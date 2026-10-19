@@ -1,30 +1,34 @@
-[gd_resource type="Resource" script_class="BuildingRules" format=3]
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://dl4pgp5cbmr8a"]
 
 [ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_woodshed"]
 
 [resource]
 script = ExtResource("1_woodshed")
-lifespan_years = 15
-max_durability = 75
-defense = 20
 building_name = "building_woodshed"
 category = 4
 required_idea_id = "advanced_paleolithic_constructions"
 required_labor = 2400
-required_materials = {
-"stick": 20,
-"wood": 4
-}
+lifespan_years = 15
 storage_slot_count = 6
-storage_space_per_slot = 100
+storage_space_per_slot = 300
 accepted_categories = Array[int]([1])
 categories_locked = true
-storage_accepted_resources = Array[String](["wood", "stick", "firewood"])
-required_space = 1
-has_door = false
+required_materials = {
+"stick": 20,
+"stone": 8,
+"wood": 16
+}
+max_durability = 75
+defense = 20
+required_space = 2
+footprint = Vector2i(2, 1)
+door_offset = 1
 visibility_radius = 2
 is_workstation = true
-production_output_slots = 10
-production_output_to_storage = true
-production_max_quantity = 5
+production_output_slots = 100
+production_output_to_storage = false
+storage_accepted_resources = Array[String](["wood", "stick", "firewood"])
 production_max_orders = 2
+production_max_quantity = 50
+toolkit_tool_types = 1
+toolkit_units_per_type = 3

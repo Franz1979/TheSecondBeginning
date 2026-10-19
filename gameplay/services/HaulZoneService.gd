@@ -359,6 +359,22 @@ static func count_available(area: WorkArea, macro_state: MacroCellState, names: 
 	return total
 
 
+# true se count_available sarebbe > 0, fermandosi alla prima cella buona (2026-10-18, scatti: la lista dei lavori lo
+# chiedeva più volte per fotogramma, ognuna scorrendo tutta la zona).
+static func has_available_in_area(area: WorkArea, macro_state: MacroCellState, names: Array[String], individual: HumanIndividual = null) -> bool:
+	if area == null or macro_state == null or names.is_empty():
+		return false
+	for y in range(area.rect.position.y, area.rect.end.y):
+		for x in range(area.rect.position.x, area.rect.end.x):
+			var cell := Vector2i(x, y)
+			for candidate_name in names:
+				if PickUpAction.get_source_available_at(macro_state, cell, PickUpAction.SourceKind.TERRAIN, candidate_name) > 0:
+					if individual == null or is_cell_reachable(individual, area.macro_coords, cell):
+						return true
+					break
+	return false
+
+
 # true se nella WorkArea c'è ancora qualcosa tra `names` (controllo della ripetizione).
 static func work_area_has_available(area: WorkArea, macro_state: MacroCellState, names: Array[String]) -> bool:
 	if area == null or macro_state == null or names.is_empty():

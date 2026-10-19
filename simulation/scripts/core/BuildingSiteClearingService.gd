@@ -31,6 +31,43 @@ static func has_woody_vegetation(macro_state: MacroCellState, pos: Vector2i) -> 
 	return false
 
 
+# Resti di piante sulla microcella `pos` (2026-10-18, macerie nuove): ceppi o piante morte, di qualunque età.
+static func has_plant_remains(macro_state: MacroCellState, pos: Vector2i) -> bool:
+	if macro_state == null:
+		return false
+	for exceptions in [macro_state.vegetation_cut_exceptions, macro_state.vegetation_death_exceptions]:
+		for key in (exceptions as Dictionary).keys():
+			if key.x == pos.x and key.y == pos.y:
+				return true
+	return false
+
+
+# Detriti dei ceppi sulla microcella `pos` (2026-10-18, richiesta utente — Fossa dei rifiuti): per ogni ceppo d'albero o di
+# cespuglio ancora visibile (finestra di rientro), base del tipo × la sua taglia (size_multiplier: età × affollamento del
+# lotto), per eccesso, minimo 1. Base: WasteDisposalService.DEBRIS_PER_TREE_STUMP / DEBRIS_PER_SHRUB_STUMP.
+static func stump_debris(macro_state: MacroCellState, pos: Vector2i, current_year: int) -> int:
+	if macro_state == null:
+		return 0
+	var total := 0
+	for key in macro_state.vegetation_cut_exceptions.keys():
+		if key.x != pos.x or key.y != pos.y:
+			continue
+		var entry: Dictionary = macro_state.vegetation_cut_exceptions[key]
+		var origin_type := int(entry.get("origin_type", -1))
+		var base := 0
+		if origin_type == GameTypes.WorldObjectType.TREE:
+			base = WasteDisposalService.DEBRIS_PER_TREE_STUMP
+		elif origin_type == GameTypes.WorldObjectType.SHRUB:
+			base = WasteDisposalService.DEBRIS_PER_SHRUB_STUMP
+		else:
+			continue
+		var reentry_years: int = int(IndividualVegetationService.REENTRY_YEARS_BY_TYPE.get(origin_type, 0))
+		if current_year - int(entry.get("cut_year", 0)) >= reentry_years:
+			continue
+		total += maxi(ceili(float(base) * float(entry.get("size_multiplier", 1.0)) - 0.000001), 1)
+	return total
+
+
 # Ceppi d'albero sulla microcella `pos` (2026-10-16, da ClearAction): tagli d'albero ancora nella finestra di rientro
 # (dopo, lo slot non mostra più il ceppo). Sola lettura. Lo usano la durata della pulizia (ClearAction) e la regola
 # BuildingRules.requires_tree_stump (BuildingVerificationService).

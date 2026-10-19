@@ -1380,6 +1380,9 @@ func _draw_buildings() -> void:
 		if not is_complete:
 			if not entry.get("site_setup_complete", false):
 				_draw_construction_wip_marker(ground)
+			# Detriti dei ceppi rimasti nel cantiere (2026-10-18): le macerie sopra finché non vengono portati via.
+			if entry.get("site_debris", false):
+				PlaceholderBuildingShapes.draw(self, "rubble", ground)
 			continue
 		# Smistamento per tipo (2026-09-07, richiesta utente, Pebble Circle) — .get() con default
 		# "hut" per compatibilità con entry costruite prima che "building_type_name" esistesse
@@ -1423,6 +1426,10 @@ func _draw_buildings() -> void:
 			continue
 		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 			PlaceholderBuildingShapes.draw(self, building_type_name, ground, false, 1.0, entry.get("rotation", GameTypes.Direction.SOUTH))
+			continue
+		# Legnaia (2026-10-18, 2x1): tettoia con la catasta e spiazzo di lavoro, sul rettangolo intero.
+		if building_type_name == WoodshedShape.TYPE:
+			WoodshedShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		# Spiazzo delle feste (2026-10-17, 2x2): terra battuta e cerchio di sassi, sul rettangolo intero.
 		if building_type_name == FeastGroundShape.TYPE:

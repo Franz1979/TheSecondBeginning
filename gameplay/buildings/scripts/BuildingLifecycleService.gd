@@ -144,8 +144,14 @@ static func evict_damaged_house_overflow(ctx: GameContext, effects: GameEffects)
 # --- Demolizione ---
 
 # Edificio completo segnato "da demolire" (2026-09-27). Demolizione pianificata (2026-10-14): segnarlo non lo ferma più,
-# funziona finché il demolitore non comincia (start_demolition).
-static func mark_for_demolition(building: Building, effects: GameEffects) -> void:
+# funziona finché il demolitore non comincia (start_demolition). Macerie (2026-10-18, Fossa dei rifiuti): segnate solo se
+# esiste una Fossa con posto per i loro detriti (WasteDisposalService.find_pit_for_debris); una Fossa con dei rifiuti non
+# si segna mai (WasteDisposalService.blocks_demolition). false = non segnato.
+static func mark_for_demolition(world: World, building: Building, effects: GameEffects) -> bool:
+	if (building.is_rubble() and WasteDisposalService.find_pit_for_debris(world, building) == null) \
+			or WasteDisposalService.blocks_demolition(building):
+		effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
+		return false
 	building.is_marked_for_demolition = true
 	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
@@ -154,6 +160,7 @@ static func mark_for_demolition(building: Building, effects: GameEffects) -> voi
 	print("[DEMOLISH] Edificio #%d (%s) segnato da demolire (pianificata: funziona fino all'inizio del lavoro)." % [
 		building.id, building.get_display_name()
 	])
+	return true
 
 
 # Primo lavoro del demolitore (DemolishAction.demolition_started, 2026-10-14): da qui l'edificio è inagibile. Materiali della
@@ -195,7 +202,7 @@ static func request_cancel_demolition(ctx: GameContext, building: Building, effe
 	if float(building.construction_progress.get(DemolishAction.LABOR_KEY, 0.0)) > 0.0:
 		effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
 		return
-	var freed := close_tasks_on_building(ctx, building, JobWorkScanService.DEMOLISH_TASK_NAMES, null)
+	var freed := close_tasks_on_building(ctx, building, JobWorkScanService.demolish_task_names_for(building), null)
 	if building.is_rubble():
 		building.rubble_auto_excluded = true
 	cancel_demolition(ctx, building, effects)
@@ -207,34 +214,87 @@ static func request_cancel_demolition(ctx: GameContext, building: Building, effe
 # mucchio metà dei required_materials (per difetto; il materiale di allestimento non si recupera), il deposito e il buffer
 # di uscita. Se c'è un mucchio, chiede nel context della Task di accodare allo stesso individuo il trasporto al magazzino
 # (HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL, consumato subito dopo questo step).
-static func complete_demolition(ctx: GameContext, building: Building, demolisher: HumanIndividual, context: Dictionary, effects: GameEffects) -> void:
+# Macerie (2026-10-18, richiesta utente): la metà persa diventa macerie, una per microcella dell'edificio
+# (WasteDisposalService.demolition_debris_quantity, divisa con split_debris), già da sgomberare; il mucchio cade fuori da
+# quelle celle. Con una Fossa che ha posto il demolitore, dopo il mucchio, sgombera anche le macerie (Task accodata).
+# Ritorna le macerie create.
+static func complete_demolition(ctx: GameContext, building: Building, demolisher: HumanIndividual, context: Dictionary, effects: GameEffects) -> Array[Building]:
+	var rubbles: Array[Building] = []
 	if building == null or building.is_demolished:
-		return
+		return rubbles
 	var salvaged: Dictionary = {}
 	if building.rules != null:
 		for material_name in building.rules.required_materials.keys():
 			var salvaged_quantity: int = floori(float(building.rules.required_materials[material_name]) / 2.0)
 			if salvaged_quantity > 0:
 				salvaged[material_name] = salvaged_quantity
-	var pile := demolish(ctx, building, effects, salvaged, demolisher)
+	var debris: int = WasteDisposalService.demolition_debris_quantity(building.rules)
+	var cells: Array = BuildingFootprint.cells_of(building) if debris > 0 else []
+	var source_type := building.building_type_name
+	var macro_coords := Vector2i(building.macro_x, building.macro_y)
+	var pile := demolish(ctx, building, effects, salvaged, demolisher, cells)
 	if pile != null:
 		context[HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL] = {
 			"macro_x": pile.macro_coords.x, "macro_y": pile.macro_coords.y,
 			"micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
 		}
+	if debris <= 0:
+		return rubbles
+	rubbles = spawn_rubble_on_cells(ctx, source_type, macro_coords, cells, debris, effects, Building.RUBBLE_ORIGIN_DEMOLITION)
+	for rubble in rubbles:
+		rubble.is_marked_for_demolition = true
+		effects.refresh_marker(rubble)
+	if demolisher != null and not rubbles.is_empty() and demolisher.task_queue.size() < TaskQueueService.MAX_QUEUE_SIZE:
+		var clearing := WasteDisposalService.build_debris_clearing_task(ctx.world, demolisher, rubbles[0])
+		if clearing != null:
+			TaskQueueService.push_suspended_task(demolisher, clearing)
+			effects.wire_storage_task(clearing, demolisher)
+	BuildingMaintenanceService.request_rubble_check(ctx.game_data)
+	effects.refresh_pending()
+	print("[DEMOLISH] Macerie lasciate dalla demolizione di %s: %d detriti su %d microcelle." % [source_type, debris, rubbles.size()])
+	return rubbles
+
+
+# Macerie 1x1 su `cells` (microcelle di `macro_coords`) con `total_debris` detriti divisi tra loro (split_debris): crollo e
+# demolizione. Ritorna le macerie create.
+static func spawn_rubble_on_cells(
+	ctx: GameContext, source_type: String, macro_coords: Vector2i, cells: Array, total_debris: int, effects: GameEffects,
+	origin: String = Building.RUBBLE_ORIGIN_COLLAPSE
+) -> Array[Building]:
+	var result: Array[Building] = []
+	var debris_split := split_debris(total_debris, cells.size())
+	var overflow := 0
+	for i in range(cells.size()):
+		var share := int(debris_split[i])
+		var rubble := spawn_rubble(ctx, source_type, macro_coords, cells[i], mini(share, WasteDisposalService.MAX_DEBRIS_PER_RUBBLE), effects, origin)
+		if rubble != null:
+			result.append(rubble)
+			overflow += maxi(share - WasteDisposalService.MAX_DEBRIS_PER_RUBBLE, 0)
+	# Oltre il tetto per maceria (2026-10-18): il resto in macerie nuove vicine, stessa origine; segnate come le prime
+	# (la demolizione le segna dopo, chi chiama).
+	if overflow > 0 and not cells.is_empty():
+		var extra := put_debris_near(ctx, macro_coords, cells[0], overflow, effects, null, source_type, origin, false)
+		for rubble in extra["rubbles"]:
+			if not result.has(rubble):
+				result.append(rubble)
+	return result
 
 
 # Demolizione VERA (2026-09-12): `building` viene rimosso da world.buildings, quindi nessuna doppia chiamata è possibile per
 # lo stesso Building. `salvaged` = materiali recuperati (nome -> quantità) che cadono a terra insieme al contenuto;
 # `completing` = chi ha appena finito di abbatterlo, la cui Task (in pieno completamento) non va chiusa. Ritorna il mucchio
 # a terra, o null.
-static func demolish(ctx: GameContext, building: Building, effects: GameEffects, salvaged: Dictionary = {}, completing: HumanIndividual = null) -> GroundPile:
+# `excluded_drop_cells` (2026-10-18): microcelle dove il mucchio non deve cadere (lì nasceranno le macerie della demolizione).
+static func demolish(ctx: GameContext, building: Building, effects: GameEffects, salvaged: Dictionary = {}, completing: HumanIndividual = null, excluded_drop_cells: Array = []) -> GroundPile:
 	if building == null or ctx.world == null:
 		return null
 	# 1) Lavori sull'edificio (costruzione e demolizione, correnti e in coda) chiusi, con la regola del carico
 	# (CargoReturnService). Chi resta senza task si rimette in moto DOPO l'abbattimento (step 6), così una task in coda per lo
 	# stesso edificio non può essere ripresa.
 	var individuals_to_resolve := close_tasks_on_building(ctx, building, JobWorkScanService.BUILD_AND_DEMOLISH_TASK_NAMES, completing)
+	# Macerie (2026-10-18): anche gli sgomberi che devono ancora prendere detriti qui.
+	if building.is_rubble():
+		individuals_to_resolve.append_array(close_tasks_on_building(ctx, building, JobWorkScanService.RUBBLE_CLEARING_TASK_NAMES, completing))
 	# 2) Residenti: slot liberati (house_id torna a -1) solo per un edificio residenziale. Casa persa (2026-10-10): crollo o
 	# cantiere annullato con residenti; per un edificio "da demolire" i residenti sono già usciti all'inizio del lavoro.
 	if building.rules != null and building.rules.max_residents > 0:
@@ -259,7 +319,7 @@ static func demolish(ctx: GameContext, building: Building, effects: GameEffects,
 	building.is_demolished = true
 	ctx.world.buildings.erase(building)
 	village_center_removed(ctx, building, effects)
-	var pile := GroundPileService.drop_building_contents(ctx.game_data, building, ctx.world, salvaged)
+	var pile := GroundPileService.drop_building_contents(ctx.game_data, building, ctx.world, salvaged, excluded_drop_cells)
 	# 6) Individui rimasti senza task per la demolizione: riprendono dalla coda o vanno in perditempo.
 	resolve_freed(ctx, individuals_to_resolve)
 	# Ridisegno della cella (torna il terreno; i rametti del cantiere spariscono col ridisegno) e delle vicine, selezione
@@ -296,14 +356,16 @@ static func collapse_ruined_buildings(ctx: GameContext, effects: GameEffects) ->
 
 # Persone come nella demolizione (residenti liberati e ricollocati, lavori sull'edificio chiusi); in più si chiudono
 # produzione, riparazione e riti sull'edificio e la richiesta di riparazione. Contenuto (magazzino, prodotti finiti,
-# Attrezzeria) e materiali: tutto perso, nessun mucchio. Con BuildingRules.leaves_rubble al suo posto nasce un edificio
-# "Macerie" (rubble), da sgomberare con la Demolish; senza, la cella torna libera. Avviso al giocatore e riga [COLLAPSE].
+# Attrezzeria) e materiali: tutto perso, nessun mucchio. Con BuildingRules.leaves_rubble al suo posto nascono le "Macerie"
+# (rubble, 1x1): una per ogni microcella dell'ingombro (2026-10-18, richiesta utente — sgomberabili una per una), con i
+# detriti dell'edificio divisi tra loro (split_debris); senza, le celle tornano libere. Avviso al giocatore e riga [COLLAPSE].
 static func collapse(ctx: GameContext, building: Building, effects: GameEffects) -> void:
 	var display_name := building.get_display_name()
 	var leaves_rubble: bool = building.rules.leaves_rubble
 	var source_type := building.building_type_name
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
-	var microcell := Vector2i(building.micro_x, building.micro_y)
+	# Celle dell'ingombro (rettangolo già ruotato), lette prima che demolish tolga l'edificio.
+	var rubble_cells: Array = BuildingFootprint.cells_of(building)
 	var freed := close_tasks_on_building(ctx, building, COLLAPSE_CLOSED_TASK_NAMES, null)
 	building.repair_requested = false
 	# Tutto perso: demolish non trova nulla da far cadere a terra.
@@ -315,7 +377,10 @@ static func collapse(ctx: GameContext, building: Building, effects: GameEffects)
 	building.repair_plan = {}
 	demolish(ctx, building, effects)
 	resolve_freed(ctx, freed)
-	var rubble: Building = spawn_rubble(ctx, source_type, macro_coords, microcell, effects) if leaves_rubble else null
+	var rubble_ids: Array[int] = []
+	if leaves_rubble:
+		for rubble in spawn_rubble_on_cells(ctx, source_type, macro_coords, rubble_cells, WasteDisposalService.rubble_debris_quantity(source_type), effects):
+			rubble_ids.append(rubble.id)
 	# Crollo con macerie (2026-10-10, evento di felicità): tutto il villaggio; chi ci abitava ha già perso la casa sopra.
 	if leaves_rubble:
 		var collapse_rules: HumanRules = ctx.folk.human_rules_ref if ctx.folk != null else null
@@ -324,7 +389,7 @@ static func collapse(ctx: GameContext, building: Building, effects: GameEffects)
 				ctx.individuals, -collapse_rules.collapse_village_happiness_loss, {}, 0.0, -1, "crollo di %s" % display_name
 			)
 	print("[COLLAPSE] Edificio #%d (%s) crollato a Integrità zero — %s." % [
-		building.id, display_name, ("macerie #%d nella stessa microcella" % rubble.id) if rubble != null else "nessuna maceria, cella libera"
+		building.id, display_name, ("macerie %s, una per microcella" % str(rubble_ids)) if not rubble_ids.is_empty() else "nessuna maceria, celle libere"
 	])
 	effects.notify(
 		NotificationTypes.NotificationPopupType.BUILDING_COLLAPSED,
@@ -336,10 +401,181 @@ static func collapse(ctx: GameContext, building: Building, effects: GameEffects)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
 
 
-# Macerie al posto di un edificio crollato (`source_type` = suo building_type_name): edificio completo come il piazzamento
-# istantaneo, stessa riserva di spazio della microcella (le piante non ricrescono lì), nessuna pulizia della vegetazione
-# (la cella era già occupata).
-static func spawn_rubble(ctx: GameContext, source_type: String, macro_coords: Vector2i, microcell: Vector2i, effects: GameEffects) -> Building:
+# Detriti posati a terra (2026-10-18, richiesta utente): ogni mucchio con dei detriti li cede a una maceria da sgomberare
+# vicina (WasteDisposalService.GROUND_DEBRIS_MERGE_RADIUS) o a una maceria nuova sulla microcella adatta più vicina
+# (GroundPileService.find_rubble_microcell; senza origine, "Detriti abbandonati"), già da sgomberare. Senza posto i detriti
+# restano nel mucchio e si riprova al giro dopo. Una volta al secondo (GameSimulation.tick_second).
+static func settle_ground_debris(ctx: GameContext, effects: GameEffects) -> void:
+	if ctx.world == null or ctx.game_data == null:
+		return
+	var changed := false
+	for entry in WasteDisposalService.find_ground_debris(ctx.game_data):
+		var pile: GroundPile = entry["pile"]
+		var quantity: int = int(entry["quantity"])
+		# Un mucchio di soli detriti sparisce: la sua microcella va bene per la maceria.
+		var only_debris := true
+		for resource_name in pile.resources.keys():
+			if not WasteDisposalService.is_waste_only(String(resource_name)):
+				only_debris = false
+		var placed := put_debris_near(ctx, pile.macro_coords, pile.microcell, quantity, effects, pile if only_debris and pile.carcasses.is_empty() else null)
+		if (placed["rubbles"] as Array).is_empty():
+			continue
+		WasteDisposalService.take_ground_debris(ctx.game_data, pile)
+		# Detriti senza posto (tutte le celle vicine occupate): restano a terra, si riprova al giro dopo.
+		var leftover := int(placed["leftover"])
+		if leftover > 0:
+			GroundPileService.drop_entries(ctx.game_data, pile.macro_coords, Vector2(pile.microcell) + Vector2(0.5, 0.5),
+				{WasteDisposalService.DEBRIS_RESOURCE: {"quantity": leftover, "decay_fraction": 0.0}}, ctx.world)
+		print("[DEBRIS] %d detriti a terra in %s %s -> %d macerie (senza posto: %d)." % [quantity, pile.macro_coords, pile.microcell, (placed["rubbles"] as Array).size(), leftover])
+		changed = true
+	if changed:
+		BuildingMaintenanceService.request_rubble_check(ctx.game_data)
+		effects.refresh_pending()
+		effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
+
+
+# `quantity` detriti a terra vicino a `micro` (2026-10-18): riempiono le macerie da sgomberare entro
+# WasteDisposalService.GROUND_DEBRIS_MERGE_RADIUS fino al tetto (MAX_DEBRIS_PER_RUBBLE), il resto va in macerie nuove
+# (blocchi fino al tetto) sulle microcelle adatte più vicine (GroundPileService.find_rubble_microcell; `leaving_pile` =
+# mucchio che sta per sparire, la sua cella vale). `source_type`/`origin`: edificio e origine delle macerie nuove (di base
+# detriti abbandonati); `marked` = nascono già da sgomberare. Ritorna {"rubbles": macerie toccate, "leftover": detriti
+# senza posto}.
+static func put_debris_near(
+	ctx: GameContext, macro: Vector2i, micro: Vector2i, quantity: int, effects: GameEffects, leaving_pile: GroundPile = null,
+	source_type: String = "", origin: String = Building.RUBBLE_ORIGIN_DROPPED, marked: bool = true
+) -> Dictionary:
+	var rubbles: Array[Building] = []
+	var remaining := quantity
+	while remaining > 0:
+		var rubble := WasteDisposalService.find_rubble_near(ctx.world, macro, micro, WasteDisposalService.GROUND_DEBRIS_MERGE_RADIUS)
+		if rubble != null:
+			var added := mini(remaining, WasteDisposalService.rubble_room(rubble))
+			WasteDisposalService.add_debris(rubble, added)
+			remaining -= added
+			if not rubbles.has(rubble):
+				rubbles.append(rubble)
+			effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
+			continue
+		var cell: Variant = GroundPileService.find_rubble_microcell(ctx.game_data, ctx.world, macro, micro, leaving_pile)
+		if cell == null:
+			break
+		leaving_pile = null
+		var share := mini(remaining, WasteDisposalService.MAX_DEBRIS_PER_RUBBLE)
+		rubble = spawn_rubble(ctx, source_type, macro, cell, share, effects, origin)
+		if rubble == null:
+			break
+		remaining -= share
+		rubble.is_marked_for_demolition = marked
+		effects.refresh_marker(rubble)
+		rubbles.append(rubble)
+		# Una maceria non segnata (crollo) non è trovata da find_rubble_near: il prossimo blocco va in una nuova.
+	return {"rubbles": rubbles, "leftover": remaining}
+
+
+# Detriti dei ceppi di un cantiere appena ripulito (2026-10-18, richiesta utente — ClearAction.STUMP_DEBRIS_KEY): una
+# maceria accanto al cantiere (put_debris_near, mai sulle sue celle, occupate dall'edificio); il costruttore, finito
+# l'edificio, la sgombera se c'è una Fossa con posto (Task accodata in fondo, dopo la costruzione). Senza posto vicino i
+# detriti cadono in un mucchio, che settle_ground_debris riprova a trasformare in maceria ogni secondo (nessun blocco della
+# costruzione).
+static func settle_site_stump_debris(ctx: GameContext, site: Building, builder: HumanIndividual, effects: GameEffects) -> void:
+	if site == null or ctx.world == null:
+		return
+	var debris: int = int(site.construction_progress.get(ClearAction.STUMP_DEBRIS_KEY, 0))
+	if debris <= 0:
+		return
+	site.construction_progress.erase(ClearAction.STUMP_DEBRIS_KEY)
+	var macro := Vector2i(site.macro_x, site.macro_y)
+	var placed := put_debris_near(
+		ctx, macro, Vector2i(site.micro_x, site.micro_y), debris, effects, null, site.building_type_name, Building.RUBBLE_ORIGIN_STUMPS
+	)
+	var leftover := int(placed["leftover"])
+	# Nessuna cella libera vicina (2026-10-18, richiesta utente — cantiere in mezzo al bosco): i detriti restano nel
+	# cantiere e la costruzione aspetta che vengano portati alla Fossa (BuildAction, lavoro "Sgombero · detriti del
+	# cantiere").
+	if leftover > 0:
+		WasteDisposalService.add_debris(site, leftover)
+		effects.refresh_building_cell(site)
+		effects.refresh_pending()
+	if (placed["rubbles"] as Array).is_empty():
+		return
+	var rubble: Building = placed["rubbles"][0]
+	print("[DEBRIS] %d detriti dei ceppi del cantiere #%d -> macerie #%d." % [debris, site.id, rubble.id])
+	if builder != null and builder.task_queue.size() < TaskQueueService.MAX_QUEUE_SIZE:
+		var clearing := WasteDisposalService.build_debris_clearing_task(ctx.world, builder, rubble)
+		if clearing != null:
+			TaskQueueService.push_suspended_task(builder, clearing)
+			effects.wire_storage_task(clearing, builder)
+	BuildingMaintenanceService.request_rubble_check(ctx.game_data)
+	effects.refresh_pending()
+
+
+# Rifiuti del villaggio (2026-10-18, richiesta utente): ogni WasteDisposalService.VILLAGE_WASTE_PERIOD_DAYS giorni, per
+# ogni villaggio con centro, VILLAGE_WASTE_PER_INHABITANT_PER_MONTH × abitanti detriti; entrano direttamente nelle Fosse
+# aperte più vicine al centro, il resto diventa "Rifiuti del villaggio" accanto al centro (put_debris_near, già da
+# sgomberare). Senza centro niente. Dal giro giornaliero (GameSimulation.tick_day).
+static func produce_village_waste(ctx: GameContext, effects: GameEffects) -> void:
+	if ctx.world == null or ctx.game_data == null or ctx.folk == null:
+		return
+	if ctx.game_data.get_absolute_day() % WasteDisposalService.VILLAGE_WASTE_PERIOD_DAYS != 0:
+		return
+	var first_village_id := -1
+	for village in ctx.folk.villages:
+		if village.center_building_id != -1:
+			first_village_id = village.id
+			break
+	var changed := false
+	for village in ctx.folk.villages:
+		if village.center_building_id == -1:
+			continue
+		var center: Building = null
+		for building in ctx.world.buildings:
+			if building.id == village.center_building_id and not building.is_demolished:
+				center = building
+				break
+		if center == null:
+			continue
+		var inhabitants := WasteDisposalService.village_inhabitants(village, ctx.individuals, ctx.world, first_village_id)
+		var amount := inhabitants * WasteDisposalService.VILLAGE_WASTE_PER_INHABITANT_PER_MONTH
+		if amount <= 0:
+			continue
+		var dumped := WasteDisposalService.dump_into_pits(ctx.world, center, amount)
+		var leftover := amount - dumped
+		if leftover > 0:
+			var placed := put_debris_near(
+				ctx, Vector2i(center.macro_x, center.macro_y), Vector2i(center.micro_x, center.micro_y), leftover, effects, null, "",
+				Building.RUBBLE_ORIGIN_VILLAGE
+			)
+			leftover = int(placed["leftover"])
+		print("[WASTE] %s: %d abitanti -> %d rifiuti, %d nelle Fosse, %d come macerie, %d senza posto." % [
+			village.get_display_name(), inhabitants, amount, dumped, amount - dumped - leftover, leftover
+		])
+		changed = true
+	if changed:
+		BuildingMaintenanceService.request_rubble_check(ctx.game_data)
+		effects.refresh_pending()
+		effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
+
+
+# Detriti di un crollo divisi tra `parts` macerie (2026-10-18): parti intere quasi uguali, le prime `resto` con +1, ognuna
+# almeno 1 (330 su 4 -> 83, 83, 82, 82).
+static func split_debris(total: int, parts: int) -> Array[int]:
+	var result: Array[int] = []
+	if parts <= 0:
+		return result
+	var base: int = total / parts
+	var remainder: int = total % parts
+	for i in range(parts):
+		result.append(maxi(base + (1 if i < remainder else 0), 1))
+	return result
+
+
+# Maceria 1x1 su una microcella di un edificio crollato (`source_type` = suo building_type_name), con `debris` detriti:
+# edificio completo come il piazzamento istantaneo, 1 di spazio della macrocella come la microcella che occupa (le piante
+# non ricrescono lì), nessuna pulizia della vegetazione (la cella era già occupata).
+static func spawn_rubble(
+	ctx: GameContext, source_type: String, macro_coords: Vector2i, microcell: Vector2i, debris: int, effects: GameEffects,
+	origin: String = Building.RUBBLE_ORIGIN_COLLAPSE
+) -> Building:
 	var rules := BuildingCalculator.get_building_rules(RUBBLE_BUILDING_TYPE)
 	var state := ctx.world.get_cell_state_at(macro_coords.x, macro_coords.y) if ctx.world != null else null
 	if rules == null or state == null:
@@ -354,6 +590,9 @@ static func spawn_rubble(ctx: GameContext, source_type: String, macro_coords: Ve
 	rubble.current_durability = rules.max_durability
 	rubble.built_year = ctx.game_data.year
 	rubble.rubble_source_name = source_type
+	rubble.rubble_origin = origin
+	# Detriti da portare alla Fossa dei rifiuti (2026-10-18): lo sgombero li porta via a viaggi.
+	WasteDisposalService.seed_rubble_debris(rubble, debris)
 	ctx.world.buildings.append(rubble)
 	state.set_dedicated_space(GameTypes.WorldObjectType.BUILDING, state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING) + rules.required_space)
 	effects.refresh_cell(macro_coords)

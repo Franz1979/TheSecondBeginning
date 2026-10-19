@@ -389,6 +389,11 @@ static func repeat_transport(ctx: GameContext, owner: HumanIndividual, context: 
 	if owner == null or not TaskRepeatRules.is_enabled(context) or delivered <= 0:
 		return
 	var repeats_done: int = TaskRepeatRules.get_count(context)
+	# Sgombero delle macerie (2026-10-18): si ripete finché le macerie hanno detriti, senza il tetto dei viaggi, verso la
+	# Fossa più vicina con posto (riscelta a ogni viaggio: se quella di prima si è riempita, la successiva).
+	if bool(context.get(WasteDisposalService.CONTEXT_DEBRIS_CLEARING, false)):
+		_repeat_rubble_clearing(ctx, owner, context, repeats_done, effects)
+		return
 	if repeats_done >= TaskRepeatRules.MAX_REPEATS:
 		return
 	var resource_name: String = String(context.get("transport_delivery_resource", ""))
@@ -416,6 +421,14 @@ static func repeat_transport(ctx: GameContext, owner: HumanIndividual, context: 
 	# Trasporto verso la rastrelliera ordinato dal gestore delle scorte: la ripetizione resta sua.
 	if context.has(WarehouseManagerService.STOCK_DRY_KEY):
 		repeat_task.context[WarehouseManagerService.STOCK_DRY_KEY] = context[WarehouseManagerService.STOCK_DRY_KEY]
+	# Eccedenza da buttare (2026-10-18): anche la ripetizione resta del gestore delle scorte.
+	if context.has(WarehouseManagerService.STOCK_WASTE_KEY):
+		repeat_task.context[WarehouseManagerService.STOCK_WASTE_KEY] = context[WarehouseManagerService.STOCK_WASTE_KEY]
+	# Combustibile e Attrezzerie (2026-10-18): anche le loro ripetizioni restano del gestore delle scorte (conteggio "in
+	# viaggio").
+	for manager_key in [FuelStockService.FUEL_TARGET_KEY, ToolkitStockService.TOOLKIT_TARGET_KEY, ToolkitStockService.TOOLKIT_TOOL_KEY]:
+		if context.has(manager_key):
+			repeat_task.context[manager_key] = context[manager_key]
 	TaskQueueService.push_suspended_task(owner, repeat_task)
 	effects.wire_storage_task(repeat_task, owner)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
@@ -451,3 +464,21 @@ static func _find_building(world: World, building_id: int) -> Building:
 		if building.id == building_id:
 			return building
 	return null
+
+
+static func _repeat_rubble_clearing(ctx: GameContext, owner: HumanIndividual, context: Dictionary, repeats_done: int, effects: GameEffects) -> void:
+	# Sorgente ancora con un lavoro aperto: macerie da sgomberare o Fossa in svuotamento (2026-10-18).
+	var rubble := _find_building(ctx.world, int(context.get("transport_source_id", -1)))
+	# Sorgente finita (macerie svuotate e tolte): si prosegue sulle macerie da sgomberare vicine (edificio grande).
+	if rubble == null or rubble.is_demolished or WasteDisposalService.get_debris(rubble) <= 0:
+		rubble = WasteDisposalService.find_next_rubble(ctx.world, context.get(WasteDisposalService.CONTEXT_DEBRIS_SOURCE_CELL, {}))
+	if rubble == null or rubble.is_demolished or not WasteDisposalService.has_debris_job(rubble):
+		return
+	if owner.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
+		return
+	var repeat_task := WasteDisposalService.build_debris_clearing_task(ctx.world, owner, rubble)
+	if repeat_task == null:
+		return
+	TaskRepeatRules.write(repeat_task.context, true, repeats_done + 1)
+	TaskQueueService.push_suspended_task(owner, repeat_task)
+	effects.wire_storage_task(repeat_task, owner)

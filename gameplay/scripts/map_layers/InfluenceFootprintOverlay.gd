@@ -20,6 +20,8 @@ const COLORS := {
 	InfluenceService.InfluenceType.POLITICAL: Color(0.95, 0.75, 0.15),
 	InfluenceService.InfluenceType.CULTURAL: Color(0.65, 0.35, 0.90),
 	InfluenceService.InfluenceType.RELIGIOUS: Color(0.95, 0.35, 0.20),
+	# Disagio (2026-10-18): verde marcio.
+	InfluenceService.InfluenceType.DISCOMFORT: Color(0.55, 0.60, 0.20),
 }
 
 # Centro (px, locali al container) e raggi in px per tipo, risolti una volta in show_building: l'impronta è una

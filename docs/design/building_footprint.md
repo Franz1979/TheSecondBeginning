@@ -49,7 +49,9 @@ lo Spiazzo delle feste 2x2 (vedi `feast_ground.md`).
 8. **Bordo**: per ora un edificio non può uscire dalla sua macrocella (un controllo in verifica:
    `micro + misura − 1 < World.WIDTH/HEIGHT`). Supportarlo toccherebbe ostacoli, renderer, pathfinding e spazio, che
    sono tutti per macrocella.
-9. **Macerie**: ereditano l'ingombro dell'edificio crollato (`rubble_source_name`, già salvato).
+9. **Macerie**: ~~ereditano l'ingombro dell'edificio crollato~~ — cambiato il 2026-10-18 (richiesta utente): un edificio
+   grande che crolla lascia **una maceria 1x1 per ogni microcella** del suo ingombro, con i detriti divisi tra loro
+   (`BuildingLifecycleService.split_debris`), sgomberabili una per una.
 10. **Miglioramenti** (`upgrades_to`): solo verso un tipo con lo stesso ingombro.
 11. **Salvataggi**: nessun cambiamento. L'ingombro viene dal tipo; ancora e rotazione sono già salvate.
 
@@ -106,7 +108,8 @@ Ogni passo si prova in gioco prima del successivo.
 1. **Base dell'ingombro** con un edificio di prova (per esempio un 3x2 di movimento): dati, classe comune, piazzamento,
    ostacoli, vegetazione, disegno, clic, cantiere. Gli edifici 1x1 devono comportarsi esattamente come prima.
 2. **Spiazzo delle feste 2x2** e il suo banchetto (`feast_ground.md`): 2a l'edificio (fatto), 2b deposito e banchetto.
-3. **Macerie e miglioramenti** con ingombro.
+3. **Macerie e miglioramenti** con ingombro. Macerie fatte (2026-10-18: una 1x1 per microcella, vedi decisione 9); restano i
+   miglioramenti.
 4. **Edifici grandi che bloccano**: punto di lavoro davanti alla porta nei ~30 punti, quando servirà il primo.
 5. **Più costruttori**:
    - `max_builders` esiste già e il lavoro si accumula sull'edificio (`construction_progress`);

@@ -56,6 +56,13 @@ const LAYERS: Array[Dictionary] = [
 		"overlay_params": {"influence_type": InfluenceService.InfluenceType.RELIGIOUS},
 		"minimap_method": "",
 	},
+	# Disagio (2026-10-18): Fossa dei rifiuti e macerie.
+	{
+		"id": "discomfort_influence", "name_key": "map_layer_discomfort_influence", "icon": "🪰", "available": true,
+		"map_overlay": preload("res://gameplay/scripts/map_layers/InfluenceLayerOverlay.gd"),
+		"overlay_params": {"influence_type": InfluenceService.InfluenceType.DISCOMFORT},
+		"minimap_method": "",
+	},
 ]
 
 # Colore delle macrocelle non percorribili (acqua) sulla minimappa, layer Percorribilità — stesso rosso

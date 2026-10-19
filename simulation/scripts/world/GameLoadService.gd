@@ -229,6 +229,14 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# Sgombero automatico delle macerie (2026-10-10) — spento per i salvataggi precedenti.
 	game_data.job_board_auto_clear_rubble = bool(data["game"].get("job_board_auto_clear_rubble", false))
 	# Livelli minimi delle scorte (2026-10-10) — nessuno per i salvataggi precedenti; i numeri del JSON tornano float.
+	# Massimi per risorsa (2026-10-18): nessuno nei salvataggi precedenti.
+	game_data.stock_max_levels.clear()
+	var raw_max_levels = data["game"].get("stock_max_levels", {})
+	if raw_max_levels is Dictionary:
+		for resource_name in raw_max_levels.keys():
+			var max_level := int(raw_max_levels[resource_name])
+			if max_level > 0:
+				game_data.stock_max_levels[String(resource_name)] = max_level
 	game_data.stock_min_levels.clear()
 	var raw_min_levels = data["game"].get("stock_min_levels", {})
 	if raw_min_levels is Dictionary:
@@ -241,13 +249,28 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	# Regola del combustibile: il primo salvataggio (un solo N per tutti, "stock_fuel_min_per_building") la accende soltanto.
 	game_data.stock_fuel_rule_enabled = bool(data["game"].get("stock_fuel_rule_enabled", int(data["game"].get("stock_fuel_min_per_building", 0)) > 0))
 	# Regola dei banchetti spontanei (2026-10-17) — 500 e accesa per i salvataggi precedenti.
-	game_data.stock_banquet_calories = int(data["game"].get("stock_banquet_calories", 500))
 	game_data.stock_banquet_safe_only = bool(data["game"].get("stock_banquet_safe_only", true))
 	game_data.stock_fuel_min_by_type.clear()
 	var raw_fuel_mins = data["game"].get("stock_fuel_min_by_type", {})
 	if raw_fuel_mins is Dictionary:
 		for type_name in raw_fuel_mins.keys():
 			game_data.stock_fuel_min_by_type[String(type_name)] = maxi(int(raw_fuel_mins[type_name]), 0)
+	# Regola "Rifornisci le Attrezzerie" (2026-10-18): spenta e senza desiderati nei salvataggi precedenti.
+	game_data.stock_toolkit_rule_enabled = bool(data["game"].get("stock_toolkit_rule_enabled", false))
+	game_data.stock_toolkit_targets.clear()
+	var raw_toolkit_targets = data["game"].get("stock_toolkit_targets", {})
+	if raw_toolkit_targets is Dictionary:
+		for type_name in raw_toolkit_targets.keys():
+			var raw_by_tool = raw_toolkit_targets[type_name]
+			if not (raw_by_tool is Dictionary):
+				continue
+			var by_tool: Dictionary = {}
+			for tool_name in raw_by_tool.keys():
+				var level := int(raw_by_tool[tool_name])
+				if level > 0:
+					by_tool[String(tool_name)] = level
+			if not by_tool.is_empty():
+				game_data.stock_toolkit_targets[String(type_name)] = by_tool
 	game_data.job_board_return_borrowed_tools = bool(data["game"].get("job_board_return_borrowed_tools", true))
 	game_data.job_board_single_builder = bool(data["game"].get("job_board_single_builder", false))
 	# Inventario del magazzino (2026-10-11): salvataggi precedenti = mai fatto (il primo entra subito in coda).
@@ -693,6 +716,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.feast_calorie_threshold = int(building_data.get("feast_calorie_threshold", -1))
 			# Macerie (2026-10-10) — "" per i salvataggi precedenti.
 			building.rubble_source_name = String(building_data.get("rubble_source_name", ""))
+			# Origine delle macerie (2026-10-18): nei salvataggi precedenti crollo se c'è l'edificio d'origine, altrimenti detriti.
+			building.rubble_origin = String(building_data.get("rubble_origin",
+				Building.RUBBLE_ORIGIN_COLLAPSE if building.rubble_source_name != "" else Building.RUBBLE_ORIGIN_DROPPED))
 			building.rubble_auto_excluded = bool(building_data.get("rubble_auto_excluded", false))
 			building.current_durability = float(building_data.get("current_durability", 0.0))
 			building.built_year = int(building_data.get("built_year", -1))
@@ -713,6 +739,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for buried_entry in building_data.get("buried", []):
 				if buried_entry is Dictionary:
 					building.buried.append(buried_entry)
+			# Rifiuti (2026-10-18, Fossa dei rifiuti): 0 nei salvataggi precedenti.
+			building.waste_stored = int(building_data.get("waste_stored", 0))
+			building.waste_reserved = int(building_data.get("waste_reserved", 0))
+			# Svuota la Fossa (2026-10-18): false nei salvataggi precedenti.
+			building.waste_emptying = bool(building_data.get("waste_emptying", false))
+			building.waste_closed = bool(building_data.get("waste_closed", false))
+			building.awaiting_site_cut = bool(building_data.get("awaiting_site_cut", false))
 			building.influence_last_gain_day = {}
 			var saved_last_gain_day: Variant = building_data.get("influence_last_gain_day", {})
 			if saved_last_gain_day is Dictionary:
@@ -726,6 +759,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# non lo fosse stato) continua a caricare senza perdere dati — un intero vecchio letto
 			# come {"quantity": vecchio_intero, "decay_fraction": 0.0}, mai un breaking change.
 			building.stored_resources = _parse_stored_resources(building_data.get("stored_resources", {}))
+			# Macerie dei salvataggi precedenti ai detriti (2026-10-18): ricevono i detriti dello sgombero a viaggi.
+			if building.is_rubble() and not building.stored_resources.has(WasteDisposalService.DEBRIS_RESOURCE):
+				WasteDisposalService.seed_rubble_debris(building)
 			# construction_progress (2026-09-10, richiesta utente — preparazione Build Task; primi
 			# consumatori arrivati il 2026-09-11 con BuildAction/SetupSiteAction/ClearAction) —
 			# .get(key, {}) per compatibilità con save precedenti l'introduzione del campo, stesso

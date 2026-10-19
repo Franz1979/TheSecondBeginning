@@ -12,7 +12,7 @@ category = 2
 required_idea_id = "advanced_paleolithic_constructions"
 required_labor = 4000
 storage_slot_count = 12
-storage_space_per_slot = 150
+storage_space_per_slot = 300
 durability_multiplier_by_category = Array[float]([1.5, 1.4, 1.4, 1.4, 1.4, 1.6])
 required_materials = {
 "dried_hide": 20,

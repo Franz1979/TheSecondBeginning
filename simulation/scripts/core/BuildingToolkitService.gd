@@ -116,6 +116,14 @@ static func get_free_units_for(building: Building, tool_name: String) -> int:
 	return get_units_per_type(building) if get_tool_names(building).size() < get_type_capacity(building) else 0
 
 
+# Pezzi di `tool_name` che un trasporto può lasciare nell'Attrezzeria (2026-10-18, richiesta utente — Transport manuale
+# verso l'Attrezzeria): get_free_units_for, 0 per un edificio incompleto, demolito o fuori servizio.
+static func get_max_toolkit_depositable(building: Building, tool_name: String) -> int:
+	if building == null or building.is_demolished or not building.is_complete or building.is_out_of_service():
+		return 0
+	return get_free_units_for(building, tool_name)
+
+
 # Aggiunge un pezzo (istanza; usi pieni = pezzo nuovo). false se non c'è posto o il pezzo è rotto.
 static func add_unit(building: Building, tool_name: String, instance: Dictionary) -> bool:
 	if not can_add(building, tool_name):
@@ -247,3 +255,43 @@ static func load_toolkit(raw: Dictionary) -> Dictionary:
 		ToolInstance.set_used_instances(entry, used)
 		toolkit[tool_name] = entry
 	return toolkit
+
+
+# --- Per tipo di edificio (2026-10-18, regola "Rifornisci le Attrezzerie", ToolkitStockService) ---
+
+static func type_has_toolkit(type_name: String) -> bool:
+	var rules := BuildingCalculator.get_building_rules(type_name)
+	return rules != null and rules.toolkit_tool_types > 0 and rules.toolkit_units_per_type > 0
+
+
+static func units_per_type_for(type_name: String) -> int:
+	var rules := BuildingCalculator.get_building_rules(type_name)
+	return maxi(rules.toolkit_units_per_type, 0) if rules != null else 0
+
+
+# Attrezzi che l'Attrezzeria del tipo accetta: stessa regola di is_accepted_tool (una categoria d'uso richiesta dalle
+# ricette di quel tipo), in ordine di nome.
+static func accepted_tools_for_type(type_name: String) -> Array[String]:
+	var tools: Array[String] = []
+	if not type_has_toolkit(type_name):
+		return tools
+	var needed: Array[int] = []
+	for recipe_name in CaloricCalculator.list_secondary_resource_names():
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
+		if recipe_rules == null or not recipe_rules.recipe_workstation_types.has(type_name):
+			continue
+		for category in recipe_rules.recipe_required_tool_categories:
+			if not needed.has(int(category)):
+				needed.append(int(category))
+	for resource_name in CaloricCalculator.list_secondary_resource_names():
+		if not ToolInstance.is_tool_resource(resource_name):
+			continue
+		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		if rules == null:
+			continue
+		for category in rules.tool_categories:
+			if needed.has(int(category)):
+				tools.append(resource_name)
+				break
+	tools.sort()
+	return tools

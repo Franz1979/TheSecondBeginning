@@ -17,9 +17,7 @@ extends SocialRiteRules
 # villaggio si unisce; prima 0.01 per pezzo di carne da 100 calorie, stesso valore), oltre alla quota fissa
 # SocialRiteRules.cohesion_gain.
 @export var cohesion_gain_per_1000_calories: float = 0.1
-# Banchetto spontaneo (2026-10-17, attività idle): soglia di calorie fissa (non quella del pannello) e freno sulle scorte —
-# parte solo se il cibo nei magazzini del villaggio vale almeno idle_min_stock_ratio × la soglia (3 = la festa consuma al
-# più un terzo). Letti da SocialRiteService.get_idle_calorie_threshold / _has_idle_food_stock: lì, col gestore scorte,
-# arriverà la regola "banchetti da X calorie".
-@export var idle_calorie_threshold: int = 500
+# Banchetto spontaneo (2026-10-17, attività idle): freno sulle scorte — parte solo se il cibo nei magazzini del villaggio
+# vale almeno idle_min_stock_ratio × la soglia dello spiazzo (3 = la festa consuma al più un terzo). Letto da
+# SocialRiteService._has_idle_food_stock. La soglia è quella dello spiazzo (2026-10-18, get_calorie_threshold).
 @export var idle_min_stock_ratio: float = 3.0

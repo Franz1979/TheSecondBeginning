@@ -311,15 +311,10 @@ static func find_idle_target(
 	) as Building
 
 
-# Soglia di calorie di un banchetto spontaneo (2026-10-17): fissa nei dati (BanquetRiteRules.idle_calorie_threshold); col
-# gestore scorte sbloccato quella della regola "Banchetti spontanei" (GameData.stock_banquet_calories). Mai sotto il minimo.
-static func get_idle_calorie_threshold(rules: BanquetRiteRules) -> int:
-	if rules == null:
-		return 0
-	var threshold := rules.idle_calorie_threshold
-	if _is_stock_manager_unlocked():
-		threshold = GameSettings.active_game_data.stock_banquet_calories
-	return maxi(threshold, rules.min_calorie_threshold)
+# Soglia di calorie di un banchetto spontaneo: dal 2026-10-18 (richiesta utente) la stessa "Soglia calorie" dello spiazzo
+# (get_calorie_threshold), con o senza gestore scorte; prima era un valore a parte (dati del rito o cassetto).
+static func get_idle_calorie_threshold(building: Building, rules: BanquetRiteRules) -> int:
+	return get_calorie_threshold(building, rules)
 
 
 # Gestore scorte sbloccato: la stessa idea che apre il cassetto Gestione scorte (WarehousePanel.REQUIRED_IDEA_ID).
@@ -329,14 +324,14 @@ static func _is_stock_manager_unlocked() -> bool:
 
 
 # Freno del banchetto spontaneo: cibo nei magazzini del villaggio (VillageStockService, lo spiazzo non conta) almeno
-# idle_min_stock_ratio × la soglia spontanea. Col gestore scorte sbloccato vale solo se la casella "solo se consumano meno
+# idle_min_stock_ratio × la soglia dello spiazzo. Col gestore scorte sbloccato vale solo se la casella "solo se consumano meno
 # di un terzo delle scorte" è accesa (GameData.stock_banquet_safe_only). Oggi le scorte sono di tutto il mondo
 # (VillageStockService non distingue i villaggi).
-static func _has_idle_food_stock(_building: Building, rules: BanquetRiteRules, world: World) -> bool:
+static func _has_idle_food_stock(building: Building, rules: BanquetRiteRules, world: World) -> bool:
 	if _is_stock_manager_unlocked() and not GameSettings.active_game_data.stock_banquet_safe_only:
 		return true
 	var food_calories := VillageStockService.get_food_calories(VillageStockService.get_village_stock(world))
-	return food_calories >= rules.idle_min_stock_ratio * float(get_idle_calorie_threshold(rules))
+	return food_calories >= rules.idle_min_stock_ratio * float(get_idle_calorie_threshold(building, rules))
 
 
 # Preparazione finita (SocialRiteAttendAction dell'organizzatore, 2026-10-16): materiale minimo nell'edificio, si convoca

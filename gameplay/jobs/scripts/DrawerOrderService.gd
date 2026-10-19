@@ -287,7 +287,7 @@ static func area_has_targets(
 			String(order.get("resource_name", ""))
 		)
 		var gather_state := ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		return HaulZoneService.count_available(area, gather_state, names, individual) > 0
+		return HaulZoneService.has_available_in_area(area, gather_state, names, individual)
 	if order_type == TYPE_QUARRY:
 		if not ctx.live_cells.has(area.macro_coords):
 			return false

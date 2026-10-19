@@ -55,11 +55,11 @@ const STATE_LOCKED := "locked"
 # "repair" (2026-10-10): riparazioni richieste dal pannello edificio ("repair:<id edificio>", Building.repair_requested).
 # "inventory" (2026-10-11): inventario del magazzino ("inventory:0", uno alla volta; InventoryJobProvider.collect).
 # "rite" (2026-10-14): riti ordinati dal pannello edificio ("rite:<id edificio>", Building.requested_rite_id).
-const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED, "quarry": STATE_LISTED, "gather": STATE_LISTED, "hunt": STATE_LISTED, "repair": STATE_LISTED, "inventory": STATE_LISTED, "rite": STATE_LISTED}
+const DEFAULT_STATE_BY_KIND := {"build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED, "quarry": STATE_LISTED, "gather": STATE_LISTED, "hunt": STATE_LISTED, "repair": STATE_LISTED, "inventory": STATE_LISTED, "rite": STATE_LISTED, "site_cut": STATE_LISTED}
 # Tipo di lavoro -> chiave di SkillEffectService (skill_action_effects.tres) della sua skill (modo "Più adatto").
-const SKILL_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": HuntService.SKILL_EFFECT_KEY, "repair": "build", "inventory": InventoryAction.SKILL_EFFECT_KEY, "rite": RiteAction.SKILL_EFFECT_KEY}
+const SKILL_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": HuntService.SKILL_EFFECT_KEY, "repair": "build", "inventory": InventoryAction.SKILL_EFFECT_KEY, "rite": RiteAction.SKILL_EFFECT_KEY, "site_cut": "cut"}
 # Tipo di lavoro -> icona di comando (IconRegistry) che lampeggia sull'edificio durante l'attesa per l'assegnazione a mano.
-const ICON_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt", "repair": "build", "inventory": "transport", "rite": "rite"}
+const ICON_KEY_BY_KIND := {"build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt", "repair": "build", "inventory": "transport", "rite": "rite", "site_cut": "cut"}
 
 # Modi di priorità (valori salvati in GameData.job_board_priority_mode, mai cambiarli).
 const PRIORITY_BEST_FIT := "best_fit"
@@ -80,9 +80,10 @@ const PRIORITY_NAME_KEYS := {
 # salvato) entra in fondo (get_kind_order).
 # "hunt" (2026-10-09): ordini di caccia del cassetto, in fondo. "repair" (2026-10-10): riparazioni richieste, in fondo.
 # "inventory" (2026-10-11): l'inventario del magazzino, per primo (senza di lui non escono gli ordini del magazzino).
-const DEFAULT_KIND_ORDER: Array[String] = ["inventory", "body", "build", "upgrade", "demolish", "pile", "output", "produce", "cut", "quarry", "gather", "hunt", "repair", "rite"]
+const DEFAULT_KIND_ORDER: Array[String] = ["inventory", "body", "build", "upgrade", "demolish", "pile", "output", "produce", "site_cut", "cut", "quarry", "gather", "hunt", "repair", "rite"]
 # Tipo -> chiave tr() del nome nell'elenco dei tipi e nel log.
 const KIND_NAME_KEYS := {
+	"site_cut": "task_assignment_kind_site_cut",
 	"body": "task_assignment_kind_body",
 	"build": "task_assignment_kind_build",
 	"upgrade": "task_assignment_kind_upgrade",

@@ -222,6 +222,10 @@ extends Resource
 # Bonus giornalieri della copertura della casa (2026-10-02, HumanVitalsInteractionService): influenza CULTURAL ->
 # felicità, influenza POLITICAL -> lealtà. Solo bonus: senza casa o con la casa non coperta nessun effetto.
 @export var cultural_coverage_daily_happiness: float = 5.0
+# Disagio (2026-10-18, richiesta utente — Fossa dei rifiuti e macerie): casa coperta dall'influenza DISCOMFORT -> perdita
+# giornaliera di felicità e salute (valori positivi, sottratti da HumanVitalsInteractionService), qualunque sorgente.
+@export var discomfort_coverage_daily_happiness_loss: float = 5.0
+@export var discomfort_coverage_daily_health_loss: float = 2.0
 # Regole giornaliere stamina -> felicità e salute -> felicità (2026-10-10, richiesta utente — prima numeri fissi in
 # HumanVitalsInteractionService): stamina almeno a metà del massimo -> +gain, altrimenti -loss; salute sopra i 2/3 del
 # massimo -> +gain, altrimenti -loss. Le perdite sono valori positivi, sottratti dal service.

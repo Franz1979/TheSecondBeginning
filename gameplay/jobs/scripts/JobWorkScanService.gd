@@ -14,6 +14,8 @@ const PRODUCE_TASK_NAMES: Array[String] = ["task_produce_name"]
 const BUILDING_WORK_TASK_NAMES: Array[String] = ["task_build_name", "task_produce_name"]
 # Demolizione (2026-09-27, demolish.tres).
 const DEMOLISH_TASK_NAMES: Array[String] = ["task_demolish_name"]
+# Sgombero delle macerie (2026-10-18, Fossa dei rifiuti): una Transport dei detriti (WasteDisposalService).
+const RUBBLE_CLEARING_TASK_NAMES: Array[String] = ["task_transport_name"]
 # Task chiuse quando un edificio viene abbattuto.
 const BUILD_AND_DEMOLISH_TASK_NAMES: Array[String] = ["task_build_name", "task_demolish_name"]
 # Riparazione (2026-10-10, repair.tres).
@@ -26,6 +28,12 @@ const REPAIR_TASK_NAMES: Array[String] = ["task_repair_name"]
 # si escludono da soli. Solo gli step ancora da fare (2026-09-26, consegna dopo la produzione): a ordine finito il
 # produttore che porta il prodotto al magazzino non occupa più la postazione; lo step di consegna
 # (RetrieveAction.deliver_to_warehouse) non conta come lavoro sull'edificio.
+# Task di chi lavora a demolire `building`: il trasporto dei detriti per le macerie e le Fosse in svuotamento, la Demolisci
+# per ogni altro edificio.
+static func demolish_task_names_for(building: Building) -> Array[String]:
+	return RUBBLE_CLEARING_TASK_NAMES if WasteDisposalService.is_debris_source(building) else DEMOLISH_TASK_NAMES
+
+
 static func task_works_on_building(task: Task, building: Building, task_names: Array[String]) -> bool:
 	if task == null or task.is_finished() or not task_names.has(task.task_name):
 		return false
@@ -128,6 +136,10 @@ static func collect_assignments(individuals: Array[HumanIndividual]) -> Dictiona
 				for step in queued.steps:
 					if step is RiteAction and (step as RiteAction).target_building != null:
 						result["rite"][(step as RiteAction).target_building.id] = true
+				continue
+			# Sgombero delle macerie (2026-10-18): conta come lavoro "demolish" sulle macerie sorgente.
+			if WasteDisposalService.is_debris_clearing_task(queued):
+				result["demolish"][int(queued.context.get("transport_source_id", -1))] = true
 				continue
 			var bucket := ""
 			if BUILD_TASK_NAMES.has(queued.task_name):

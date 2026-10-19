@@ -89,6 +89,16 @@ var rubble_source_name: String = ""
 # Macerie escluse dallo sgombero automatico (2026-10-10): lo sgombero annullato dal giocatore (X del cassetto o "Annulla
 # sgombero") lo accende; "Sgombera" lo spegne. Salvato con l'edificio.
 var rubble_auto_excluded: bool = false
+# Origine delle macerie (2026-10-18): come sono nate — RUBBLE_ORIGIN_COLLAPSE (crollo), _DEMOLITION (metà persa della
+# demolizione), _STUMPS (ceppi della pulizia di un cantiere), _DROPPED (detriti posati a terra). Testo in
+# get_rubble_origin_text. Salvata con l'edificio.
+const RUBBLE_ORIGIN_COLLAPSE := "collapse"
+const RUBBLE_ORIGIN_DEMOLITION := "demolition"
+const RUBBLE_ORIGIN_STUMPS := "stumps"
+const RUBBLE_ORIGIN_DROPPED := "dropped"
+# Rifiuti del villaggio (2026-10-18): prodotti dagli abitanti quando nessuna Fossa ha posto.
+const RUBBLE_ORIGIN_VILLAGE := "village"
+var rubble_origin: String = RUBBLE_ORIGIN_COLLAPSE
 
 # true quando questo cantiere (SetupSiteAction) è bloccato perché nessuna sorgente ha materiale da
 # costruzione disponibile (2026-09-14, richiesta utente — segnalazione player) — valorizzato/
@@ -149,8 +159,26 @@ func get_display_name() -> String:
 
 
 # Macerie: nome dell'edificio crollato da cui sono nate (tradotto), o il tipo grezzo se le regole non ci sono più.
+# "Crollo di Capanna", "Demolizione di Capanna", "Ceppi del cantiere di Capanna", "Detriti abbandonati" (2026-10-18).
+func get_rubble_origin_text() -> String:
+	var key := "rubble_origin_collapse"
+	match rubble_origin:
+		RUBBLE_ORIGIN_DEMOLITION:
+			key = "rubble_origin_demolition"
+		RUBBLE_ORIGIN_STUMPS:
+			key = "rubble_origin_stumps"
+		RUBBLE_ORIGIN_DROPPED:
+			return String(TranslationServer.translate("rubble_origin_dropped"))
+		RUBBLE_ORIGIN_VILLAGE:
+			return String(TranslationServer.translate("rubble_origin_village"))
+	return String(TranslationServer.translate(key)).format({"building": get_rubble_source_display_name()})
+
+
 func get_rubble_source_display_name() -> String:
-	var source_rules := BuildingCalculator.get_building_rules(rubble_source_name) if rubble_source_name != "" else null
+	# Macerie nate da detriti posati a terra (2026-10-18): nessun edificio d'origine.
+	if rubble_source_name == "":
+		return String(TranslationServer.translate("building_rubble_abandoned_name"))
+	var source_rules := BuildingCalculator.get_building_rules(rubble_source_name)
 	return String(TranslationServer.translate(source_rules.building_name)) if source_rules != null else rubble_source_name
 
 
@@ -200,6 +228,25 @@ var influence_last_gain_day: Dictionary = {}
 # lo riempirà la task di sepoltura. Un Dictionary JSON-nativo per defunto, salvato così com'è da GameSaveService.
 # Capienza: BuildingRules.max_buried.
 var buried: Array = []
+# Rifiuti (2026-10-18, richiesta utente — Fossa dei rifiuti, passo 1): spazio occupato e spazio prenotato da trasporti
+# in viaggio verso la fossa (così due portatori non contano sullo stesso posto libero). Capienza:
+# BuildingRules.waste_capacity. Per ora sempre 0: chi ci butta dentro arriverà nei passi successivi.
+var waste_stored: int = 0
+var waste_reserved: int = 0
+# Svuota la Fossa (2026-10-18, richiesta utente): in svuotamento (i rifiuti sono detriti nel suo deposito, da portare in
+# un'altra Fossa) e chiusa ai rifiuti (non riceve nulla). Scritti da WasteDisposalService e dai comandi del pannello.
+var waste_emptying: bool = false
+var waste_closed: bool = false
+# Cantiere nel bosco (2026-10-18, richiesta utente — "prima disbosca, poi costruisci"): piazzato su celle con alberi o
+# cespugli vivi, il cantiere aspetta il taglio: niente lavoro di costruzione finché le sue celle non sono libere (solo i
+# lavori di taglio, SiteCutJobProvider). Si spegne da solo (BuildingMaintenanceService.finish_site_cuts). Salvato.
+var awaiting_site_cut: bool = false
+
+# Spazio ancora libero nella fossa, al netto delle prenotazioni; 0 se non è una fossa.
+func get_waste_free_space() -> int:
+	if rules == null or rules.waste_capacity <= 0:
+		return 0
+	return maxi(rules.waste_capacity - waste_stored - waste_reserved, 0)
 
 # Giorno assoluto (GameData.get_absolute_day) dell'ultimo rito completato presso questo edificio, manuale o spontaneo
 # (2026-10-02 — scritto da ReligiousRiteEffectService). -1 = mai. Letto dalla regola giornaliera della fede

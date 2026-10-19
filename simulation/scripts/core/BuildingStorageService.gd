@@ -595,6 +595,9 @@ static func _free_storage_allows(building: Building, resource_name: String, reso
 	# Deposito riservato agli eventi (2026-10-17): niente stoccaggio libero, entra solo la quota del rito.
 	if building.rules.storage_event_only:
 		return false
+	# Rifiuti (2026-10-18, detriti): nessun magazzino li accetta, vanno solo alla Fossa (WasteDisposalService).
+	if resource_rules != null and resource_rules.waste_only:
+		return false
 	# Risorse ammesse per nome (2026-10-16, BuildingRules.storage_accepted_resources — legnaia).
 	if not building.rules.storage_accepted_resources.is_empty() and not building.rules.storage_accepted_resources.has(resource_name):
 		return false

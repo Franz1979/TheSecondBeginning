@@ -248,9 +248,26 @@ static func tick_second(ctx: GameContext, now: float, effects: GameEffects) -> v
 	# Riparazioni richieste (2026-10-10): quelle non più valide si chiudono, poi quelle automatiche sotto soglia.
 	BuildingMaintenanceService.settle_repair_requests(ctx.world)
 	BuildingMaintenanceService.auto_request_repairs(ctx.world, ctx.game_data, ctx.folk, ctx.individuals)
+	# Cantieri nel bosco (2026-10-18): taglio finito -> cantiere normale, nasce il lavoro di costruzione.
+	if not BuildingMaintenanceService.finish_site_cuts(ctx.world).is_empty():
+		effects.refresh_pending()
+		effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
+		effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
+	# Raggio di disagio delle Fosse (2026-10-18): cambia col riempimento, copertura delle case aggiornata.
+	WasteDisposalService.sync_discomfort_radii(ctx.world, ctx.game_data)
+	# Detriti posati a terra (2026-10-18): diventano macerie da sgomberare.
+	BuildingLifecycleService.settle_ground_debris(ctx, effects)
+	# Macerie svuotate dallo sgombero (2026-10-18): tolte, la cella torna libera.
+	for building in BuildingMaintenanceService.emptied_rubble(ctx.world):
+		BuildingLifecycleService.demolish(ctx, building, effects)
+	# Fosse svuotate (2026-10-18): restano vuote e chiuse ai rifiuti.
+	if not BuildingMaintenanceService.finish_emptied_pits(ctx.world).is_empty():
+		effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
+		effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
 	# Sgombero automatico delle macerie (2026-10-10): segnate come col clic su "Sgombera".
 	for building in BuildingMaintenanceService.rubble_to_clear(ctx.world, ctx.game_data, ctx.folk):
-		BuildingLifecycleService.mark_for_demolition(building, effects)
+		if not BuildingLifecycleService.mark_for_demolition(ctx.world, building, effects):
+			continue
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 			print("[JOB BOARD] Sgombero richiesto in automatico per le macerie #%d (crollo di %s): in coda come demolish:%d." % [
 				building.id, building.get_rubble_source_display_name(), building.id
@@ -269,6 +286,8 @@ static func tick_second(ctx: GameContext, now: float, effects: GameEffects) -> v
 # Giro giornaliero (prima in GameScene._on_day_advanced, stesso ordine), dopo il calo giornaliero dell'Integrità
 # (WorldTimeService, già girato).
 static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
+	# Rifiuti del villaggio (2026-10-18): ogni 30 giorni, nelle Fosse o accanto al centro del villaggio.
+	BuildingLifecycleService.produce_village_waste(ctx, effects)
 	# Crollo a Integrità zero (2026-10-10).
 	BuildingLifecycleService.collapse_ruined_buildings(ctx, effects)
 	# Case danneggiate (2026-10-10, effetti passo 5): sfratto di chi è in più, poi riassegnazione.

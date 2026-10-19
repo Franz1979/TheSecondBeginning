@@ -26,5 +26,4 @@ default_calorie_threshold = 1500
 min_calorie_threshold = 500
 cohesion_gain_per_1000_calories = 0.1
 idle_cooldown_days = 7.0
-idle_calorie_threshold = 500
 idle_min_stock_ratio = 3.0

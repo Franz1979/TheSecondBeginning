@@ -36,11 +36,12 @@ const MERGE_WITH_EXISTING_RADIUS: int = 0
 # non nasce mai sopra un edificio, un cantiere, l'acqua, il fiume o un sasso. Nessuno si sposta: il mucchio
 # nasce dove c'è posto. Ritorna il mucchio che ha ricevuto le voci; null se non c'era nulla da lasciare,
 # game_data manca o non c'è una microcella libera entro MAX_DROP_SEARCH_RADIUS (carico perso).
-static func drop_entries(game_data: GameData, macro_coords: Vector2i, position: Vector2, entries: Dictionary, world: World = null) -> GroundPile:
+# `excluded_cells` (2026-10-18, demolizione con macerie): microcelle dove il mucchio non deve cadere (lì nasceranno le macerie).
+static func drop_entries(game_data: GameData, macro_coords: Vector2i, position: Vector2, entries: Dictionary, world: World = null, excluded_cells: Array = []) -> GroundPile:
 	if game_data == null or entries.is_empty():
 		return null
 	var resolved_world: World = world if world != null else GameSettings.active_world
-	var drop_microcell: Variant = find_drop_microcell(game_data, resolved_world, macro_coords, microcell_for(position))
+	var drop_microcell: Variant = find_drop_microcell(game_data, resolved_world, macro_coords, microcell_for(position), excluded_cells)
 	if drop_microcell == null:
 		push_warning("GroundPileService: nessuna microcella libera entro %d da %s in %s — carico perso (%s)." % [
 			MAX_DROP_SEARCH_RADIUS, microcell_for(position), macro_coords, str(entries.keys())
@@ -96,7 +97,7 @@ static func drop_repair_materials(game_data: GameData, building: Building, world
 	return drop_entries(game_data, Vector2i(building.macro_x, building.macro_y), building_position, entries, world)
 
 
-static func drop_building_contents(game_data: GameData, building: Building, world: World = null, extra_fresh: Dictionary = {}) -> GroundPile:
+static func drop_building_contents(game_data: GameData, building: Building, world: World = null, extra_fresh: Dictionary = {}, excluded_cells: Array = []) -> GroundPile:
 	if building == null:
 		return null
 	var entries: Dictionary = building.stored_resources.duplicate(true)
@@ -110,7 +111,7 @@ static func drop_building_contents(game_data: GameData, building: Building, worl
 	if entries.is_empty():
 		return null
 	var building_position := Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5)
-	return drop_entries(game_data, Vector2i(building.macro_x, building.macro_y), building_position, entries, world)
+	return drop_entries(game_data, Vector2i(building.macro_x, building.macro_y), building_position, entries, world, excluded_cells)
 
 
 # Somma a `entries` (formato magazzino) le quantità fresche di `fresh` (nome -> int, decay_fraction 0.0): una risorsa
@@ -236,7 +237,7 @@ static func _new_pile(game_data: GameData, macro_coords: Vector2i, microcell: Ve
 #   3. anelli concentrici attorno a `start` (raggio 0, 1, …, MAX_DROP_SEARCH_RADIUS): la prima microcella
 #      libera, la più vicina a `start` dentro l'anello.
 # null se non c'è posto. world null = nessun controllo sugli ostacoli (si posa in `start`).
-static func find_drop_microcell(game_data: GameData, world: World, macro_coords: Vector2i, start: Vector2i) -> Variant:
+static func find_drop_microcell(game_data: GameData, world: World, macro_coords: Vector2i, start: Vector2i, excluded_cells: Array = []) -> Variant:
 	if world == null:
 		return start
 	var macro_cell := world.get_cell_at(macro_coords.x, macro_coords.y)
@@ -249,6 +250,8 @@ static func find_drop_microcell(game_data: GameData, world: World, macro_coords:
 	var obstacles := MicrocellObstacles.build(macro_coords, macro_cell, macro_state, river_lookup, world)
 	var is_free := func(microcell: Vector2i) -> bool:
 		if microcell.x < 0 or microcell.y < 0 or microcell.x >= World.WIDTH or microcell.y >= World.HEIGHT:
+			return false
+		if excluded_cells.has(microcell):
 			return false
 		return obstacles.is_free(microcell, false, false, false, true)
 
@@ -487,3 +490,77 @@ static func from_save_data(data: Dictionary, parse_resources: Callable) -> Groun
 					"killed_day": int(raw_carcass.get("killed_day", 0)),
 				})
 	return pile
+
+
+# Insieme (Vector2i -> true) delle microcelle di `macro_coords` vietate a una maceria nuova: alberi/cespugli vivi su un
+# lotto rivendicato, ceppi e piante morte (chiavi Vector3i x, y, slot), mucchi (tranne `leaving_pile`), impronte degli
+# edifici non demoliti.
+static func _rubble_blocked_cells(game_data: GameData, world: World, macro_coords: Vector2i, macro_state: MacroCellState, leaving_pile: GroundPile) -> Dictionary:
+	var blocked: Dictionary = {}
+	if macro_state != null:
+		for pair in [[macro_state.tree_individual_subtype, macro_state.tree_claimed_lots], [macro_state.shrub_individual_subtype, macro_state.shrub_claimed_lots]]:
+			var claimed_lots: Dictionary = pair[1]
+			for key in (pair[0] as Dictionary).keys():
+				var pos := Vector2i(key.x, key.y)
+				if claimed_lots.has(pos):
+					blocked[pos] = true
+		for exceptions in [macro_state.vegetation_cut_exceptions, macro_state.vegetation_death_exceptions]:
+			for key in (exceptions as Dictionary).keys():
+				blocked[Vector2i(key.x, key.y)] = true
+	if game_data != null:
+		for pile in game_data.ground_piles:
+			if pile != leaving_pile and pile.macro_coords == macro_coords:
+				blocked[pile.microcell] = true
+	for building in world.buildings:
+		if building.is_demolished or building.macro_x != macro_coords.x or building.macro_y != macro_coords.y:
+			continue
+		var rect_size := BuildingFootprint.size_of(building)
+		for dy in range(rect_size.y):
+			for dx in range(rect_size.x):
+				blocked[Vector2i(building.micro_x + dx, building.micro_y + dy)] = true
+	return blocked
+
+
+# Microcella per una maceria nata da detriti posati a terra (2026-10-18, Fossa dei rifiuti): come find_drop_microcell
+# (anelli attorno a `start` fino a MAX_DROP_SEARCH_RADIUS, stessi ostacoli), ma senza nessun edificio sopra (neanche
+# calpestabile), senza mucchi e senza piante: niente alberi o cespugli vivi, ceppi, piante morte né sassi di scarto (una
+# maceria su un albero lo nasconderebbe lasciando lì il suo lotto); l'erba va bene; `leaving_pile` = un mucchio che sta per sparire (ha solo detriti): la sua microcella vale.
+# null se non c'è posto.
+static func find_rubble_microcell(game_data: GameData, world: World, macro_coords: Vector2i, start: Vector2i, leaving_pile: GroundPile = null) -> Variant:
+	if world == null:
+		return null
+	var macro_cell := world.get_cell_at(macro_coords.x, macro_coords.y)
+	var macro_state := world.get_cell_state_at(macro_coords.x, macro_coords.y)
+	if macro_cell == null:
+		return null
+	var river_lookup := BuildingVerificationService.get_river_lookup(macro_cell, macro_state)
+	var obstacles := MicrocellObstacles.build(macro_coords, macro_cell, macro_state, river_lookup, world)
+	# Microcelle escluse calcolate una volta sola (2026-10-18, scatti): le stesse condizioni di
+	# BuildingSiteClearingService.has_woody_vegetation/has_plant_remains, dei mucchi e delle impronte degli edifici, che
+	# per microcella scorrevano ogni volta tutti gli individui, le eccezioni, i mucchi e gli edifici.
+	var blocked := _rubble_blocked_cells(game_data, world, macro_coords, macro_state, leaving_pile)
+	var is_suitable := func(microcell: Vector2i) -> bool:
+		if microcell.x < 0 or microcell.y < 0 or microcell.x >= World.WIDTH or microcell.y >= World.HEIGHT:
+			return false
+		if blocked.has(microcell):
+			return false
+		if not obstacles.is_free(microcell, false, false, false, true):
+			return false
+		if RockStoneService.has_waste_pebbles(macro_state, microcell):
+			return false
+		return true
+	for radius in range(MAX_DROP_SEARCH_RADIUS + 1):
+		var best_cell: Variant = null
+		var best_distance := INF
+		for dy in range(-radius, radius + 1):
+			for dx in range(-radius, radius + 1):
+				if maxi(absi(dx), absi(dy)) != radius:
+					continue
+				var candidate := start + Vector2i(dx, dy)
+				var distance := Vector2(dx, dy).length()
+				if distance < best_distance and is_suitable.call(candidate):
+					best_distance = distance
+					best_cell = candidate
+		if best_cell != null:
+			return best_cell
+	return null

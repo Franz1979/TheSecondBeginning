@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3 uid="uid://b7h4pm1yx1ran"]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_waste_pit"]
+
+[resource]
+script = ExtResource("1_waste_pit")
+building_name = "building_waste_pit"
+category = 10
+min_construction_days = 1
+required_labor = 600
+max_durability = 0
+leaves_rubble = false
+defense = 0
+waste_capacity = 5000
+required_space = 1
+has_door = false
+visibility_radius = 2

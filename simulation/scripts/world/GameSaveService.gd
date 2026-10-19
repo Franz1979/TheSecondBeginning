@@ -122,11 +122,13 @@ func save_game_to_json(
 			"job_board_auto_clear_rubble": game_data.job_board_auto_clear_rubble,
 			# Livelli minimi delle scorte (2026-10-10): già JSON-nativi.
 			"stock_min_levels": game_data.stock_min_levels,
+			"stock_max_levels": game_data.stock_max_levels,
 			"stock_min_food_days": game_data.stock_min_food_days,
 			"stock_excess_meat_destination": game_data.stock_excess_meat_destination,
 			"stock_fuel_rule_enabled": game_data.stock_fuel_rule_enabled,
 			"stock_fuel_min_by_type": game_data.stock_fuel_min_by_type,
-			"stock_banquet_calories": game_data.stock_banquet_calories,
+			"stock_toolkit_rule_enabled": game_data.stock_toolkit_rule_enabled,
+			"stock_toolkit_targets": game_data.stock_toolkit_targets,
 			"stock_banquet_safe_only": game_data.stock_banquet_safe_only,
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
 			"job_board_single_builder": game_data.job_board_single_builder,
@@ -450,6 +452,7 @@ func save_game_to_json(
 			"feast_calorie_threshold": building.feast_calorie_threshold,
 			# Macerie (2026-10-10): tipo dell'edificio crollato.
 			"rubble_source_name": building.rubble_source_name,
+			"rubble_origin": building.rubble_origin,
 			"rubble_auto_excluded": building.rubble_auto_excluded,
 			"current_durability": building.current_durability,
 			"built_year": building.built_year,
@@ -460,6 +463,12 @@ func save_game_to_json(
 			"influence_last_gain_day": building.influence_last_gain_day,
 			# Sepolti (2026-10-04, cumulo sepolcrale): elenco di Dictionary JSON-nativi.
 			"buried": building.buried,
+			# Rifiuti (2026-10-18, Fossa dei rifiuti): spazio occupato e prenotato.
+			"waste_stored": building.waste_stored,
+			"waste_reserved": building.waste_reserved,
+			"waste_emptying": building.waste_emptying,
+			"waste_closed": building.waste_closed,
+			"awaiting_site_cut": building.awaiting_site_cut,
 			"last_rite_absolute_day": building.last_rite_absolute_day,
 			"stored_resources": building.stored_resources,
 			# construction_progress (2026-09-10, richiesta utente — preparazione Build Task; primi

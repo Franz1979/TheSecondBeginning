@@ -274,6 +274,13 @@ func activate(individual: Variant, context: Dictionary) -> void:
 			var units_now: int = 0
 			if deposit_kind == DepositKind.REPAIR:
 				units_now = mini(_repair_room(String(resource_name)), carried_units)
+			elif WasteDisposalService.is_waste_pit(target_building):
+				# Fossa dei rifiuti (2026-10-18): solo lo spazio che resta nella fossa.
+				units_now = mini(WasteDisposalService.get_max_disposable(target_building, String(resource_name)), carried_units)
+			elif _toolkit_room(context, String(resource_name)) > 0:
+				# Attrezzeria (2026-10-18): i suoi posti, poi il magazzino se accetta l'attrezzo.
+				var storage_room := BuildingStorageService.get_max_depositable(target_building, String(resource_name)) 					if BuildingStorageService.can_accept(target_building, String(resource_name)) else 0
+				units_now = mini(_toolkit_room(context, String(resource_name)) + storage_room, carried_units)
 			elif BuildingStorageService.can_accept(target_building, String(resource_name)):
 				units_now = min(BuildingStorageService.get_max_depositable(target_building, String(resource_name)), carried_units)
 			if units_now <= 0:
@@ -476,7 +483,19 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 				# Contenitore della riparazione (2026-10-10): mai il magazzino, solo fino a quanto chiede ancora.
 				deposited = _store_repair_material(String(resource_name), int(carried_entry["quantity"]))
 			elif not _is_completed_site_destination(context) and _is_deposit_allowed(String(resource_name)):
-				if ToolInstance.uses_instances(String(resource_name)):
+				if WasteDisposalService.is_waste_pit(target_building):
+					# Fossa dei rifiuti (2026-10-18): la merce è distrutta, occupa solo spazio. Gli attrezzi escono
+					# dallo zaino qui (la rimozione sotto salta chi usa le istanze).
+					deposited = WasteDisposalService.dispose(target_building, String(resource_name), int(carried_entry["quantity"]))
+					if deposited > 0 and ToolInstance.uses_instances(String(resource_name)):
+						individual.remove_carried_resource(String(resource_name), deposited)
+				elif ToolInstance.uses_instances(String(resource_name)) and _toolkit_room(context, String(resource_name)) > 0:
+					# Attrezzeria (2026-10-18): prima i suoi posti, il resto nel magazzino come sempre.
+					var carried_tools := int(carried_entry["quantity"])
+					deposited = _store_carried_tool_in_toolkit(individual, String(resource_name), carried_tools)
+					if deposited < carried_tools:
+						deposited += _store_carried_tool(individual, String(resource_name), carried_tools - deposited)
+				elif ToolInstance.uses_instances(String(resource_name)):
 					deposited = _store_carried_tool(individual, String(resource_name), int(carried_entry["quantity"]))
 				else:
 					deposited = BuildingStorageService.store(
@@ -730,6 +749,28 @@ static func _walk_away_destination(individual: Variant, origin: Vector2, distanc
 # il loro stato — prima le più consumate — e si depositano una per una (BuildingStorageService.
 # store_tool_units). Quelle eventualmente rifiutate tornano nello zaino con lo stesso stato. Ritorna le
 # unità depositate, stesso significato del valore di ritorno di store().
+# Posti dell'Attrezzeria di target_building per `resource_name` (2026-10-18, richiesta utente): solo per il Transport
+# diretto a questo edificio (la ricerca automatica dei magazzini non sceglie mai un'Attrezzeria). 0 altrimenti.
+func _toolkit_room(context: Dictionary, resource_name: String) -> int:
+	if target_building == null or not context.has("transport_destination_id") or int(context["transport_destination_id"]) != target_building.id:
+		return 0
+	return BuildingToolkitService.get_max_toolkit_depositable(target_building, resource_name)
+
+
+# Attrezzi in spalla nell'Attrezzeria di target_building, uno per pezzo con i suoi usi; quelli che non entrano tornano
+# in spalla. Ritorna quanti sono entrati.
+func _store_carried_tool_in_toolkit(individual: Variant, resource_name: String, carried_quantity: int) -> int:
+	var room := BuildingToolkitService.get_max_toolkit_depositable(target_building, resource_name)
+	var units: Array = individual.take_carried_tool_units(resource_name, mini(carried_quantity, room))
+	var stored := 0
+	for unit in units:
+		if BuildingToolkitService.add_unit(target_building, resource_name, unit):
+			stored += 1
+		else:
+			individual.add_carried_tool_instance(resource_name, unit)
+	return stored
+
+
 func _store_carried_tool(individual: Variant, resource_name: String, carried_quantity: int) -> int:
 	if not BuildingStorageService.can_accept(target_building, resource_name):
 		return 0

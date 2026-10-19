@@ -28,6 +28,8 @@ const STOCK_ORDER_MIN_AGE_DAYS: float = 1.0
 const STOCK_ANTI_OSCILLATION: bool = false
 # Trasporti del magazzino verso l'essiccatoio: ricetta nel context della Transport Task (pezzi in viaggio, _dry_traveling).
 const STOCK_DRY_KEY := "stock_dry_recipe"
+# Eccedenza da buttare (2026-10-18, Fossa dei rifiuti): risorsa dell'ordine "transport" verso la Fossa e delle sue Task.
+const STOCK_WASTE_KEY := "stock_waste_resource"
 
 
 # --- Magazzino e inventario ---
@@ -251,7 +253,11 @@ static func request_stock(ctx: GameContext, now: float, effects: GameEffects) ->
 		changed = true
 	if _request_fuel(ctx, now):
 		changed = true
+	if _request_toolkits(ctx, now):
+		changed = true
 	if _request_food_days(ctx, now, stock):
+		changed = true
+	if _request_waste(ctx, now, stock):
 		changed = true
 	_update_fill_names(ctx, stock)
 	if changed:
@@ -756,6 +762,108 @@ static func _request_fuel(ctx: GameContext, now: float) -> bool:
 	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
 
 
+# Massimo per risorsa (2026-10-18, richiesta utente — Fossa dei rifiuti): per ogni risorsa con GameData.stock_max_levels,
+# eccedenza = scorta − massimo − in viaggio verso la Fossa (Task con STOCK_WASTE_KEY) − ordini aperti; se > 0, un ordine
+# "transport" (STOCK_WASTE_KEY = risorsa, senza ORDER_KEY: non è un livello minimo) magazzino → Fossa. Un solo ordine aperto
+# per risorsa; quelli non presi si tolgono se l'eccedenza sparisce (o il massimo è stato tolto). true se ha cambiato ordini.
+static func _request_waste(ctx: GameContext, now: float, stock: Dictionary) -> bool:
+	var game_data := ctx.game_data
+	var changed := false
+	var open_by_resource: Dictionary = {}
+	for order in game_data.drawer_orders:
+		if order.has(STOCK_WASTE_KEY):
+			open_by_resource[String(order[STOCK_WASTE_KEY])] = order
+	for resource_name in open_by_resource.keys():
+		var order: Dictionary = open_by_resource[resource_name]
+		var max_level := int(game_data.stock_max_levels.get(resource_name, 0))
+		var excess_without := int(stock.get(resource_name, 0)) - max_level - _waste_traveling(ctx.individuals, resource_name)
+		if max_level <= 0 or excess_without <= 0:
+			DrawerOrderService.remove(game_data, int(order["id"]))
+			open_by_resource.erase(resource_name)
+			changed = true
+	for resource_name in game_data.stock_max_levels.keys():
+		var waste_name := String(resource_name)
+		if open_by_resource.has(waste_name):
+			continue
+		var excess := int(stock.get(waste_name, 0)) - int(game_data.stock_max_levels[resource_name]) - _waste_traveling(ctx.individuals, waste_name)
+		if excess <= 0:
+			continue
+		var order_id := game_data.next_drawer_order_id
+		game_data.next_drawer_order_id += 1
+		var waste_order := {
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT, STOCK_WASTE_KEY: waste_name, "resource": waste_name, "quantity": excess,
+			StockRequestService.CREATED_AT_KEY: now,
+		}
+		mark_inventory_pending(game_data, waste_order)
+		game_data.drawer_orders.append(waste_order)
+		changed = true
+		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+			print("[JOB BOARD] Ordine del cassetto #%d: butta %d %s nella Fossa (oltre il massimo)." % [order_id, excess, waste_name])
+	return changed
+
+
+# Pezzi già in viaggio verso la Fossa per `resource_name`: residuo dei trasporti con STOCK_WASTE_KEY (il più alto per
+# individuo, come _dry_traveling).
+static func _waste_traveling(individuals: Array[HumanIndividual], resource_name: String) -> int:
+	var total := 0
+	for member in individuals:
+		var best := 0
+		for task in JobWorkScanService.open_tasks(member):
+			if String(task.context.get(STOCK_WASTE_KEY, "")) == resource_name:
+				best = maxi(best, int(task.context.get("transport_requested_remaining", 0)))
+		total += best
+	return total
+
+
+# Regola "Rifornisci le Attrezzerie" (2026-10-18, ToolkitStockService): ordini "transport" deposito → Attrezzeria con
+# TOOLKIT_TARGET_KEY/TOOLKIT_TOOL_KEY, senza ORDER_KEY (non è un livello minimo); avvisi in StockRuntimeState.
+# toolkit_warnings. true se ha creato o tolto ordini.
+static func _request_toolkits(ctx: GameContext, now: float) -> bool:
+	var game_data := ctx.game_data
+	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool: return order.has(ToolkitStockService.TOOLKIT_TARGET_KEY))
+	var plan := ToolkitStockService.plan_orders(ctx.world, game_data, open_orders, ToolkitStockService.traveling(ctx.individuals))
+	game_data.stock_runtime.toolkit_warnings = plan["warnings"]
+	for order_id in plan["remove"]:
+		DrawerOrderService.remove(game_data, int(order_id))
+	for need in plan["create"]:
+		var order_id := game_data.next_drawer_order_id
+		game_data.next_drawer_order_id += 1
+		var toolkit_order := {
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT,
+			ToolkitStockService.TOOLKIT_TARGET_KEY: int(need[ToolkitStockService.TOOLKIT_TARGET_KEY]),
+			ToolkitStockService.TOOLKIT_TOOL_KEY: String(need[ToolkitStockService.TOOLKIT_TOOL_KEY]),
+			"resource": String(need[ToolkitStockService.TOOLKIT_TOOL_KEY]), "quantity": int(need["quantity"]),
+			StockRequestService.CREATED_AT_KEY: now,
+		}
+		mark_inventory_pending(game_data, toolkit_order)
+		game_data.drawer_orders.append(toolkit_order)
+		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+			print("[JOB BOARD] Ordine del cassetto #%d: porta %d %s all'Attrezzeria di %s #%d." % [
+				order_id, int(need["quantity"]), String(need[ToolkitStockService.TOOLKIT_TOOL_KEY]),
+				(need["building"] as Building).building_type_name, int(need[ToolkitStockService.TOOLKIT_TARGET_KEY]),
+			])
+	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
+
+
+# Avviso in campanella della regola "Rifornisci le Attrezzerie": attrezzi che mancano e nessun magazzino ha.
+static func collect_toolkit_entries(game_data: GameData) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var warnings: Dictionary = game_data.stock_runtime.toolkit_warnings
+	if warnings.is_empty():
+		return entries
+	var parts: Array[String] = []
+	for tool_name in warnings.keys():
+		parts.append("%d %s" % [int(warnings[tool_name]), IconRegistry.get_resource_display_name(String(tool_name))])
+	var row_name := GameContext.tr_text("pending_stock_toolkit")
+	var reason := GameContext.tr_text("pending_stock_toolkit_missing").format({"tools": ", ".join(parts)})
+	var entry := PendingEntryService.make_entry("stock_toolkit", "%s\n%s" % [row_name, reason], {
+		"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": 0.0, "name": row_name, "detail": reason,
+	}, false)
+	entry["disabled_reason"] = GameContext.tr_text("pending_stock_blocked_detail")
+	entries.append(entry)
+	return entries
+
+
 # Ingrediente della ricetta ad avanzamento automatico (il primo; oggi ce n'è uno solo per ricetta), "" se nessuno.
 static func dry_ingredient(recipe: String) -> String:
 	var rules := CaloricCalculator.get_caloric_source_rules(recipe)
@@ -807,6 +915,30 @@ static func _dry_traveling(individuals: Array[HumanIndividual], recipe: String) 
 # - combustibile (FuelStockService.FUEL_TARGET_KEY, 2026-10-16): l'edificio dell'ordine; quale combustibile, quanti pezzi
 #   e da dove li sceglie FuelStockService.pick_fuel adesso, non alla creazione dell'ordine.
 static func transport_order_pick(world: World, worker: HumanIndividual, order: Dictionary) -> Dictionary:
+	# Eccedenza da buttare (2026-10-18): magazzino più vicino che ha la risorsa → Fossa aperta con posto più vicina a lui.
+	if order.has(STOCK_WASTE_KEY):
+		var waste_resource := String(order[STOCK_WASTE_KEY])
+		var waste_origin := worker.position if worker != null else Vector2.ZERO
+		var waste_macro := worker.home_macro_coords if worker != null else Vector2i.ZERO
+		var waste_reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
+		var waste_source := WarehouseSelectionService.find_source_for_retrieval(world, waste_origin, waste_macro, waste_resource, [], 1, -1, waste_reachability)
+		if waste_source == null:
+			return {}
+		var pit := WasteDisposalService.find_pit_for(world, 1, waste_source)
+		if pit == null or WasteDisposalService.get_max_disposable(pit, waste_resource) <= 0:
+			return {}
+		return {"target": pit, "source": waste_source, "resource": waste_resource, "quantity": int(order.get("quantity", 1))}
+	# Attrezzeria (2026-10-18, regola "Rifornisci le Attrezzerie"): magazzino più vicino con l'attrezzo → Attrezzeria.
+	if order.has(ToolkitStockService.TOOLKIT_TARGET_KEY):
+		var toolkit_target := find_building(world, int(order[ToolkitStockService.TOOLKIT_TARGET_KEY]))
+		var tool_name := String(order.get(ToolkitStockService.TOOLKIT_TOOL_KEY, ""))
+		if toolkit_target == null:
+			return {}
+		var room := BuildingToolkitService.get_max_toolkit_depositable(toolkit_target, tool_name)
+		var toolkit_source := ToolkitStockService.pick_source(world, toolkit_target, tool_name, worker)
+		if room <= 0 or toolkit_source == null:
+			return {}
+		return {"target": toolkit_target, "source": toolkit_source, "resource": tool_name, "quantity": mini(int(order.get("quantity", 1)), room)}
 	if order.has(FuelStockService.FUEL_TARGET_KEY):
 		var target := find_building(world, int(order[FuelStockService.FUEL_TARGET_KEY]))
 		if target == null or target.is_demolished or not target.is_complete or target.is_out_of_service():
@@ -846,6 +978,11 @@ static func transport_order_task(worker: HumanIndividual, order: Dictionary, pic
 	var task := TaskBuilderService.build_transport_task(worker, pick["source"], target, resource_name, trip_target, quantity, true, 0)
 	if task != null and order.has(FuelStockService.FUEL_TARGET_KEY):
 		task.context[FuelStockService.FUEL_TARGET_KEY] = int(order[FuelStockService.FUEL_TARGET_KEY])
+	elif task != null and order.has(ToolkitStockService.TOOLKIT_TARGET_KEY):
+		task.context[ToolkitStockService.TOOLKIT_TARGET_KEY] = int(order[ToolkitStockService.TOOLKIT_TARGET_KEY])
+		task.context[ToolkitStockService.TOOLKIT_TOOL_KEY] = String(order.get(ToolkitStockService.TOOLKIT_TOOL_KEY, ""))
+	elif task != null and order.has(STOCK_WASTE_KEY):
+		task.context[STOCK_WASTE_KEY] = String(order[STOCK_WASTE_KEY])
 	elif task != null:
 		task.context[STOCK_DRY_KEY] = String(order.get("recipe", ""))
 	return task
@@ -926,6 +1063,10 @@ static func _request_food_days(ctx: GameContext, now: float, stock: Dictionary) 
 		var wanted := mini(ceili(missing / calories), maxi(_best_produce_quantity(ctx.world, recipe), 1))
 		var fuel_per_cycle := _recipe_fuel_per_cycle(ctx.world, recipe)
 		var makeable := _makeable_units(recipe, wanted, available, fuel_per_cycle)
+		# Il massimo vince sui giorni di cibo (2026-10-18, richiesta utente): mai oltre il massimo del prodotto.
+		var recipe_max := int(game_data.stock_max_levels.get(recipe, 0))
+		if recipe_max > 0:
+			makeable = mini(makeable, recipe_max - int(stock.get(recipe, 0)))
 		if makeable <= 0:
 			continue
 		_reserve_recipe(available, recipe, makeable, fuel_per_cycle)

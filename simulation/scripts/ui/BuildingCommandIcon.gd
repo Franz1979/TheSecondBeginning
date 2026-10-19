@@ -17,6 +17,12 @@ const KIND_CANCEL_DEMOLITION := "cancel_demolition"
 const KIND_REPAIR := "repair"
 const KIND_CLEAR_RUBBLE := "clear_rubble"
 const KIND_CANCEL_CLEAR_RUBBLE := "cancel_clear_rubble"
+# Fossa dei rifiuti (2026-10-18): Svuota (buca con la freccia in su), Annulla svuotamento (barrata), Chiudi (buca coperta
+# da un'asse), Riapri (buca con la freccia in giù).
+const KIND_EMPTY_PIT := "empty_pit"
+const KIND_CANCEL_EMPTY_PIT := "cancel_empty_pit"
+const KIND_CLOSE_PIT := "close_pit"
+const KIND_OPEN_PIT := "open_pit"
 
 # Il disegno è pensato in un quadrato di DRAWING_SPAN unità, scalato al lato minore del rettangolo.
 const DRAWING_SPAN: float = 20.0
@@ -43,6 +49,8 @@ const HAMMER_HEAD := Color(0.72, 0.74, 0.78, 1.0)
 const HAMMER_HEAD_FACE := Color(0.88, 0.90, 0.93, 1.0)
 const SHOVEL_BLADE := Color(0.70, 0.72, 0.76, 1.0)
 const SHOVEL_HANDLE := HAMMER_HANDLE
+const PIT_RIM := Color(0.62, 0.50, 0.36, 1.0)
+const PIT_HOLE := Color(0.20, 0.16, 0.12, 1.0)
 
 var kind: String = KIND_UPGRADE:
 	set(value):
@@ -83,6 +91,19 @@ func _draw() -> void:
 		KIND_CANCEL_CLEAR_RUBBLE:
 			_draw_clear_rubble()
 			_draw_cancel_cross()
+		KIND_EMPTY_PIT:
+			_draw_pit()
+			_up_arrow(10.0, 0.6, 9.5, 3.0, 1.2)
+		KIND_CANCEL_EMPTY_PIT:
+			_draw_pit()
+			_up_arrow(10.0, 0.6, 9.5, 3.0, 1.2)
+			_draw_cancel_cross()
+		KIND_CLOSE_PIT:
+			_draw_pit()
+			_shape([Vector2(1.5, 11.0), Vector2(18.5, 11.0), Vector2(18.5, 14.0), Vector2(1.5, 14.0)], CRATE_WOOD)
+		KIND_OPEN_PIT:
+			_draw_pit()
+			_down_arrow(10.0, 9.5, 0.6, 3.0, 1.2)
 
 
 # Migliora: casa a sinistra, freccia in su a destra.
@@ -144,6 +165,23 @@ func _draw_clear_rubble() -> void:
 	_shape(_rotated(handle, angle, pivot), SHOVEL_HANDLE)
 	_shape(_rotated(grip, angle, pivot), SHOVEL_HANDLE)
 	_shape(_rotated(blade, angle, pivot), SHOVEL_BLADE)
+
+
+# Fossa dei rifiuti vista dall'alto: bordo di terra e fondo scuro, nella metà bassa.
+func _draw_pit() -> void:
+	_shape([Vector2(1.0, 12.5), Vector2(4.0, 9.5), Vector2(16.0, 9.5), Vector2(19.0, 12.5), Vector2(16.0, 18.5), Vector2(4.0, 18.5)], PIT_RIM)
+	_shape([Vector2(3.5, 13.0), Vector2(5.5, 11.2), Vector2(14.5, 11.2), Vector2(16.5, 13.0), Vector2(14.5, 17.0), Vector2(5.5, 17.0)], PIT_HOLE)
+
+
+# Freccia in giù: come _up_arrow, punta in basso (`tip_y` sotto `top_y`).
+func _down_arrow(center_x: float, tip_y: float, top_y: float, head_half_width: float, shaft_half_width: float) -> void:
+	var head_base_y: float = tip_y - 6.0
+	_shape([
+		Vector2(center_x - shaft_half_width, top_y), Vector2(center_x + shaft_half_width, top_y),
+		Vector2(center_x + shaft_half_width, head_base_y), Vector2(center_x + head_half_width, head_base_y),
+		Vector2(center_x, tip_y), Vector2(center_x - head_half_width, head_base_y),
+		Vector2(center_x - shaft_half_width, head_base_y),
+	], ARROW)
 
 
 # Punti ruotati di `angle` attorno all'origine e spostati in `pivot`, in unità del disegno.

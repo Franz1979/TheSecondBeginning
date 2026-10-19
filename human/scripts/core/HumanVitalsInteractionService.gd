@@ -80,6 +80,11 @@ const FALLBACK_FAITH_DAILY_GAIN_RITE: float = 10.0
 # regole esistenti sulla lealtà. Solo bonus; letto da InfluenceService.is_house_covered (cache, nessuna distanza).
 # Ripiego se HumanRules non è risolvibile: stessi valori dei default.
 const FALLBACK_CULTURAL_COVERAGE_DAILY_HAPPINESS: float = 5.0
+# Disagio (2026-10-18): casa coperta dall'influenza DISCOMFORT (Fossa dei rifiuti, macerie) -> − HumanRules.
+# discomfort_coverage_daily_happiness_loss alla felicità e − discomfort_coverage_daily_health_loss alla salute, subito dopo
+# il bonus culturale. Ripiego senza HumanRules: gli stessi valori dei default.
+const FALLBACK_DISCOMFORT_DAILY_HAPPINESS_LOSS: float = 5.0
+const FALLBACK_DISCOMFORT_DAILY_HEALTH_LOSS: float = 2.0
 # Regole 2 e 3 senza HumanRules risolvibile: gli stessi valori di partenza dei campi di HumanRules.
 const FALLBACK_STAMINA_DAILY_HAPPINESS_GAIN: float = 30.0
 const FALLBACK_STAMINA_DAILY_HAPPINESS_LOSS: float = 30.0
@@ -129,6 +134,12 @@ static func apply_daily_interaction(individual: HumanIndividual) -> void:
 	if has_home and InfluenceService.is_house_covered(individual.house_id, InfluenceService.InfluenceType.CULTURAL):
 		var happiness_bonus: float = human_rules.cultural_coverage_daily_happiness if human_rules != null else FALLBACK_CULTURAL_COVERAGE_DAILY_HAPPINESS
 		individual.current_happiness = _add_clamped(individual.current_happiness, happiness_bonus, individual.max_happiness)
+
+	if has_home and InfluenceService.is_house_covered(individual.house_id, InfluenceService.InfluenceType.DISCOMFORT):
+		var discomfort_happiness: float = human_rules.discomfort_coverage_daily_happiness_loss if human_rules != null else FALLBACK_DISCOMFORT_DAILY_HAPPINESS_LOSS
+		var discomfort_health: float = human_rules.discomfort_coverage_daily_health_loss if human_rules != null else FALLBACK_DISCOMFORT_DAILY_HEALTH_LOSS
+		individual.current_happiness = _add_clamped(individual.current_happiness, -discomfort_happiness, individual.max_happiness)
+		individual.current_health = _add_clamped(individual.current_health, -discomfort_health, individual.max_health)
 
 	var happiness_threshold := individual.max_happiness / 2.0
 	var loyalty_delta: float = 100.0

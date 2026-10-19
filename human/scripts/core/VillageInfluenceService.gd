@@ -34,6 +34,9 @@ static func apply_annual_growth(folk: Folk, world: World) -> void:
 static func compute_annual_gains(village: Village, buildings: Array[Building]) -> Dictionary:
 	var gains := {}
 	for influence_type in InfluenceService.InfluenceType.values():
+		# Disagio (2026-10-18): non è un valore del villaggio che cresce, solo un raggio attorno alle case.
+		if influence_type == InfluenceService.InfluenceType.DISCOMFORT:
+			continue
 		gains[influence_type] = 0
 	if village == null or village.center_building_id == -1:
 		return gains

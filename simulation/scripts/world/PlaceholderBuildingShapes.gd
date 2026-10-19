@@ -11,7 +11,7 @@ extends RefCounted
 # `scale` = pixel per unità di disegno (1.0 sulla mappa: una microcella = 10 px); `invalid` = anteprima su una
 # posizione non edificabile (tinta rossastra semitrasparente, come le altre sagome di BuildingGhost).
 
-const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed", "clothing_hut", "rubble", "teaching_stump"]
+const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "clothing_hut", "rubble", "teaching_stump", "waste_pit"]
 
 # Ceppo dell'insegnamento (teaching_stump, 2026-10-16, richiesta utente): aula all'aperto vista dall'alto — il ceppo in
 # alto come cattedra (corteccia, sezione chiara con gli anelli) e davanti due file curve di pietre piatte come banchi
@@ -24,31 +24,40 @@ const TEACHING_STUMP_SEATS: Array[Vector3] = [
 	Vector3(-3.3, 2.9, 0.95), Vector3(0.0, 3.6, 0.95), Vector3(3.3, 2.9, 0.95),
 ]
 
-# Macerie (rubble, 2026-10-10, richiesta utente — crollo): mucchio basso di detriti visto dall'alto, sagome irregolari di
-# terra e pietre (stessa _blob_polygon delle pietre rituali, seed fissi) con qualche trave spezzata sopra.
-# Centro (x, y) e raggio (z) di ogni detrito, dal fondo in su; colori nello stesso ordine.
+# Fossa dei rifiuti (waste_pit, 2026-10-18, richiesta utente): buca vista dall'alto — bordo di terra smossa, fondo
+# scuro e qualche scarto sul fondo (un rametto, un pezzo di pelle, un sasso). Sagome con _blob_polygon (seed fissi).
+const WASTE_PIT_RIM_RADIUS: float = 4.3
+const WASTE_PIT_HOLE_RADIUS: float = 3.1
+const WASTE_PIT_RIM := Color(0.50, 0.40, 0.29, 1.0)
+const WASTE_PIT_HOLE := Color(0.20, 0.16, 0.12, 1.0)
+const WASTE_PIT_SCRAP_HIDE := Color(0.46, 0.38, 0.30, 1.0)
+const WASTE_PIT_SCRAP_STONE := Color(0.52, 0.50, 0.47, 1.0)
+
+# Macerie (rubble, 2026-10-10; ridisegnate il 2026-10-18, richiesta utente — "meno cartone animato", nello stile degli
+# altri edifici come StorageHutShape: colori di terra smorzati, contorni sottili marroni, nessuna forma gonfia). Vista
+# dall'alto: una chiazza bassa di terra smossa con una metà in ombra, schegge di pietra piccole e qualche asse spezzata.
+const RUBBLE_GROUND_RADIUS: float = 3.7
+# Scala dell'intero disegno delle macerie (2026-10-18): più piccolo della Fossa, che occupa quasi tutta la microcella.
+const RUBBLE_DRAW_SCALE: float = 0.7
+const RUBBLE_GROUND := Color(0.47, 0.40, 0.31, 1.0)
+const RUBBLE_GROUND_SHADE := Color(0.40, 0.34, 0.26, 1.0)
+const RUBBLE_OUTLINE := Color(0.30, 0.22, 0.12, 1.0)
+const RUBBLE_OUTLINE_WIDTH: float = 0.35
+# Schegge di pietra: centro (x, y) e raggio (z); colori nello stesso ordine.
 const RUBBLE_CHUNKS: Array[Vector3] = [
-	Vector3(0.0, 0.6, 3.9), Vector3(-1.9, 0.9, 1.6), Vector3(1.8, 1.3, 1.4), Vector3(0.6, -1.2, 1.5),
-	Vector3(-1.2, -1.0, 1.1), Vector3(2.4, -0.6, 0.9), Vector3(-0.3, 2.3, 0.9),
+	Vector3(-1.6, -0.9, 0.75), Vector3(1.2, -1.6, 0.6), Vector3(0.4, 1.4, 0.8), Vector3(-1.0, 1.9, 0.5),
+	Vector3(2.0, 0.6, 0.55), Vector3(-2.3, 0.6, 0.45), Vector3(0.1, -0.2, 0.5),
 ]
 const RUBBLE_CHUNK_COLORS: Array[Color] = [
-	Color(0.45, 0.37, 0.28, 1.0), Color(0.58, 0.57, 0.54, 1.0), Color(0.52, 0.50, 0.47, 1.0), Color(0.66, 0.64, 0.60, 1.0),
-	Color(0.50, 0.42, 0.33, 1.0), Color(0.62, 0.60, 0.57, 1.0), Color(0.55, 0.53, 0.50, 1.0),
+	Color(0.56, 0.53, 0.48, 1.0), Color(0.50, 0.47, 0.43, 1.0), Color(0.60, 0.57, 0.51, 1.0), Color(0.53, 0.50, 0.45, 1.0),
+	Color(0.58, 0.55, 0.49, 1.0), Color(0.49, 0.46, 0.42, 1.0), Color(0.55, 0.52, 0.46, 1.0),
 ]
-# Travi spezzate: estremi (x1, y1, x2, y2).
-const RUBBLE_BEAMS: Array[Vector4] = [Vector4(-3.4, -2.2, -0.4, 0.2), Vector4(0.8, 2.9, 3.6, 0.8), Vector4(-0.6, -2.9, 1.7, -2.0)]
-const RUBBLE_BEAM_WIDTH: float = 0.55
+# Assi spezzate: estremi (x1, y1, x2, y2), colore chiaro/scuro alternato come le falde dei tetti.
+const RUBBLE_BEAMS: Array[Vector4] = [Vector4(-2.8, -2.0, -0.6, -0.4), Vector4(0.9, 2.6, 2.9, 1.2), Vector4(-0.4, -2.7, 1.5, -2.1)]
+const RUBBLE_BEAM_WIDTH: float = 0.45
+const RUBBLE_BEAM_LIGHT := Color(0.66, 0.51, 0.32, 1.0)
+const RUBBLE_BEAM_DARK := Color(0.54, 0.40, 0.24, 1.0)
 
-# Legnaia (woodshed, 2026-10-08, richiesta utente — segnaposto): vista di fronte come graticcio e affumicatoio, una
-# tettoia di legno inclinata su due pali con sotto una catasta di tronchi a piramide (3-2-1), visti di testa: corteccia
-# scura, sezione chiara e un anello più scuro al centro.
-const WOODSHED_LOG_RADIUS: float = 0.95
-const WOODSHED_LOGS: Array[Vector2] = [
-	Vector2(-1.9, 2.65), Vector2(0.0, 2.65), Vector2(1.9, 2.65),
-	Vector2(-0.95, 1.0), Vector2(0.95, 1.0),
-	Vector2(0.0, -0.65),
-]
-const WOODSHED_ROOF: Array[Vector2] = [Vector2(-4.3, -3.9), Vector2(4.3, -2.5), Vector2(4.3, -1.7), Vector2(-4.3, -3.1)]
 # Capanna del vestiario (clothing_hut, 2026-10-11, richiesta utente — segnaposto): vista di fronte, una capanna a
 # punta di pelli grigio-brune con l'ingresso scuro e, a destra, una pelle tesa ad asciugare su un telaio di due pali.
 const CLOTHING_HUT_HIDE := Color(0.52, 0.48, 0.43, 1.0)
@@ -110,7 +119,7 @@ const SLAB_CRACK_WIDTH: float = 0.18
 # Direzione dell'edificio (2026-10-17, richiesta utente — tutti gli edifici ruotabili): i disegni sono fatti verso SUD;
 # gli altri ruotano di 90° per passo (orario, N-E-S-W), tranne quelli visti di fronte, che a OVEST si specchiano soltanto
 # (ruotati sembrerebbero coricati). Una sola draw_set_transform per edificio: nessun costo di disegno in più.
-const FRONT_VIEW_TYPES: Array[String] = ["drying_rack", "smokehouse", "woodshed", "clothing_hut", "earthwork"]
+const FRONT_VIEW_TYPES: Array[String] = ["drying_rack", "smokehouse", "clothing_hut", "earthwork"]
 
 
 static func _direction_angle(building_type: String, direction: GameTypes.Direction) -> float:
@@ -190,21 +199,6 @@ static func draw(
 				ridge.append(p.call(-4.0 + 8.0 * t, 1.0 - sin(t * PI) * 2.6))
 			canvas.draw_polyline(ridge, tint.call(EARTH), w.call(2.2), true)
 			canvas.draw_polyline(ridge, tint.call(EARTH_DARK), w.call(0.5), true)
-		"woodshed":
-			# Pali dietro, catasta, tettoia sopra (con il contorno come l'affumicatoio).
-			canvas.draw_line(p.call(-3.6, 3.7), p.call(-3.6, -3.4), tint.call(WOOD_DARK), w.call(0.6), true)
-			canvas.draw_line(p.call(3.6, 3.7), p.call(3.6, -2.1), tint.call(WOOD_DARK), w.call(0.6), true)
-			for log_center in WOODSHED_LOGS:
-				canvas.draw_circle(p.call(log_center.x, log_center.y), w.call(WOODSHED_LOG_RADIUS), tint.call(LOG_BARK))
-				canvas.draw_circle(p.call(log_center.x, log_center.y), w.call(WOODSHED_LOG_RADIUS * 0.72), tint.call(LOG_END))
-				canvas.draw_circle(p.call(log_center.x, log_center.y), w.call(WOODSHED_LOG_RADIUS * 0.25), tint.call(LOG_RING))
-			var roof := PackedVector2Array()
-			for point in WOODSHED_ROOF:
-				roof.append(p.call(point.x, point.y))
-			canvas.draw_colored_polygon(roof, tint.call(WOOD))
-			var roof_outline := roof.duplicate()
-			roof_outline.append(roof[0])
-			canvas.draw_polyline(roof_outline, tint.call(OUTLINE), w.call(0.3), true)
 		"clothing_hut":
 			# Telaio con la pelle tesa (dietro), poi la capanna a punta con l'ingresso e le cuciture.
 			canvas.draw_line(p.call(2.4, 3.8), p.call(2.4, -1.6), tint.call(WOOD_DARK), w.call(0.45), true)
@@ -226,14 +220,37 @@ static func draw(
 			canvas.draw_polyline(hut_outline, tint.call(OUTLINE), w.call(0.3), true)
 		"rubble":
 			# Detriti dal fondo in su, poi le travi spezzate sopra (con il contorno scuro sotto il legno).
+			# Più piccole della Fossa dei rifiuti (2026-10-18, richiesta utente): tutto il disegno scalato di RUBBLE_DRAW_SCALE.
+			var rp := func(x: float, y: float) -> Vector2: return p.call(x * RUBBLE_DRAW_SCALE, y * RUBBLE_DRAW_SCALE)
+			var rw := func(width: float) -> float: return w.call(width * RUBBLE_DRAW_SCALE)
+			# Terra smossa: la chiazza in ombra sotto, quella chiara sopra spostata verso destra e in alto (resta un bordo
+			# d'ombra a sinistra e in basso), contorno sottile; poi assi e schegge, ognuna col suo contorno.
+			var ground := _blob_polygon(center, rw.call(RUBBLE_GROUND_RADIUS), 300, 12, 0.88, 1.06)
+			canvas.draw_colored_polygon(ground, tint.call(RUBBLE_GROUND_SHADE))
+			canvas.draw_colored_polygon(
+				_blob_polygon(rp.call(0.35, -0.35), rw.call(RUBBLE_GROUND_RADIUS * 0.82), 300, 12, 0.88, 1.06), tint.call(RUBBLE_GROUND)
+			)
+			var ground_outline := ground.duplicate()
+			ground_outline.append(ground[0])
+			canvas.draw_polyline(ground_outline, tint.call(RUBBLE_OUTLINE), rw.call(RUBBLE_OUTLINE_WIDTH), true)
+			for i in range(RUBBLE_BEAMS.size()):
+				var beam: Vector4 = RUBBLE_BEAMS[i]
+				canvas.draw_line(rp.call(beam.x, beam.y), rp.call(beam.z, beam.w), tint.call(RUBBLE_OUTLINE), rw.call(RUBBLE_BEAM_WIDTH + 0.25), true)
+				canvas.draw_line(rp.call(beam.x, beam.y), rp.call(beam.z, beam.w), tint.call(RUBBLE_BEAM_LIGHT if i % 2 == 0 else RUBBLE_BEAM_DARK), rw.call(RUBBLE_BEAM_WIDTH), true)
 			for i in range(RUBBLE_CHUNKS.size()):
 				var chunk: Vector3 = RUBBLE_CHUNKS[i]
-				canvas.draw_colored_polygon(
-					_blob_polygon(p.call(chunk.x, chunk.y), w.call(chunk.z), 300 + i), tint.call(RUBBLE_CHUNK_COLORS[i])
-				)
-			for beam in RUBBLE_BEAMS:
-				canvas.draw_line(p.call(beam.x, beam.y), p.call(beam.z, beam.w), tint.call(OUTLINE), w.call(RUBBLE_BEAM_WIDTH + 0.3), true)
-				canvas.draw_line(p.call(beam.x, beam.y), p.call(beam.z, beam.w), tint.call(WOOD), w.call(RUBBLE_BEAM_WIDTH), true)
+				var stone := _blob_polygon(rp.call(chunk.x, chunk.y), rw.call(chunk.z), 310 + i, 6, 0.75, 1.15)
+				canvas.draw_colored_polygon(stone, tint.call(RUBBLE_CHUNK_COLORS[i]))
+				var stone_outline := stone.duplicate()
+				stone_outline.append(stone[0])
+				canvas.draw_polyline(stone_outline, tint.call(RUBBLE_OUTLINE), rw.call(0.2), true)
+		"waste_pit":
+			# Bordo di terra, fondo scuro, poi gli scarti sopra il fondo.
+			canvas.draw_colored_polygon(_blob_polygon(center, w.call(WASTE_PIT_RIM_RADIUS), 500, 12, 0.9, 1.06), tint.call(WASTE_PIT_RIM))
+			canvas.draw_colored_polygon(_blob_polygon(center, w.call(WASTE_PIT_HOLE_RADIUS), 501, 10, 0.85, 1.05), tint.call(WASTE_PIT_HOLE))
+			canvas.draw_colored_polygon(_blob_polygon(p.call(0.9, 0.8), w.call(0.9), 502, 7, 0.7, 1.1), tint.call(WASTE_PIT_SCRAP_HIDE))
+			canvas.draw_colored_polygon(_blob_polygon(p.call(-1.1, 1.2), w.call(0.55), 503), tint.call(WASTE_PIT_SCRAP_STONE))
+			canvas.draw_line(p.call(-1.6, -0.9), p.call(1.0, -1.5), tint.call(WOOD), w.call(0.35), true)
 		"teaching_stump":
 			# Ceppo: corteccia scura, sezione chiara, due anelli. Poi i banchi, ognuno col suo bordo scuro sotto.
 			var stump_center: Vector2 = p.call(TEACHING_STUMP_CENTER.x, TEACHING_STUMP_CENTER.y)

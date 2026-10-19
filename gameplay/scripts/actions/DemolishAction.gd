@@ -19,6 +19,8 @@ signal demolition_completed(building: Building, individual: Variant, context: Di
 signal demolition_started(building: Building)
 
 const LABOR_KEY := "demolition_labor_accumulated"
+# Integrità dell'edificio al primo lavoro di demolizione (2026-10-18), salvata con construction_progress.
+const START_DURABILITY_KEY := "demolition_start_durability"
 # Stesso drain della costruzione (BuildAction.STAMINA_DRAIN_PER_DAY), costante propria come ogni Action.
 const STAMINA_DRAIN_PER_DAY: float = 200.0
 # Frazione del lavoro di costruzione richiesta per abbattere l'edificio.
@@ -65,8 +67,21 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var was_started := _get_labor_accumulated() > 0.0
 	target_building.construction_progress[LABOR_KEY] = _get_labor_accumulated() + stamina_spent * skill_factor
 	if not was_started and _get_labor_accumulated() > 0.0:
+		# Integrità di partenza (2026-10-18): la barra scende da qui a 0 col lavoro (sotto).
+		target_building.construction_progress[START_DURABILITY_KEY] = target_building.current_durability
 		demolition_started.emit(target_building)
+	_update_durability_from_labor()
 	return -stamina_spent
+
+
+# Integrità che scende col lavoro di demolizione (2026-10-18, richiesta utente): partenza × (1 − lavoro / richiesto).
+# Solo per edifici con Integrità (le macerie non ne hanno).
+func _update_durability_from_labor() -> void:
+	if target_building.rules == null or target_building.rules.max_durability <= 0 or get_required_labor() <= 0.0:
+		return
+	var start: float = float(target_building.construction_progress.get(START_DURABILITY_KEY, target_building.current_durability))
+	var done: float = clampf(_get_labor_accumulated() / get_required_labor(), 0.0, 1.0)
+	target_building.current_durability = clampf(start * (1.0 - done), 0.0, start)
 
 
 # Mai completa con un edificio non più valido (demolito nel frattempo da un altro individuo): la Task si chiude dal

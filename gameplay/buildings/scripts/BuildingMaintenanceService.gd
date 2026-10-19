@@ -96,6 +96,31 @@ static func auto_request_repairs(world: World, game_data: GameData, folk: Folk, 
 			])
 
 
+# Macerie svuotate (2026-10-18, sgombero a viaggi verso la Fossa dei rifiuti): quelle senza più detriti, da togliere (la
+# rimozione la fa chi chiama, con BuildingLifecycleService.demolish).
+static func emptied_rubble(world: World) -> Array[Building]:
+	var result: Array[Building] = []
+	if world == null:
+		return result
+	for building in world.buildings:
+		if building.is_rubble() and not building.is_demolished and WasteDisposalService.get_debris(building) <= 0:
+			result.append(building)
+	return result
+
+
+# Fosse svuotate del tutto (2026-10-18): lo svuotamento si chiude (WasteDisposalService.finish_emptying, la Fossa resta
+# chiusa ai rifiuti). Ritorna le Fosse chiuse, per il ridisegno dei pannelli.
+static func finish_emptied_pits(world: World) -> Array[Building]:
+	var result: Array[Building] = []
+	if world == null:
+		return result
+	for building in world.buildings:
+		if WasteDisposalService.is_pit(building) and building.waste_emptying and WasteDisposalService.get_debris(building) <= 0:
+			WasteDisposalService.finish_emptying(building)
+			result.append(building)
+	return result
+
+
 # Sgombero automatico delle macerie (2026-10-10, regola "Sgombera sempre le macerie", GameData.job_board_auto_clear_rubble):
 # con la coda attiva, le macerie non già da sgomberare e non escluse (Building.rubble_auto_excluded) da segnare come col
 # clic su "Sgombera". Un controllo per giorno di gioco, più subito a spunta cambiata, alla prima lettura dopo un caricamento
@@ -127,3 +152,15 @@ static func rubble_to_clear(world: World, game_data: GameData, folk: Folk) -> Ar
 static func request_rubble_check(game_data: GameData) -> void:
 	if game_data != null:
 		game_data.building_runtime.auto_clear_checked_day = -1
+
+
+# Cantieri nel bosco (2026-10-18): quelli in attesa del taglio con le celle ormai libere tornano cantieri normali (nasce il
+# lavoro di costruzione). Ritorna i cantieri cambiati.
+static func finish_site_cuts(world: World) -> Array[Building]:
+	var result: Array[Building] = []
+	if world == null:
+		return result
+	for building in world.buildings:
+		if building.awaiting_site_cut and not building.is_demolished and SiteCutService.try_finish(world, building):
+			result.append(building)
+	return result

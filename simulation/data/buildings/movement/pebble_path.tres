@@ -13,7 +13,6 @@ lifespan_years = 30
 required_materials = {
 "pebble": 20
 }
-leaves_rubble = false
 is_linear = true
 walkable = true
 required_space = 1

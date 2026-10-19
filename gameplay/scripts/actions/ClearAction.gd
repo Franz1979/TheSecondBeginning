@@ -151,6 +151,10 @@ func _get_space_reserved() -> bool:
 # Ceppi d'albero (2026-10-04, richiesta utente): mezzo giorno ciascuno. Ceppi di arbusto e piante morte non
 # aggiungono tempo (si tolgono comunque, vedi BuildingSiteClearingService._clear_exceptions_at_lot).
 const TREE_STUMP_CLEAR_DAYS: float = 0.5
+# Detriti dei ceppi tolti da questa pulizia, ancora da trasformare in maceria (construction_progress, salvato).
+const STUMP_DEBRIS_KEY := "stump_debris_pending"
+# Piante vive sul cantiere (2026-10-18, cantiere nel bosco): letto e tolto da HumanIndividualActionService.
+const CONTEXT_PENDING_SITE_CUT := "pending_site_cut"
 
 
 func _compute_duration() -> float:
@@ -193,6 +197,8 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	# Pianta viva nel lotto: il costruttore resta in attesa, riparte da solo quando è stata tagliata.
 	if has_live_plants():
+		# Cantiere nel bosco (2026-10-18): chi taglia lo decide HumanIndividualActionService (taglia lui o rimanda).
+		context[CONTEXT_PENDING_SITE_CUT] = target_building.id
 		return 0.0
 	target_building.construction_progress["clear_days_done"] = _get_clear_days_done() + delta
 	if _is_clear_log_on():
@@ -260,6 +266,13 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	# ognuna che l'aveva.
 	# Una volta sola (2026-10-17, più costruttori: chi finisce dopo non toglie di nuovo l'erba dal bilancio della macrocella).
 	if not bool(target_building.construction_progress.get("ground_cleared", false)):
+		# Detriti dei ceppi (2026-10-18, Fossa dei rifiuti): contati prima di toglierli, letti da GameScene._on_site_cleared
+		# (BuildingLifecycleService.settle_site_stump_debris), che ne fa una maceria accanto al cantiere.
+		var current_year: int = GameSettings.active_game_data.year if GameSettings.active_game_data != null else 0
+		var stump_debris := 0
+		for cell in _cells:
+			stump_debris += BuildingSiteClearingService.stump_debris(_macro_state, cell, current_year)
+		target_building.construction_progress[STUMP_DEBRIS_KEY] = stump_debris
 		for i in range(_cells.size()):
 			BuildingSiteClearingService.clear_ground(_macro_state, _cells[i], i < _grass_cells)
 		target_building.construction_progress["ground_cleared"] = true

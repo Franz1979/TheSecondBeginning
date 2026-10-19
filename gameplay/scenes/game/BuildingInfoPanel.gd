@@ -108,6 +108,10 @@ signal upgrade_requested(building: Building)
 signal repair_requested(building: Building)
 # "Sgombera" (2026-10-10, macerie): GameScene avvia lo sgombero (_on_clear_rubble_requested).
 signal clear_rubble_requested(building: Building)
+# Fossa dei rifiuti (2026-10-18): "Svuota", "Annulla svuotamento", "Chiudi/Riapri ai rifiuti".
+signal empty_pit_requested(building: Building)
+signal cancel_empty_pit_requested(building: Building)
+signal waste_closed_toggle_requested(building: Building)
 
 # Icone di influenza (2026-10-02, richiesta utente — sostituiscono il bottone "Mostra influenza"): una per tipo
 # (politica, cultura, religione), nell'intestazione della scheda accanto al 🎯. Clic: GameScene mostra per qualche
@@ -124,6 +128,8 @@ const INFLUENCE_BUTTONS: Array[Dictionary] = [
 	{"type": InfluenceService.InfluenceType.POLITICAL, "layer_id": "political_influence", "tooltip_key": "building_influence_political_tooltip", "none_key": "building_influence_political_none_tooltip"},
 	{"type": InfluenceService.InfluenceType.CULTURAL, "layer_id": "cultural_influence", "tooltip_key": "building_influence_cultural_tooltip", "none_key": "building_influence_cultural_none_tooltip"},
 	{"type": InfluenceService.InfluenceType.RELIGIOUS, "layer_id": "religious_influence", "tooltip_key": "building_influence_religious_tooltip", "none_key": "building_influence_religious_none_tooltip"},
+	# Disagio (2026-10-18): Fossa dei rifiuti e macerie.
+	{"type": InfluenceService.InfluenceType.DISCOMFORT, "layer_id": "discomfort_influence", "tooltip_key": "building_influence_discomfort_tooltip", "none_key": "building_influence_discomfort_none_tooltip"},
 ]
 const INFLUENCE_BUTTON_SIZE := Vector2(22, 22)
 const INFLUENCE_BUTTON_DISABLED_COLOR := Color(0.5, 0.5, 0.5)
@@ -262,6 +268,10 @@ var repair_button: TooltipButton = null
 # "Sgombera" (2026-10-10, richiesta utente — macerie): l'unico comando del pannello delle macerie, a sinistra, creato in
 # codice come Ripara (_build_repair_controls). Su ogni altro edificio resta nascosto.
 var clear_rubble_button: Button = null
+# Comandi della Fossa dei rifiuti (2026-10-18), creati con gli altri in _build_repair_controls.
+var empty_pit_button: Button = null
+var cancel_empty_pit_button: Button = null
+var waste_closed_button: Button = null
 var _repair_status_label: Label = null
 # Riparazione ferma per materiale (2026-10-10, passo 4): riga arancione subito sotto _repair_status_label.
 var _repair_wait_label: Label = null
@@ -357,6 +367,15 @@ var _durability_label: Label = null
 var _durability_bar_margin: MarginContainer = null
 var _durability_bar: ProgressBar = null
 var _durability_fill_style: StyleBoxFlat = null
+# Riga "Riempimento: N / capienza" e barra della Fossa dei rifiuti (2026-10-18, richiesta utente): stessa forma della riga
+# dell'Integrità, sotto i materiali per la riparazione; visibile solo per un edificio completo con
+# BuildingRules.waste_capacity > 0. Riempimento color terra, rosso a fossa piena. Creata in codice.
+const WASTE_FILL_COLOR := Color(0.55, 0.42, 0.28, 1)
+const WASTE_FILL_COLOR_FULL := Color(0.82, 0.25, 0.2, 1)
+var _waste_label: Label = null
+var _waste_bar_margin: MarginContainer = null
+var _waste_bar: ProgressBar = null
+var _waste_fill_style: StyleBoxFlat = null
 
 
 func _ready() -> void:
@@ -396,6 +415,7 @@ func _ready() -> void:
 	move_child(_buried_box, _sacredness_box.get_index() + 1)
 	_build_durability_rows()
 	_build_repair_materials_rows()
+	_build_waste_rows()
 	clear()
 	residents_caption.text = tr("building_residents_caption")
 	storage_caption.text = tr("building_storage_caption")
@@ -567,6 +587,9 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 		if demolisher_names.is_empty():
 			# Macerie (2026-10-10): il suggerimento parla di sgombero.
 			hint_key = "rubble" if building.is_rubble() else "demolition"
+	# Svuotamento di una Fossa (2026-10-18): stesso suggerimento finché nessuno ci lavora.
+	elif building.waste_emptying and demolisher_names.is_empty():
+		hint_key = "empty_pit"
 	elif is_under_construction and assigned_builder_names.is_empty():
 		hint_key = "site"
 	_assign_hint_label.visible = hint_key != ""
@@ -605,13 +628,14 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 		built_text = tr("building_not_yet_built")
 	# Macerie (2026-10-10): "Crollo di <edificio>" al posto dell'anno di costruzione.
 	if building.is_rubble():
-		var source_rules := BuildingCalculator.get_building_rules(building.rubble_source_name) if building.rubble_source_name != "" else null
-		built_text = tr("building_rubble_source_label").format({
-			"building": tr(source_rules.building_name) if source_rules != null else building.rubble_source_name,
-		})
+		# Origine (2026-10-18): crollo, demolizione, ceppi del cantiere o detriti abbandonati.
+		built_text = building.get_rubble_origin_text()
+		# Detriti ancora da portare alla Fossa dei rifiuti (2026-10-18).
+		built_text += "\n" + tr("building_rubble_debris_label").format({"debris": WasteDisposalService.get_debris(building)})
 	# Dal 2026-10-10 l'Integrità non è più su questa riga: ha la propria riga con barra sotto (_refresh_durability).
 	built_year_label.text = built_text
 	_refresh_durability(building)
+	_refresh_waste(building)
 
 	_refresh_influence_received(building)
 	_refresh_residents_grid(building, residents_display_data)
@@ -636,12 +660,24 @@ func _refresh_command_icon_row(building: Building, demolition_started: bool) -> 
 	# Macerie (2026-10-10): niente Demolisci, al suo posto "Sgombera" a sinistra.
 	demolish_button.visible = not building.is_marked_for_demolition and not building.is_rubble()
 	clear_rubble_button.visible = building.is_rubble() and not building.is_marked_for_demolition
-	clear_rubble_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("building_clear_rubble_button"), tr("building_command_clear_rubble_detail").format({
-		"labor": roundi(float(building.rules.required_labor) * DemolishAction.LABOR_FRACTION_OF_BUILD) if building.rules != null else 0,
-	})])
+	# Fossa dei rifiuti (2026-10-18): sgomberare = portare i detriti alla Fossa a viaggi; serve una Fossa con posto.
+	var rubble_tooltip := "%s\n%s" % [tr("building_clear_rubble_button"), tr("building_command_clear_rubble_waste").format({
+		"debris": WasteDisposalService.get_debris(building),
+	})]
+	if clear_rubble_button.visible:
+		var has_pit := WasteDisposalService.find_pit_for_debris(GameSettings.active_world, building) != null
+		clear_rubble_button.disabled = not has_pit
+		if not has_pit:
+			rubble_tooltip += "\n" + tr("building_command_clear_rubble_no_pit")
+	clear_rubble_button.tooltip_text = TooltipText.wrap(rubble_tooltip)
+	demolish_button.disabled = false
 	if building.is_complete:
 		(_command_icons[demolish_button] as BuildingCommandIcon).kind = BuildingCommandIcon.KIND_DEMOLISH
 		demolish_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("building_demolish_button"), tr("building_command_demolish_detail")])
+		# Fossa dei rifiuti con dei rifiuti (2026-10-18): Demolisci disabilitato.
+		if WasteDisposalService.blocks_demolition(building):
+			demolish_button.disabled = true
+			demolish_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("building_demolish_button"), tr("building_command_demolish_waste_pit_not_empty")])
 	else:
 		var is_upgrade_site := BuildingUpgradeService.is_upgrade_site(building)
 		(_command_icons[demolish_button] as BuildingCommandIcon).kind = BuildingCommandIcon.KIND_CANCEL_UPGRADE if is_upgrade_site else BuildingCommandIcon.KIND_CANCEL_SITE
@@ -672,10 +708,13 @@ func _refresh_command_icon_row(building: Building, demolition_started: bool) -> 
 	elif demolish_button.get_index() > spacer_index:
 		command_icon_row.move_child(demolish_button, spacer_index)
 	_refresh_repair_button(building)
-	for button in [upgrade_button, repair_button, clear_rubble_button, empty_all_button, demolish_button, cancel_demolition_button]:
+	_refresh_waste_pit_buttons(building)
+	for button in [upgrade_button, repair_button, clear_rubble_button, empty_all_button, demolish_button, cancel_demolition_button,
+			empty_pit_button, cancel_empty_pit_button, waste_closed_button]:
 		_style_command_icon_button(button)
 	command_icon_row.visible = upgrade_button.visible or repair_button.visible or clear_rubble_button.visible or empty_all_button.visible \
-		or demolish_button.visible or cancel_demolition_button.visible
+		or demolish_button.visible or cancel_demolition_button.visible or empty_pit_button.visible or cancel_empty_pit_button.visible \
+		or waste_closed_button.visible
 	_update_command_bar_visibility()
 
 
@@ -741,6 +780,17 @@ func _build_repair_controls() -> void:
 	command_icon_row.add_child(clear_rubble_button)
 	command_icon_row.move_child(clear_rubble_button, 0)
 	clear_rubble_button.pressed.connect(func(): clear_rubble_requested.emit(_current_building))
+	# Fossa dei rifiuti (2026-10-18): a sinistra, dopo Sgombera.
+	empty_pit_button = Button.new()
+	cancel_empty_pit_button = Button.new()
+	waste_closed_button = Button.new()
+	for pit_button in [empty_pit_button, cancel_empty_pit_button, waste_closed_button]:
+		pit_button.visible = false
+		command_icon_row.add_child(pit_button)
+		command_icon_row.move_child(pit_button, clear_rubble_button.get_index() + 1)
+	empty_pit_button.pressed.connect(func(): empty_pit_requested.emit(_current_building))
+	cancel_empty_pit_button.pressed.connect(func(): cancel_empty_pit_requested.emit(_current_building))
+	waste_closed_button.pressed.connect(func(): waste_closed_toggle_requested.emit(_current_building))
 	_repair_status_label = Label.new()
 	_repair_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_repair_status_label.custom_minimum_size.x = 0.0
@@ -842,6 +892,9 @@ func _setup_command_icon_buttons() -> void:
 		upgrade_button: BuildingCommandIcon.KIND_UPGRADE,
 		repair_button: BuildingCommandIcon.KIND_REPAIR,
 		clear_rubble_button: BuildingCommandIcon.KIND_CLEAR_RUBBLE,
+		empty_pit_button: BuildingCommandIcon.KIND_EMPTY_PIT,
+		cancel_empty_pit_button: BuildingCommandIcon.KIND_CANCEL_EMPTY_PIT,
+		waste_closed_button: BuildingCommandIcon.KIND_CLOSE_PIT,
 		empty_all_button: BuildingCommandIcon.KIND_EMPTY_ALL,
 		demolish_button: BuildingCommandIcon.KIND_DEMOLISH,
 		cancel_demolition_button: BuildingCommandIcon.KIND_CANCEL_DEMOLITION,
@@ -1038,6 +1091,9 @@ func _influence_tooltip(building: Building, entry: Dictionary, radius: int) -> S
 	if radius <= 0:
 		return tr(String(entry["none_key"]))
 	var influence_type: int = entry["type"]
+	# Disagio (2026-10-18): solo il raggio (nessun punto).
+	if influence_type == InfluenceService.InfluenceType.DISCOMFORT:
+		return tr(String(entry["tooltip_key"])).format({"radius": radius})
 	# Cultura e politica (2026-10-17): raggio, poi i punti (Tradizione/Autorità) e l'eventuale calo annuo.
 	if influence_type != InfluenceService.InfluenceType.RELIGIOUS:
 		var type_text := tr(String(entry["tooltip_key"])).format({"radius": radius})
@@ -1195,6 +1251,81 @@ func _build_durability_rows() -> void:
 	move_child(_durability_bar_margin, _durability_label.get_index() + 1)
 
 
+# Comandi della Fossa dei rifiuti (2026-10-18): Svuota (con rifiuti, non in svuotamento; spento senza un'altra Fossa con
+# posto), Annulla svuotamento (in svuotamento), Chiudi/Riapri ai rifiuti (non in svuotamento).
+func _refresh_waste_pit_buttons(building: Building) -> void:
+	var is_pit := WasteDisposalService.is_pit(building)
+	empty_pit_button.visible = is_pit and not building.waste_emptying and building.waste_stored > 0
+	cancel_empty_pit_button.visible = is_pit and building.waste_emptying
+	waste_closed_button.visible = is_pit and not building.waste_emptying
+	if not is_pit:
+		return
+	var can_empty := WasteDisposalService.can_start_emptying(GameSettings.active_world, building)
+	empty_pit_button.disabled = not can_empty
+	var empty_lines: Array[String] = [tr("building_empty_pit_button"), tr("building_command_empty_pit_detail")]
+	if not can_empty:
+		empty_lines.append(tr("building_command_empty_pit_no_other_pit"))
+	empty_pit_button.tooltip_text = TooltipText.wrap("\n".join(empty_lines))
+	cancel_empty_pit_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("building_cancel_empty_pit_button"), tr("building_command_cancel_empty_pit_detail")])
+	(_command_icons[waste_closed_button] as BuildingCommandIcon).kind = \
+		BuildingCommandIcon.KIND_OPEN_PIT if building.waste_closed else BuildingCommandIcon.KIND_CLOSE_PIT
+	waste_closed_button.tooltip_text = TooltipText.wrap("%s\n%s" % [
+		tr("building_open_pit_button" if building.waste_closed else "building_close_pit_button"),
+		tr("building_command_open_pit_detail" if building.waste_closed else "building_command_close_pit_detail"),
+	])
+
+
+# Riga del riempimento della Fossa dei rifiuti (vedi _waste_label): stessa costruzione di _build_durability_rows, subito
+# sotto i materiali per la riparazione.
+func _build_waste_rows() -> void:
+	_waste_label = Label.new()
+	_waste_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_waste_label.add_theme_font_size_override("font_size", 10)
+	_waste_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	_waste_label.visible = false
+	add_child(_waste_label)
+	move_child(_waste_label, _repair_materials_grid.get_index() + 1)
+	_waste_bar_margin = MarginContainer.new()
+	_waste_bar_margin.add_theme_constant_override("margin_left", 4)
+	_waste_bar_margin.add_theme_constant_override("margin_right", 4)
+	_waste_bar_margin.visible = false
+	_waste_bar = ProgressBar.new()
+	_waste_bar.custom_minimum_size = construction_progress_bar.custom_minimum_size
+	_waste_bar.min_value = 0.0
+	_waste_bar.show_percentage = false
+	_waste_bar.mouse_filter = Control.MOUSE_FILTER_PASS
+	_waste_bar.add_theme_stylebox_override("background", construction_progress_bar.get_theme_stylebox("background"))
+	_waste_fill_style = construction_progress_bar.get_theme_stylebox("fill").duplicate() as StyleBoxFlat
+	if _waste_fill_style != null:
+		_waste_bar.add_theme_stylebox_override("fill", _waste_fill_style)
+	_waste_bar_margin.add_child(_waste_bar)
+	add_child(_waste_bar_margin)
+	move_child(_waste_bar_margin, _waste_label.get_index() + 1)
+
+
+# Riempimento della fossa completa (cantieri: nascosto). Tooltip con lo spazio prenotato dai trasporti in viaggio.
+func _refresh_waste(building: Building) -> void:
+	var capacity: int = building.rules.waste_capacity if building.rules != null else 0
+	var show := building.is_complete and capacity > 0
+	_waste_label.visible = show
+	_waste_bar_margin.visible = show
+	if not show:
+		return
+	_waste_label.text = tr("building_info_waste_fill").format({"stored": WasteDisposalService.get_pit_fill(building), "capacity": capacity})
+	# Stato della Fossa (2026-10-18): in svuotamento (detriti ancora da portare via) o chiusa ai rifiuti.
+	if building.waste_emptying:
+		_waste_label.text += "\n" + tr("building_info_waste_emptying").format({"debris": WasteDisposalService.get_debris(building)})
+	elif building.waste_closed:
+		_waste_label.text += "\n" + tr("building_info_waste_closed")
+	var reserved_text: String = tr("building_info_waste_reserved").format({"reserved": building.waste_reserved})
+	_waste_label.tooltip_text = TooltipText.wrap(reserved_text)
+	_waste_bar.tooltip_text = TooltipText.wrap(reserved_text)
+	_waste_bar.max_value = float(capacity)
+	_waste_bar.value = float(WasteDisposalService.get_pit_fill(building))
+	if _waste_fill_style != null:
+		_waste_fill_style.bg_color = WASTE_FILL_COLOR_FULL if building.get_waste_free_space() <= 0 else WASTE_FILL_COLOR
+
+
 # Materiali per la riparazione (2026-10-10, Building.repair_materials): didascalia e chip delle risorse presenti con la
 # quantità, nello stile di "Materiali consegnati" (stessa didascalia e stessa griglia a capo, duplicate dal .tscn), subito
 # sotto la barra dell'Integrità. Visibili solo con il contenitore non vuoto.
@@ -1347,6 +1478,9 @@ func _build_buried_label(text: String, indent: int) -> Control:
 
 
 func clear() -> void:
+	if _waste_label != null:
+		_waste_label.visible = false
+		_waste_bar_margin.visible = false
 	if _buried_box != null:
 		_buried_box.visible = false
 	if _toolkit_box != null:
@@ -1466,6 +1600,11 @@ func _refresh_construction_progress(building: Building) -> void:
 	# (autowrap), il pannello non si allarga.
 	if phase == "clear_site" and _has_live_plants_on_site(building):
 		construction_phase_label.text += "\n" + tr("build_blocked_cut_trees_first")
+	# Cantiere nel bosco (2026-10-18): prima del cantiere vero, il taglio.
+	if building.awaiting_site_cut:
+		construction_phase_label.text = tr("building_awaiting_site_cut").format({
+			"cells": SiteCutService.cells_with_plants(GameSettings.active_world, building).size(),
+		})
 	construction_progress_bar.value = percent
 
 
@@ -2024,7 +2163,12 @@ func _change_production_order(building: Building, resource_name: String, delta: 
 			return
 		_order_recipe = resource_name
 		_order_quantity = 0
-	_order_quantity = clampi(_order_quantity + delta, 0, max_quantity)
+	# A cicli interi (2026-10-18, richiesta utente): ogni clic vale i pezzi di un ciclo della ricetta (la legna da ardere
+	# 10 alla volta: da un tronco ne escono 10), tetto arrotondato al ciclo sotto (mai sotto un ciclo).
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	var step: int = maxi(recipe_rules.recipe_output_quantity, 1) if recipe_rules != null else 1
+	var max_by_cycles: int = maxi((max_quantity / step) * step, step)
+	_order_quantity = clampi(_order_quantity + delta * step, 0, max_by_cycles)
 	if _order_quantity == 0:
 		_order_recipe = ""
 	# "Tieni per l'edificio" vale solo per un attrezzo con posto nell'Attrezzeria (2026-10-08): spenta prima di avvisare.
@@ -2433,6 +2577,7 @@ const INFLUENCE_TYPE_NAME_KEYS := {
 	InfluenceService.InfluenceType.POLITICAL: "influence_type_political",
 	InfluenceService.InfluenceType.CULTURAL: "influence_type_cultural",
 	InfluenceService.InfluenceType.RELIGIOUS: "influence_type_religious",
+	InfluenceService.InfluenceType.DISCOMFORT: "influence_type_discomfort",
 }
 
 

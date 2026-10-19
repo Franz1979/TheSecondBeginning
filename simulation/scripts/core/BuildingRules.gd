@@ -114,7 +114,7 @@ extends Resource
 @export var max_durability: int = 50
 
 # Crollo (2026-10-10, richiesta utente): a Integrità zero l'edificio crolla; true = al suo posto restano le macerie
-# (edificio "rubble", da sgomberare), false = sparisce e la cella torna libera (oggi solo la terra battuta).
+# (edificio "rubble", da sgomberare), false = sparisce e la cella torna libera.
 @export var leaves_rubble: bool = true
 
 # Difesa (2026-10-04, richiesta utente — "Difesa"/"Defense" a schermo, blocco Info dell'edificio). NESSUNA logica la
@@ -134,6 +134,12 @@ extends Resource
 # accogliere; 0 = non è un luogo di sepoltura. I sepolti stanno in Building.buried; il trasporto dei corpi e il funerale
 # arriveranno nei passi successivi.
 @export var max_buried: int = 0
+
+# Rifiuti (2026-10-18, richiesta utente — Fossa dei rifiuti, passo 1): spazio totale per i rifiuti, come lo spazio di un
+# magazzino ma senza slot e senza mai riprendere nulla; 0 = non è una fossa. Occupato e prenotato stanno in
+# Building.waste_stored/waste_reserved; piena = non accetta più nulla, se ne costruisce un'altra. Chi ci butta dentro
+# (ceppi, macerie, merce dai magazzini) arriverà nei passi successivi.
+@export var waste_capacity: int = 0
 
 # Miglioramento (2026-10-03, richiesta utente): nome del tipo di edificio (building_type_name, es. "hide_tent") in cui
 # questo può trasformarsi; "" = nessun miglioramento. Una sola destinazione, con lo stesso required_space (un edificio

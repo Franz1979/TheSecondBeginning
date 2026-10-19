@@ -139,36 +139,49 @@ static func _distribute_individuals(
 	# ancora congelare/aggiungere nulla — serve l'elenco completo PRIMA di sapere quali di questi
 	# nascono già "morti" (vedi _seed_first_sight_death_markers sotto), altrimenti la seconda
 	# passata (_is_blocked) non li vedrebbe ancora bloccati.
-	var planned_slots: Array = []
+	# Solo il numero di slot per lotto (2026-10-18, scatti al taglio): l'elenco esplicito degli slot (un Dictionary per
+	# slot, ~30.000 per tipo) serve solo alla prima scoperta; la seconda passata rifà lo stesso giro, nello stesso ordine.
+	var effective_counts: PackedInt32Array = PackedInt32Array()
+	effective_counts.resize(ordered_lots.size())
 	for i in range(ordered_lots.size()):
 		var lot_pos: Vector2i = ordered_lots[i]
 		var target_count: int = floor_count + (1 if i < remainder else 0)
 		var known_extent: int = int(known_extent_by_lot.get(lot_pos, 0))
 		# Mai sotto quanto già noto in questo lotto (vedi commento in testa alla funzione).
-		var effective_count: int = max(target_count, known_extent)
-		for index in range(effective_count):
-			planned_slots.append({"lot_pos": lot_pos, "index": index})
+		effective_counts[i] = max(target_count, known_extent)
 
 	if is_first_sight:
+		var planned_slots: Array = []
+		for i in range(ordered_lots.size()):
+			for index in range(effective_counts[i]):
+				planned_slots.append({"lot_pos": ordered_lots[i], "index": index})
 		_seed_first_sight_death_markers(macro_state, object_type, planned_slots, current_year, current_day)
 
+	# Stesso test di _is_blocked, svolto qui per non pagare una chiamata per slot: edificio sul lotto (tutto il lotto),
+	# taglio ancora attivo, morte naturale.
+	var cut_exceptions: Dictionary = macro_state.vegetation_cut_exceptions
+	var death_exceptions: Dictionary = macro_state.vegetation_death_exceptions
 	var individuals: Array = []
-	for slot in planned_slots:
-		var lot_pos: Vector2i = slot["lot_pos"]
-		var index: int = slot["index"]
-		if _is_blocked(macro_state, lot_pos, index, current_year, building_positions):
+	for i in range(ordered_lots.size()):
+		var lot_pos: Vector2i = ordered_lots[i]
+		if building_positions.has(lot_pos):
 			continue
-		var key := Vector3i(lot_pos.x, lot_pos.y, index)
-		# "or", non "and": i due dati sono indipendenti (un salvataggio precedente
-		# all'introduzione del sottotipo congelato potrebbe avere l'anno di nascita ma non il
-		# sottotipo) — ciascuno va completato per conto suo, mai saltato per intero solo perché
-		# l'altro è già presente.
-		if not birth_year_store.has(key) or not subtype_store.has(key):
-			_freeze_new_individual(
-				macro_state, object_type, key, lot_pos, index, current_year,
-				birth_year_store, subtype_store, is_first_sight
-			)
-		individuals.append(key)
+		for index in range(effective_counts[i]):
+			var key := Vector3i(lot_pos.x, lot_pos.y, index)
+			if death_exceptions.has(key):
+				continue
+			if cut_exceptions.has(key) and _is_cut_entry_active(cut_exceptions[key], current_year):
+				continue
+			# "or", non "and": i due dati sono indipendenti (un salvataggio precedente
+			# all'introduzione del sottotipo congelato potrebbe avere l'anno di nascita ma non il
+			# sottotipo) — ciascuno va completato per conto suo, mai saltato per intero solo perché
+			# l'altro è già presente.
+			if not birth_year_store.has(key) or not subtype_store.has(key):
+				_freeze_new_individual(
+					macro_state, object_type, key, lot_pos, index, current_year,
+					birth_year_store, subtype_store, is_first_sight
+				)
+			individuals.append(key)
 	return individuals
 
 
@@ -458,7 +471,24 @@ static func _remainder_priority_hash(pos: Vector2i, noise_seed: int) -> float:
 	return float(hash(pos * 13 + Vector2i(noise_seed, 4243)) % 100000) / 100000.0
 
 
+# Ordinamenti già fatti (2026-10-18, scatti al taglio: ~60 ms a rigenerazione), per seme e insieme di lotti: i lotti di
+# una cella cambiano solo quando se ne rivendicano di nuovi. Il risultato è in sola lettura per il chiamante.
+static var _sorted_lots_cache: Dictionary = {}
+const SORTED_LOTS_CACHE_MAX := 64
+
+
 static func _sorted_by_remainder_priority(lot_positions: Array, noise_seed: int) -> Array:
+	var cache_key := [noise_seed, lot_positions.size(), lot_positions.hash()]
+	if _sorted_lots_cache.has(cache_key):
+		return _sorted_lots_cache[cache_key]
+	if _sorted_lots_cache.size() >= SORTED_LOTS_CACHE_MAX:
+		_sorted_lots_cache.clear()
+	var sorted_lots := _sort_by_remainder_priority(lot_positions, noise_seed)
+	_sorted_lots_cache[cache_key] = sorted_lots
+	return sorted_lots
+
+
+static func _sort_by_remainder_priority(lot_positions: Array, noise_seed: int) -> Array:
 	var decorated: Array = []
 	for pos in lot_positions:
 		decorated.append([_remainder_priority_hash(pos, noise_seed), pos])

@@ -58,6 +58,8 @@ const TAB_ORDER: Array[int] = [
 # (StockRequestService.source_kind_for) fa nascere ordini nella coda dei lavori (WarehouseManagerService.request_stock), con il
 # suo tooltip (warehouse_min_level_auto_tooltip); per le altre risorse e per i giorni del cibo resta solo indicativo.
 signal min_level_changed(resource_name: String, level: int)
+# Massimo per risorsa (2026-10-18, Fossa dei rifiuti): secondo campo della riga; oltre, l'eccedenza va buttata.
+signal max_level_changed(resource_name: String, level: int)
 signal min_food_days_changed(days: int)
 # Regole di stoccaggio (2026-10-11): riga "⚙ Regole di stoccaggio" in fondo al cassetto che apre e chiude le regole,
 # come "Regole di assegnazione" del cassetto delle task. Per ora una regola: destinazione di carne e pelli in eccesso negli
@@ -75,17 +77,22 @@ signal inventory_interval_changed(hours: int)
 # fuel_rule_toggled / fuel_min_changed.
 signal fuel_rule_toggled(enabled: bool)
 signal fuel_min_changed(type_name: String, level: int)
+# Regola "Rifornisci le Attrezzerie" (2026-10-18, ToolkitStockService): accesa/spenta e pezzi voluti per tipo e attrezzo.
+signal toolkit_rule_toggled(enabled: bool)
+signal toolkit_target_changed(type_name: String, tool_name: String, level: int)
 var _fuel_rule_enabled: bool = false
 var _fuel_rows: Array[Dictionary] = []
-# Regola "Banchetti spontanei" (2026-10-17): calorie fino a cui si organizzano (− [N] +, passi di 100, minimo
-# BANQUET_CALORIES_MIN) e casella "solo se consumano meno di un terzo delle scorte" (GameData.stock_banquet_calories /
-# stock_banquet_safe_only). Stato da GameScene (set_banquet_rule, prima di _ready); i cambi escono con
-# banquet_calories_changed / banquet_safe_only_toggled.
-signal banquet_calories_changed(calories: int)
+var _toolkit_rule_enabled: bool = false
+# [{"type", "name", "tools": [{"tool", "level", "max"}]}] (ToolkitStockService.get_rule_rows).
+var _toolkit_rows: Array[Dictionary] = []
+var _toolkit_popup: PopupPanel = null
+const TOOLKIT_POPUP_INSET: int = 8
+const TOOLKIT_POPUP_BG_COLOR := Color(0.12, 0.14, 0.18, 1.0)
+const TOOLKIT_POPUP_BORDER_COLOR := Color(0.75, 0.85, 1.0, 0.6)
+# Regola "Banchetti spontanei" (2026-10-17): casella "al massimo un terzo delle scorte" (GameData.stock_banquet_safe_only).
+# Le calorie sono quelle della "Soglia calorie" dello spiazzo (2026-10-18, richiesta utente: prima c'era anche un campo
+# qui). Stato da GameScene (set_banquet_rule, prima di _ready); i cambi escono con banquet_safe_only_toggled.
 signal banquet_safe_only_toggled(enabled: bool)
-const BANQUET_CALORIES_STEP: int = 100
-const BANQUET_CALORIES_MIN: int = 500
-var _banquet_calories: int = 500
 var _banquet_safe_only: bool = true
 const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
 var _inventory_label: Label = null
@@ -96,7 +103,23 @@ const LEVEL_BUTTON_WIDTH: float = 16.0
 const LEVEL_EDIT_WIDTH: float = 38.0
 const LEVEL_MAX: int = 99999
 const BELOW_LEVEL_COLOR := Color(0.95, 0.35, 0.3, 1.0)
+# Scorta oltre il massimo (2026-10-18): ambra.
+const ABOVE_MAX_COLOR := Color(0.95, 0.72, 0.25, 1.0)
 const LEVEL_NONE_TEXT := "—"
+# Righe compatte (2026-10-18, richiesta utente): campi Min/Max stretti con + e − piccoli impilati a destra, rotella per
+# cambiarli; massimo vuoto = ∞. Stili propri (margini minimi) perché il tema di base allarga campo e bottoni.
+const LEVEL_COMPACT_EDIT_WIDTH: float = 26.0
+const LEVEL_COMPACT_BUTTON_SIZE := Vector2(11.0, 9.0)
+# Larghezza fissa della colonna di un campo compatto (campo + bottoni), uguale nelle righe e nell'intestazione "Min"/"Max"
+# (2026-10-18: prima l'intestazione misurava un campo di prova fuori dalla scena, senza tema, e le etichette scivolavano).
+const LEVEL_COMPACT_COLUMN_WIDTH: float = 40.0
+const LEVEL_COMPACT_FONT_SIZE: int = 10
+const LEVEL_COMPACT_BUTTON_FONT_SIZE: int = 9
+const LEVEL_COMPACT_BG := Color(0.10, 0.11, 0.14, 1.0)
+const LEVEL_COMPACT_BORDER := Color(1.0, 1.0, 1.0, 0.18)
+const LEVEL_COMPACT_BORDER_FOCUS := Color(1.0, 1.0, 1.0, 0.7)
+const LEVEL_INFINITE_TEXT := "∞"
+const COLUMN_HEADER_COLOR := Color(1.0, 1.0, 1.0, 0.55)
 
 # Ultima linguetta scelta (per tutta la sessione): all'apertura successiva il cassetto riparte da qui.
 static var _last_category: int = SecondaryResourceTypes.Category.FOOD
@@ -116,10 +139,13 @@ var _quantity_labels: Dictionary = {}
 # Nome risorsa -> Array di LineEdit del suo livello: una risorsa può avere più righe (la carne cruda in Materie prime e in
 # "Da cucinare o lavorare" del Cibo), con lo stesso livello tenuto allineato (_sync_level_edits).
 var _level_edits: Dictionary = {}
+# Stessa cosa per il campo del massimo (2026-10-18).
+var _max_edits: Dictionary = {}
 var _food_summary_label: Label = null
 # Livelli minimi (copia locale dei valori della partita) e ultimi dati ricevuti, per ricolorare subito a un cambio.
 var _min_levels: Dictionary = {}
 var _min_food_days: int = 0
+var _max_levels: Dictionary = {}
 var _last_stock: Dictionary = {}
 var _last_days: float = -1.0
 var _food_days_label: Label = null
@@ -198,18 +224,22 @@ func set_min_levels(levels: Dictionary, food_days: int) -> void:
 	_min_food_days = maxi(food_days, 0)
 
 
+# Massimi per risorsa della partita (2026-10-18), prima di aggiungere il pannello al cassetto.
+func set_max_levels(levels: Dictionary) -> void:
+	_max_levels = levels.duplicate()
+
+
 # `rows`: [{"type", "name" (chiave tr), "level"}] (FuelStockService.get_rule_rows).
 func set_fuel_rule(enabled: bool, rows: Array[Dictionary]) -> void:
 	_fuel_rule_enabled = enabled
 	_fuel_rows = rows.duplicate()
 
 
-func set_banquet_rule(calories: int, safe_only: bool) -> void:
-	_banquet_calories = maxi(calories, BANQUET_CALORIES_MIN)
+func set_banquet_rule(safe_only: bool) -> void:
 	_banquet_safe_only = safe_only
 
 
-# Regola dei banchetti spontanei: titolo, riga "fino a − [N] + calorie" e la casella del terzo delle scorte.
+# Regola dei banchetti spontanei: titolo e la casella del terzo delle scorte.
 func _build_banquet_rule_rows() -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 2)
@@ -219,21 +249,6 @@ func _build_banquet_rule_rows() -> Control:
 	title.mouse_filter = Control.MOUSE_FILTER_PASS
 	title.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	box.add_child(title)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	var label := Label.new()
-	label.text = tr("warehouse_rule_banquet_calories")
-	label.tooltip_text = TooltipText.wrap(tr("warehouse_rule_banquet_tooltip"))
-	label.mouse_filter = Control.MOUSE_FILTER_PASS
-	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(label)
-	row.add_child(_build_level_field(_banquet_calories, func(calories: int) -> void:
-		_banquet_calories = calories
-		banquet_calories_changed.emit(calories)
-	, "warehouse_rule_banquet_tooltip", BANQUET_CALORIES_STEP, BANQUET_CALORIES_MIN))
-	box.add_child(row)
 	var safe_toggle := CheckBox.new()
 	safe_toggle.text = tr("warehouse_rule_banquet_safe_only")
 	safe_toggle.tooltip_text = TooltipText.wrap(tr("warehouse_rule_banquet_safe_only_tooltip"))
@@ -246,6 +261,128 @@ func _build_banquet_rule_rows() -> Control:
 	)
 	box.add_child(safe_toggle)
 	return box
+
+
+func set_toolkit_rule(enabled: bool, rows: Array[Dictionary]) -> void:
+	_toolkit_rule_enabled = enabled
+	_toolkit_rows = rows.duplicate(true)
+
+
+# Regola "Rifornisci le Attrezzerie" (2026-10-18): casella accesa/spenta e accanto "Modifica…", che apre il dettaglio in
+# un popup (2026-10-18, richiesta utente: aperto sempre nel cassetto lo allargava e occupava troppo; come "Modifica
+# ordine…" delle Regole di assegnazione). Nel popup, per ogni tipo con Attrezzeria icona e nome e sotto, rientrati, gli
+# attrezzi che accetta con il campo compatto dei pezzi voluti (tetto: pezzi per tipo dell'Attrezzeria). Valgono per
+# tutti gli edifici di quel tipo.
+func _build_toolkit_rule_rows() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var toggle := CheckBox.new()
+	toggle.text = tr("warehouse_rule_toolkit")
+	toggle.tooltip_text = TooltipText.wrap(tr("warehouse_rule_toolkit_tooltip"))
+	toggle.button_pressed = _toolkit_rule_enabled
+	toggle.focus_mode = Control.FOCUS_NONE
+	toggle.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	toggle.clip_text = true
+	toggle.toggled.connect(func(pressed: bool) -> void:
+		_toolkit_rule_enabled = pressed
+		toolkit_rule_toggled.emit(pressed)
+	)
+	row.add_child(toggle)
+	var edit_button := Button.new()
+	edit_button.text = tr("warehouse_rule_toolkit_edit")
+	edit_button.tooltip_text = TooltipText.wrap(tr("warehouse_rule_toolkit_edit_tooltip"))
+	edit_button.focus_mode = Control.FOCUS_NONE
+	edit_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	edit_button.pressed.connect(func() -> void: _open_toolkit_popup(edit_button))
+	row.add_child(edit_button)
+	return row
+
+
+# Popup del dettaglio Attrezzerie, rifatto a ogni apertura dalle righe di adesso; largo quanto il cassetto, alto quanto
+# le voci (al massimo lo schermo, poi scorrono), con il fondo appena sopra il pulsante. Si chiude con un clic fuori o Esc.
+func _open_toolkit_popup(anchor: Control) -> void:
+	if _toolkit_popup != null:
+		_toolkit_popup.queue_free()
+	_toolkit_popup = PopupPanel.new()
+	_toolkit_popup.add_theme_stylebox_override("panel", _make_toolkit_popup_style())
+	add_child(_toolkit_popup)
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_toolkit_popup.add_child(scroll)
+	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	box.add_theme_constant_override("separation", 2)
+	scroll.add_child(box)
+	var title := Label.new()
+	title.text = tr("warehouse_rule_toolkit")
+	title.add_theme_font_size_override("font_size", SECTION_FONT_SIZE)
+	box.add_child(title)
+	if _toolkit_rows.is_empty():
+		var empty := Label.new()
+		empty.text = tr("warehouse_rule_toolkit_empty")
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+		box.add_child(empty)
+	for entry in _toolkit_rows:
+		var type_name := String(entry.get("type", ""))
+		var header := HBoxContainer.new()
+		header.add_theme_constant_override("separation", 6)
+		header.add_child(IconRegistry.build_building_icon_box(type_name, LIST_ICON_SIDE))
+		header.add_child(_toolkit_popup_label(tr(String(entry.get("name", type_name)))))
+		box.add_child(header)
+		for tool_entry in entry.get("tools", []):
+			var tool_name := String(tool_entry.get("tool", ""))
+			var max_units := int(tool_entry.get("max", 0))
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 6)
+			var indent := Control.new()
+			indent.custom_minimum_size = Vector2(LIST_ICON_SIDE, 0.0)
+			row.add_child(indent)
+			var tool_label := _toolkit_popup_label(IconRegistry.get_resource_display_name(tool_name))
+			tool_label.tooltip_text = TooltipText.wrap(tr("warehouse_rule_toolkit_tool_tooltip").format({"max": max_units}))
+			tool_label.mouse_filter = Control.MOUSE_FILTER_PASS
+			row.add_child(tool_label)
+			row.add_child(_build_level_field(int(tool_entry.get("level", 0)), func(level: int) -> void:
+				var clamped := mini(level, max_units)
+				tool_entry["level"] = clamped
+				toolkit_target_changed.emit(type_name, tool_name, clamped)
+			, "warehouse_rule_toolkit_tool_tooltip", 1, 0, true))
+			box.add_child(row)
+	var style := _toolkit_popup.get_theme_stylebox("panel")
+	var margins := style.get_minimum_size() if style != null else Vector2.ZERO
+	var screen_height := int(get_viewport().get_visible_rect().size.y)
+	var width := int(get_global_rect().size.x) - 2 * TOOLKIT_POPUP_INSET
+	var height := mini(int(ceilf(box.get_combined_minimum_size().y + margins.y)), screen_height - 2 * TOOLKIT_POPUP_INSET)
+	var x := int(get_global_rect().position.x) + TOOLKIT_POPUP_INSET
+	var y := clampi(int(anchor.get_global_rect().position.y) - height - 4, 0, maxi(screen_height - height, 0))
+	_toolkit_popup.popup(Rect2i(Vector2i(x, y), Vector2i(width, height)))
+
+
+# Etichetta del popup che si accorcia con "…" invece di allargarlo.
+func _toolkit_popup_label(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.clip_text = true
+	label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	return label
+
+
+# Fondo pieno con bordo chiaro, come il popup "Modifica ordine…" delle Regole di assegnazione.
+func _make_toolkit_popup_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = TOOLKIT_POPUP_BG_COLOR
+	style.set_border_width_all(1)
+	style.border_color = TOOLKIT_POPUP_BORDER_COLOR
+	style.set_corner_radius_all(4)
+	style.content_margin_left = 6
+	style.content_margin_right = 6
+	style.content_margin_top = 6
+	style.content_margin_bottom = 6
+	return style
 
 
 # Regola del combustibile: casella accesa/spenta, poi per ogni tipo icona, nome e campo − [N] + (spenti con la regola).
@@ -368,6 +505,7 @@ func _build_rules_section() -> void:
 	DashedSeparator.add_item(_rules_box, _build_inventory_interval_row())
 	DashedSeparator.add_item(_rules_box, row)
 	DashedSeparator.add_item(_rules_box, _build_fuel_rule_rows())
+	DashedSeparator.add_item(_rules_box, _build_toolkit_rule_rows())
 	DashedSeparator.add_item(_rules_box, _build_banquet_rule_rows())
 	if _excess_meat_state.size() == 3:
 		var options: Array[Dictionary] = []
@@ -380,11 +518,14 @@ func _apply_quantities() -> void:
 	for resource_name in _quantity_labels.keys():
 		var quantity: int = int(_last_stock.get(resource_name, 0))
 		var level: int = int(_min_levels.get(resource_name, 0))
+		var max_level: int = int(_max_levels.get(resource_name, 0))
 		for label in _quantity_labels[resource_name]:
 			label.text = str(quantity)
 			label.modulate = Color(1, 1, 1, 1)
 			if level > 0 and quantity < level:
 				label.modulate = BELOW_LEVEL_COLOR
+			elif max_level > 0 and quantity > max_level:
+				label.modulate = ABOVE_MAX_COLOR
 			elif quantity <= 0:
 				label.modulate = ZERO_QUANTITY_COLOR
 	if _food_days_label != null:
@@ -397,10 +538,15 @@ func _apply_quantities() -> void:
 
 # `on_change(value)` alla conferma di un valore nuovo (bottoni, Invio o uscita dal campo).
 # `step` e `min_value` (2026-10-17, calorie dei banchetti: passi di 100, minimo 500); di base 1 e 0, come prima.
+# `compact` (2026-10-18, righe delle risorse): [campo stretto][+ sopra, − sotto]; anche la rotella cambia il valore (±1,
+# Shift ±10). `none_text`: testo del valore 0 ("—", o "∞" per il massimo).
 func _build_level_field(
-	initial: int, on_change: Callable, tooltip_key: String = "warehouse_min_level_tooltip", step: int = 1, min_value: int = 0
+	initial: int, on_change: Callable, tooltip_key: String = "warehouse_min_level_tooltip", step: int = 1, min_value: int = 0,
+	compact: bool = false, none_text: String = LEVEL_NONE_TEXT
 ) -> Control:
 	var tooltip := tr(tooltip_key)
+	if compact:
+		tooltip += "\n" + tr("warehouse_level_wheel_hint")
 	var field := HBoxContainer.new()
 	field.add_theme_constant_override("separation", 0)
 	field.tooltip_text = TooltipText.wrap(tooltip)
@@ -408,16 +554,17 @@ func _build_level_field(
 	var edit := LineEdit.new()
 	var minus := _level_button("−", tooltip)
 	var plus := _level_button("+", tooltip)
-	edit.custom_minimum_size = Vector2(LEVEL_EDIT_WIDTH, 0.0)
+	edit.custom_minimum_size = Vector2(LEVEL_COMPACT_EDIT_WIDTH if compact else LEVEL_EDIT_WIDTH, 0.0)
 	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	edit.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	edit.tooltip_text = TooltipText.wrap(tooltip)
 	edit.context_menu_enabled = false
 	edit.set_meta("level", initial)
-	edit.text = _level_text(initial)
+	edit.set_meta("none_text", none_text)
+	edit.text = _level_text(initial, none_text)
 	var commit := func(value: int) -> void:
 		var clamped := clampi(value, min_value, LEVEL_MAX)
-		edit.text = _level_text(clamped)
+		edit.text = _level_text(clamped, none_text)
 		if clamped == int(edit.get_meta("level")):
 			return
 		edit.set_meta("level", clamped)
@@ -436,10 +583,60 @@ func _build_level_field(
 	edit.focus_exited.connect(func() -> void:
 		commit.call(int(edit.text) if edit.text.strip_edges().is_valid_int() else 0)
 	)
+	if compact:
+		edit.gui_input.connect(func(event: InputEvent) -> void:
+			var wheel := event as InputEventMouseButton
+			if wheel == null or not wheel.pressed:
+				return
+			var amount := step * (10 if wheel.shift_pressed else 1)
+			if wheel.button_index == MOUSE_BUTTON_WHEEL_UP:
+				commit.call(int(edit.get_meta("level")) + amount)
+				edit.accept_event()
+			elif wheel.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				commit.call(int(edit.get_meta("level")) - amount)
+				edit.accept_event()
+		)
+		_style_compact_edit(edit)
+		field.add_theme_constant_override("separation", 1)
+		field.custom_minimum_size.x = LEVEL_COMPACT_COLUMN_WIDTH
+		field.alignment = BoxContainer.ALIGNMENT_CENTER
+		field.add_child(edit)
+		var buttons := VBoxContainer.new()
+		buttons.add_theme_constant_override("separation", 0)
+		buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+		for button in [plus, minus]:
+			_style_compact_button(button)
+			buttons.add_child(button)
+		field.add_child(buttons)
+		return field
 	field.add_child(minus)
 	field.add_child(edit)
 	field.add_child(plus)
 	return field
+
+
+# Campo compatto: font piccolo, margini minimi, bordo sottile (più chiaro col fuoco).
+func _style_compact_edit(edit: LineEdit) -> void:
+	edit.add_theme_font_size_override("font_size", LEVEL_COMPACT_FONT_SIZE)
+	for state in ["normal", "focus", "read_only"]:
+		var box := StyleBoxFlat.new()
+		box.bg_color = LEVEL_COMPACT_BG
+		box.border_color = LEVEL_COMPACT_BORDER_FOCUS if state == "focus" else LEVEL_COMPACT_BORDER
+		box.set_border_width_all(1)
+		box.set_corner_radius_all(2)
+		box.content_margin_left = 1.0
+		box.content_margin_right = 1.0
+		box.content_margin_top = 1.0
+		box.content_margin_bottom = 1.0
+		edit.add_theme_stylebox_override(state, box)
+
+
+# + e − compatti: senza sfondo né margini, solo il segno, uno sopra l'altro.
+func _style_compact_button(button: Button) -> void:
+	button.custom_minimum_size = LEVEL_COMPACT_BUTTON_SIZE
+	button.add_theme_font_size_override("font_size", LEVEL_COMPACT_BUTTON_FONT_SIZE)
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 
 
 func _level_button(text: String, tooltip: String) -> Button:
@@ -453,8 +650,8 @@ func _level_button(text: String, tooltip: String) -> Button:
 	return button
 
 
-func _level_text(level: int) -> String:
-	return LEVEL_NONE_TEXT if level <= 0 else str(level)
+func _level_text(level: int, none_text: String = LEVEL_NONE_TEXT) -> String:
+	return none_text if level <= 0 else str(level)
 
 
 func _on_resource_level_changed(resource_name: String, level: int) -> void:
@@ -463,8 +660,35 @@ func _on_resource_level_changed(resource_name: String, level: int) -> void:
 	else:
 		_min_levels.erase(resource_name)
 	_sync_level_edits(resource_name, level)
-	_apply_quantities()
 	min_level_changed.emit(resource_name, level)
+	# Minimo sopra il massimo (2026-10-18): il massimo sale con lui.
+	var max_level: int = int(_max_levels.get(resource_name, 0))
+	if level > 0 and max_level > 0 and level > max_level:
+		_set_max_level(resource_name, level)
+	_apply_quantities()
+
+
+# Campo del massimo cambiato (2026-10-18). Massimo sotto il minimo: il minimo scende con lui.
+func _on_resource_max_changed(resource_name: String, level: int) -> void:
+	_set_max_level(resource_name, level)
+	var min_level: int = int(_min_levels.get(resource_name, 0))
+	if level > 0 and min_level > level:
+		_min_levels[resource_name] = level
+		_sync_level_edits(resource_name, level)
+		min_level_changed.emit(resource_name, level)
+	_apply_quantities()
+
+
+func _set_max_level(resource_name: String, level: int) -> void:
+	if level > 0:
+		_max_levels[resource_name] = level
+	else:
+		_max_levels.erase(resource_name)
+	for edit in _max_edits.get(resource_name, []):
+		if is_instance_valid(edit) and int(edit.get_meta("level")) != level:
+			edit.set_meta("level", level)
+			edit.text = _level_text(level, String(edit.get_meta("none_text", LEVEL_NONE_TEXT)))
+	max_level_changed.emit(resource_name, level)
 
 
 # Stesso livello su tutte le righe della risorsa (quella appena cambiata è già a posto).
@@ -472,7 +696,7 @@ func _sync_level_edits(resource_name: String, level: int) -> void:
 	for edit in _level_edits.get(resource_name, []):
 		if is_instance_valid(edit) and int(edit.get_meta("level")) != level:
 			edit.set_meta("level", level)
-			edit.text = _level_text(level)
+			edit.text = _level_text(level, String(edit.get_meta("none_text", LEVEL_NONE_TEXT)))
 
 
 func _on_food_days_level_changed(days: int) -> void:
@@ -559,7 +783,8 @@ func _show_selected_category() -> void:
 func _visible_resource_names() -> Array[String]:
 	var names: Array[String] = []
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
-		if not TerrainScatteredResourceService.is_resource_locked(resource_name):
+		# Rifiuti (2026-10-18, detriti): mai in magazzino, nessuna riga.
+		if not TerrainScatteredResourceService.is_resource_locked(resource_name) and not WasteDisposalService.is_waste_only(resource_name):
 			names.append(resource_name)
 	# In ordine alfabetico del nome mostrato, nella lingua scelta (2026-10-11, richiesta utente).
 	names.sort_custom(func(a: String, b: String) -> bool:
@@ -575,6 +800,7 @@ func _rebuild_rows(names: Array[String]) -> void:
 	_category_boxes.clear()
 	_quantity_labels.clear()
 	_level_edits.clear()
+	_max_edits.clear()
 	_food_summary_label = null
 	_food_days_label = null
 	_shown_names = names.duplicate()
@@ -596,9 +822,16 @@ func _rebuild_rows(names: Array[String]) -> void:
 			food_row.add_child(_food_summary_label)
 			_food_days_label = _quantity_column_label()
 			food_row.add_child(_food_days_label)
-			food_row.add_child(_build_level_field(_min_food_days, _on_food_days_level_changed, "warehouse_food_days_auto_tooltip"))
+			# Giorni minimi (2026-10-18): campo compatto come le righe (+ e − impilati a destra), in fondo alla riga (colonna
+			# "Max", così la scritta del totale ha più spazio) e alto quanto quelli delle righe, centrato.
+			var days_field := _build_level_field(
+				_min_food_days, _on_food_days_level_changed, "warehouse_food_days_auto_tooltip", 1, 0, true
+			)
+			days_field.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			food_row.add_child(days_field)
 			box.add_child(food_row)
 			box.add_child(HSeparator.new())
+		box.add_child(_build_column_header())
 		for resource_name in names:
 			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 			# La carne cruda (2026-10-11): solo in "Da cucinare o lavorare" del Cibo.
@@ -610,6 +843,26 @@ func _rebuild_rows(names: Array[String]) -> void:
 			_add_food_ingredients_section(box, names)
 	_show_selected_category()
 	_apply_quantities()
+
+
+# Intestazione delle colonne (2026-10-18): "Qtà", "Min", "Max" allineate ai campi delle righe.
+func _build_column_header() -> Control:
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 6)
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(spacer)
+	for column in [["warehouse_column_quantity", QUANTITY_COLUMN_WIDTH, HORIZONTAL_ALIGNMENT_RIGHT],
+			["warehouse_column_min", LEVEL_COMPACT_COLUMN_WIDTH, HORIZONTAL_ALIGNMENT_CENTER],
+			["warehouse_column_max", LEVEL_COMPACT_COLUMN_WIDTH, HORIZONTAL_ALIGNMENT_CENTER]]:
+		var label := Label.new()
+		label.text = tr(String(column[0]))
+		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 1)
+		label.custom_minimum_size = Vector2(float(column[1]), 0.0)
+		label.horizontal_alignment = column[2]
+		label.modulate = COLUMN_HEADER_COLOR
+		header.add_child(label)
+	return header
 
 
 func _build_row(resource_name: String) -> Control:
@@ -635,11 +888,20 @@ func _build_row(resource_name: String) -> Control:
 	if StockRequestService.DERIVED_LEVEL_RESOURCES.has(resource_name):
 		tooltip_key = "warehouse_meat_level_tooltip"
 	var on_change := func(level: int) -> void: _on_resource_level_changed(resource_name, level)
-	var field := _build_level_field(int(_min_levels.get(resource_name, 0)), on_change, tooltip_key)
+	var field := _build_level_field(int(_min_levels.get(resource_name, 0)), on_change, tooltip_key, 1, 0, true)
 	row.add_child(field)
 	if not _level_edits.has(resource_name):
 		_level_edits[resource_name] = []
-	(_level_edits[resource_name] as Array).append(field.get_child(1))
+	(_level_edits[resource_name] as Array).append(field.get_child(0))
+	# Massimo (2026-10-18, Fossa dei rifiuti): secondo campo, stessa forma.
+	var on_max_change := func(level: int) -> void: _on_resource_max_changed(resource_name, level)
+	var max_field := _build_level_field(
+		int(_max_levels.get(resource_name, 0)), on_max_change, "warehouse_max_level_tooltip", 1, 0, true, LEVEL_INFINITE_TEXT
+	)
+	row.add_child(max_field)
+	if not _max_edits.has(resource_name):
+		_max_edits[resource_name] = []
+	(_max_edits[resource_name] as Array).append(max_field.get_child(0))
 	return row
 
 
@@ -662,6 +924,7 @@ func _add_food_ingredients_section(box: VBoxContainer, names: Array[String]) -> 
 	note.custom_minimum_size.x = 0.0
 	note.modulate = ZERO_QUANTITY_COLOR
 	box.add_child(note)
+	box.add_child(_build_column_header())
 	for resource_name in ingredients:
 		box.add_child(_build_row(resource_name))
 

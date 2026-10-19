@@ -64,6 +64,9 @@ var tool_multiplier: float = 1.0
 signal building_construction_completed(building: Building)
 
 
+# Detriti sul cantiere (2026-10-18, cantiere nel bosco): letto e tolto da HumanIndividualActionService.
+const CONTEXT_PENDING_SITE_DEBRIS := "pending_site_debris"
+
 func _init(
 	p_target_building: Building = null,
 	p_tool_multiplier: float = 1.0
@@ -163,6 +166,10 @@ func activate(individual: Variant, context: Dictionary) -> void:
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if target_building == null or target_building.rules == null:
 		return 0.0
+	# Detriti dei ceppi rimasti nel cantiere (2026-10-18): prima lo sgombero, lo decide HumanIndividualActionService.
+	if WasteDisposalService.has_site_debris(target_building):
+		context[CONTEXT_PENDING_SITE_DEBRIS] = target_building.id
+		return 0.0
 	if not get_missing_materials().is_empty():
 		return 0.0
 	if _get_labor_accumulated() >= float(target_building.rules.required_labor):
@@ -185,6 +192,8 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 # (che può anche essere già a target da un tentativo precedente, se mai possibile): il completamento
 # resta subordinato a ENTRAMBE le condizioni.
 func is_complete(individual: Variant, context: Dictionary) -> bool:
+	if WasteDisposalService.has_site_debris(target_building):
+		return false
 	if target_building == null or target_building.rules == null:
 		return false
 	if BuildingLifecycleService.is_finishing(target_building):

@@ -87,6 +87,14 @@ static func transport_trip_target(destination_building: Building, resource_name:
 		return 0
 	if destination_building.is_demolished:
 		return 0
+	# Fossa dei rifiuti (2026-10-18): tutto ciò che ci sta ancora, qualunque merce (WasteDisposalService).
+	if WasteDisposalService.is_waste_pit(destination_building):
+		return mini(remaining_quantity, WasteDisposalService.get_max_disposable(destination_building, resource_name))
+	# Attrezzeria (2026-10-18, richiesta utente): un attrezzo che le serve entra prima lì, poi nel magazzino se lo accetta.
+	var toolkit_room := BuildingToolkitService.get_max_toolkit_depositable(destination_building, resource_name)
+	if toolkit_room > 0:
+		var storage_room := BuildingStorageService.get_max_depositable(destination_building, resource_name) 			if BuildingStorageService.can_accept(destination_building, resource_name) else 0
+		return mini(remaining_quantity, toolkit_room + storage_room)
 	if not destination_building.is_complete or ProductionService.is_production_demand(destination_building, resource_name):
 		return mini(remaining_quantity, BuildingStorageService.get_max_depositable(destination_building, resource_name))
 	if not BuildingStorageService.can_accept(destination_building, resource_name):

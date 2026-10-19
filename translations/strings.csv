@@ -1015,7 +1015,7 @@ task_assignment_kind_body,Sepolture
 task_assignment_kind_build,Cantieri
 task_assignment_kind_upgrade,Miglioramenti
 task_assignment_kind_demolish,Demolizioni e sgomberi
-task_assignment_kind_pile,Mucchi
+task_assignment_kind_pile,Trasporti e mucchi
 task_assignment_kind_move_up,Sposta su
 task_assignment_kind_move_down,Sposta giù
 task_assignment_kind_order_edit,Modifica ordine…
@@ -1164,8 +1164,8 @@ building_cancel_clear_rubble_button,Annulla sgombero
 building_command_cancel_clear_rubble_detail,Le macerie restano dove sono.
 building_command_cancel_clear_rubble_started,Lo sgombero è già iniziato: non si può più annullare.
 task_clear_rubble_name,Sgombero
-pending_clear_rubble,Sgombero ({building})
-pending_rubble,Macerie: crollo di {building}
+pending_clear_rubble,Sgombero · {origin} ({debris} detriti)
+pending_rubble,Macerie · {origin}
 notification_building_collapsed,Crollo: {building}
 notification_building_lost,Edificio perso: {building}
 clear_rubble_assign_banner_text,Sgombera {building}: clicca un individuo (Esc per annullare)
@@ -1325,10 +1325,77 @@ social_rite_reject_wrong_building,Questo rito non si tiene in questo edificio
 building_feast_storage_summary,"Cibo: {calories} / {threshold} calorie · Combustibile: {fuel} / {fuel_needed}"
 building_feast_calorie_threshold_locked_tooltip,"Banchetto in corso: la soglia è fissata, la modifica vale per il prossimo"
 warehouse_rule_banquet,Banchetti spontanei
-warehouse_rule_banquet_calories,Calorie per banchetto
-warehouse_rule_banquet_tooltip,"Quanto è grande ogni banchetto spontaneo: prima di chiamare il villaggio si porta sullo spiazzo cibo fino a queste calorie (minimo 500)"
-warehouse_rule_banquet_safe_only,Solo se consumano meno di un terzo delle scorte
+warehouse_rule_banquet_tooltip,"Banchetti che gli abitanti organizzano da soli: si porta sullo spiazzo cibo fino alla Soglia calorie dello spiazzo"
+warehouse_rule_banquet_safe_only,Al massimo un terzo delle scorte
 warehouse_rule_banquet_safe_only_tooltip,"Un banchetto spontaneo parte solo se nei magazzini c'è almeno il triplo del cibo che consuma"
 task_assignment_setting_single_builder,Un solo costruttore per cantiere
 task_assignment_setting_single_builder_tooltip,"La coda dei lavori manda al massimo un costruttore per cantiere, anche dove ne servirebbero di più. A mano puoi sempre mandarne fino al massimo dell'edificio."
 building_construction_phase_finishing,"In finitura: ancora {days} giorni"
+building_category_other,Altro
+building_waste_pit,Fossa dei rifiuti
+build_bar_waste_pit_tooltip,"Fossa dei rifiuti: una buca dove buttare ciò che non serve. Si riempie fino a esaurire lo spazio, poi bisogna scavarne un'altra"
+building_info_waste_capacity,Capienza rifiuti: {capacity}
+building_info_waste_fill,Riempimento: {stored} / {capacity}
+building_info_waste_reserved,Spazio prenotato da trasporti in arrivo: {reserved}
+building_command_clear_rubble_waste,Detriti da portare alla Fossa dei rifiuti: {debris}
+building_command_clear_rubble_no_pit,Serve una Fossa dei rifiuti con spazio libero
+building_rubble_debris_label,Detriti: {debris}
+notification_clear_rubble_no_pit,Nessuna Fossa dei rifiuti con posto per i detriti
+carried_resource_tooltip_debris,Detriti
+building_command_demolish_waste_pit_not_empty,Contiene rifiuti: una Fossa si può demolire solo vuota
+notification_waste_pit_not_empty,La Fossa dei rifiuti contiene rifiuti: non si può demolire
+building_empty_pit_button,Svuota
+building_command_empty_pit_detail,"I rifiuti diventano detriti da portare in un'altra Fossa; la Fossa si chiude ai rifiuti"
+building_command_empty_pit_no_other_pit,Serve un'altra Fossa dei rifiuti aperta con spazio libero
+building_cancel_empty_pit_button,Annulla svuotamento
+building_command_cancel_empty_pit_detail,"I detriti non ancora portati via tornano rifiuti; la Fossa resta chiusa"
+building_close_pit_button,Chiudi ai rifiuti
+building_command_close_pit_detail,Nessuno ci porterà più rifiuti finché non la riapri
+building_open_pit_button,Riapri ai rifiuti
+building_command_open_pit_detail,Torna a ricevere rifiuti
+building_info_waste_emptying,In svuotamento: {debris} detriti da portare via
+building_info_waste_closed,Chiusa ai rifiuti
+pending_empty_pit,Svuotamento · {building}
+task_empty_pit_name,Svuotamento
+building_assign_hint_empty_pit_manual,Per assegnare lo svuotamento: seleziona un individuo e fai clic destro sulla Fossa.
+building_assign_hint_empty_pit_queued,In coda: lo svuotamento lo prenderà un individuo libero. Per sceglierlo tu: seleziona un individuo e fai clic destro sulla Fossa.
+building_assign_hint_empty_pit_locked,Svuotamento bloccato in coda. Per sceglierlo tu: seleziona un individuo e fai clic destro sulla Fossa.
+building_rubble_abandoned_label,Detriti abbandonati
+building_rubble_abandoned_name,detriti abbandonati
+warehouse_max_level_tooltip,"Massimo: oltre questa quantità, all'Inventario il gestore delle scorte fa portare l'eccedenza nella Fossa dei rifiuti. — = nessun massimo"
+drawer_order_waste_row,Buttare · {quantity} {resource}
+pending_stock_waste_blocked,Nessuna Fossa dei rifiuti aperta con posto, o nessun magazzino con la risorsa
+rubble_origin_collapse,Crollo di {building}
+rubble_origin_demolition,Demolizione di {building}
+rubble_origin_stumps,Ceppi del cantiere di {building}
+rubble_origin_dropped,Detriti abbandonati
+pending_reason_rubble_unmarked,Da sgomberare: bottone Sgombera nel pannello
+pending_reason_clearer_missing,Manca chi sgombera
+pending_reason_emptier_missing,Manca chi svuota
+pending_reason_no_waste_pit,Nessuna Fossa dei rifiuti aperta con posto
+warehouse_column_quantity,Qtà
+warehouse_column_min,Min
+warehouse_column_max,Max
+warehouse_level_wheel_hint,Rotella del mouse per cambiare (Shift: 10 alla volta); vuoto = nessun limite
+influence_type_discomfort,disagio
+building_influence_discomfort_tooltip,"Disagio: raggio {radius}"
+building_influence_discomfort_none_tooltip,Nessun disagio
+map_layer_discomfort_influence,Disagio
+rubble_origin_village,Rifiuti del villaggio
+job_site_cut,"Taglio · Cantiere {building}"
+job_site_cut_cell,"Taglio · Cantiere {building} (cella {index}/{count})"
+task_assignment_kind_site_cut,Taglio per i cantieri
+job_postponed_site_cut,"Rimandato da {name}: in attesa del taglio"
+site_cut_command_needs_axe,"Cantiere in attesa del taglio: serve qualcuno con l'ascia"
+building_awaiting_site_cut,"In attesa del taglio: {cells} celle con piante"
+pending_site_debris,"Sgombero · detriti del cantiere {building} ({debris} detriti)"
+warehouse_rule_toolkit,Rifornisci le Attrezzerie
+warehouse_rule_toolkit_tooltip,"All'Inventario il gestore delle scorte porta nelle Attrezzerie gli attrezzi che mancano per arrivare ai pezzi voluti per ogni tipo di edificio, anche sotto la scorta minima del magazzino"
+warehouse_rule_toolkit_tool_tooltip,"Pezzi voluti nell'Attrezzeria di ogni edificio di questo tipo (massimo {max})"
+drawer_order_toolkit_row,"{building}: porta {quantity} {resource}"
+pending_stock_toolkit_blocked,"Nessun magazzino con l'attrezzo, o l'Attrezzeria è già piena"
+pending_stock_toolkit,Attrezzerie da rifornire
+pending_stock_toolkit_missing,"Nessun magazzino ha: {tools}"
+warehouse_rule_toolkit_edit,Modifica…
+warehouse_rule_toolkit_edit_tooltip,"Pezzi voluti di ogni attrezzo nelle Attrezzerie, per tipo di edificio"
+warehouse_rule_toolkit_empty,"Nessun edificio con Attrezzeria ancora sbloccato"

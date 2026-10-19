@@ -512,8 +512,10 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 			assigned = bool(TalkService.start_talk(individual, age_band)["ok"])
 		elif (remaining[drawn_index]["definition"] as TaskDefinition).idle_social_rite_id != "":
 			var rite_rules := RiteService.get_rules((remaining[drawn_index]["definition"] as TaskDefinition).idle_social_rite_id) as SocialRiteRules
-			# Banchetto spontaneo: soglia fissa (SocialRiteService.get_idle_calorie_threshold), non quella del pannello.
-			var idle_threshold := SocialRiteService.get_idle_calorie_threshold(rite_rules as BanquetRiteRules) if rite_rules is BanquetRiteRules else -1
+			# Banchetto spontaneo: la "Soglia calorie" dello spiazzo (SocialRiteService.get_idle_calorie_threshold).
+			var idle_threshold := SocialRiteService.get_idle_calorie_threshold(
+				remaining[drawn_index]["building"], rite_rules as BanquetRiteRules
+			) if rite_rules is BanquetRiteRules else -1
 			assigned = SocialRiteService.start(
 				individual, remaining[drawn_index]["building"], rite_rules, GameSettings.active_human_individuals,
 				GameSettings.active_game_data, world, idle_threshold

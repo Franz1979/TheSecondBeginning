@@ -22,6 +22,9 @@ static func get_village_stock(world: World) -> Dictionary:
 		# Deposito riservato agli eventi (2026-10-17, lo spiazzo): non è una scorta, nessuno ci può prelevare.
 		if building.rules.storage_event_only:
 			continue
+		# Macerie e Fosse in svuotamento (2026-10-18): i detriti non sono una scorta.
+		if WasteDisposalService.is_debris_source(building):
+			continue
 		if building.rules.is_workstation:
 			for output_name in building.production_output.keys():
 				_add(totals, String(output_name), int(building.production_output[output_name]))

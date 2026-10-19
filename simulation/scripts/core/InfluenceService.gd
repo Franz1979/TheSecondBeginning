@@ -14,7 +14,10 @@ extends RefCounted
 # una cache statica NON salvata, ricalcolata pigramente alla prima lettura dopo un cambio di GameData.
 # buildings_revision (o di partita): mai a ogni giorno né a ogni frame. Lettura: is_house_covered / get_house_coverage.
 
-enum InfluenceType { POLITICAL, CULTURAL, RELIGIOUS }
+# DISCOMFORT (2026-10-18, richiesta utente — Fossa dei rifiuti): disagio, l'unico tipo negativo. Lo danno la Fossa dei
+# rifiuti (raggio che cresce col riempimento) e le macerie (raggio fisso); raggio da WasteDisposalService.discomfort_radius,
+# senza punti né soglie. Come gli altri: o la casa è nel raggio o no, più sorgenti valgono come una. Aggiunto IN FONDO.
+enum InfluenceType { POLITICAL, CULTURAL, RELIGIOUS, DISCOMFORT }
 
 # PUNTI E SOGLIE (2026-10-03, richiesta utente — sostituisce il raggio corrente con i decimali del passo 4c): ogni
 # edificio accumula per tipo dei punti di influenza (Building.influence_points, oggi solo i riti, tipo RELIGIOUS) e
@@ -35,6 +38,9 @@ const NEGLECTED_RITES_LOSS_FRACTION: float = 0.1
 static func get_effective_radius(building: Building, influence_type: InfluenceType) -> int:
 	if building == null or building.rules == null or building.is_demolished or not building.is_complete:
 		return 0
+	# Disagio (2026-10-18): raggio deciso dai rifiuti, niente livelli.
+	if influence_type == InfluenceType.DISCOMFORT:
+		return WasteDisposalService.discomfort_radius(building)
 	var base := get_base_radius(building, influence_type)
 	if base <= 0:
 		return 0
@@ -53,6 +59,8 @@ static func get_base_radius(building: Building, influence_type: InfluenceType) -
 		InfluenceType.RELIGIOUS:
 			# Danneggiato (2026-10-10, effetti passo 4): raggio religioso a metà (per difetto, mai sotto 1).
 			return building.get_effective_capacity(maxi(building.rules.religious_radius, 0))
+		InfluenceType.DISCOMFORT:
+			return WasteDisposalService.discomfort_radius(building)
 	return 0
 
 

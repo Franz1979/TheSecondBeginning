@@ -33,6 +33,10 @@ static func build(rules: BuildingRules) -> Array[Dictionary]:
 	# (BuildingInfoPanel._refresh_buried_list).
 	if rules.max_buried > 0:
 		add_row.call(_tr("building_info_burial_capacity").format({"max": rules.max_buried}), false)
+	# Capienza della Fossa dei rifiuti (2026-10-18): "Capienza rifiuti: 1000". Il riempimento sta nel corpo del pannello
+	# (BuildingInfoPanel._refresh_waste).
+	if rules.waste_capacity > 0:
+		add_row.call(_tr("building_info_waste_capacity").format({"capacity": rules.waste_capacity}), false)
 	# Attrezzeria (2026-10-04): letta dai dati, su ogni edificio che ce l'ha; con la regola d'uso.
 	if rules.toolkit_tool_types > 0 and rules.toolkit_units_per_type > 0:
 		add_row.call(_tr("building_info_toolkit").format({"types": rules.toolkit_tool_types, "units": rules.toolkit_units_per_type}), false)

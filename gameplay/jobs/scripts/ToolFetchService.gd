@@ -68,6 +68,30 @@ static func has_equipped_member(ctx: GameContext, categories: Array, age_kind: S
 	return false
 
 
+# Come has_equipped_member, ma senza chi porta già un ordine di zona dello stesso tipo (2026-10-19, richiesta utente: due
+# cacciatori attrezzati già a caccia per altri ordini tenevano fermi gli ordini nuovi con "lo ha già un altro", coi
+# coltelli in magazzino). Per gli ordini di zona `age_kind` è il loro tipo (DrawerOrderService.TYPE_*). Solo per
+# rejection: chi è impegnato tornerà libero, quindi per la riga in coda (blocked_reason) conta ancora.
+static func has_available_equipped_member(ctx: GameContext, categories: Array, age_kind: String) -> bool:
+	for member in ctx.individuals:
+		if age_ok(ctx, member, age_kind) and member_missing_categories(member, categories).is_empty() 				and not _holds_zone_order_of_type(ctx, member, age_kind):
+			return true
+	return false
+
+
+# `member` porta (in corso o in coda) la serie di un ordine di zona del cassetto di tipo `order_type`.
+static func _holds_zone_order_of_type(ctx: GameContext, member: HumanIndividual, order_type: String) -> bool:
+	if not DrawerOrderService.is_zone_order_type(order_type):
+		return false
+	for task in JobWorkScanService.open_tasks(member):
+		var order_id := DrawerOrderService.order_of_task(task)
+		if order_id < 0:
+			continue
+		if String(DrawerOrderService.find(ctx.game_data, order_id).get("type", "")) == order_type:
+			return true
+	return false
+
+
 # Posti liberi della cintura di `member`, in ordine.
 static func free_belt_slots(member: HumanIndividual) -> Array[int]:
 	var slots: Array[int] = []
@@ -155,7 +179,7 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, categories: Arr
 	var missing := member_missing_categories(worker, categories)
 	if missing.is_empty():
 		return ""
-	if has_equipped_member(ctx, categories, age_kind):
+	if has_available_equipped_member(ctx, categories, age_kind):
 		return "attrezzo mancante: lo ha già un altro"
 	if free_belt_slots(worker).size() < missing.size():
 		return "cintura piena per gli attrezzi da prendere"

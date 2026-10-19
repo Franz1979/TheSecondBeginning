@@ -17,3 +17,6 @@ var fill_names: Array[String] = []
 var hunt_pause_until: float = -1.0
 # Avvisi dell'essiccatoio del magazzino (ricetta -> motivo), ricalcolati a ogni giro.
 var dry_warnings: Dictionary = {}
+# Regola "Rifornisci le Attrezzerie" (2026-10-18): attrezzo -> pezzi che mancano alle Attrezzerie e nessun magazzino ha,
+# ricalcolati a ogni Inventario (avviso in campanella).
+var toolkit_warnings: Dictionary = {}

@@ -47,6 +47,8 @@ const RESOURCE_ICONS := {
 	"fiber_rope": "🪢",
 	# Legna da ardere (2026-10-16, legnaia): ciocchi spaccati da un tronco.
 	"firewood": "🪵",
+	# Detriti (2026-10-18, macerie da portare alla Fossa dei rifiuti): emoji provvisorio.
+	"debris": "🧱",
 }
 
 
@@ -206,6 +208,8 @@ const BUILDING_ICON_NODES := {
 	"rubble": preload("res://simulation/scripts/ui/RubbleIcon.gd"),
 	# Ceppo dell'insegnamento (2026-10-16, richiesta utente): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"teaching_stump": preload("res://simulation/scripts/ui/TeachingStumpIcon.gd"),
+	# Fossa dei rifiuti (2026-10-18, richiesta utente): stesso disegno della mappa (PlaceholderBuildingShapes).
+	"waste_pit": preload("res://simulation/scripts/ui/WastePitIcon.gd"),
 }
 
 

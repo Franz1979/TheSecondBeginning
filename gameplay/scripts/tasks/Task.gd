@@ -464,6 +464,14 @@ func get_activity_description() -> String:
 				var category_key: String = SecondaryResourceTypes.Category.keys()[haul_category]
 				return "%s (%s)%s" % [base_text, tr("category_name_%s" % category_key.to_lower()), progress_suffix]
 		"task_transport_name":
+			# Sgombero delle macerie (2026-10-18): "Sgombero (Macerie)", senza conteggio dei viaggi (dura finché ci sono detriti).
+			# Svuotamento di una Fossa (2026-10-18): "Svuotamento (Fossa dei rifiuti)"; sorgente letta dal primo Retrieve.
+			if bool(context.get(WasteDisposalService.CONTEXT_DEBRIS_CLEARING, false)):
+				for step in steps:
+					if step is RetrieveAction and (step as RetrieveAction).target_building != null \
+							and not (step as RetrieveAction).target_building.is_rubble():
+						return "%s (%s)" % [tr("task_empty_pit_name"), tr("building_waste_pit")]
+				return "%s (%s)" % [tr("task_clear_rubble_name"), tr("building_rubble")]
 			if TaskRepeatRules.is_enabled(context):
 				progress_suffix = _trip_progress_suffix(TaskRepeatRules.MAX_TRIPS)
 			for step in steps:

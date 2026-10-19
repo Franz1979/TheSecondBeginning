@@ -12,3 +12,6 @@ allowed_age_bands = Array[int]([3, 4, 5])
 is_suspendable = false
 is_idle_activity = true
 idle_weight = 0.5
+idle_weight_by_age_band = {
+5: 1.0
+}

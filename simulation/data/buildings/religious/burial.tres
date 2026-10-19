@@ -4,9 +4,6 @@
 
 [resource]
 script = ExtResource("1_burial")
-lifespan_years = -1
-max_durability = 200
-defense = 30
 building_name = "building_burial"
 category = 6
 required_idea_id = "paleolithic_constructions"
@@ -17,6 +14,8 @@ required_materials = {
 "stick": 20,
 "stone": 5
 }
+max_durability = 200
+defense = 30
 max_buried = 10
 required_space = 1
 has_door = false

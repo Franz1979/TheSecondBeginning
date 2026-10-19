@@ -854,6 +854,9 @@ func _ready() -> void:
 	building_info_panel.upgrade_requested.connect(_on_upgrade_requested)
 	building_info_panel.repair_requested.connect(_on_repair_requested)
 	building_info_panel.clear_rubble_requested.connect(_on_clear_rubble_requested)
+	building_info_panel.empty_pit_requested.connect(_on_empty_pit_requested)
+	building_info_panel.cancel_empty_pit_requested.connect(_on_cancel_empty_pit_requested)
+	building_info_panel.waste_closed_toggle_requested.connect(_on_waste_closed_toggle_requested)
 	# Icone di influenza (2026-10-02): impronta temporanea del cerchio del tipo cliccato e anteprima fissa al passaggio
 	# del mouse. Il gruppo di icone vive nell'intestazione della scheda, accanto al 🎯.
 	game_info_tabs.header_actions.add_child(building_info_panel.influence_buttons_box)
@@ -1289,7 +1292,8 @@ func _process(delta: float) -> void:
 			_building_ghost,
 			ghost_rules != null and BuildingVerificationService.is_position_buildable(
 				live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, ghost_mouse_position,
-				game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, ghost_rules, false
+				game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, ghost_rules,
+				SiteCutService.village_has_axe(_game_context())
 			)
 		)
 
@@ -2455,6 +2459,25 @@ func _try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
 			if live_cells.has(hit_macro_coords):
 				_spawn_command_icon_at_microcell(live_cells[hit_macro_coords], Vector2i(hit_building.micro_x, hit_building.micro_y), "task_rejected")
 			return true
+		# Fossa in svuotamento (2026-10-18): il clic destro assegna lo svuotamento, niente popup del prelievo.
+		if WasteDisposalService.is_pit(hit_building) and hit_building.waste_emptying:
+			return _assign_debris_clearing_task(individual, hit_building)
+		# Macerie (2026-10-18, richiesta utente): niente popup del prelievo, il clic destro le fa sgomberare subito
+		# dall'individuo selezionato (come "Sgombera" più l'assegnazione). Senza Fossa con posto: X e motivo.
+		if hit_building.is_rubble():
+			if not hit_building.is_marked_for_demolition:
+				var effects := GameEffects.new()
+				var marked := BuildingLifecycleService.mark_for_demolition(macro_world, hit_building, effects)
+				_apply_effects(effects)
+				if not marked:
+					var rubble_macro := Vector2i(hit_building.macro_x, hit_building.macro_y)
+					if live_cells.has(rubble_macro):
+						_spawn_command_icon_at_microcell(live_cells[rubble_macro], Vector2i(hit_building.micro_x, hit_building.micro_y), "task_rejected")
+					_report_command_rejection(individual, tr("notification_clear_rubble_no_pit"))
+					return true
+				hit_building.rubble_auto_excluded = false
+				_refresh_pending_entries()
+			return _assign_debris_clearing_task(individual, hit_building)
 		# available_quantities: Dictionary[String, int] — appiattito da stored_resources (Dictionary
 		# [String, Dictionary{"quantity":int,"decay_fraction":float}]), stesso "spacchettamento" già
 		# fatto da RetrieveAction.activate()/BuildingStorageService.withdraw per la stessa struttura.
@@ -3121,7 +3144,7 @@ func _refresh_building_panel() -> void:
 	# Fabbisogno dell'ordine intero aggiornato prima di mostrarlo (2026-09-26).
 	_reconcile_production_units(building)
 	_sync_production_queue_mode(building)
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, JobWorkScanService.DEMOLISH_TASK_NAMES), _resolve_names_working_on_building(building, JobWorkScanService.REPAIR_TASK_NAMES))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, JobWorkScanService.demolish_task_names_for(building)), _resolve_names_working_on_building(building, JobWorkScanService.REPAIR_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel. Dal 2026-09-27 (richiesta
 	# utente, riorganizzazione del pannello edificio) sulla riga del titolo c'è anche l'ID, prima in fondo al pannello.
@@ -3216,7 +3239,7 @@ func _on_empty_all_requested(building: Building) -> void:
 func _empty_building_contents(building: Building) -> void:
 	var pile := GroundPileService.drop_building_contents(game_data, building, macro_world)
 	_sync_production_queue_mode(building)
-	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, JobWorkScanService.DEMOLISH_TASK_NAMES), _resolve_names_working_on_building(building, JobWorkScanService.REPAIR_TASK_NAMES))
+	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, JobWorkScanService.demolish_task_names_for(building)), _resolve_names_working_on_building(building, JobWorkScanService.REPAIR_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if live_cells.has(macro_coords):
@@ -4341,6 +4364,14 @@ func _on_cut_zone_series_continue_requested(worker: HumanIndividual, series: Dic
 	var effects := GameEffects.new()
 	WorkFollowUpService.continue_cut_series(_game_context(), worker, series, effects)
 	_apply_effects(effects)
+	# Cantiere nel bosco (2026-10-18): chi taglia l'ultima cella libera il cantiere e ne prende subito la costruzione.
+	if CutZoneService.is_cell_series(series):
+		var site := SiteCutService.find_awaiting_site_at(
+			macro_world, CutZoneService.get_cell_series_macro_coords(series), CutZoneService.get_cell_series_lot(series)
+		)
+		if site != null and SiteCutService.try_finish(macro_world, site):
+			_refresh_pending_entries()
+			_assign_resumable_building_task(worker, site)
 
 
 # Serie "taglia tutto qui" su una cella (2026-10-18, blocco 5d — WorkFollowUpService.continue_cut_cell_series).
@@ -4411,7 +4442,7 @@ func _on_work_area_gather_choice(workers: Array[HumanIndividual], kind: int, cat
 			continue
 		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
 		for worker in workers:
-			if HaulZoneService.count_available(area, macro_state, names, worker) > 0:
+			if HaulZoneService.has_available_in_area(area, macro_state, names, worker):
 				valid_ids.append(area.id)
 				break
 	if valid_ids.is_empty():
@@ -5753,7 +5784,9 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 	# senza risorse", fuorviante su una cella che in realtà un contenuto ce l'ha, solo non ispezionabile
 	# da qui). La cella resta comunque quella selezionata (_select_microcell sotto), MAI l'edificio —
 	# per i dettagli dell'edificio resta il click SINGOLO su di esso (_select_building, invariato).
-	if _find_building_at_microcell(macro_coords, lot) != null:
+	# Cantiere nel bosco in attesa del taglio (2026-10-18): la cella mostra ancora le piante e le risorse.
+	var inspected_building := _find_building_at_microcell(macro_coords, lot)
+	if inspected_building != null and not inspected_building.awaiting_site_cut:
 		_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": [tr("microcell_inspection_building_occupied")]})
 		return
 
@@ -6519,6 +6552,12 @@ func _active_rite_building_ids() -> Dictionary:
 # via TaskReassignmentService.reassign_task. Icona sul bersaglio e motivo in caso di rifiuto. Ritorna false solo se la
 # Task non si è potuta costruire (nessun comando da segnalare), true altrimenti.
 func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Building) -> bool:
+	# Sgombero delle macerie e svuotamento di una Fossa (2026-10-18): Transport dei detriti alla Fossa, non una Demolish.
+	if WasteDisposalService.has_debris_job(hit_building):
+		return _assign_debris_clearing_task(worker, hit_building)
+	# Cantiere nel bosco in attesa del taglio (2026-10-18): il comando fa tagliare una sua cella (con l'ascia), mai costruire.
+	if hit_building.awaiting_site_cut and not SiteCutService.try_finish(macro_world, hit_building):
+		return _assign_site_cut_command(worker, hit_building)
 	var build_macro_coords := Vector2i(hit_building.macro_x, hit_building.macro_y)
 	# Demolish Task (2026-09-27, richiesta utente): stesso percorso per un edificio "da demolire" — reassign_task
 	# costruisce demolish.tres (Building.get_resumable_task_definition_path), stesso guard max_builders contato sulle
@@ -6784,7 +6823,7 @@ func _get_production_queue_draft_key(building: Building) -> String:
 func _sync_production_queue_mode(building: Building) -> void:
 	# Suggerimento "come assegnarlo" del pannello (2026-10-09): idea dell'assegnazione e stato del lavoro dell'edificio
 	# nella coda (cantiere build/upgrade o demolizione, chiavi di BuildingJobProvider.collect).
-	var job_kind := "demolish" if building.is_marked_for_demolition else (
+	var job_kind := "demolish" if building.is_marked_for_demolition or building.waste_emptying else (
 		"upgrade" if BuildingUpgradeService.get_upgrade_from_rules(building) != null else "build"
 	)
 	building_info_panel.set_assign_hint_state(
@@ -7313,12 +7352,13 @@ func _collect_rubble_entries() -> Array[Dictionary]:
 	if macro_world == null:
 		return entries
 	for building in macro_world.buildings:
-		if not building.is_rubble() or building.is_demolished:
+		# Solo le macerie non ancora da sgomberare (2026-10-18): quelle segnate hanno già la voce del lavoro, col suo motivo.
+		if not building.is_rubble() or building.is_demolished or building.is_marked_for_demolition:
 			continue
-		var text := tr("pending_rubble").format({"building": _rubble_source_display_name(building)})
+		var text := tr("pending_rubble").format({"origin": building.get_rubble_origin_text()})
 		entries.append(_pending_entry("rubble:%d" % building.id, text, {
 			"kind": "building", "id": building.id, "macro": Vector2i(building.macro_x, building.macro_y),
-			"sort": float(building.id), "name": text,
+			"sort": float(building.id), "name": text, "detail": tr("pending_reason_rubble_unmarked"),
 		}))
 	return entries
 
@@ -8436,17 +8476,37 @@ func _refresh_pending_entries() -> void:
 				continue
 			var building_name: String = tr(building.rules.building_name)
 			var jobs: Array[Dictionary] = []
-			if building.is_marked_for_demolition:
+			# Sgombero delle macerie (2026-10-18): origine, detriti e motivo vero (Fossa o chi sgombera), non il demolitore.
+			if building.is_marked_for_demolition and building.is_rubble():
 				if not assigned["demolish"].has(building.id):
-					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_clear_rubble" if building.is_rubble() else "pending_demolish").format({"building": building_name}),
+					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_clear_rubble").format({
+						"origin": building.get_rubble_origin_text(), "debris": WasteDisposalService.get_debris(building),
+					}), "detail": tr(WasteDisposalService.debris_job_reason_key(macro_world, building, "pending_reason_clearer_missing"))})
+			elif building.is_marked_for_demolition:
+				if not assigned["demolish"].has(building.id):
+					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_demolish").format({"building": building_name}),
 						"detail": tr("pending_reason_demolisher_missing")})
+			# Svuotamento di una Fossa (2026-10-18): stessa chiave "demolish" delle demolizioni (un lavoro per edificio).
+			elif building.waste_emptying:
+				if not assigned["demolish"].has(building.id):
+					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_empty_pit").format({"building": building_name}),
+						"detail": tr(WasteDisposalService.debris_job_reason_key(macro_world, building, "pending_reason_emptier_missing"))})
+			# Detriti dei ceppi nel cantiere (2026-10-18): prima lo sgombero.
+			elif WasteDisposalService.has_site_debris(building):
+				if not assigned["demolish"].has(building.id):
+					jobs.append({"key": "demolish:%d" % building.id, "text": tr("pending_site_debris").format({
+						"building": building_name, "debris": WasteDisposalService.get_debris(building),
+					}), "detail": tr(WasteDisposalService.debris_job_reason_key(macro_world, building, "pending_reason_clearer_missing"))})
 			elif not building.is_complete:
 				var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
 				if not assigned["build"].has(building.id):
 					jobs.append({
 						"key": "%s:%d" % ["upgrade" if is_upgrade else "build", building.id],
 						"text": tr("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name}),
-						"detail": tr("pending_reason_builder_missing"),
+						# Cantiere nel bosco (2026-10-18): prima del costruttore serve il taglio.
+						"detail": tr("building_awaiting_site_cut").format({
+							"cells": SiteCutService.cells_with_plants(macro_world, building).size(),
+						}) if building.awaiting_site_cut else tr("pending_reason_builder_missing"),
 					})
 			elif building.rules.is_workstation:
 				for order_key in ProductionService.get_order_keys(building):
@@ -8495,6 +8555,7 @@ func _refresh_pending_entries() -> void:
 	entries.append_array(WarehouseManagerService.collect_blocked_entries(_game_context()))
 	# Essiccatoio del magazzino (2026-10-11): manca l'ingrediente, essiccatoio pieno o assente.
 	entries.append_array(WarehouseManagerService.collect_dry_entries(game_data))
+	entries.append_array(WarehouseManagerService.collect_toolkit_entries(game_data))
 	# Inventario del magazzino scaduto da più di un'ora e nessuno che lo fa (2026-10-11).
 	entries.append_array(WarehouseManagerService.collect_inventory_entries(_game_context(), _job_board_now()))
 	# Ordini di caccia del cassetto senza prede (2026-10-09).
@@ -8810,6 +8871,17 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _body_job_release,
 		})
+		# Taglio per il cantiere nel bosco (2026-10-18): una microcella per lavoro, vedi SiteCutJobProvider.
+		_job_board_provider_list.append({
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return SiteCutJobProvider.collect(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return SiteCutJobProvider.rejection(_game_context(), worker, job),
+			"assign": _assign_site_cut_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return SiteCutJobProvider.workers(_game_context(), job),
+			"cancel_fields": _pile_job_cancel_fields,
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _site_cut_job_release,
+		})
 		_job_board_provider_list.append({
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return PileJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return "pile:%d" % int(job["id"]),
@@ -8946,6 +9018,10 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool, current_workers
 				"name": (job["postponed_by"] as HumanIndividual).name,
 				"materials": _missing_materials_text(job["target"] as Building, String(job["kind"]) == "repair"),
 			})
+			# Cantiere nel bosco (2026-10-18): rimandato in attesa del taglio, non per materiale.
+			var postponed_site := job["target"] as Building
+			if postponed_site != null and not postponed_site.is_awaiting_material and not postponed_site.is_complete 					and not SiteCutService.cells_with_plants(macro_world, postponed_site).is_empty():
+				blocked_reason = tr("job_postponed_site_cut").format({"name": (job["postponed_by"] as HumanIndividual).name})
 		# Assegnato ma nessuno lo sta svolgendo adesso (2026-10-18): è nella coda personale di chi lo tiene.
 		elif bool(job["assigned"]):
 			var holders: Array[String] = []
@@ -9314,6 +9390,78 @@ func _body_job_release(job: Dictionary) -> void:
 
 # Assegnazione dalla lista: la consegna come task corrente del pipottino libero, in silenzio (nessuna icona di rifiuto
 # né messaggio). Riuscita: la manina sul mucchio, come per l'ordine a mano, e il mucchio esce dall'attesa.
+# Cantiere nel bosco (2026-10-18, SiteCutService): la pulizia ha trovato piante vive. Costruttore con l'ascia: il "taglia
+# tutto" di una cella del cantiere davanti alla costruzione (sospesa, riparte dopo); altrimenti, o se non c'è una cella
+# da tagliare per lui, la costruzione si rimanda in attesa del taglio.
+func _on_site_cut_requested(worker: HumanIndividual, task: Task, site: Building) -> void:
+	var ctx := _game_context()
+	if ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING):
+		var cell: Variant = SiteCutService.pick_cell(ctx, worker, site)
+		if cell != null:
+			var plant := SiteCutService.pick_plant(ctx, worker, site, cell)
+			_assign_cut_task(worker, plant, -1, SiteCutService.make_series(ctx, site, cell), true)
+			if worker.current_task != task:
+				return
+	individual_action_service.postpone_for_site_cut(worker, task, site, macro_world, game_data)
+	_refresh_pending_entries()
+
+
+# Comando "costruisci" su un cantiere in attesa del taglio: chi ha l'ascia taglia una cella libera del cantiere; senza
+# ascia, o senza celle da prendere, X e motivo. true = comando gestito.
+func _assign_site_cut_command(worker: HumanIndividual, site: Building) -> bool:
+	var ctx := _game_context()
+	var cell: Variant = SiteCutService.pick_cell(ctx, worker, site) if ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING) else null
+	if cell == null:
+		var macro := Vector2i(site.macro_x, site.macro_y)
+		if live_cells.has(macro):
+			_spawn_command_icon_at_microcell(live_cells[macro], Vector2i(site.micro_x, site.micro_y), "task_rejected")
+		_report_command_rejection(worker, tr("site_cut_command_needs_axe"))
+		return true
+	_assign_cut_task(worker, SiteCutService.pick_plant(ctx, worker, site, cell), -1, SiteCutService.make_series(ctx, site, cell))
+	return true
+
+
+# Detriti dei ceppi rimasti nel cantiere (2026-10-18): con una Fossa con posto il costruttore li porta lui (la costruzione
+# resta sospesa e riparte dopo); senza, la costruzione si rimanda.
+func _on_site_debris_requested(worker: HumanIndividual, task: Task, site: Building) -> void:
+	var clearing := WasteDisposalService.build_debris_clearing_task(macro_world, worker, site)
+	if clearing != null:
+		_wire_transport_task(clearing, worker)
+		worker.assign_task(clearing, _resolve_age_band(worker), true)
+		if worker.current_task != task:
+			_refresh_pending_entries()
+			return
+	individual_action_service.postpone_for_site_debris(worker, task, site, macro_world, game_data)
+	_refresh_pending_entries()
+
+
+# Lavoro "Taglio per il cantiere" preso dalla coda: l'ascia da prendere in deposito (se serve), poi il "taglia tutto"
+# della microcella, come gli ordini Taglia del cassetto (_assign_drawer_cut_job).
+func _assign_site_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var ctx := _game_context()
+	var site: Building = job["target"]
+	var cell: Vector2i = job["cell"]
+	var plant := SiteCutService.pick_plant(ctx, worker, site, cell)
+	if plant.is_empty():
+		return
+	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, SiteCutService.TOOL_CATEGORIES)
+	_assign_cut_task(worker, plant, -1, SiteCutService.make_series(ctx, site, cell), true)
+	var job_keys: Array[String] = [String(job["key"])]
+	_forget_job_board_wait(job_keys)
+	_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
+
+
+# Rimetti in coda / Blocca di un taglio per il cantiere: chi lo sta facendo smette (salta la lista una volta).
+func _site_cut_job_release(job: Dictionary) -> void:
+	for member in SiteCutJobProvider.workers(_game_context(), job):
+		var current := member.current_task
+		if current != null and not current.is_finished():
+			member.skip_job_board_once = true
+			member.stop(false)
+			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_refresh_selected_individual_panel()
+
+
 func _assign_pile_job(worker: HumanIndividual, job: Dictionary) -> void:
 	if not (job["target"] is GroundPile):
 		return
@@ -9932,6 +10080,8 @@ const DIRECT_COMMAND_EXCLUDED_TASK_NAMES: Array[String] = [
 	"task_leisure_restock_name", "task_leisure_rite_name", "task_wander_name", "task_play_name", "task_daydream_name",
 	"task_explore_name",
 ]
+# Rito religioso spontaneo: escluso come gli svaghi tranne che dalle righe "In corso", dove compare come "Automatico".
+const LEISURE_RITE_TASK_NAME := "task_leisure_rite_name"
 # Icona dell'azione per nome della task (IconRegistry.COMMAND_ICON_NODES); assente = nessuna icona.
 const DIRECT_COMMAND_ICON_BY_TASK := {
 	"task_haul_resource_name": "pickup", "task_transport_name": "transport", "task_cut_name": "cut",
@@ -9953,7 +10103,9 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 		_log_in_progress_rows(board_jobs, pile_job_keys)
 	for member in human_individuals:
 		var task := member.current_task
-		if task == null or task.is_finished() or task.is_idle_activity or DIRECT_COMMAND_EXCLUDED_TASK_NAMES.has(task.task_name):
+		# Rito religioso spontaneo (2026-10-19, richiesta utente): svago, ma con la riga "Automatico" come il rito sociale.
+		var is_leisure_rite := task != null and task.task_name == LEISURE_RITE_TASK_NAME
+		if task == null or task.is_finished() or (not is_leisure_rite and (task.is_idle_activity or DIRECT_COMMAND_EXCLUDED_TASK_NAMES.has(task.task_name))):
 			continue
 		# Riti sociali e lezione (2026-10-17): solo chi li organizza è "al lavoro", non i convocati (bambini compresi).
 		if task.task_name == SocialRiteService.TASK_NAME and not bool(task.context.get(SocialRiteService.CONTEXT_ORGANIZER, false)):
@@ -9980,8 +10132,10 @@ func _collect_direct_command_entries(board_jobs: Array[Dictionary]) -> Array[Dic
 		# "Cerca lavoro" (2026-10-09, coordinatore passo 2) e "Coordina" (passo 3): riga "Automatico" (partita da sola,
 		# nessuna X), in fondo. Anche l'organizzatore di un rito sociale spontaneo (2026-10-17): quello ordinato è della coda.
 		if task.task_name == JobBoardService.SEEK_JOB_TASK_NAME or CoordinatorService.is_coordinate_task(task) \
-				or task.task_name == SocialRiteService.TASK_NAME \
-				or bool(task.context.get(ToolFetchService.BORROWED_TOOL_RETURN_KEY, false)) or task.context.has(WarehouseManagerService.STOCK_DRY_KEY):
+				or task.task_name == SocialRiteService.TASK_NAME or is_leisure_rite \
+				or bool(task.context.get(ToolFetchService.BORROWED_TOOL_RETURN_KEY, false)) or task.context.has(WarehouseManagerService.STOCK_DRY_KEY) \
+				or task.context.has(WarehouseManagerService.STOCK_WASTE_KEY) or task.context.has(FuelStockService.FUEL_TARGET_KEY) \
+				or task.context.has(ToolkitStockService.TOOLKIT_TARGET_KEY):
 			entries.append(_pending_entry("%s%d" % [DIRECT_COMMAND_KEY_PREFIX, member.id], text, {
 				"kind": "individual", "id": member.id, "macro": member.home_macro_coords,
 				"sort": float(member.id) + DIRECT_COMMAND_SORT_OFFSET,
@@ -12515,7 +12669,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		cell.vegetation_presence_sent = false
 		cell.vegetation_layout_version += 1
 		# Posizioni rigenerate: nel dubbio la geometria in memoria del renderer si butta tutta (passo B, 2026-10-03).
-		if cell.renderer != null:
+		# Non al taglio (2026-10-18, scatti: ~10.000 alberi ricalcolati per uno solo): la geometria è per individuo e
+		# validata dalla firma (sottotipo, anno di nascita, lotto) e da anno/parametri d'età, gli altri restano uguali.
+		if cell.renderer != null and reason != "taglio":
 			cell.renderer.clear_vegetation_geometry_cache()
 		var vegetation_service := VegetationPositionService.new()
 		cell.cached_vegetation_positions = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
@@ -13819,6 +13975,8 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Spiazzo delle feste (2026-10-17) — azione cablata in BuildBar._ready.
 		&"build_feast_ground":
 			return "feast_ground"
+		&"build_waste_pit":
+			return "waste_pit"
 		_:
 			return ""
 
@@ -13842,6 +14000,10 @@ func _clear_building_ghost() -> void:
 
 func _on_demolish_requested(building: Building) -> void:
 	if building == null or building.is_demolished or building.is_marked_for_demolition:
+		return
+	# Fossa dei rifiuti con dei rifiuti (2026-10-18): non si demolisce, avviso al posto della conferma.
+	if WasteDisposalService.blocks_demolition(building):
+		_report_command_rejection(null, tr("notification_waste_pit_not_empty"))
 		return
 	var display_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
 	demolish_confirmation_dialog.open_dialog(building, display_name, building.id, not building.is_complete)
@@ -13868,7 +14030,7 @@ func _on_demolish_confirmed(building: Variant) -> void:
 # Edificio segnato "da demolire" (BuildingLifecycleService.mark_for_demolition): funziona fino all'inizio del lavoro.
 func _mark_building_for_demolition(building: Building) -> void:
 	var effects := GameEffects.new()
-	BuildingLifecycleService.mark_for_demolition(building, effects)
+	BuildingLifecycleService.mark_for_demolition(macro_world, building, effects)
 	_apply_effects(effects)
 
 
@@ -14092,6 +14254,64 @@ func _on_clear_rubble_requested(building: Building) -> void:
 	_refresh_pending_entries()
 
 
+# "Svuota" dal pannello della Fossa (2026-10-18): la segna in svuotamento (i rifiuti diventano detriti da portare in
+# un'altra Fossa, e la Fossa si chiude ai rifiuti). Come Demolisci/Sgombera nessun lavoratore viene scelto qui: clic destro
+# con un individuo selezionato o, con l'idea, la coda dei lavori.
+func _on_empty_pit_requested(building: Building) -> void:
+	if WasteDisposalService.can_start_emptying(macro_world, building):
+		WasteDisposalService.start_emptying(building)
+		_refresh_pending_entries()
+	_refresh_selected_building_panel()
+
+
+# "Annulla svuotamento": chiusi i lavori che devono ancora prendere detriti qui, i detriti rimasti tornano rifiuti; chi è
+# già in viaggio porta il suo carico a destinazione.
+func _on_cancel_empty_pit_requested(building: Building) -> void:
+	if building == null or not building.waste_emptying:
+		return
+	var ctx := _game_context()
+	var freed := BuildingLifecycleService.close_tasks_on_building(ctx, building, JobWorkScanService.RUBBLE_CLEARING_TASK_NAMES, null)
+	WasteDisposalService.cancel_emptying(building)
+	BuildingLifecycleService.resolve_freed(ctx, freed)
+	_refresh_pending_entries()
+	_refresh_selected_building_panel()
+	_refresh_selected_individual_panel()
+
+
+# "Chiudi/Riapri ai rifiuti" (2026-10-18): una Fossa chiusa non riceve più nulla. Durante lo svuotamento resta chiusa.
+func _on_waste_closed_toggle_requested(building: Building) -> void:
+	if building == null or building.waste_emptying or not WasteDisposalService.is_pit(building):
+		return
+	building.waste_closed = not building.waste_closed
+	_refresh_selected_building_panel()
+
+
+# Sgombero delle macerie / svuotamento di una Fossa (2026-10-18, Fossa dei rifiuti): Transport ripetuta dei detriti dalla
+# sorgente alla Fossa più vicina con posto (WasteDisposalService.build_debris_clearing_task). Stesso esito di
+# _assign_resumable_building_task: true = comando gestito (assegnato o rifiutato con la X e il motivo).
+func _assign_debris_clearing_task(worker: HumanIndividual, rubble: Building) -> bool:
+	var macro_coords := Vector2i(rubble.macro_x, rubble.macro_y)
+	var microcell := Vector2i(rubble.micro_x, rubble.micro_y)
+	var task := WasteDisposalService.build_debris_clearing_task(macro_world, worker, rubble)
+	if task == null:
+		if live_cells.has(macro_coords):
+			_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "task_rejected")
+		_report_command_rejection(worker, tr("notification_clear_rubble_no_pit"))
+		return true
+	_wire_transport_task(task, worker)
+	if not worker.assign_task(task, _resolve_age_band(worker)) and not worker.task_queue.has(task):
+		if live_cells.has(macro_coords):
+			_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "task_rejected")
+		_report_failed_assignment(worker, task, "task_activity_transport")
+		return true
+	_forget_job_board_wait(BuildingJobProvider.job_keys(rubble))
+	if live_cells.has(macro_coords):
+		_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "clear_rubble")
+	if worker == individual:
+		_refresh_selected_individual_panel()
+	return true
+
+
 # Trasporto del mucchio a terra (2026-10-18, blocco 5d — WorkFollowUpService.ground_pile_haul).
 func _on_ground_pile_haul_requested(carrier: HumanIndividual, pile_ref: Dictionary) -> void:
 	var effects := GameEffects.new()
@@ -14226,6 +14446,14 @@ func _toggle_warehouse_drawer() -> void:
 				game_data.stock_min_levels.erase(resource_name)
 		)
 		_warehouse_panel.min_food_days_changed.connect(func(days: int) -> void: game_data.stock_min_food_days = days)
+		# Massimi per risorsa (2026-10-18, Fossa dei rifiuti).
+		_warehouse_panel.set_max_levels(game_data.stock_max_levels)
+		_warehouse_panel.max_level_changed.connect(func(resource_name: String, level: int) -> void:
+			if level > 0:
+				game_data.stock_max_levels[resource_name] = level
+			else:
+				game_data.stock_max_levels.erase(resource_name)
+		)
 		# Regola "Carne e pelli in eccesso" (2026-10-11): dato della partita, pulsante delle destinazioni della caccia.
 		_sync_excess_meat_destination()
 		_warehouse_panel.excess_meat_destination_changed.connect(func(destination: String) -> void:
@@ -14236,9 +14464,14 @@ func _toggle_warehouse_drawer() -> void:
 		_warehouse_panel.set_fuel_rule(game_data.stock_fuel_rule_enabled, FuelStockService.get_rule_rows(game_data, human_folk.completed_ideas))
 		_warehouse_panel.fuel_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_fuel_rule_enabled = enabled)
 		_warehouse_panel.fuel_min_changed.connect(func(type_name: String, level: int) -> void: game_data.stock_fuel_min_by_type[type_name] = level)
+		# Regola "Rifornisci le Attrezzerie" (2026-10-18): dati della partita, per tipo di edificio e attrezzo.
+		_warehouse_panel.set_toolkit_rule(game_data.stock_toolkit_rule_enabled, ToolkitStockService.get_rule_rows(game_data, human_folk.completed_ideas))
+		_warehouse_panel.toolkit_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_toolkit_rule_enabled = enabled)
+		_warehouse_panel.toolkit_target_changed.connect(func(type_name: String, tool_name: String, level: int) -> void:
+			ToolkitStockService.set_target(game_data, type_name, tool_name, level)
+		)
 		# Regola dei banchetti spontanei (2026-10-17): dati della partita, letti da SocialRiteService.
-		_warehouse_panel.set_banquet_rule(game_data.stock_banquet_calories, game_data.stock_banquet_safe_only)
-		_warehouse_panel.banquet_calories_changed.connect(func(calories: int) -> void: game_data.stock_banquet_calories = calories)
+		_warehouse_panel.set_banquet_rule(game_data.stock_banquet_safe_only)
 		_warehouse_panel.banquet_safe_only_toggled.connect(func(enabled: bool) -> void: game_data.stock_banquet_safe_only = enabled)
 		# Frequenza dell'inventario (2026-10-11): dato della partita.
 		_warehouse_panel.set_inventory_interval(game_data.inventory_interval_hours)
@@ -14924,15 +15157,16 @@ func _world_has_storage_building() -> bool:
 
 
 # Controllo di edificabilità al click della Build Task: stesso controllo dell'anteprima (il piazzamento istantaneo
-# con B, bypass di debug/test, non lo usa e ignora alberi/cespugli come prima). Alberi e arbusti vivi bloccano
-# SEMPRE (2026-10-04, richiesta utente — si abbattono solo con la task Cut, nessuna eccezione per chi ha un attrezzo
-# CHOPPING; ceppi e piante morte non bloccano). Se il rifiuto dipende SOLO da loro (la stessa posizione passerebbe
+# con B, bypass di debug/test, non lo usa e ignora alberi/cespugli come prima). Alberi e arbusti vivi bloccano solo
+# finché nel villaggio non c'è un'ascia (2026-10-18, cantiere nel bosco — SiteCutService: con l'ascia il taglio diventa
+# parte del cantiere); ceppi e piante morte non bloccano. Se il rifiuto dipende SOLO da loro (la stessa posizione passerebbe
 # con can_cut = true), lo spiega col canale di sempre dei comandi rifiutati (_report_command_rejection: pannello del
 # selezionato + popup giallo) e la X rossa sulla microcella. Gli altri motivi restano segnalati solo dal fantasma rosso.
 func _is_placement_buildable_or_report(world_position: Vector2, rules: BuildingRules) -> bool:
 	if BuildingVerificationService.is_position_buildable(
 		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
-		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules, false
+		game_data.get_absolute_day(), macro_world, _building_ghost.rotation_dir, rules,
+		SiteCutService.village_has_axe(_game_context())
 	):
 		return true
 	# Ceppo dell'insegnamento (2026-10-16): senza un ceppo d'albero sulla microcella, il motivo con lo stesso canale.
@@ -15179,6 +15413,8 @@ func _start_building_task_at(world_position: Vector2) -> void:
 	_assign_building_village(building)
 	building.is_complete = false
 	building.rotation = _building_ghost.rotation_dir
+	# Cantiere nel bosco (2026-10-18): sulle piante vive aspetta il taglio prima di diventare un lavoro di costruzione.
+	building.awaiting_site_cut = not SiteCutService.cells_with_plants(macro_world, building).is_empty()
 	macro_world.buildings.append(building)
 	# Rinfresca la scheda 🏠 (2026-09-12, richiesta utente) — nuovo cantiere in lista, "in
 	# costruzione" (is_complete è già false qui sopra).
@@ -15642,6 +15878,11 @@ func _on_individual_jumped(individual_ref: HumanIndividual) -> void:
 func _on_site_cleared(building: Building) -> void:
 	if building == null:
 		return
+	# Detriti dei ceppi (2026-10-18): maceria accanto al cantiere, sgomberata poi dal costruttore se c'è una Fossa.
+	var builders := JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.BUILD_TASK_NAMES)
+	var effects := GameEffects.new()
+	BuildingLifecycleService.settle_site_stump_debris(_game_context(), building, builders[0] if not builders.is_empty() else null, effects)
+	_apply_effects(effects)
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if not live_cells.has(macro_coords):
 		return
@@ -15840,7 +16081,13 @@ func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
 	for building in macro_world.buildings:
 		if building.macro_x == cell.macro_x and building.macro_y == cell.macro_y:
 			# Ingombro (2026-10-17): tutte le microcelle del rettangolo, altrimenti la vegetazione ci ricresce.
-			positions.append_array(BuildingFootprint.cells_of(building))
+			# Cantiere nel bosco (2026-10-18): finché non è ripulito, le sue celle con alberi o cespugli vivi restano fuori
+			# dall'esclusione, così le piante si vedono e si tagliano (SiteCutService); dopo la pulizia tornano escluse.
+			var uncleared_site := not building.is_complete and not bool(building.construction_progress.get("ground_cleared", false))
+			for site_cell in BuildingFootprint.cells_of(building):
+				if uncleared_site and BuildingSiteClearingService.has_woody_vegetation(cell.macro_state, site_cell):
+					continue
+				positions.append(site_cell)
 	return positions
 
 
@@ -15895,6 +16142,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				# _draw_job_markers): da demolire (macerie da sgomberare comprese) e in miglioramento.
 				"marked_for_demolition": building.is_marked_for_demolition,
 				"upgrading": is_upgrade_site,
+				# Detriti dei ceppi rimasti nel cantiere (2026-10-18): macerie disegnate sopra.
+				"site_debris": WasteDisposalService.has_site_debris(building),
 			}
 			# "slot_breakdown" (2026-09-11, richiesta utente — "sul deposit site... disegna gli
 			# oggetti che ci sono, tipo mucchietti") — SOLO per deposit_site ("solo su questo",
@@ -16571,6 +16820,8 @@ func _setup_clock() -> void:
 	individual_action_service.hunt_zone_series_ended.connect(_on_hunt_zone_series_ended)
 	individual_action_service.quarry_zone_series_continue_requested.connect(_on_quarry_zone_series_continue_requested)
 	individual_action_service.cut_zone_series_continue_requested.connect(_on_cut_zone_series_continue_requested)
+	individual_action_service.site_cut_requested.connect(_on_site_cut_requested)
+	individual_action_service.site_debris_requested.connect(_on_site_debris_requested)
 	# Essiccatoio pieno durante una macellazione (2026-10-03, essiccazione passo 5).
 	individual_action_service.processing_station_full.connect(_on_processing_station_full)
 	individual_action_service.building_material_blocked.connect(_on_building_material_blocked)

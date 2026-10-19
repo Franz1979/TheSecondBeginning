@@ -961,7 +961,7 @@ task_assignment_kind_body,Burials
 task_assignment_kind_build,Construction sites
 task_assignment_kind_upgrade,Upgrades
 task_assignment_kind_demolish,Demolitions and clearing
-task_assignment_kind_pile,Piles
+task_assignment_kind_pile,Transports and piles
 task_assignment_kind_move_up,Move up
 task_assignment_kind_move_down,Move down
 task_assignment_kind_order_edit,Edit order…
@@ -1110,8 +1110,8 @@ building_cancel_clear_rubble_button,Cancel clearing
 building_command_cancel_clear_rubble_detail,The rubble stays where it is.
 building_command_cancel_clear_rubble_started,Clearing has already started: it can no longer be cancelled.
 task_clear_rubble_name,Clearing
-pending_clear_rubble,Clearing ({building})
-pending_rubble,Rubble: collapse of {building}
+pending_clear_rubble,Clearing · {origin} ({debris} debris)
+pending_rubble,Rubble · {origin}
 notification_building_collapsed,Collapse: {building}
 notification_building_lost,Building lost: {building}
 clear_rubble_assign_banner_text,Clear {building}: click an individual (Esc to cancel)
@@ -1271,10 +1271,77 @@ social_rite_reject_wrong_building,This rite is not held in this building
 building_feast_storage_summary,"Food: {calories} / {threshold} calories · Fuel: {fuel} / {fuel_needed}"
 building_feast_calorie_threshold_locked_tooltip,"Banquet in progress: the threshold is set, changes apply to the next one"
 warehouse_rule_banquet,Spontaneous banquets
-warehouse_rule_banquet_calories,Calories per banquet
-warehouse_rule_banquet_tooltip,"How big each spontaneous banquet is: before the village is called, food is brought to the feast ground up to these calories (minimum 500)"
-warehouse_rule_banquet_safe_only,Only if they use less than a third of the stock
+warehouse_rule_banquet_tooltip,"Banquets the villagers organize on their own: food is brought to the feast ground up to the ground's calorie threshold"
+warehouse_rule_banquet_safe_only,At most a third of the stock
 warehouse_rule_banquet_safe_only_tooltip,"A spontaneous banquet starts only if the storehouses hold at least three times the food it uses"
 task_assignment_setting_single_builder,One builder per site
 task_assignment_setting_single_builder_tooltip,"The job queue sends at most one builder per site, even where more could work. By hand you can still send up to the building's maximum."
 building_construction_phase_finishing,"Finishing: {days} more days"
+building_category_other,Other
+building_waste_pit,Waste pit
+build_bar_waste_pit_tooltip,"Waste pit: a hole to throw away what is no longer needed. It fills up until it runs out of space, then another one must be dug"
+building_info_waste_capacity,Waste capacity: {capacity}
+building_info_waste_fill,Fill: {stored} / {capacity}
+building_info_waste_reserved,Space reserved by incoming transports: {reserved}
+building_command_clear_rubble_waste,Debris to carry to the waste pit: {debris}
+building_command_clear_rubble_no_pit,Needs a waste pit with free space
+building_rubble_debris_label,Debris: {debris}
+notification_clear_rubble_no_pit,No waste pit with room for the debris
+carried_resource_tooltip_debris,Debris
+building_command_demolish_waste_pit_not_empty,Contains waste: a pit can only be demolished when empty
+notification_waste_pit_not_empty,The waste pit contains waste: it cannot be demolished
+building_empty_pit_button,Empty
+building_command_empty_pit_detail,"The waste becomes debris to carry to another pit; this pit closes to waste"
+building_command_empty_pit_no_other_pit,Needs another open waste pit with free space
+building_cancel_empty_pit_button,Cancel emptying
+building_command_cancel_empty_pit_detail,"Debris not yet carried away turns back into waste; the pit stays closed"
+building_close_pit_button,Close to waste
+building_command_close_pit_detail,Nobody will bring waste here until you reopen it
+building_open_pit_button,Reopen to waste
+building_command_open_pit_detail,It accepts waste again
+building_info_waste_emptying,Being emptied: {debris} debris to carry away
+building_info_waste_closed,Closed to waste
+pending_empty_pit,Emptying · {building}
+task_empty_pit_name,Emptying
+building_assign_hint_empty_pit_manual,To assign the emptying: select an individual and right-click the pit.
+building_assign_hint_empty_pit_queued,Queued: a free individual will take the emptying. To choose yourself: select an individual and right-click the pit.
+building_assign_hint_empty_pit_locked,Emptying locked in the queue. To choose yourself: select an individual and right-click the pit.
+building_rubble_abandoned_label,Abandoned debris
+building_rubble_abandoned_name,abandoned debris
+warehouse_max_level_tooltip,"Maximum: above this amount, at the Inventory the stock manager has the excess carried to the waste pit. — = no maximum"
+drawer_order_waste_row,Throw away · {quantity} {resource}
+pending_stock_waste_blocked,No open waste pit with room, or no warehouse with the resource
+rubble_origin_collapse,Collapse of {building}
+rubble_origin_demolition,Demolition of {building}
+rubble_origin_stumps,Stumps from the {building} site
+rubble_origin_dropped,Abandoned debris
+pending_reason_rubble_unmarked,To clear: Clear button in the panel
+pending_reason_clearer_missing,Nobody is clearing it
+pending_reason_emptier_missing,Nobody is emptying it
+pending_reason_no_waste_pit,No open waste pit with room
+warehouse_column_quantity,Qty
+warehouse_column_min,Min
+warehouse_column_max,Max
+warehouse_level_wheel_hint,Mouse wheel to change (Shift: 10 at a time); empty = no limit
+influence_type_discomfort,discomfort
+building_influence_discomfort_tooltip,"Discomfort: radius {radius}"
+building_influence_discomfort_none_tooltip,No discomfort
+map_layer_discomfort_influence,Discomfort
+rubble_origin_village,Village waste
+job_site_cut,"Cutting · {building} site"
+job_site_cut_cell,"Cutting · {building} site (cell {index}/{count})"
+task_assignment_kind_site_cut,Site clearing cuts
+job_postponed_site_cut,"Postponed by {name}: waiting for the trees to be cut"
+site_cut_command_needs_axe,"Site waiting for the trees to be cut: needs someone with an axe"
+building_awaiting_site_cut,"Waiting for the trees to be cut: {cells} cells with plants"
+pending_site_debris,"Clearing · debris of the {building} site ({debris} debris)"
+warehouse_rule_toolkit,Restock toolkits
+warehouse_rule_toolkit_tooltip,"At the Inventory the stock manager brings to the toolkits the tools they miss to reach the wanted pieces for each building type, even below the warehouse minimum"
+warehouse_rule_toolkit_tool_tooltip,"Pieces wanted in the toolkit of every building of this type (max {max})"
+drawer_order_toolkit_row,"{building}: bring {quantity} {resource}"
+pending_stock_toolkit_blocked,"No warehouse has the tool, or the toolkit is already full"
+pending_stock_toolkit,Toolkits to restock
+pending_stock_toolkit_missing,"No warehouse has: {tools}"
+warehouse_rule_toolkit_edit,Edit…
+warehouse_rule_toolkit_edit_tooltip,"Wanted pieces of each tool in the toolkits, per building type"
+warehouse_rule_toolkit_empty,"No building with a toolkit unlocked yet"

@@ -130,6 +130,10 @@ extends Resource
 # nessuna logica di trasporto/storage esiste ancora, nessuna .tres esistente lo valorizza.
 @export var space_per_unit: float = 1.0
 
+# Solo rifiuto (2026-10-18, richiesta utente — detriti delle macerie): nessun magazzino lo accetta, non compare tra le
+# scorte né nel cassetto del magazzino; si porta solo alla Fossa dei rifiuti (WasteDisposalService.is_waste_only).
+@export var waste_only: bool = false
+
 # Effetto del cibo su felicità e salute di chi lo carica (2026-10-03, richiesta utente): punti ogni 100 calorie
 # caricate, applicati SOLO al rifornimento (RestockPouchAction.on_complete, riserva corporea e provviste, sorgente
 # magazzino o zaino), mai alla dotazione iniziale né al consumo giornaliero. Anche negativi; 0.0 = nessun effetto.

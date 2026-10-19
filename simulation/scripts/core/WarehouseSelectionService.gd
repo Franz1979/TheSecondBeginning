@@ -243,6 +243,10 @@ static func find_source_for_retrieval(
 	var has_stock := func(building: Building) -> bool:
 		if not building.is_complete or building.is_demolished or building.is_out_of_service():
 			return false
+		# Macerie e Fosse in svuotamento (2026-10-18): i loro detriti si portano via solo con lo sgombero, mai come sorgente
+		# automatica.
+		if WasteDisposalService.is_debris_source(building):
+			return false
 		return not WarehouseSelectionService._get_matching_stock(building, criterion, min_quantity, workstation_products_only).is_empty()
 
 	var source := SpatialSelectionService.find_nearest(

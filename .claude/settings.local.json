@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(python \"C:/Users/crfra/AppData/Local/Temp/claude/C--Users-crfra-GodotProjects-Project-TheSecondBeginning-game/d1adb6cf-2d51-40b9-9a0e-54d0b59d2746/scratchpad/patch5.py\")",
-      "Bash(python -)"
+      "Bash(python -)",
+      "PowerShell(& \"C:\\\\Users\\\\crfra\\\\GodotProjects\\\\godot\\\\Godot_v4.6.3-stable_win64_console.exe\" --headless --path . --quit-after 60 gameplay/scenes/game/GameScene.tscn 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\crfra\\\\GodotProjects\\\\godot\\\\Godot_v4.6.3-stable_win64_console.exe\" --headless --path . --quit-after 60 gameplay/scenes/game/GameScene.tscn 2>&1 | Select-String -Pattern \"SCRIPT ERROR\" -Context 0,1 | Where-Object { $_.Line -notmatch \"because of|depended|Cannot infer\" } | ForEach-Object { $_.Line + \" | \" + $_.Context.PostContext[0] } | Sort-Object -Unique | Select-Object -First 15)"
     ]
   },
   "worktree": {

@@ -40,4 +40,7 @@ enum Category {
 	# Ricreativo (2026-10-17, richiesta utente — Spiazzo delle feste, poi altri luoghi di gioia e unione): aggiunta IN FONDO.
 	# Nessun raggio di influenza proprio: l'effetto dei suoi riti va a chi partecipa.
 	RECREATIONAL,
+	# Altro (2026-10-18, richiesta utente — Fossa dei rifiuti): edifici di servizio senza una categoria propria.
+	# Aggiunta IN FONDO.
+	OTHER,
 }

@@ -22,11 +22,30 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 		if building.is_marked_for_demolition:
 			kind = "demolish"
 			# Sgombero delle macerie (2026-10-10): stesso tipo delle demolizioni, "Sgombero (Macerie)".
-			text = GameContext.tr_text("pending_clear_rubble" if building.is_rubble() else "pending_demolish").format({"building": building_name})
+			text = GameContext.tr_text("pending_demolish").format({"building": building_name})
+			# Sgombero delle macerie (2026-10-18): origine e detriti, come la campanella.
+			if building.is_rubble():
+				text = GameContext.tr_text("pending_clear_rubble").format({
+					"origin": building.get_rubble_origin_text(), "debris": WasteDisposalService.get_debris(building),
+				})
+			is_assigned = assigned["demolish"].has(building.id)
+		# Detriti dei ceppi nel cantiere (2026-10-18): stesso tipo delle demolizioni (sgombero a viaggi verso la Fossa), al
+		# posto del lavoro di costruzione finché non sono stati portati via.
+		elif WasteDisposalService.has_site_debris(building):
+			kind = "demolish"
+			text = GameContext.tr_text("pending_site_debris").format({"building": building_name, "debris": WasteDisposalService.get_debris(building)})
+			is_assigned = assigned["demolish"].has(building.id)
+		# Svuotamento di una Fossa (2026-10-18): stesso tipo (e chiave demolish:<id>) delle demolizioni, un lavoro per edificio.
+		elif building.waste_emptying and building.is_complete:
+			kind = "demolish"
+			text = GameContext.tr_text("pending_empty_pit").format({"building": building_name})
 			is_assigned = assigned["demolish"].has(building.id)
 		elif not building.is_complete:
 			# In finitura (2026-10-17, giorni minimi): il lavoro è finito, nessuno ci deve andare.
 			if BuildingLifecycleService.is_finishing(building):
+				continue
+			# Cantiere nel bosco (2026-10-18): prima il taglio (SiteCutJobProvider), il lavoro di costruzione dopo.
+			if building.awaiting_site_cut:
 				continue
 			var is_upgrade := BuildingUpgradeService.get_upgrade_from_rules(building) != null
 			kind = "upgrade" if is_upgrade else "build"
@@ -46,8 +65,8 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 		jobs.append({
 			"key": "%s:%d" % [kind, building.id], "kind": kind,
 			"name": building_name if kind == "build" else text, "text": text, "log_name": building_name,
-			"icon": {"building_command": BuildingCommandIcon.KIND_CLEAR_RUBBLE if building.is_rubble() else BuildingCommandIcon.KIND_DEMOLISH} if kind == "demolish" else {"building_type": building.building_type_name},
-			"map_icon_key": "clear_rubble" if building.is_rubble() else String(JobBoardService.ICON_KEY_BY_KIND.get(kind, "")),
+			"icon": {"building_command": BuildingCommandIcon.KIND_CLEAR_RUBBLE if WasteDisposalService.is_debris_source(building) else BuildingCommandIcon.KIND_DEMOLISH} if kind == "demolish" else {"building_type": building.building_type_name},
+			"map_icon_key": "clear_rubble" if WasteDisposalService.is_debris_source(building) else String(JobBoardService.ICON_KEY_BY_KIND.get(kind, "")),
 			"macro": Vector2i(building.macro_x, building.macro_y), "microcell": Vector2i(building.micro_x, building.micro_y),
 			"reach_target": building, "entry_kind": "building", "id": building.id, "sort": float(building.id),
 			"assigned": is_assigned, "open_slots": open_slots, "hidden": false,
@@ -77,7 +96,7 @@ static func job_keys(building: Building) -> Array[String]:
 
 
 static func task_names(job: Dictionary) -> Array[String]:
-	return JobWorkScanService.DEMOLISH_TASK_NAMES if String(job["kind"]) == "demolish" else JobWorkScanService.BUILD_TASK_NAMES
+	return JobWorkScanService.demolish_task_names_for(job["target"]) if String(job["kind"]) == "demolish" else JobWorkScanService.BUILD_TASK_NAMES
 
 
 # Motivo per cui `worker` non potrebbe ricevere la task del lavoro (HumanIndividual.ASSIGN_OK se può): task di prova
@@ -85,6 +104,12 @@ static func task_names(job: Dictionary) -> Array[String]:
 # solo contesto dell'edificio), mai assegnata.
 static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	var building: Building = job["target"]
+	# Sgombero delle macerie e svuotamento di una Fossa (2026-10-18): la Transport dei detriti, solo con una Fossa che ha posto.
+	if WasteDisposalService.has_debris_job(building):
+		var clearing := WasteDisposalService.build_debris_clearing_task(ctx.world, worker, building)
+		if clearing == null:
+			return "nessuna Fossa dei rifiuti con posto"
+		return worker.get_assign_rejection_reason(clearing, ctx.age_band_of(worker))
 	var definition := load(building.get_resumable_task_definition_path()) as TaskDefinition
 	if definition == null:
 		return "definizione mancante"

@@ -29,8 +29,10 @@ extends RefCounted
 # Peso dei guadi (per ora costante): attraversarli costa più del terreno normale.
 const FORD_WEIGHT_SCALE: float = 3.0
 # Preferenza per le strade (2026-10-16, richiesta utente): il vantaggio sul terreno normale (1 − costo) moltiplicato, solo
-# nella scelta del percorso. 2 = sentiero di ciottoli visto a ~0.71 invece di ~0.86, terra battuta a 0.90 invece di 0.95.
-const ROAD_PREFERENCE: float = 2.0
+# nella scelta del percorso. 4 (2026-10-18, era 2: i pipottini tagliavano nel bosco, che pesa quanto il terreno) =
+# sentiero di ciottoli visto a ~0.43 invece di ~0.86, terra battuta a 0.80 invece di 0.95: terreno normale ~2.33 volte il
+# sentiero, quindi il sentiero conviene finché la deviazione allunga meno di ~2.3 volte.
+const ROAD_PREFERENCE: float = 4.0
 # Costo minimo ammesso dopo la preferenza (difensivo: un costo <= 0 romperebbe la normalizzazione).
 const MIN_PATH_COST: float = 0.05
 # Costo (dopo la preferenza) della microcella più conveniente possibile: il miglior edificio MOVEMENT dei dati, 1.0 se

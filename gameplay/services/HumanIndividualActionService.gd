@@ -52,6 +52,12 @@ signal hunt_zone_series_ended(individual: HumanIndividual, series: Dictionary, r
 signal quarry_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
 # Serie di tagli in zona (2026-10-06): taglio successivo dopo l'ultima consegna a mucchio vuoto (_continue_cut_zone_series).
 signal cut_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
+# Cantiere nel bosco (2026-10-18): la pulizia ha trovato piante vive; la scena fa tagliare il costruttore (se ha l'ascia) o
+# chiama postpone_for_site_cut.
+signal site_cut_requested(individual: HumanIndividual, task: Task, site: Building)
+# Detriti dei ceppi rimasti nel cantiere (2026-10-18): la scena fa sgomberare il costruttore (con una Fossa con posto) o
+# chiama postpone_for_site_debris.
+signal site_debris_requested(individual: HumanIndividual, task: Task, site: Building)
 # Macellazione con destinazione una postazione di lavorazione (essiccatoio, affumicatoio — 2026-10-03): nessuna
 # postazione di quel tipo ha posto per `resource_name` (carne o pelli) e la risorsa ripiega sul magazzino. Una volta per
 # Task e per risorsa (CONTEXT_PROCESSING_FULL_NOTIFIED); GameScene mostra il popup con il nome dell'edificio di
@@ -182,6 +188,22 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# resto di questo frame non riguarda più `task`.
 	if individual.current_task != task:
 		return
+	# Cantiere nel bosco (2026-10-18): piante vive alla pulizia -> la scena decide (taglia lui o si rimanda).
+	if task.context.has(ClearAction.CONTEXT_PENDING_SITE_CUT):
+		var site := _find_building_by_id(world, int(task.context[ClearAction.CONTEXT_PENDING_SITE_CUT]))
+		task.context.erase(ClearAction.CONTEXT_PENDING_SITE_CUT)
+		if site != null:
+			site_cut_requested.emit(individual, task, site)
+		if individual.current_task != task:
+			return
+	# Detriti sul cantiere (2026-10-18): prima lo sgombero -> la scena decide (sgombera lui o si rimanda).
+	if task.context.has(BuildAction.CONTEXT_PENDING_SITE_DEBRIS):
+		var debris_site := _find_building_by_id(world, int(task.context[BuildAction.CONTEXT_PENDING_SITE_DEBRIS]))
+		task.context.erase(BuildAction.CONTEXT_PENDING_SITE_DEBRIS)
+		if debris_site != null:
+			site_debris_requested.emit(individual, task, debris_site)
+		if individual.current_task != task:
+			return
 	# Prodotti finiti pieni a metà ordine con "Porta al deposito" (2026-10-08, ProduceAction): giro di consegna.
 	_handle_pending_output_delivery(individual, task, world)
 
@@ -447,6 +469,12 @@ const POSTPONED_KIND_REPAIR := "repair"
 # Rito sociale in preparazione (2026-10-17, banchetto sullo spiazzo): l'organizzatore senza cibo o combustibile in nessun
 # magazzino va in coda come un costruttore; il fabbisogno si ricontrolla con MaterialSupplyService.get_missing_materials.
 const POSTPONED_KIND_RITE := "rite"
+# Cantiere nel bosco (2026-10-18): costruttore senza ascia con piante vive sul cantiere; riparte quando il cantiere non ha
+# più piante (SiteCutService.cells_with_plants), tagliate da chi prende i lavori di taglio.
+const POSTPONED_KIND_SITE_CUT := "site_cut"
+# Detriti dei ceppi nel cantiere senza una Fossa con posto (2026-10-18): riparte quando c'è una Fossa o i detriti sono
+# stati portati via da altri.
+const POSTPONED_KIND_SITE_DEBRIS := "site_debris"
 
 
 # Costruttore senza materiale in nessun magazzino: la task di costruzione va in coda (marcata) e il pipottino torna
@@ -473,6 +501,20 @@ func _postpone_for_material(
 	resolve_idle_individual(individual, _resolve_age_band(individual, game_data), world)
 
 
+# Detriti nel cantiere senza Fossa con posto (2026-10-18): la costruzione va in coda e il costruttore torna libero.
+func postpone_for_site_debris(individual: HumanIndividual, task: Task, site: Building, world: World, game_data: GameData) -> void:
+	if individual.current_task != task:
+		return
+	_postpone_for_material(individual, task, site, world, game_data, POSTPONED_KIND_SITE_DEBRIS)
+
+
+# Cantiere nel bosco (2026-10-18): la costruzione va in coda "in attesa del taglio" e il costruttore torna libero.
+func postpone_for_site_cut(individual: HumanIndividual, task: Task, site: Building, world: World, game_data: GameData) -> void:
+	if individual.current_task != task:
+		return
+	_postpone_for_material(individual, task, site, world, game_data, POSTPONED_KIND_SITE_CUT)
+
+
 # true se `task` è un cantiere rimandato per materiale e nessun magazzino ha ancora quello che manca.
 static func _is_waiting_for_material(task: Task, world: World) -> bool:
 	if task == null or world == null or not task.context.has(CONTEXT_MATERIAL_POSTPONED):
@@ -483,6 +525,11 @@ static func _is_waiting_for_material(task: Task, world: World) -> bool:
 	var kind := String(task.context.get(CONTEXT_MATERIAL_POSTPONED_KIND, POSTPONED_KIND_BUILD))
 	if kind == POSTPONED_KIND_BUILD and building.is_complete:
 		return false
+	# In attesa del taglio (2026-10-18): finché il cantiere ha piante vive.
+	if kind == POSTPONED_KIND_SITE_CUT:
+		return not building.is_complete and not SiteCutService.cells_with_plants(world, building).is_empty()
+	if kind == POSTPONED_KIND_SITE_DEBRIS:
+		return WasteDisposalService.site_debris_waiting(world, building)
 	var is_repair := kind == POSTPONED_KIND_REPAIR
 	var missing := RepairAction.get_supply_missing(building) if is_repair else MaterialSupplyService.get_missing_materials(building)
 	if missing.is_empty():

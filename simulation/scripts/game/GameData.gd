@@ -269,6 +269,10 @@ var job_board_auto_clear_rubble: bool = false
 # in drawer_orders con la chiave StockRequestService.ORDER_KEY); gli altri e i giorni del cibo restano solo visivi.
 var stock_min_levels: Dictionary = {}
 var stock_min_food_days: int = 0
+# Massimi per risorsa (2026-10-18, richiesta utente — Fossa dei rifiuti): nome -> int > 0 (assente = nessun massimo), per
+# tutto il villaggio, mai sotto il minimo. Oltre, all'Inventario il gestore delle scorte ordina di portare l'eccedenza in
+# una Fossa (WarehouseManagerService._request_waste). Salvati come "stock_max_levels".
+var stock_max_levels: Dictionary = {}
 # Regole di stoccaggio (2026-10-11, cassetto "Gestione scorte"): destinazione di carne e pelli in eccesso negli ordini di
 # caccia del magazzino (ButcherDestinationService, stessi valori della caccia manuale). Salvata da GameSaveService
 # ("stock_excess_meat_destination"); partita nuova e salvataggi vecchi: il magazzino.
@@ -278,12 +282,16 @@ var stock_excess_meat_destination: String = "warehouse"
 # Salvati da GameSaveService ("stock_fuel_rule_enabled", "stock_fuel_min_by_type"); partita nuova: spenta, nessun cambio.
 var stock_fuel_rule_enabled: bool = false
 var stock_fuel_min_by_type: Dictionary = {}
+# Regola "Rifornisci le Attrezzerie" (2026-10-18, richiesta utente — ToolkitStockService): accesa/spenta e pezzi voluti
+# per tipo di edificio e attrezzo (tipo -> {attrezzo -> int}). Salvati ("stock_toolkit_rule_enabled",
+# "stock_toolkit_targets"); partita nuova e salvataggi precedenti: spenta, nessun desiderato.
+var stock_toolkit_rule_enabled: bool = false
+var stock_toolkit_targets: Dictionary = {}
 # Regola "Banchetti spontanei" (2026-10-17, richiesta utente — il gestore scorte non ordina banchetti, autorizza quelli
-# spontanei): calorie fino a cui un banchetto spontaneo si organizza (al posto di BanquetRiteRules.idle_calorie_threshold) e
-# la casella "solo se consumano meno di un terzo delle scorte". Valgono solo con il gestore scorte sbloccato
-# (SocialRiteService.get_idle_calorie_threshold / _has_idle_food_stock). Salvate da GameSaveService ("stock_banquet_calories",
-# "stock_banquet_safe_only"); partita nuova e salvataggi vecchi: 500, accesa.
-var stock_banquet_calories: int = 500
+# spontanei): la casella "al massimo un terzo delle scorte". Vale solo con il gestore scorte sbloccato
+# (SocialRiteService._has_idle_food_stock). Le calorie sono la "Soglia calorie" dello spiazzo (2026-10-18; prima anche
+# "stock_banquet_calories", ignorato nei salvataggi vecchi). Salvata da GameSaveService ("stock_banquet_safe_only");
+# partita nuova e salvataggi vecchi: accesa.
 var stock_banquet_safe_only: bool = true
 # Regola di assegnazione "Riponi gli attrezzi presi per un lavoro" (2026-10-11): gli attrezzi presi in deposito per un
 # ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da

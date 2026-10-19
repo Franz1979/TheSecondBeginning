@@ -27,5 +27,4 @@ storage_space_per_slot = 100
 storage_event_only = true
 accepted_categories = Array[int]([0, 1])
 categories_locked = true
-leaves_rubble = false
 visibility_radius = 1

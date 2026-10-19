@@ -84,6 +84,18 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 	var resource_name := String(pick.get("resource", order.get("resource", "")))
 	var quantity := int(pick.get("quantity", order.get("quantity", 1)))
 	var row_name := GameContext.tr_text("drawer_order_dry_row").format({"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name)})
+	var is_waste := order.has(WarehouseManagerService.STOCK_WASTE_KEY)
+	var is_toolkit := order.has(ToolkitStockService.TOOLKIT_TARGET_KEY)
+	# Attrezzeria (2026-10-18): "Legnaia: porta 2 Asce".
+	if is_toolkit:
+		var toolkit_target := WarehouseManagerService.find_building(ctx.world, int(order[ToolkitStockService.TOOLKIT_TARGET_KEY]))
+		row_name = GameContext.tr_text("drawer_order_toolkit_row").format({
+			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
+			"building": toolkit_target.get_display_name() if toolkit_target != null else "",
+		})
+	# Eccedenza da buttare (2026-10-18): "Buttare · 70 Rametti".
+	if is_waste:
+		row_name = GameContext.tr_text("drawer_order_waste_row").format({"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name)})
 	if is_fuel:
 		var fuel_target := WarehouseManagerService.find_building(ctx.world, int(order[FuelStockService.FUEL_TARGET_KEY]))
 		row_name = GameContext.tr_text("drawer_order_fuel_row").format({
@@ -98,7 +110,9 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 		"microcell": Vector2i(target.micro_x, target.micro_y) if target != null else Vector2i(-1, -1), "reach_target": target,
 		"entry_kind": "drawer_order", "id": order_id, "sort": float(order_id) + DrawerOrderService.PRODUCE_JOB_SORT_OFFSET,
 		"assigned": false, "hidden": false, "warehouse": order.has(StockRequestService.ORDER_KEY),
-		"blocked_reason": "" if not pick.is_empty() else GameContext.tr_text("pending_stock_fuel_blocked" if is_fuel else "pending_stock_dry_blocked"),
+		"blocked_reason": "" if not pick.is_empty() else GameContext.tr_text(
+			"pending_stock_waste_blocked" if is_waste else ("pending_stock_toolkit_blocked" if is_toolkit else ("pending_stock_fuel_blocked" if is_fuel else "pending_stock_dry_blocked"))
+		),
 		"target": target, "provider": provider, "order": order,
 	}
 

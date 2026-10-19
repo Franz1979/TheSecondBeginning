@@ -11,5 +11,5 @@ idle_weight = 0.5
 idle_social_rite_id = "oral_lesson"
 idle_weight_by_age_band = {
 4: 0.5,
-5: 2.0
+5: 1.5
 }

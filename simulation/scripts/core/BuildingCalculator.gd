@@ -17,6 +17,7 @@ const BUILDING_FOLDER_CATEGORIES := {
 	"ruins": BuildingTypes.Category.RUINS,
 	"cultural": BuildingTypes.Category.CULTURAL,
 	"recreational": BuildingTypes.Category.RECREATIONAL,
+	"other": BuildingTypes.Category.OTHER,
 }
 
 # Cache in-memory (2026-09-19, richiesta utente — correzione prestazioni: get_building_rules è
