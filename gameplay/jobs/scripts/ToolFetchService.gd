@@ -294,8 +294,8 @@ static func return_borrowed_tools(ctx: GameContext) -> Array[Dictionary]:
 
 
 # Regola "Prendi la sacca se disponibile" (2026-10-19, richiesta utente — GameData.job_board_take_bag): chiamata da
-# HumanIndividualActionService.resolve_idle_individual quando `individual` si libera e non ha preso lavori dalla coda, al
-# posto dell'attività di ripiego. Senza sacca in cintura e con un posto libero va a prendere in deposito la sacca col bonus
+# HumanIndividualActionService.resolve_idle_individual appena `individual` si libera, prima della lista dei lavori (subito
+# dopo la regola del vestiario). Senza sacca in cintura e con un posto libero va a prendere in deposito la sacca col bonus
 # di capacità più alto (equip_tool.tres, in cintura). La sacca resta sua: niente borrowed_tools. Le sacche che altri stanno
 # già andando a prendere (BAG_FETCH_KEY) non contano, così una sacca manda una persona sola. true = task assegnata.
 static func try_take_bag(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
@@ -336,7 +336,7 @@ static func try_take_bag(individual: HumanIndividual, age_band: HumanTypes.AgeBa
 
 
 # Regola "Indossa i capi disponibili" (2026-10-19, richiesta utente — GameData.job_board_wear_apparel): chiamata da
-# resolve_idle_individual prima della sacca. Il primo slot vuoto in ordine APPAREL_FETCH_ORDER sceglie il deposito (il più
+# resolve_idle_individual appena libero, prima della sacca e della lista dei lavori. Il primo slot vuoto in ordine APPAREL_FETCH_ORDER sceglie il deposito (il più
 # vicino con un capo del suo tipo); nello STESSO deposito si prendono anche i capi per gli altri slot vuoti, così è un
 # viaggio solo: prima task assegnata, le altre accodate subito dopo. Quelli che lì mancano, a un momento libero successivo.
 # Il capo si prende anche se sfavorevole per la stagione (la hut gestirà il cambio). Tra più capi dello stesso tipo, quello

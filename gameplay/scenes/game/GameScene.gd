@@ -3861,16 +3861,23 @@ func _order_hunt(selected: Array[HumanIndividual]) -> void:
 
 # Opzioni della sezione "Destinazione" del dialog di Caccia (2026-10-03, ButcherDestinationService): una per
 # destinazione, in ordine, con nome, tipo di edificio per l'icona e motivo di indisponibilità ("" = selezionabile).
+# Dal 2026-10-19 due elenchi, carne e pelli ("kind"), per il pulsante a due scelte (ButcherDestinationButton).
 func _build_butcher_destination_options() -> Array[Dictionary]:
 	var options: Array[Dictionary] = []
-	for destination in ButcherDestinationService.ORDER:
-		options.append({
-			"id": destination,
-			"name": tr(String(ButcherDestinationService.NAME_KEYS[destination])),
-			"building_type": String(ButcherDestinationService.BUILDING_TYPES[destination]),
-			"disabled_reason": ButcherDestinationService.get_unavailable_reason(destination, macro_world, human_folk),
-			"locked": ButcherDestinationService.NOT_YET_AVAILABLE.has(destination),
-		})
+	var lists := {
+		ButcherDestinationService.KIND_MEAT: ButcherDestinationService.MEAT_TARGETS,
+		ButcherDestinationService.KIND_HIDE: ButcherDestinationService.HIDE_TARGETS,
+	}
+	for kind in lists.keys():
+		for target in lists[kind]:
+			options.append({
+				"kind": kind,
+				"id": target,
+				"name": tr(String(ButcherDestinationService.NAME_KEYS[target])),
+				"building_type": String(ButcherDestinationService.BUILDING_TYPES[target]),
+				"disabled_reason": ButcherDestinationService.get_unavailable_reason(target, macro_world, human_folk),
+				"locked": ButcherDestinationService.NOT_YET_AVAILABLE.has(target),
+			})
 	return options
 
 
@@ -4102,16 +4109,22 @@ func _sync_excess_meat_destination() -> void:
 	if _warehouse_panel == null or not is_instance_valid(_warehouse_panel) or game_data == null:
 		return
 	_warehouse_panel.set_excess_meat_destination(
-		true, _butcher_destination_entry(WarehouseManagerService.excess_meat_destination(_game_context())), _build_butcher_destination_options()
+		true, _butcher_destination_entry(WarehouseManagerService.stock_hunt_destination(_game_context())), _build_butcher_destination_options()
 	)
 
 
+# Voce attuale del pulsante a due scelte (2026-10-19): la coppia e, per carne e pelli, nome e tipo di edificio.
 func _butcher_destination_entry(destination: String) -> Dictionary:
-	return {
-		"id": destination,
-		"name": tr(String(ButcherDestinationService.NAME_KEYS.get(destination, ""))),
-		"building_type": String(ButcherDestinationService.BUILDING_TYPES.get(destination, "")),
-	}
+	var pair := ButcherDestinationService.parse(destination)
+	var entry := {"id": ButcherDestinationService.compose(String(pair["meat"]), String(pair["hide"]))}
+	for kind in [ButcherDestinationService.KIND_MEAT, ButcherDestinationService.KIND_HIDE]:
+		var target := String(pair[kind])
+		entry[kind] = {
+			"id": target,
+			"name": tr(String(ButcherDestinationService.NAME_KEYS.get(target, ""))),
+			"building_type": String(ButcherDestinationService.BUILDING_TYPES.get(target, "")),
+		}
+	return entry
 
 
 # Scelta dal pulsante della barra (2026-10-03): vale per le cacce ordinate da adesso; quelle in corso hanno già la
@@ -10063,8 +10076,12 @@ func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 			"repeat": trips > 1, "trips": trips, "stock_fill": order.has(StockRequestService.ORDER_KEY),
 		}, true, order_id)
 	elif order_type == DrawerOrderService.TYPE_HUNT:
+		# Cacce del gestore scorte (2026-10-19): la coppia della regola, letta adesso (anche per gli ordini nati prima).
+		var hunt_destination := String(order.get("butcher_destination", ""))
+		if order.has(StockRequestService.ORDER_KEY):
+			hunt_destination = WarehouseManagerService.stock_hunt_destination(_game_context())
 		series = HuntZoneService.make_meat_series(
-			area.id, maxi(int(order.get("count", 1)), 1), String(order.get("butcher_destination", "")),
+			area.id, maxi(int(order.get("count", 1)), 1), hunt_destination,
 			int(order.get("zone_id", -1)) < 0
 		)
 		series[DrawerOrderService.SERIES_KEY] = order_id

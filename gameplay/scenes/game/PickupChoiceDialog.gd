@@ -98,7 +98,7 @@ var _auto_zone_row: HBoxContainer = null
 # Riga "Destinazione dei prodotti [pulsante]" nella caccia (2026-10-09), sopra quella della zona automatica: il pulsante
 # della barra dei comandi, visibile negli stessi casi (set_butcher_destination, da GameScene).
 var _hunt_destination_row: HBoxContainer = null
-var _hunt_destination_button: ButcherDestinationButton = null
+var _hunt_destination_button: ButcherDestinationPair = null
 var _hunt_destination_state: Dictionary = {"shown": false, "current": {}, "options": []}
 
 
@@ -331,7 +331,7 @@ func _show_hunt_destination_row() -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		_hunt_destination_row.add_child(label)
-		_hunt_destination_button = ButcherDestinationButton.new()
+		_hunt_destination_button = ButcherDestinationPair.new()
 		_hunt_destination_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		_hunt_destination_button.destination_chosen.connect(_on_hunt_destination_button_chosen)
 		_hunt_destination_row.add_child(_hunt_destination_button)

@@ -26,7 +26,7 @@ const STOCK_ORDER_MIN_AGE_DAYS: float = 1.0
 # più il ricalcolo continuo che le rendeva necessarie, quindi spente — età minima (_order_too_young) e margine di
 # un'unità nel giudizio "di troppo" (_margin). true = comportamento di prima.
 const STOCK_ANTI_OSCILLATION: bool = false
-# Trasporti del magazzino verso l'essiccatoio: ricetta nel context della Transport Task (pezzi in viaggio, _dry_traveling).
+# Trasporti del magazzino verso l'essiccatoio: ricetta nel context della Transport Task (pezzi in viaggio, dry_traveling).
 const STOCK_DRY_KEY := "stock_dry_recipe"
 # Eccedenza da buttare (2026-10-18, Fossa dei rifiuti): risorsa dell'ordine "transport" verso la Fossa e delle sue Task.
 const STOCK_WASTE_KEY := "stock_waste_resource"
@@ -291,9 +291,8 @@ static func order_blocked_reason(ctx: GameContext, order_type: String, extra: Di
 # Caccia del magazzino (2026-10-11). Per ogni prodotto della caccia con un livello: scoperto = livello − scorta − in arrivo
 # (mucchi e carcasse a terra, con una caccia del magazzino in corso), tradotto in carne (StockRequestService.
 # get_meat_per_unit); la domanda è il MASSIMO, perché la stessa preda li dà tutti. Ordini "hunt" in zona automatica da 5 a
-# STOCK_HUNT_MAX_MEAT carne, chiave HUNT_GROUP_KEY. Destinazione: carne o pelle che servono = il magazzino (solo lì entrano
-# nelle scorte); altrimenti la regola "Carne e pelli in eccesso" (excess_meat_destination). Dopo un ordine finito senza
-# prede, pausa fino a StockRuntimeState.hunt_pause_until. true se ha creato o tolto ordini.
+# STOCK_HUNT_MAX_MEAT carne, chiave HUNT_GROUP_KEY. Destinazione dei prodotti: alla presa, stock_hunt_destination. Dopo un
+# ordine finito senza prede, pausa fino a StockRuntimeState.hunt_pause_until. true se ha creato o tolto ordini.
 static func _request_hunt(ctx: GameContext, now: float, stock: Dictionary, claims: Dictionary, orders: Array) -> bool:
 	var game_data := ctx.game_data
 	if not ButcherDestinationService.is_available(ButcherDestinationService.WAREHOUSE, ctx.world, ctx.folk):
@@ -320,7 +319,10 @@ static func _request_hunt(ctx: GameContext, now: float, stock: Dictionary, claim
 	for resource_name in levels.keys():
 		if StockRequestService.source_kind_for(String(resource_name)) != StockRequestService.SOURCE_HUNT:
 			continue
-		var uncovered := int(levels[resource_name]) - int(stock.get(resource_name, 0)) - int(arriving.get(resource_name, 0))
+		var have := int(stock.get(resource_name, 0))
+		if String(resource_name) == HuntZoneService.MEAT_RESOURCE:
+			have += meat_in_workstations(ctx.world)
+		var uncovered := int(levels[resource_name]) - have - int(arriving.get(resource_name, 0))
 		if uncovered <= 0:
 			continue
 		var meat := ceili(float(uncovered) * StockRequestService.get_meat_per_unit(String(resource_name)))
@@ -350,36 +352,37 @@ static func _request_hunt(ctx: GameContext, now: float, stock: Dictionary, claim
 	)
 	if counts.is_empty():
 		return changed
-	# Carne o pelle ancora scoperte dopo gli ordini già aperti: tutto al magazzino. Eccezione (2026-10-11): carne che serve
-	# solo per la carne essiccata = direttamente all'essiccatoio, senza il trasporto successivo dal deposito. Dal 2026-10-13
-	# con "Essiccatoio – solo carne": le pelli vanno al magazzino, anche quando servono anche loro. Essiccatoio pieno
-	# all'arrivo = ripiego sul deposito (ButcherDestinationService.find_preferred_building), poi il trasporto del magazzino.
-	var needs_meat := int(demand_by_resource.get(HuntZoneService.MEAT_RESOURCE, 0)) > total_coverage
-	var needs_hide := int(demand_by_resource.get("hide", 0)) > total_coverage
-	var destination := excess_meat_destination(ctx)
-	if needs_meat or needs_hide:
-		destination = ButcherDestinationService.WAREHOUSE
-		var breakdown := _derived_meat_breakdown(ctx, stock)
-		# Con la riserva di carne cruda ancora scoperta la carne serve anche al magazzino (2026-10-16): niente scorciatoia.
-		var reserve_covered := int(stock.get(HuntZoneService.MEAT_RESOURCE, 0)) >= own_meat_level
-		if needs_meat and reserve_covered and int(breakdown["dry"]) > 0 and int(breakdown["other"]) <= 0 \
-				and ButcherDestinationService.is_available(ButcherDestinationService.DRYING_RACK_MEAT, ctx.world, ctx.folk):
-			destination = ButcherDestinationService.DRYING_RACK_MEAT
+	# Destinazione (2026-10-19, richiesta utente): non più decisa qui. Le cacce del gestore portano la coppia carne/pelli
+	# della regola con il segno ":auto" (stock_hunt_destination), letta alla presa dell'ordine: allo scarico i prodotti
+	# coprono prima i minimi (HuntProductAllocationService), il resto va dove dice la coppia.
 	for count in counts:
 		_create_zone_order(ctx, now, DrawerOrderService.TYPE_HUNT, StockRequestService.snap_hunt_count(count), -1, {
-			StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY, "butcher_destination": destination,
+			StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY,
 		})
 		changed = true
 	return changed
 
 
-# Destinazione di carne e pelli in eccesso per gli ordini di caccia del magazzino: la regola, se disponibile; altrimenti
-# il magazzino.
-static func excess_meat_destination(ctx: GameContext) -> String:
-	var destination := ctx.game_data.stock_excess_meat_destination
-	if ButcherDestinationService.ORDER.has(destination) and ButcherDestinationService.is_available(destination, ctx.world, ctx.folk):
-		return destination
-	return ButcherDestinationService.WAREHOUSE
+# Coppia carne/pelli per ciò che avanza dalle cacce del gestore scorte (GameData.stock_excess_meat_destination), con le
+# parti non più disponibili sul magazzino e il segno ":auto" (ButcherDestinationService.resolve_stock).
+static func stock_hunt_destination(ctx: GameContext) -> String:
+	return ButcherDestinationService.resolve_stock(ctx.game_data.stock_excess_meat_destination, ctx.world, ctx.folk)
+
+
+# Carne cruda nei depositi di focolari e affumicatoi (2026-10-19, richiesta utente): conta per la riserva di carne cruda
+# della caccia, così la carne portata lì non fa nascere cacce inutili. Quella sull'essiccatoio no: conta già come carne in
+# essiccazione per la carne essiccata.
+static func meat_in_workstations(world: World) -> int:
+	var total := 0
+	for building in world.buildings:
+		if building.is_demolished or building.rules == null:
+			continue
+		if building.building_type_name != "campfire" and building.building_type_name != "smokehouse":
+			continue
+		var entry: Variant = building.stored_resources.get(HuntZoneService.MEAT_RESOURCE, null)
+		if entry is Dictionary:
+			total += int((entry as Dictionary).get("quantity", 0))
+	return total
 
 
 # Prodotti della caccia già a terra: risorse dei mucchi e resa delle carcasse non ancora macellate (ButcherAction.
@@ -414,7 +417,7 @@ static func _derived_meat_breakdown(ctx: GameContext, stock: Dictionary) -> Dict
 			continue
 		var have := int(stock.get(resource_name, 0)) + int(in_production.get(resource_name, 0))
 		if rules.recipe_auto_progress_days > 0:
-			have += _dry_in_racks(ctx.world, String(resource_name), meat) + _dry_traveling(ctx.individuals, String(resource_name))
+			have += dry_in_racks(ctx.world, String(resource_name), meat) + dry_traveling(ctx.individuals, String(resource_name))
 			for order in game_data.drawer_orders:
 				if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and String(order.get("recipe", "")) == String(resource_name):
 					have += int(order.get("quantity", 0))
@@ -692,7 +695,7 @@ static func _request_dry(ctx: GameContext, now: float, stock: Dictionary) -> boo
 				open_orders.append(order)
 				pending += int(order.get("quantity", 0))
 		# Coperto senza gli ordini aperti (la loro quantità non deve far sembrare il livello raggiunto e farli togliere).
-		var covered_without := int(stock.get(recipe, 0)) + _dry_in_racks(ctx.world, recipe, ingredient) + _dry_traveling(ctx.individuals, recipe)
+		var covered_without := int(stock.get(recipe, 0)) + dry_in_racks(ctx.world, recipe, ingredient) + dry_traveling(ctx.individuals, recipe)
 		var covered := covered_without + pending
 		# Ordini non presi da togliere: di troppo anche senza di loro (con il margine di un pezzo e non appena nati), o che
 		# non possono più partire (essiccatoio senza posto, niente da portare: diventano l'avviso in campanella).
@@ -803,7 +806,7 @@ static func _request_waste(ctx: GameContext, now: float, stock: Dictionary) -> b
 
 
 # Pezzi già in viaggio verso la Fossa per `resource_name`: residuo dei trasporti con STOCK_WASTE_KEY (il più alto per
-# individuo, come _dry_traveling).
+# individuo, come dry_traveling).
 static func _waste_traveling(individuals: Array[HumanIndividual], resource_name: String) -> int:
 	var total := 0
 	for member in individuals:
@@ -887,7 +890,7 @@ static func _dry_racks(world: World, recipe: String) -> Array[Building]:
 
 
 # Pezzi in essiccazione: l'ingrediente nel magazzino degli essiccatoi di `recipe` (una unità di ingrediente = un pezzo).
-static func _dry_in_racks(world: World, recipe: String, ingredient: String) -> int:
+static func dry_in_racks(world: World, recipe: String, ingredient: String) -> int:
 	var total := 0
 	for rack in _dry_racks(world, recipe):
 		var entry: Variant = rack.stored_resources.get(ingredient, null)
@@ -898,7 +901,7 @@ static func _dry_in_racks(world: World, recipe: String, ingredient: String) -> i
 
 # Pezzi in viaggio verso l'essiccatoio: il residuo da consegnare dei trasporti del magazzino per `recipe` (il più alto per
 # individuo: i viaggi ripetuti portano lo stesso residuo).
-static func _dry_traveling(individuals: Array[HumanIndividual], recipe: String) -> int:
+static func dry_traveling(individuals: Array[HumanIndividual], recipe: String) -> int:
 	var total := 0
 	for member in individuals:
 		var best := 0
@@ -1134,7 +1137,7 @@ static func _food_processing_calories(ctx: GameContext) -> float:
 		var ingredient := dry_ingredient(recipe)
 		if ingredient == "":
 			continue
-		var pieces := _dry_in_racks(ctx.world, recipe, ingredient) + _dry_traveling(ctx.individuals, recipe)
+		var pieces := dry_in_racks(ctx.world, recipe, ingredient) + dry_traveling(ctx.individuals, recipe)
 		for order in ctx.game_data.drawer_orders:
 			if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and String(order.get("recipe", "")) == recipe:
 				pieces += int(order.get("quantity", 0))

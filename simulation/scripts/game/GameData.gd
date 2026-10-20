@@ -273,9 +273,10 @@ var stock_min_food_days: int = 0
 # tutto il villaggio, mai sotto il minimo. Oltre, all'Inventario il gestore delle scorte ordina di portare l'eccedenza in
 # una Fossa (WarehouseManagerService._request_waste). Salvati come "stock_max_levels".
 var stock_max_levels: Dictionary = {}
-# Regole di stoccaggio (2026-10-11, cassetto "Gestione scorte"): destinazione di carne e pelli in eccesso negli ordini di
-# caccia del magazzino (ButcherDestinationService, stessi valori della caccia manuale). Salvata da GameSaveService
-# ("stock_excess_meat_destination"); partita nuova e salvataggi vecchi: il magazzino.
+# Regole di stoccaggio (2026-10-11, cassetto "Gestione scorte"): dal 2026-10-19 coppia carne/pelli
+# (ButcherDestinationService.compose) per ciò che, nelle cacce del magazzino, avanza dopo i minimi
+# (HuntProductAllocationService). I valori di prima (una voce sola) si leggono come coppia (ButcherDestinationService.parse).
+# Salvata da GameSaveService ("stock_excess_meat_destination"); partita nuova e salvataggi vecchi: il magazzino.
 var stock_excess_meat_destination: String = "warehouse"
 # Regola "Combustibile negli edifici che lo usano" (2026-10-16, FuelStockService): accesa/spenta e minimo per tipo di
 # edificio (nome tipo -> combustibile in fuel_value) cambiato nel cassetto; un tipo assente usa BuildingRules.fuel_stock_min.
@@ -379,7 +380,8 @@ var work_areas_revision: int = 0
 # layer di influenza (InfluenceLayerOverlay) per ridisegnarsi solo quando serve.
 var buildings_revision: int = 0
 # Ultima destinazione dei prodotti della macellazione scelta nell'ordine di caccia (2026-10-03, ButcherDestinationService,
-# salvata con la partita): proposta all'apertura del dialog e usata dalla caccia diretta. "" = mai scelta.
+# salvata con la partita): proposta all'apertura del dialog e usata dalla caccia diretta. Dal 2026-10-19 coppia carne/pelli;
+# un valore di prima si legge come coppia. "" = mai scelta.
 var last_butcher_destination: String = ""
 # Ordinamento dell'elenco dei pipottini nella scheda popolazione (2026-10-04, salvato con la partita): id di
 # HumanPopulationInfoPanel.SORT_OPTIONS ("age", "name", "house"). Un id sconosciuto ricade sul predefinito.

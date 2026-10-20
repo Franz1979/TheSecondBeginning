@@ -413,11 +413,13 @@ empty_all_confirmation_text_decay,A terra le risorse deperiscono il doppio più 
 empty_all_confirmation_text_lost,"Se non c'è una microcella libera, il contenuto va perso."
 empty_all_confirmation_confirm,Svuota tutto
 hunt_destination_caption,Destinazione
+hunt_destination_meat_caption,Carne
+hunt_destination_hide_caption,Pelli
 hunt_destination_campfire,Focolare
-hunt_destination_drying_rack,Essiccatoio – carne e pelli
+hunt_destination_drying_rack,Essiccatoio
 hunt_destination_drying_rack_meat,Essiccatoio – solo carne
 hunt_destination_drying_rack_hide,Essiccatoio – solo pelli
-hunt_destination_smokehouse,Affumicatoio – carne e pelli
+hunt_destination_smokehouse,Affumicatoio
 hunt_destination_smokehouse_meat,Affumicatoio – solo carne
 hunt_destination_smokehouse_hide,Affumicatoio – solo pelli
 hunt_destination_warehouse,Magazzino
@@ -1197,9 +1199,9 @@ task_assignment_warehouse_tag_tooltip,"Ordine creato dalla gestione scorte: la r
 drawer_order_stock_cancel_tooltip,"Annulla l'ordine. Se la risorsa resta sotto il livello minimo il magazzino ne crea un altro: per fermarlo togli il livello o blocca l'ordine."
 warehouse_min_level_auto_tooltip,"Livello minimo: sotto questo valore il magazzino crea ordini di raccolta, taglio o estrazione nelle zone di lavoro."
 warehouse_rules,⚙ Regole di stoccaggio
-warehouse_rule_excess_meat,Destinazione carne e pelli in eccesso
-warehouse_rule_excess_meat_tooltip,"Cacce del magazzino: carne e pelli che servono vanno sempre al magazzino. Quelle in più (già sopra il loro livello) vanno qui. Ciò che la destinazione non prende (pelli col focolare; tendini e ossa sempre) e ciò che non trova posto va al magazzino."
-warehouse_rule_excess_meat_button_tooltip,Carne e pelli in eccesso: {name}
+warehouse_rule_excess_meat,Destinazione di carne e pelli che non servono ai minimi
+warehouse_rule_excess_meat_tooltip,"Cacce del magazzino: carne e pelli vanno prima dove mancano ai minimi (carne essiccata all'essiccatoio, carne cotta al focolare, ordini dell'affumicatoio, riserva di carne cruda e pelli al magazzino), divise in proporzione. Quello che avanza va qui. Ossa e tendini sempre al magazzino; ciò che non trova posto va al magazzino."
+warehouse_rule_excess_meat_button_tooltip,Ciò che non serve ai minimi: {name}
 warehouse_food_ingredients_title,Da cucinare o lavorare
 warehouse_food_ingredients_note,"Non contano nelle calorie: vanno prima cucinate o lavorate."
 pending_stock_blocked,Magazzino · {resource}

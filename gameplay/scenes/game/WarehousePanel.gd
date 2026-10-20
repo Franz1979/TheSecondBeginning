@@ -126,7 +126,7 @@ static var _last_category: int = SecondaryResourceTypes.Category.FOOD
 static var _rules_open: bool = false
 
 var _rules_box: VBoxContainer = null
-var _excess_meat_button: ButcherDestinationButton = null
+var _excess_meat_button: ButcherDestinationPair = null
 # Ultimo stato ricevuto prima che il pulsante esistesse (set_excess_meat_destination prima di _ready).
 var _excess_meat_state: Array = []
 
@@ -496,7 +496,7 @@ func _build_rules_section() -> void:
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(label)
-	_excess_meat_button = ButcherDestinationButton.new()
+	_excess_meat_button = ButcherDestinationPair.new()
 	_excess_meat_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_excess_meat_button.tooltip_key = "warehouse_rule_excess_meat_button_tooltip"
 	_excess_meat_button.destination_chosen.connect(func(destination: String) -> void: excess_meat_destination_changed.emit(destination))

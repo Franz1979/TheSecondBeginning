@@ -337,6 +337,10 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			(step as UnloadAction).only_preferred_resources = bool(step_data.get("only_preferred_resources", false))
 			# preferred_destination (2026-10-13): "" per i save precedenti = filtro di prima.
 			(step as UnloadAction).preferred_destination = String(step_data.get("preferred_destination", ""))
+			# planned_quantities (2026-10-19): vuoto per i save precedenti = nessun tetto.
+			var planned_quantities: Dictionary = step_data.get("planned_quantities", {})
+			for planned_name in planned_quantities.keys():
+				(step as UnloadAction).planned_quantities[String(planned_name)] = int(planned_quantities[planned_name])
 		TaskTypes.ActionType.PICKUP:
 			var pickup_target := Vector2i(
 				int(step_data.get("target_position_x", 0)), int(step_data.get("target_position_y", 0))

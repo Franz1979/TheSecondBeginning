@@ -98,7 +98,7 @@ const TOGGLE_OFF_BG_COLOR := Color(0.2, 0.2, 0.2, 1.0)
 var _row: IconButtonRow = null
 # Pulsante della destinazione dei prodotti della caccia (2026-10-03; dal 2026-10-09 classe a sé, ButcherDestinationButton,
 # riusata uguale nel popup della Caccia nelle zone). Stato deciso da GameScene (set_butcher_destination).
-var _destination_button: ButcherDestinationButton = null
+var _destination_button: ButcherDestinationPair = null
 # Gruppi con etichetta (2026-10-04, richiesta utente — torna la disposizione del 2026-10-03 pomeriggio, commit 997e6a9):
 # a sinistra "Azioni" (Raccogli, Caccia nelle zone: CommandBar.ACTIONS), un separatore, a destra "Opzioni" (destinazione
 # dei prodotti della caccia; la zona automatica non c'è più dal 2026-10-09). Tutta la barra compare solo con l'idea delle
@@ -146,7 +146,7 @@ func _ready() -> void:
 	_options_row = HBoxContainer.new()
 	_options_group.add_child(_options_row)
 
-	_destination_button = ButcherDestinationButton.new()
+	_destination_button = ButcherDestinationPair.new()
 	_destination_button.destination_chosen.connect(func(destination: String) -> void: butcher_destination_chosen.emit(destination))
 	_options_row.add_child(_destination_button)
 

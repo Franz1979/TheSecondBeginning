@@ -169,7 +169,7 @@ const ZONE_KIND_GATHER := "gather"
 const ZONE_KIND_HUNT := "hunt"
 var _hunt_button: Button = null
 var _hunt_destination_row: HBoxContainer = null
-var _hunt_destination_button: ButcherDestinationButton = null
+var _hunt_destination_button: ButcherDestinationPair = null
 var _hunt_destination_shown: bool = false
 var _zone_kind: String = ZONE_KIND_CUT
 var _cut_button: Button = null
@@ -1614,7 +1614,7 @@ func _build_cut_overlay(area: Control) -> void:
 	destination_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	destination_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_hunt_destination_row.add_child(destination_label)
-	_hunt_destination_button = ButcherDestinationButton.new()
+	_hunt_destination_button = ButcherDestinationPair.new()
 	_hunt_destination_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_hunt_destination_button.destination_chosen.connect(func(destination: String) -> void: butcher_destination_chosen.emit(destination))
 	_hunt_destination_row.add_child(_hunt_destination_button)

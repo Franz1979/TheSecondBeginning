@@ -1259,11 +1259,78 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 	# quindi se find_best restituisce per una seconda varietà lo stesso magazzino già scelto per una
 	# precedente, non si accoda un secondo Walk+Unload identico (viaggio sprecato).
 	var targeted_building_ids: Array[int] = []
+	# Cacce del gestore scorte (2026-10-19, HuntProductAllocationService): prima, per ogni risorsa, gli scarichi alle
+	# postazioni che coprono i minimi (con il tetto della loro parte), poi il resto al magazzino. In due giri, così ogni
+	# scarico al magazzino (che lascia tutto ciò che accetta) viene dopo quelli alle postazioni.
+	var auto_destination := ButcherDestinationService.get_destination(task.context)
+	if task.context.has(ButcherDestinationService.CONTEXT_KEY) and ButcherDestinationService.is_auto(auto_destination):
+		var remainders: Array[Dictionary] = []
+		for entry in searches:
+			var resource_name := String(entry.get("resource_name", ""))
+			var quantity := int(entry.get("quantity", 0))
+			var rest := _plan_allocated_unloads(individual, task, world, resource_name, quantity, auto_destination, excluded_building_ids, targeted_building_ids)
+			if rest > 0:
+				remainders.append({"resource_name": resource_name, "quantity": rest})
+		for entry in remainders:
+			_search_warehouse_for_resource(
+				individual, task, world, String(entry["resource_name"]), int(entry["quantity"]),
+				excluded_building_ids, discard_on_failure, targeted_building_ids, true
+			)
+		return
 	for entry in searches:
 		_search_warehouse_for_resource(
 			individual, task, world, String(entry.get("resource_name", "")), int(entry.get("quantity", 0)),
 			excluded_building_ids, discard_on_failure, targeted_building_ids
 		)
+
+
+# Parte di `quantity` di `resource_name` che va alle postazioni per coprire i minimi (HuntProductAllocationService):
+# un Walk+Unload per postazione, con il tetto della sua parte (UnloadAction.planned_quantities). Ritorna quanto resta per il
+# magazzino (la parte del magazzino e quella delle postazioni senza posto). Uno scarico già programmato più avanti per la
+# risorsa (re-routing di un residuo) la consegna lui: 0, nessun passo nuovo.
+func _plan_allocated_unloads(
+	individual: HumanIndividual, task: Task, world: World, resource_name: String, quantity: int, destination: String,
+	excluded_building_ids: Array[int], targeted_building_ids: Array[int]
+) -> int:
+	if resource_name == "" or quantity <= 0:
+		return 0
+	if ButcherDestinationService.resource_kind(resource_name) == "":
+		return quantity
+	if _find_later_planned_unload(task, resource_name) != null:
+		return 0
+	var reachability := PathfindingService.reachability_for(individual)
+	var rest := 0
+	for share in HuntProductAllocationService.allocate(resource_name, quantity, destination):
+		var target := String(share["target"])
+		var share_quantity := int(share["quantity"])
+		var building := ButcherDestinationService.find_target_building(
+			world, individual.position, individual.home_macro_coords, resource_name, target, 1, excluded_building_ids, reachability
+		)
+		if building == null:
+			rest += share_quantity
+			continue
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+			print("[HUNT SPLIT] #%d %s: %d %s -> %s #%d (minimi del gestore scorte)." % [
+				individual.id, individual.name, share_quantity, resource_name, building.building_type_name, building.id
+			])
+		if targeted_building_ids.has(building.id):
+			var shared_unload := _find_later_unload_to(task, building)
+			if shared_unload != null:
+				if not shared_unload.planned_resources.has(resource_name):
+					shared_unload.planned_resources.append(resource_name)
+				shared_unload.planned_quantities[resource_name] = int(shared_unload.planned_quantities.get(resource_name, 0)) + share_quantity
+				continue
+		targeted_building_ids.append(building.id)
+		var macro_offset: Vector2 = Vector2(Vector2i(building.macro_x, building.macro_y) - individual.home_macro_coords) * World.WIDTH
+		var jitter := Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
+		var unload := UnloadAction.new(building, UnloadAction.DepositKind.RESOURCE)
+		unload.planned_resources.append(resource_name)
+		unload.planned_quantities[resource_name] = share_quantity
+		unload.only_preferred_resources = true
+		unload.preferred_destination = ButcherDestinationService.compose(target, target)
+		var new_steps: Array[Action] = [WalkAction.new(Vector2(building.micro_x, building.micro_y) + macro_offset + jitter), unload]
+		task.append_steps(new_steps)
+	return rest
 
 
 # Primo scarico programmato (UnloadAction.planned_resources) per `resource_name` nei passi SUCCESSIVI a quello corrente
@@ -1319,7 +1386,7 @@ static func _skip_unloads_without_cargo(individual: HumanIndividual, task: Task)
 
 func _search_warehouse_for_resource(
 	individual: HumanIndividual, task: Task, world: World, resource_name: String, quantity: int,
-	excluded_building_ids: Array[int], discard_on_failure: bool, targeted_building_ids: Array[int]
+	excluded_building_ids: Array[int], discard_on_failure: bool, targeted_building_ids: Array[int], skip_preference: bool = false
 ) -> void:
 	if resource_name == "" or quantity <= 0:
 		return
@@ -1354,18 +1421,23 @@ func _search_warehouse_for_resource(
 	# Dal 2026-10-03 (essiccazione passo 4) la preferenza segue la destinazione scelta dal giocatore nell'ordine di caccia
 	# (ButcherDestinationService: focolare come sopra, essiccatoio per i suoi ingredienti ad avanzamento automatico,
 	# magazzino = nessuna preferenza).
-	var candidate: Building = ButcherDestinationService.find_preferred_building(
-		world, individual.position, individual.home_macro_coords, resource_name,
-		ButcherDestinationService.get_destination(task.context), 1, excluded_building_ids,
-		PathfindingService.reachability_for(individual)
-	)
+	# `skip_preference` (2026-10-19): resto delle cacce del gestore scorte dopo la divisione per i minimi, che va al
+	# magazzino o alla destinazione scelta per ciò che avanza — già decisa da HuntProductAllocationService.
+	var candidate: Building = null
+	if not skip_preference:
+		candidate = ButcherDestinationService.find_preferred_building(
+			world, individual.position, individual.home_macro_coords, resource_name,
+			ButcherDestinationService.get_destination(task.context), 1, excluded_building_ids,
+			PathfindingService.reachability_for(individual)
+		)
 	var via_workstation_preference := candidate != null
 	if candidate == null:
 		candidate = WarehouseSelectionService.find_best(
 			world, individual.position, individual.home_macro_coords, resource_name, quantity, excluded_building_ids,
 			PathfindingService.reachability_for(individual)
 		)
-		_notify_processing_station_full(individual, task, resource_name, candidate)
+		if not skip_preference:
+			_notify_processing_station_full(individual, task, resource_name, candidate)
 	if candidate != null:
 		if targeted_building_ids.has(candidate.id):
 			# Stesso magazzino già scelto per un'altra varietà in questa ricerca: la risorsa si aggiunge alle
@@ -2304,6 +2376,15 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# Punto di assegnazione (2026-10-09, coordinatore passo 1): con un punto raggiungibile e un lavoro della lista che può
 	# prendere, l'individuo va prima al punto ("Cerca lavoro") e lì lo prende, come oggi; arrivato senza più niente per
 	# lui, va allo svago (niente seconda "Cerca lavoro"). Senza punto di assegnazione, presa diretta come prima.
+	# Regole "Indossa i capi disponibili" e "Prendi la sacca se disponibile" (2026-10-19, richiesta utente): appena libero,
+	# PRIMA della lista dei lavori (con la coda sempre piena non ci si arrivava mai). Solo una verifica: partono solo con
+	# uno slot vuoto e un capo/sacca libero in deposito, altrimenti si prosegue con la lista. Non all'arrivo al punto di
+	# assegnazione (già verificato alla partenza) né dopo un annullo con H del giocatore.
+	if not individual.skip_job_board_once and not arrived_at_assignment_point:
+		if ToolFetchService.try_wear_apparel(individual, age_band, world):
+			return
+		if ToolFetchService.try_take_bag(individual, age_band, world):
+			return
 	if individual.skip_job_board_once:
 		individual.skip_job_board_once = false
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
@@ -2320,13 +2401,6 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 			return
 		# Senza punto di assegnazione nessuno prende lavori dalla coda (2026-10-10, richiesta utente — tolto il ripiego della
 		# presa diretta): la coda non è attiva (JobBoardService.is_enabled).
-
-	# Regola "Indossa i capi disponibili" (2026-10-19, richiesta utente): prima dei vestiti, poi della sacca.
-	if ToolFetchService.try_wear_apparel(individual, age_band, world):
-		return
-	# Regola "Prendi la sacca se disponibile" (2026-10-19, richiesta utente): niente lavoro dalla coda, al posto del ripiego.
-	if ToolFetchService.try_take_bag(individual, age_band, world):
-		return
 
 	if IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world):
 		return

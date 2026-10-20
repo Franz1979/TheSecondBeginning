@@ -177,6 +177,9 @@ var only_preferred_resources: bool = false
 # Destinazione della caccia che ha programmato questo scarico (2026-10-13, ButcherDestinationService — "solo carne"/"solo
 # pelli"): con only_preferred_resources decide quali risorse lasciare alla postazione. "" = come prima.
 var preferred_destination: String = ""
+# Tetto per risorsa (2026-10-19, cacce del gestore scorte — HuntProductAllocationService): nome -> quante unità lasciare
+# qui al massimo; il resto resta nello zaino per lo scarico successivo. Vuoto = nessun tetto. Persistito.
+var planned_quantities: Dictionary = {}
 
 
 func _init(
@@ -473,7 +476,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		if only_preferred_resources:
 			deposit_order = ButcherDestinationService.sort_by_shortest_durability(deposit_order)
 		for resource_name in deposit_order:
-			var carried_entry: Dictionary = carried_before_deposit[resource_name]
+			var carried_entry: Dictionary = (carried_before_deposit[resource_name] as Dictionary).duplicate()
+			if planned_quantities.has(resource_name):
+				carried_entry["quantity"] = mini(int(carried_entry["quantity"]), int(planned_quantities[resource_name]))
 			# Destinazione non valida (cantiere già completato, vedi _is_completed_site_destination): nessun
 			# deposito, tutto il carico confluisce nel residuo e nel reinstradamento verso un magazzino
 			# qui sotto — stesso esito di una destinazione demolita (can_accept/store ritornano 0).
@@ -803,6 +808,8 @@ func get_save_data() -> Dictionary:
 		data["only_preferred_resources"] = true
 	if preferred_destination != "":
 		data["preferred_destination"] = preferred_destination
+	if not planned_quantities.is_empty():
+		data["planned_quantities"] = planned_quantities.duplicate()
 	return data
 
 
@@ -811,7 +818,12 @@ func get_save_data() -> Dictionary:
 # materiale delle ricette di una postazione di lavorazione (essiccatoio, affumicatoio —
 # ButcherDestinationService.is_preferred_deposit_allowed).
 func _is_deposit_allowed(resource_name: String) -> bool:
-	return not only_preferred_resources or ButcherDestinationService.is_preferred_deposit_allowed(target_building, resource_name, preferred_destination)
+	if not only_preferred_resources:
+		return true
+	# Scarico con le parti dei minimi (2026-10-19): solo le risorse con un tetto, nient'altro dello zaino.
+	if not planned_quantities.is_empty():
+		return planned_quantities.has(resource_name)
+	return ButcherDestinationService.is_preferred_deposit_allowed(target_building, resource_name, preferred_destination)
 
 
 # true se nello zaino c'è almeno una delle risorse per cui questo scarico è stato programmato (planned_resources).
