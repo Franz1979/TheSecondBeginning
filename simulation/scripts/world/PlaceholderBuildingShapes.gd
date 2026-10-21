@@ -11,7 +11,9 @@ extends RefCounted
 # `scale` = pixel per unità di disegno (1.0 sulla mappa: una microcella = 10 px); `invalid` = anteprima su una
 # posizione non edificabile (tinta rossastra semitrasparente, come le altre sagome di BuildingGhost).
 
-const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "clothing_hut", "rubble", "teaching_stump", "waste_pit"]
+# "clothing_hut" non è più qui (2026-10-20): sulla mappa e nell'anteprima usa ClothingHutShape (vista dall'alto); il suo ramo
+# di draw() resta per la sola icona della barra (ClothingHutIcon, vista di fronte).
+const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit"]
 
 # Ceppo dell'insegnamento (teaching_stump, 2026-10-16, richiesta utente): aula all'aperto vista dall'alto — il ceppo in
 # alto come cattedra (corteccia, sezione chiara con gli anelli) e davanti due file curve di pietre piatte come banchi

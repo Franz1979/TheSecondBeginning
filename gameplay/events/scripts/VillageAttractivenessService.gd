@@ -7,7 +7,7 @@ extends RefCounted
 # sua sensibilità per evento in RandomEventRules. Oggi è attiva solo la cultura; benessere e attrattiva generale valgono
 # 1.0 finché non saranno definiti (aggiungere allora i loro parametri nel .tres e la sensibilità in RandomEventRules).
 
-const RULES_PATH := "res://gameplay/events/data/village_attractiveness_rules.tres"
+const RULES_PATH := "res://gameplay/events/data/rules/village_attractiveness_rules.tres"
 
 static var _rules: VillageAttractivenessRules = null
 

@@ -130,6 +130,7 @@ func save_game_to_json(
 			"stock_toolkit_rule_enabled": game_data.stock_toolkit_rule_enabled,
 			"stock_toolkit_targets": game_data.stock_toolkit_targets,
 			"stock_banquet_safe_only": game_data.stock_banquet_safe_only,
+			"stock_workstation_food_rule_enabled": game_data.stock_workstation_food_rule_enabled,
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
 			"job_board_take_bag": game_data.job_board_take_bag,
 			"job_board_wear_apparel": game_data.job_board_wear_apparel,

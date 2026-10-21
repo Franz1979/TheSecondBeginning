@@ -6,7 +6,7 @@
 script = ExtResource("1_firewood")
 secondary_resource_name = "firewood"
 calories_per_unit = 0.0
-category = 1
+category = 3
 generation_source = 2
 day_durability = 600
 space_per_unit = 3.0

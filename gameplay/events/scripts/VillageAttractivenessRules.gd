@@ -2,7 +2,7 @@ class_name VillageAttractivenessRules
 extends Resource
 
 # Parametri dell'attrattiva del villaggio sugli eventi casuali (2026-10-13, richiesta utente — VillageAttractivenessService).
-# Dati in res://gameplay/events/data/village_attractiveness_rules.tres: UN solo file per tutti i parametri
+# Dati in res://gameplay/events/data/rules/village_attractiveness_rules.tres: UN solo file per tutti i parametri
 # dell'attrattiva (cultura oggi; benessere e attrattiva generale qui quando saranno definiti).
 #
 # Attrattiva culturale (2026-10-18, richiesta utente — per abitante): moltiplicatore = 1 + sensibilità dell'evento ×

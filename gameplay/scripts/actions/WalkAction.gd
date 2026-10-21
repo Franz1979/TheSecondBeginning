@@ -139,9 +139,11 @@ static func compute_walk_stamina_delta(individual: Variant, distance: float, deb
 # Skill da trasportatore (2026-09-27, SkillEffectService "walk_loaded"): a zaino carico il costo è diviso per il
 # fattore — vale per la camminata vera (compute_walk_stamina_delta) e per la stima del riposo
 # (NeedTaskAssignmentService._should_rest_at_home).
+# Vestiario (2026-10-20, calzari): anche individual.get_apparel_walk_stamina_multiplier() scala la sola quota BASE, come il
+# terreno — fattore generico, prodotto dei walk_stamina_multiplier dei capi indossati (1.0 senza capi).
 static func get_walk_cost_per_microcell(individual: Variant) -> float:
 	var used_carry_space: float = individual.get_walk_load_space()
-	var base_cost: float = STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier + used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+	var base_cost: float = STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier * individual.get_apparel_walk_stamina_multiplier() + used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	return base_cost / SkillEffectService.get_factor(walk_skill_effect_key(individual), individual)
 
 

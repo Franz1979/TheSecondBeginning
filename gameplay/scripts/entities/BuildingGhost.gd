@@ -311,6 +311,10 @@ func _draw_shape() -> void:
 	if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 		PlaceholderBuildingShapes.draw(self, building_type_name, Vector2.ZERO, not is_buildable, 1.0, rotation_dir)
 		return
+	# Capanna del vestiario (2026-10-20): lo stesso disegno della mappa, semitrasparente.
+	if building_type_name == ClothingHutShape.TYPE:
+		ClothingHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
+		return
 	# Legnaia (2026-10-18, 2x1): lo stesso disegno della mappa, centrato sul rettangolo, semitrasparente.
 	if building_type_name == WoodshedShape.TYPE:
 		WoodshedShape.draw(self, _footprint_offset, rotation_dir, not is_buildable, COLOR.a)

@@ -1213,11 +1213,12 @@ apparel_slot_decay_line,Storage decay: {percent}%
 apparel_slot_head,Head
 carried_resource_tooltip_fur_dress,Fur dress
 carried_resource_tooltip_fur_cap,Fur cap
-carried_resource_tooltip_worked_hide_dress,Worked hide dress
-carried_resource_tooltip_worked_hide_cap,Worked hide cap
+carried_resource_tooltip_worked_hide_dress,Light hide dress
+carried_resource_tooltip_worked_hide_cap,Light hide cap
+carried_resource_tooltip_hide_footwear,Hide footwear
 building_clothing_hut,Clothing hut
 build_bar_clothing_hut_tooltip,Clothing hut
-build_bar_clothing_hut_description,Worked hide clothes are sewn here.
+build_bar_clothing_hut_description,"Hide dresses, caps and footwear are sewn here."
 notification_apparel_worn_out,{name}: {resource} is completely worn out
 task_activity_equip_apparel,fetch an item to wear
 task_activity_store_apparel,store an item of clothing
@@ -1281,6 +1282,8 @@ warehouse_rule_banquet,Spontaneous banquets
 warehouse_rule_banquet_tooltip,"Banquets the villagers organize on their own: food is brought to the feast ground up to the ground's calorie threshold"
 warehouse_rule_banquet_safe_only,At most a third of the stock
 warehouse_rule_banquet_safe_only_tooltip,"A spontaneous banquet starts only if the storehouses hold at least three times the food it uses"
+warehouse_rule_workstation_food,Cook meat left at workstations
+warehouse_rule_workstation_food_tooltip,"At every inventory, meat left in a campfire or smokehouse becomes a production order there, even when stock is already fine, so it does not rot. Only the product's maximum stops it"
 task_assignment_setting_single_builder,One builder per site
 task_assignment_setting_single_builder_tooltip,"The job queue sends at most one builder per site, even where more could work. By hand you can still send up to the building's maximum."
 building_construction_phase_finishing,"Finishing: {days} more days"

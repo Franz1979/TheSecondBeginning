@@ -14,12 +14,12 @@ space_per_unit = 10.0
 recipe_inputs = {
 "fiber_rope": 2,
 "sinew": 6,
-"smoked_hide": 6
+"smoked_hide": 8
 }
 recipe_labor = 1200.0
 recipe_workstation_types = Array[String](["clothing_hut"])
 recipe_required_tool_categories = Array[int]([1, 6])
-max_uses = 6000
-apparel_color = Color(0.52, 0.48, 0.43, 1)
-health_delta_by_season = Array[float]([0.0, 0.0, -4.0, 0.0])
-happiness_delta_by_season = Array[float]([5.0, 0.0, -10.0, 0.0])
+max_uses = 5000
+apparel_color = Color(0.56, 0.37, 0.215, 1)
+health_delta_by_season = Array[float]([-2.0, 0.0, 0.0, 0.0])
+happiness_delta_by_season = Array[float]([1.0, 2.0, 3.0, 1.0])

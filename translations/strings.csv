@@ -1267,11 +1267,12 @@ apparel_slot_decay_line,Deperimento da riposto: {percent}%
 apparel_slot_head,Testa
 carried_resource_tooltip_fur_dress,Vestito di pelliccia
 carried_resource_tooltip_fur_cap,Copricapo di pelliccia
-carried_resource_tooltip_worked_hide_dress,Vestito di pelli lavorate
-carried_resource_tooltip_worked_hide_cap,Cappello di pelli lavorate
+carried_resource_tooltip_worked_hide_dress,Veste leggera di pelle
+carried_resource_tooltip_worked_hide_cap,Cappello leggero di pelle
+carried_resource_tooltip_hide_footwear,Calzari di pelle
 building_clothing_hut,Capanna del vestiario
 build_bar_clothing_hut_tooltip,Capanna del vestiario
-build_bar_clothing_hut_description,Qui si cuciono i vestiti di pelli lavorate.
+build_bar_clothing_hut_description,"Qui si cuciono vesti, cappelli e calzari di pelle."
 notification_apparel_worn_out,{name}: {resource} si è consumato del tutto
 task_activity_equip_apparel,prendere un capo da indossare
 task_activity_store_apparel,riporre un capo
@@ -1335,6 +1336,8 @@ warehouse_rule_banquet,Banchetti spontanei
 warehouse_rule_banquet_tooltip,"Banchetti che gli abitanti organizzano da soli: si porta sullo spiazzo cibo fino alla Soglia calorie dello spiazzo"
 warehouse_rule_banquet_safe_only,Al massimo un terzo delle scorte
 warehouse_rule_banquet_safe_only_tooltip,"Un banchetto spontaneo parte solo se nei magazzini c'è almeno il triplo del cibo che consuma"
+warehouse_rule_workstation_food,Cuoci la carne lasciata nelle postazioni
+warehouse_rule_workstation_food_tooltip,"A ogni inventario, la carne rimasta in un focolare o in un affumicatoio diventa un ordine di produzione lì, anche con le scorte già a posto, così non marcisce. Solo il massimo del prodotto la ferma"
 task_assignment_setting_single_builder,Un solo costruttore per cantiere
 task_assignment_setting_single_builder_tooltip,"La coda dei lavori manda al massimo un costruttore per cantiere, anche dove ne servirebbero di più. A mano puoi sempre mandarne fino al massimo dell'edificio."
 building_construction_phase_finishing,"In finitura: ancora {days} giorni"

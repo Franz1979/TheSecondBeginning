@@ -3,17 +3,18 @@ extends Control
 
 # Icona disegnata del "vestito di pelli lavorate" (worked_hide_dress, 2026-10-11, richiesta utente — secondo livello,
 # segnaposto: il disegno più "sartoriale" scartato per la pelliccia di base). Veste lunga svasata, maniche corte,
-# scollo a V, orli chiari a zigzag su collo e fondo, qualche cucitura scura, cintura con due capi pendenti. Toni grigi
-# come le altre icone del vestiario. Stesso schema di FurDressIcon: spazio di disegno DESIGN_SIZE, nessun randf().
+# scollo a V, orli chiari a zigzag su collo e fondo, qualche cucitura scura, cintura con due capi pendenti. Toni di pelle
+# affumicata (2026-10-20, richiesta utente: i grigi di prima si confondevano con la pelliccia). Stesso schema di
+# FurDressIcon: spazio di disegno DESIGN_SIZE, nessun randf().
 #
 # draw_into (statica) è la geometria vera, condivisa con DepositStorageIcons (magazzini e mucchi a terra).
 
 const DESIGN_SIZE := Vector2(108.0, 204.0)
-const HIDE_COLOR := Color(0.52, 0.48, 0.43, 1.0)
-const OUTLINE_COLOR := Color(0.25, 0.23, 0.21, 1.0)
-const TRIM_COLOR := Color(0.74, 0.70, 0.63, 1.0)
-const STITCH_COLOR := Color(0.38, 0.35, 0.32, 1.0)
-const BELT_COLOR := Color(0.66, 0.61, 0.50, 1.0)
+const HIDE_COLOR := Color(0.56, 0.37, 0.215, 1.0)
+const OUTLINE_COLOR := Color(0.24, 0.14, 0.07, 1.0)
+const TRIM_COLOR := Color(0.84, 0.71, 0.52, 1.0)
+const STITCH_COLOR := Color(0.37, 0.23, 0.125, 1.0)
+const BELT_COLOR := Color(0.77, 0.59, 0.38, 1.0)
 
 const OUTLINE_POINTS := [
 	Vector2(36, 12), Vector2(54, 27), Vector2(72, 12), Vector2(90, 21), Vector2(99, 45), Vector2(87, 51),

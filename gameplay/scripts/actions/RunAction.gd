@@ -64,8 +64,10 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var used_carry_space: float = individual.get_walk_load_space()
 
 	var cost_per_microcell: float = (
-		# terrain_stamina_multiplier (2026-09-19, vedi MovementTerrainService): solo sulla quota base.
+		# terrain_stamina_multiplier (2026-09-19, vedi MovementTerrainService): solo sulla quota base. Stessa cosa per il
+		# vestiario (2026-10-20, calzari — WalkAction.get_walk_cost_per_microcell).
 		RUN_INTENSITY_MULTIPLIER * WalkAction.STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier
+			* individual.get_apparel_walk_stamina_multiplier()
 		+ used_carry_space * WalkAction.CARRY_STAMINA_MULTIPLIER
 		+ WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	)

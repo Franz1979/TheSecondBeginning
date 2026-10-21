@@ -603,6 +603,21 @@ static func get_missing_inputs_for_recipes(building: Building, recipe_names: Arr
 	return missing
 
 
+# Unità di `input_name` presso `building` non impegnate dagli ordini già sull'edificio (2026-10-20, regola della carne
+# lasciata nelle postazioni): get_input_available meno recipe_inputs × get_cycles_due di ogni ricetta con ordini. Mai
+# sotto 0.
+static func get_free_input(building: Building, input_name: String) -> int:
+	if building == null:
+		return 0
+	var committed := 0
+	for active_name in get_active_resource_names(building):
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(active_name)
+		if recipe_rules == null:
+			continue
+		committed += int(recipe_rules.recipe_inputs.get(input_name, 0)) * get_cycles_due(building, active_name)
+	return maxi(get_input_available(building, input_name) - committed, 0)
+
+
 # --- Combustibile (2026-09-24, richiesta utente) ---
 # Una ricetta con recipe_fuel_required > 0 richiede, oltre ai materiali, un valore combustibile pari a
 # recipe_fuel_required × BuildingRules.production_fuel_multiplier. Lo si copre con le risorse in

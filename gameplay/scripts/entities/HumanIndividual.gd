@@ -1394,6 +1394,27 @@ func get_carried_decay_fraction(resource_name: String) -> float:
 # Carico che pesa sul cammino (2026-10-04, cumulo sepolcrale passo 2): con un corpo in spalla si cammina come a
 # pieno carico (max_carry_capacity), qualunque cosa ci sia nello zaino; altrimenti lo spazio occupato dallo zaino.
 # Letto da WalkAction/RunAction al posto di get_carried_space per la stamina.
+# Moltiplicatore della fatica del camminare dato dal vestiario (2026-10-20, calzari): prodotto dei
+# SecondaryResourceRules.walk_stamina_multiplier dei capi indossati, 1.0 senza capi. In cache, ricalcolato solo quando
+# cambia uno slot (_set_apparel_slot) o al primo uso dopo un caricamento (flag vero di default). I bambini non
+# indossano capi del villaggio (ToolFetchService), quindi per loro vale sempre 1.0.
+var _apparel_walk_multiplier: float = 1.0
+var _apparel_walk_multiplier_dirty: bool = true
+
+
+func get_apparel_walk_stamina_multiplier() -> float:
+	if _apparel_walk_multiplier_dirty:
+		_apparel_walk_multiplier_dirty = false
+		_apparel_walk_multiplier = 1.0
+		for apparel_name in equipped_apparel:
+			if apparel_name == "":
+				continue
+			var rules := CaloricCalculator.get_caloric_source_rules(apparel_name)
+			if rules != null:
+				_apparel_walk_multiplier *= rules.walk_stamina_multiplier
+	return _apparel_walk_multiplier
+
+
 func get_walk_load_space() -> float:
 	if carried_body_id != -1:
 		return maxf(max_carry_capacity, get_carried_space())
@@ -1769,6 +1790,7 @@ func get_equipped_apparel_instance(slot_index: int) -> Dictionary:
 # pieno, deperimento 0). resource_name "" = svuota lo slot. Chiamare dopo _ensure_apparel_slots, slot già validato.
 func _set_apparel_slot(slot_index: int, resource_name: String, instance: Dictionary = {}) -> void:
 	equipped_apparel[slot_index] = resource_name
+	_apparel_walk_multiplier_dirty = true
 	if resource_name == "":
 		equipped_apparel_instances[slot_index] = {}
 	elif instance.is_empty():

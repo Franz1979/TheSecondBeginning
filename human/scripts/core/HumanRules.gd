@@ -234,6 +234,8 @@ extends Resource
 # Applicato da HumanVitalsInteractionService insieme ai bonus dei capi indossati (regola 0b). 0 = nessun effetto.
 @export var missing_body_apparel_daily_delta_by_season: Array[float] = [-4.0, 0.0, 0.0, -2.0]
 @export var missing_head_apparel_daily_delta_by_season: Array[float] = [-1.0, 0.0, 0.0, 0.0]
+# Senza calzari (2026-10-20, richiesta utente): stessa regola, slot dei piedi — freddo d'inverno, fango d'autunno.
+@export var missing_feet_apparel_daily_delta_by_season: Array[float] = [-1.0, 0.0, 0.0, -0.5]
 @export var stamina_daily_happiness_gain: float = 30.0
 @export var stamina_daily_happiness_loss: float = 30.0
 @export var health_daily_happiness_gain: float = 10.0

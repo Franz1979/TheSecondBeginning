@@ -317,3 +317,8 @@ extends Resource
 # magazzino non dà nulla). Applicati ogni giorno da HumanVitalsInteractionService._apply_apparel_bonuses.
 @export var health_delta_by_season: Array[float] = [0.0, 0.0, 0.0, 0.0]
 @export var happiness_delta_by_season: Array[float] = [0.0, 0.0, 0.0, 0.0]
+# Moltiplicatore della fatica del camminare (2026-10-20, richiesta utente — calzari): scala la sola quota BASE del costo
+# di stamina per microcella (WalkAction.get_walk_cost_per_microcell, RunAction), mai carico e attrezzi, finché il capo è
+# indossato. Generico: i capi indossati si moltiplicano tra loro (HumanIndividual.get_apparel_walk_stamina_multiplier).
+# 1.0 = nessun effetto; < 1.0 = si cammina con meno fatica.
+@export var walk_stamina_multiplier: float = 1.0

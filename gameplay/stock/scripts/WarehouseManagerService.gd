@@ -255,6 +255,8 @@ static func request_stock(ctx: GameContext, now: float, effects: GameEffects) ->
 		changed = true
 	if _request_toolkits(ctx, now):
 		changed = true
+	if _request_workstation_food(ctx, stock):
+		changed = true
 	if _request_food_days(ctx, now, stock):
 		changed = true
 	if _request_waste(ctx, now, stock):
@@ -846,6 +848,54 @@ static func _request_toolkits(ctx: GameContext, now: float) -> bool:
 				(need["building"] as Building).building_type_name, int(need[ToolkitStockService.TOOLKIT_TARGET_KEY]),
 			])
 	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
+
+
+# Regola "Cuoci la carne lasciata nelle postazioni" (2026-10-20, richiesta utente — GameData.
+# stock_workstation_food_rule_enabled): la carne in un focolare o in un affumicatoio non è nelle scorte
+# (VillageStockService) e nessun'altra regola la lavora, così marciva lì. A ogni Inventario, per ogni postazione con
+# ingredienti di una ricetta di cibo non impegnati dai suoi ordini (ProductionService.get_free_input), un ordine sulla
+# postazione stessa per quello che si può fare, dalla ricetta più calorica, a prescindere da minimi e giorni di cibo; solo
+# il massimo del prodotto lo limita. Solo le ricette di cibo: pelli, fibre e tendini durano a lungo e hanno più usi.
+# Prima dei giorni di cibo, che contano questi ordini come cibo in arrivo (_food_processing_calories).
+static func _request_workstation_food(ctx: GameContext, stock: Dictionary) -> bool:
+	var game_data := ctx.game_data
+	if not game_data.stock_workstation_food_rule_enabled:
+		return false
+	var changed := false
+	var in_production := _units_in_production(ctx)
+	for building in ctx.world.buildings:
+		if building.is_demolished or building.rules == null or not building.rules.is_workstation or not building.is_complete \
+				or building.is_out_of_service():
+			continue
+		for recipe in _food_recipes_by_calories():
+			if not ProductionService.can_produce_at(building, recipe):
+				continue
+			if ProductionService.has_max_orders(building) or not ProductionService.has_output_room(building, recipe):
+				break
+			var rules := CaloricCalculator.get_caloric_source_rules(recipe)
+			var cycles := -1
+			for input_name in rules.recipe_inputs.keys():
+				var per_cycle := int(rules.recipe_inputs[input_name])
+				if per_cycle <= 0:
+					continue
+				var input_cycles := floori(float(ProductionService.get_free_input(building, String(input_name))) / float(per_cycle))
+				cycles = input_cycles if cycles < 0 else mini(cycles, input_cycles)
+			var units := maxi(cycles, 0) * maxi(rules.recipe_output_quantity, 1)
+			units = mini(units, ProductionService.get_max_order_quantity(building))
+			var recipe_max := int(game_data.stock_max_levels.get(recipe, 0))
+			if recipe_max > 0:
+				units = mini(units, recipe_max - int(stock.get(recipe, 0)) - int(in_production.get(recipe, 0)))
+			if units <= 0:
+				continue
+			if ProductionService.create_order(building, recipe, units, -1, false, true, true) == "":
+				break
+			in_production[recipe] = int(in_production.get(recipe, 0)) + units
+			changed = true
+			if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+				print("[JOB BOARD] Magazzino: %d %s su %s #%d con gli ingredienti lasciati lì." % [
+					units, recipe, building.building_type_name, building.id,
+				])
+	return changed
 
 
 # Avviso in campanella della regola "Rifornisci le Attrezzerie": attrezzi che mancano e nessun magazzino ha.

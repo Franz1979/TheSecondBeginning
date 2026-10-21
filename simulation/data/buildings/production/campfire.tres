@@ -13,7 +13,7 @@ min_construction_days = 2
 required_labor = 1000
 storage_slot_count = 8
 storage_space_per_slot = 50
-accepted_categories = Array[int]([0, 1])
+accepted_categories = Array[int]([0, 1, 3])
 categories_locked = true
 required_materials = {
 "pebble": 80

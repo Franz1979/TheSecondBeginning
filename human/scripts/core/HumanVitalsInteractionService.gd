@@ -94,6 +94,7 @@ const FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY: float = 5.0
 # Senza vestiario, senza HumanRules risolvibile: gli stessi default dei campi di HumanRules.
 const FALLBACK_MISSING_BODY_APPAREL_DELTA: Array[float] = [-4.0, 0.0, 0.0, -2.0]
 const FALLBACK_MISSING_HEAD_APPAREL_DELTA: Array[float] = [-1.0, 0.0, 0.0, 0.0]
+const FALLBACK_MISSING_FEET_APPAREL_DELTA: Array[float] = [-1.0, 0.0, 0.0, -0.5]
 
 static func apply_daily_interaction(individual: HumanIndividual) -> void:
 	var health_before := individual.current_health
@@ -193,16 +194,19 @@ static func _apply_apparel_bonuses(individual: HumanIndividual) -> Vector2:
 		individual.current_happiness = _add_clamped(
 			individual.current_happiness, _season_value(rules.happiness_delta_by_season, season), individual.max_happiness
 		)
-	# Senza vestito / senza copricapo (2026-10-11, richiesta utente): HumanRules.missing_*_apparel_daily_delta_by_season,
+	# Senza vestito / senza copricapo (2026-10-11; senza calzari dal 2026-10-20, richiesta utente): HumanRules.missing_*_apparel_daily_delta_by_season,
 	# lo stesso valore a salute e felicità.
 	var human_rules := _resolve_human_rules(individual)
 	var missing_body: Array[float] = human_rules.missing_body_apparel_daily_delta_by_season if human_rules != null else FALLBACK_MISSING_BODY_APPAREL_DELTA
 	var missing_head: Array[float] = human_rules.missing_head_apparel_daily_delta_by_season if human_rules != null else FALLBACK_MISSING_HEAD_APPAREL_DELTA
+	var missing_feet: Array[float] = human_rules.missing_feet_apparel_daily_delta_by_season if human_rules != null else FALLBACK_MISSING_FEET_APPAREL_DELTA
 	var missing_delta := 0.0
 	if individual.get_equipped_apparel(HumanIndividual.ApparelSlot.BODY) == "":
 		missing_delta += _season_value(missing_body, season)
 	if individual.get_equipped_apparel(HumanIndividual.ApparelSlot.HEAD) == "":
 		missing_delta += _season_value(missing_head, season)
+	if individual.get_equipped_apparel(HumanIndividual.ApparelSlot.FEET) == "":
+		missing_delta += _season_value(missing_feet, season)
 	if missing_delta != 0.0:
 		individual.current_health = _add_clamped(individual.current_health, missing_delta, individual.max_health)
 		individual.current_happiness = _add_clamped(individual.current_happiness, missing_delta, individual.max_happiness)
@@ -212,6 +216,57 @@ static func _apply_apparel_bonuses(individual: HumanIndividual) -> Vector2:
 # Valore della stagione da un array indicizzato da GameTypes.Season, 0 se l'array non la copre.
 static func _season_value(values: Array[float], season: int) -> float:
 	return values[season] if season >= 0 and season < values.size() else 0.0
+
+
+# --- CONVENIENZA STAGIONALE DEI CAPI (2026-10-20, richiesta utente — regola "Indossa i capi disponibili") ---
+# Stessi dati di _apply_apparel_bonuses, così la scelta e l'effetto reale non possono divergere. Salute e felicità pesano
+# 1 a 1. Un capo è conveniente per uno slot vuoto se il suo punteggio supera quello dello slot vuoto, oppure lo pareggia
+# e ha un effetto in più (has_extra_apparel_effect): a parità senza altri effetti non si prende, perché chi lo indossa se
+# lo tiene (nessuno si spoglia: il cambio stagionale è della Hut) e un capo neutro oggi può essere pessimo domani.
+
+# Stagione del giorno corrente (0 senza partita).
+static func current_season() -> int:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null:
+		return 0
+	return SeasonCalculator.get_season_for_day(posmod(game_data.get_absolute_day(), GameData.DAYS_PER_YEAR))
+
+
+# Salute + felicità al giorno del capo indossato nella stagione `season`.
+static func apparel_season_score(apparel_name: String, season: int) -> float:
+	var rules := CaloricCalculator.get_caloric_source_rules(apparel_name)
+	if rules == null:
+		return 0.0
+	return _season_value(rules.health_delta_by_season, season) + _season_value(rules.happiness_delta_by_season, season)
+
+
+# Punteggio dello slot vuoto nella stagione `season`: la penalità missing_* vale per salute E felicità, quindi conta
+# due volte. Slot senza penalità (collo, polsi): 0.
+static func empty_slot_season_score(individual: HumanIndividual, slot: int, season: int) -> float:
+	var human_rules := _resolve_human_rules(individual)
+	var values: Array[float] = []
+	match slot:
+		HumanIndividual.ApparelSlot.BODY:
+			values = human_rules.missing_body_apparel_daily_delta_by_season if human_rules != null else FALLBACK_MISSING_BODY_APPAREL_DELTA
+		HumanIndividual.ApparelSlot.HEAD:
+			values = human_rules.missing_head_apparel_daily_delta_by_season if human_rules != null else FALLBACK_MISSING_HEAD_APPAREL_DELTA
+		HumanIndividual.ApparelSlot.FEET:
+			values = human_rules.missing_feet_apparel_daily_delta_by_season if human_rules != null else FALLBACK_MISSING_FEET_APPAREL_DELTA
+		_:
+			return 0.0
+	return 2.0 * _season_value(values, season)
+
+
+# Il capo ha un effetto oltre a salute e felicità (oggi solo il risparmio sulla camminata, walk_stamina_multiplier).
+static func has_extra_apparel_effect(apparel_name: String) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(apparel_name)
+	return rules != null and rules.walk_stamina_multiplier < 1.0
+
+
+static func is_apparel_convenient(individual: HumanIndividual, apparel_name: String, slot: int, season: int) -> bool:
+	var score := apparel_season_score(apparel_name, season)
+	var empty_score := empty_slot_season_score(individual, slot, season)
+	return score > empty_score or (is_equal_approx(score, empty_score) and has_extra_apparel_effect(apparel_name))
 
 
 # Perdita di fede del giorno appena concluso (regola 5): valori da HumanRules (faith_daily_loss_uncovered/covered,

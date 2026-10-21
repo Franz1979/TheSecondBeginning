@@ -1427,6 +1427,10 @@ func _draw_buildings() -> void:
 		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 			PlaceholderBuildingShapes.draw(self, building_type_name, ground, false, 1.0, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
+		# Capanna del vestiario (2026-10-20): vista dall'alto, ruota con la porta (ClothingHutShape).
+		if building_type_name == ClothingHutShape.TYPE:
+			ClothingHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			continue
 		# Legnaia (2026-10-18, 2x1): tettoia con la catasta e spiazzo di lavoro, sul rettangolo intero.
 		if building_type_name == WoodshedShape.TYPE:
 			WoodshedShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))

@@ -294,6 +294,10 @@ var stock_toolkit_targets: Dictionary = {}
 # "stock_banquet_calories", ignorato nei salvataggi vecchi). Salvata da GameSaveService ("stock_banquet_safe_only");
 # partita nuova e salvataggi vecchi: accesa.
 var stock_banquet_safe_only: bool = true
+# Regola "Cuoci la carne lasciata nelle postazioni" (2026-10-20, richiesta utente — WarehouseManagerService.
+# _request_workstation_food). Salvata da GameSaveService ("stock_workstation_food_rule_enabled"); partita nuova e
+# salvataggi vecchi: accesa.
+var stock_workstation_food_rule_enabled: bool = true
 # Regola di assegnazione "Riponi gli attrezzi presi per un lavoro" (2026-10-11): gli attrezzi presi in deposito per un
 # ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da
 # GameSaveService ("job_board_return_borrowed_tools"); partita nuova e salvataggi vecchi: accesa.

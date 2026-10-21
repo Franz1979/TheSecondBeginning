@@ -3737,6 +3737,9 @@ func _setup_command_bar() -> void:
 	bottom_row.offset_top = build_bar.offset_top
 	bottom_row.offset_bottom = 0.0
 	bottom_row.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	# Se il contenuto è più largo dello spazio (cassetti aperti, 2026-10-20) la riga si allarga verso sinistra, sulla
+	# mappa, e non verso destra sotto i cassetti.
+	bottom_row.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	# Colonna a due righe (2026-10-03): sopra la riga dei comandi quando non c'è spazio per affiancarli (vuota e nascosta
 	# altrimenti), sotto la riga di sempre. Larga quanto la più larga delle due: la riga sopra, allineata a sinistra,
 	# parte dal bordo sinistro della BuildBar.
@@ -4143,7 +4146,9 @@ func _layout_bottom_bar_row(bar_visible: bool) -> void:
 		return
 	var needed: float = command_panel.get_combined_minimum_size().x + float(BOTTOM_ROW_SEPARATION) \
 		+ build_bar.get_combined_minimum_size().x
-	var stacked: bool = bar_visible and needed > _bottom_bar_row.size.x
+	# Spazio dato dalle ancore (0..1) e dagli offset, non size.x: quella non scende sotto la larghezza minima del contenuto.
+	var available: float = get_viewport().get_visible_rect().size.x + _bottom_bar_row.offset_right - _bottom_bar_row.offset_left
+	var stacked: bool = bar_visible and needed > available
 	if stacked == _command_bar_stacked:
 		return
 	_command_bar_stacked = stacked
@@ -14521,6 +14526,9 @@ func _toggle_warehouse_drawer() -> void:
 		# Regola dei banchetti spontanei (2026-10-17): dati della partita, letti da SocialRiteService.
 		_warehouse_panel.set_banquet_rule(game_data.stock_banquet_safe_only)
 		_warehouse_panel.banquet_safe_only_toggled.connect(func(enabled: bool) -> void: game_data.stock_banquet_safe_only = enabled)
+		# Carne lasciata nelle postazioni (2026-10-20): dato della partita, letto da WarehouseManagerService.
+		_warehouse_panel.set_workstation_food_rule(game_data.stock_workstation_food_rule_enabled)
+		_warehouse_panel.workstation_food_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_workstation_food_rule_enabled = enabled)
 		# Frequenza dell'inventario (2026-10-11): dato della partita.
 		_warehouse_panel.set_inventory_interval(game_data.inventory_interval_hours)
 		_warehouse_panel.inventory_interval_changed.connect(func(hours: int) -> void:
@@ -14715,6 +14723,23 @@ func _layout_side_drawer() -> void:
 		var warehouse_edge := right_edge - SideDrawer.WIDTH if side_drawer.visible else right_edge
 		warehouse_drawer.set_overlay_mode(UserOptions.side_drawer_overlay)
 		warehouse_drawer.place(warehouse_edge, panel_rect.position.y, panel_rect.end.y, sidebar_rect.end.y)
+	_fit_bottom_bar_row_to_drawers(right_edge, sidebar_rect.position.x)
+
+
+# Riga in basso fino al cassetto aperto più a sinistra (2026-10-20, richiesta utente): prima arrivava sempre al bordo
+# della sidebar e i cassetti le finivano sopra. Senza cassetti aperti, il bordo della sidebar come prima. La riga si
+# ricentra nello spazio rimasto e il pannello comandi, se non ci sta accanto, passa sopra (_layout_bottom_bar_row).
+func _fit_bottom_bar_row_to_drawers(right_edge: float, sidebar_left: float) -> void:
+	if _bottom_bar_row == null:
+		return
+	var left_edge := right_edge
+	for drawer: SideDrawer in [side_drawer, warehouse_drawer]:
+		if drawer != null and drawer.visible:
+			left_edge -= SideDrawer.WIDTH
+	left_edge = minf(left_edge, sidebar_left)
+	_bottom_bar_row.offset_right = left_edge - get_viewport().get_visible_rect().size.x
+	if command_panel != null:
+		_layout_bottom_bar_row(command_panel.visible)
 
 
 # Bottone 📋: apre il cassetto con l'assegnazione delle task, o lo richiude se la mostra già.

@@ -250,6 +250,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.stock_fuel_rule_enabled = bool(data["game"].get("stock_fuel_rule_enabled", int(data["game"].get("stock_fuel_min_per_building", 0)) > 0))
 	# Regola dei banchetti spontanei (2026-10-17) — 500 e accesa per i salvataggi precedenti.
 	game_data.stock_banquet_safe_only = bool(data["game"].get("stock_banquet_safe_only", true))
+	# Carne lasciata nelle postazioni (2026-10-20) — accesa per i salvataggi precedenti.
+	game_data.stock_workstation_food_rule_enabled = bool(data["game"].get("stock_workstation_food_rule_enabled", true))
 	game_data.stock_fuel_min_by_type.clear()
 	var raw_fuel_mins = data["game"].get("stock_fuel_min_by_type", {})
 	if raw_fuel_mins is Dictionary:

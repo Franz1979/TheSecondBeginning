@@ -339,9 +339,13 @@ static func try_take_bag(individual: HumanIndividual, age_band: HumanTypes.AgeBa
 # resolve_idle_individual appena libero, prima della sacca e della lista dei lavori. Il primo slot vuoto in ordine APPAREL_FETCH_ORDER sceglie il deposito (il più
 # vicino con un capo del suo tipo); nello STESSO deposito si prendono anche i capi per gli altri slot vuoti, così è un
 # viaggio solo: prima task assegnata, le altre accodate subito dopo. Quelli che lì mancano, a un momento libero successivo.
-# Il capo si prende anche se sfavorevole per la stagione (la hut gestirà il cambio). Tra più capi dello stesso tipo, quello
-# con più pezzi disponibili; l'unità prelevata è la più consumata (BuildingStorageService.withdraw_tool_units). I capi che
-# altri stanno già andando a prendere (APPAREL_FETCH_KEY) non contano. Il capo resta suo. true = task assegnata.
+# Scelta per stagione (2026-10-20, richiesta utente): si considerano solo i capi convenienti nella stagione corrente
+# (HumanVitalsInteractionService.is_apparel_convenient: meglio dello slot vuoto), dal punteggio più alto. Il primo slot
+# sceglie il deposito più vicino che ha un capo della fascia di punteggio migliore disponibile, scendendo di fascia solo
+# se nessuno ce l'ha; negli altri slot, nello stesso deposito, il capo conveniente col punteggio più alto e a parità
+# quello con più pezzi. Solo slot vuoti: nessuno si toglie un capo indossato (il cambio stagionale è della Hut).
+# L'unità prelevata è la più consumata (BuildingStorageService.withdraw_tool_units). I capi che altri stanno già andando
+# a prendere (APPAREL_FETCH_KEY) non contano. Il capo resta suo. true = task assegnata.
 static func try_wear_apparel(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
 	var game_data: GameData = GameSettings.active_game_data
 	if game_data == null or world == null or not game_data.job_board_wear_apparel:
@@ -356,27 +360,42 @@ static func try_wear_apparel(individual: HumanIndividual, age_band: HumanTypes.A
 		return false
 	var reserved := _reserved_fetches(individual, APPAREL_FETCH_KEY)
 	var reachability := PathfindingService.reachability_for(individual)
+	var season := HumanVitalsInteractionService.current_season()
 	var depot: Building = null
 	var plan: Array[Dictionary] = []
 	for slot in empty_slots:
 		var chosen := ""
+		var candidates := _convenient_apparel_for_slot(individual, slot, season)
 		if depot == null:
-			var best_distance := INF
-			for apparel_name in apparel_names_for_slot(slot):
-				var source := _find_free_source(individual, world, apparel_name, reserved, reachability)
-				if source == null:
-					continue
-				var distance := _distance_to(individual, source)
-				if distance < best_distance:
-					best_distance = distance
-					depot = source
-					chosen = apparel_name
+			# Fasce di punteggio dalla migliore: il deposito più vicino con un capo della fascia; la successiva solo se
+			# nessun capo della fascia è disponibile.
+			var index := 0
+			while index < candidates.size() and depot == null:
+				var tier_score := float(candidates[index]["score"])
+				var best_distance := INF
+				while index < candidates.size() and is_equal_approx(float(candidates[index]["score"]), tier_score):
+					var apparel_name := String(candidates[index]["name"])
+					index += 1
+					var source := _find_free_source(individual, world, apparel_name, reserved, reachability)
+					if source == null:
+						continue
+					var distance := _distance_to(individual, source)
+					if distance < best_distance:
+						best_distance = distance
+						depot = source
+						chosen = apparel_name
 		else:
+			var chosen_score := -INF
 			var chosen_free := 0
-			for apparel_name in apparel_names_for_slot(slot):
+			for candidate in candidates:
+				var apparel_name := String(candidate["name"])
+				var score := float(candidate["score"])
 				var free := BuildingStorageService.get_available_quantity(depot, apparel_name) - int(reserved.get(_fetch_key(depot, apparel_name), 0))
-				if free > chosen_free:
+				if free <= 0:
+					continue
+				if chosen == "" or score > chosen_score + 0.0001 or (is_equal_approx(score, chosen_score) and free > chosen_free):
 					chosen = apparel_name
+					chosen_score = score
 					chosen_free = free
 		if chosen == "":
 			continue
@@ -419,6 +438,17 @@ static func apparel_names_for_slot(slot: int) -> Array[String]:
 		if HumanIndividual.can_wear_in_slot(resource_name, slot):
 			names.append(resource_name)
 	return names
+
+
+# Capi per lo slot `slot` convenienti nella stagione `season` (HumanVitalsInteractionService.is_apparel_convenient), come
+# {"name", "score"} dal punteggio più alto (2026-10-20, regola del vestiario).
+static func _convenient_apparel_for_slot(individual: HumanIndividual, slot: int, season: int) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for apparel_name in apparel_names_for_slot(slot):
+		if HumanVitalsInteractionService.is_apparel_convenient(individual, apparel_name, slot, season):
+			result.append({"name": apparel_name, "score": HumanVitalsInteractionService.apparel_season_score(apparel_name, season)})
+	result.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["score"]) > float(b["score"]))
+	return result
 
 
 # true se un edificio qualsiasi ha un capo per lo slot `slot` (riga "Senza vestito" della campanella).

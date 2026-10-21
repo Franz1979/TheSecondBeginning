@@ -14,7 +14,7 @@ min_construction_days = 4
 required_labor = 1500
 storage_slot_count = 8
 storage_space_per_slot = 100
-accepted_categories = Array[int]([0, 1])
+accepted_categories = Array[int]([0, 1, 3])
 categories_locked = true
 required_materials = {
 "stick": 20,

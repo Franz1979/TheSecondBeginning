@@ -2,8 +2,8 @@ class_name WorkedHideCapIcon
 extends Control
 
 # Icona disegnata del "cappello di pelli lavorate" (worked_hide_cap, 2026-10-11, richiesta utente — secondo livello,
-# segnaposto): berretto a cupola con qualche cucitura, bordo folto arrotondato con zigzag e pompon in cima. Toni grigi
-# come le altre icone del vestiario. Stesso schema di WorkedHideDressIcon, nessun randf().
+# segnaposto): berretto a cupola con qualche cucitura, bordo folto arrotondato con zigzag e pompon in cima. Toni di pelle
+# affumicata, presi da WorkedHideDressIcon. Stesso schema di WorkedHideDressIcon, nessun randf().
 #
 # draw_into (statica) è la geometria vera, condivisa con DepositStorageIcons (magazzini e mucchi a terra).
 

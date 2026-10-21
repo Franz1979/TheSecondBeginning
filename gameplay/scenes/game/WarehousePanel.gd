@@ -94,6 +94,10 @@ const TOOLKIT_POPUP_BORDER_COLOR := Color(0.75, 0.85, 1.0, 0.6)
 # qui). Stato da GameScene (set_banquet_rule, prima di _ready); i cambi escono con banquet_safe_only_toggled.
 signal banquet_safe_only_toggled(enabled: bool)
 var _banquet_safe_only: bool = true
+# Regola "Cuoci la carne lasciata nelle postazioni" (2026-10-20, GameData.stock_workstation_food_rule_enabled): una
+# casella. Stato da GameScene (set_workstation_food_rule, prima di _ready); i cambi escono con workstation_food_rule_toggled.
+signal workstation_food_rule_toggled(enabled: bool)
+var _workstation_food_rule_enabled: bool = true
 const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
 var _inventory_label: Label = null
 var _inventory_info: Array = []
@@ -261,6 +265,26 @@ func _build_banquet_rule_rows() -> Control:
 	)
 	box.add_child(safe_toggle)
 	return box
+
+
+func set_workstation_food_rule(enabled: bool) -> void:
+	_workstation_food_rule_enabled = enabled
+
+
+# Regola della carne lasciata nelle postazioni: una casella, con la spiegazione nel tooltip.
+func _build_workstation_food_rule_row() -> Control:
+	var toggle := CheckBox.new()
+	toggle.text = tr("warehouse_rule_workstation_food")
+	toggle.tooltip_text = TooltipText.wrap(tr("warehouse_rule_workstation_food_tooltip"))
+	toggle.button_pressed = _workstation_food_rule_enabled
+	toggle.focus_mode = Control.FOCUS_NONE
+	toggle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	toggle.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	toggle.toggled.connect(func(pressed: bool) -> void:
+		_workstation_food_rule_enabled = pressed
+		workstation_food_rule_toggled.emit(pressed)
+	)
+	return toggle
 
 
 func set_toolkit_rule(enabled: bool, rows: Array[Dictionary]) -> void:
@@ -504,6 +528,7 @@ func _build_rules_section() -> void:
 	# Frequenza dell'inventario per prima (2026-10-17, richiesta utente), voci divise da un tratteggio.
 	DashedSeparator.add_item(_rules_box, _build_inventory_interval_row())
 	DashedSeparator.add_item(_rules_box, row)
+	DashedSeparator.add_item(_rules_box, _build_workstation_food_rule_row())
 	DashedSeparator.add_item(_rules_box, _build_fuel_rule_rows())
 	DashedSeparator.add_item(_rules_box, _build_toolkit_rule_rows())
 	DashedSeparator.add_item(_rules_box, _build_banquet_rule_rows())
