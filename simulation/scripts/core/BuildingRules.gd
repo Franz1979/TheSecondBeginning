@@ -290,6 +290,10 @@ extends Resource
 # Nessuna percorribilità per ora (rocce/edifici non attraversabili): solo stamina e velocità.
 @export var movement_stamina_multiplier: float = 1.0
 @export var movement_speed_multiplier: float = 1.0
+# Velocità di chi traina un mezzo (2026-10-23, richiesta utente — travois) su questo fondo, al posto di quella del terreno
+# libero (MovementTerrainService.TOWING_SPEED_GRASS / _FOREST): sentiero 1.0, terra battuta 0.95. < 0 = non è un fondo
+# (si usa il terreno sotto). Si moltiplica con movement_speed_multiplier.
+@export var towing_speed_multiplier: float = -1.0
 # Calpestabile (2026-10-17, richiesta utente — separato dalla categoria per lo Spiazzo delle feste, che è Ricreativo): true
 # = l'edificio non blocca le sue microcelle (ci si cammina sopra, ci si posa un mucchio) e può stare davanti alla porta di
 # un altro edificio. Prima lo decideva la categoria MOVEMENT, che resta il "tappeto/strada" (elenco, conteggi, preferenza

@@ -230,6 +230,9 @@ build_bar_palisade_description,Pali appuntiti piantati in un argine di terra.
 building_gate,Cancello
 build_bar_gate_tooltip,Cancello
 build_bar_gate_description,"Varco nella cinta con due ante: aperto si passa, chiuso no."
+building_travois_rack,Appoggio per travois
+build_bar_travois_rack_tooltip,Appoggio per travois
+build_bar_travois_rack_description,"Staccionata dove si appoggiano i travois, quattro per lato: si prendono qui per i trasporti pesanti e qui si riportano."
 build_bar_dirt_ground_tooltip,Terra battuta
 build_bar_requires_idea_tooltip,Richiede: {idea}
 build_bar_requires_deposit_site_tooltip,Serve prima un deposito
@@ -367,6 +370,7 @@ carried_resource_tooltip_wooden_spear,Lancia di legno
 carried_resource_tooltip_stone_knife,Coltello di pietra
 carried_resource_tooltip_bone_awl,Punteruolo d'osso
 carried_resource_tooltip_hide_bag,Sacca di pelle
+carried_resource_tooltip_travois,Travois
 carried_resource_tooltip_meat,Carne cruda
 carried_resource_tooltip_cooked_meat,Carne cotta
 carried_resource_tooltip_dried_meat,Carne essiccata
@@ -889,6 +893,7 @@ carried_resource_tooltip_stone_spear,Lancia con punta di pietra
 carried_resource_tooltip_bow,Arco
 carried_resource_tooltip_arrow_bundle,Mazzo di frecce
 tool_category_ammo,munizioni
+tool_category_towing,traino
 tool_gate_hunt_no_ammo,{name}: mancano le munizioni per {weapon}
 carried_resource_tooltip_stone_axe,Accetta rudimentale
 carried_resource_tooltip_wood,Tronco

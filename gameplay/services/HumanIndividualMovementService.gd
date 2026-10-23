@@ -95,6 +95,13 @@ func _update_path(individual: HumanIndividual, live_cells: Dictionary) -> void:
 				individual.current_task.task_name if individual.current_task != null else "?"
 			])
 		return
+	# Destinazione su una barriera (2026-10-23, PathfindingService.find_path): il percorso finisce sulla microcella libera
+	# prima, e lì ci si ferma — l'arrivo diventa il suo centro (target_position e path_target insieme, così il percorso non
+	# viene invalidato al prossimo frame).
+	var last_cell: Vector2i = cells[cells.size() - 1]
+	if last_cell != to:
+		individual.target_position = Vector2(last_cell) + Vector2(0.5, 0.5)
+		individual.path_target = individual.target_position
 	# Waypoint: i centri delle microcelle intermedie (né quella di partenza né quella d'arrivo); l'ultimo tratto va
 	# dritto alla posizione esatta di target_position.
 	for i in range(1, cells.size() - 1):

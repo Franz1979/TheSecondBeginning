@@ -370,8 +370,14 @@ func _complete_equip(individual: Variant) -> void:
 	var units: Array = BuildingStorageService.withdraw_tool_units(target_building, resource_name, 1)
 	if units.is_empty():
 		return
-	var equipped: bool = individual.equip_apparel_direct(resource_name, slot, units[0]) if _is_apparel() \
-		else individual.equip_tool_direct(resource_name, slot, null, units[0])
+	var equipped: bool = false
+	if slot == HumanIndividual.TOWED_SLOT:
+		# Mezzo da traino (2026-10-23, travois): si aggancia dietro, non in cintura.
+		equipped = individual.attach_towed(resource_name, units[0], null)
+	elif _is_apparel():
+		equipped = individual.equip_apparel_direct(resource_name, slot, units[0])
+	else:
+		equipped = individual.equip_tool_direct(resource_name, slot, null, units[0])
 	if not equipped:
 		BuildingStorageService.store_tool_instance(target_building, resource_name, units[0])
 		return
@@ -385,6 +391,8 @@ func _is_apparel() -> bool:
 
 
 func _find_equip_slot(individual: Variant) -> int:
+	if HumanIndividual.is_towing_resource(resource_name):
+		return HumanIndividual.TOWED_SLOT if not individual.is_towing() else -1
 	if _is_apparel():
 		return individual.find_apparel_slot_for(resource_name, equip_slot_index)
 	return individual.find_slot_for_direct_equip(resource_name, equip_slot_index)

@@ -1443,6 +1443,10 @@ func _draw_buildings() -> void:
 		if building_type_name == WoodshedShape.TYPE:
 			WoodshedShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
+		# Appoggio per travois (2026-10-23, 1x1): staccionata con i travois presenti appoggiati.
+		if building_type_name == TravoisRackShape.TYPE:
+			TravoisRackShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), int(entry.get("travois_count", 0)))
+			continue
 		# Spiazzo delle feste (2026-10-17, 2x2): terra battuta e cerchio di sassi, sul rettangolo intero.
 		if building_type_name == FeastGroundShape.TYPE:
 			# Il fondo è quello dei tile di terra battuta (_rebuild_dirt_ground_mesh): qui solo il cerchio di sassi.
@@ -1785,6 +1789,8 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"toolmaker_hut",
 	# Legnaia (2026-10-08, richiesta utente — segnaposto): stesso fondo degli altri edifici segnaposto.
 	"woodshed",
+	# Appoggio per travois (2026-10-23): terra battuta sotto.
+	"travois_rack",
 	# Capanna del vestiario (2026-10-11, segnaposto).
 	"clothing_hut",
 	# Ceppo dell'insegnamento (2026-10-16).
@@ -1808,6 +1814,24 @@ func _rebuild_dirt_ground_mesh() -> void:
 		if String(entry.get("building_type_name", "")) == "pebble_path" and entry.get("is_complete", true) \
 				and int(entry.get("linear_ground_fill", 0)) != 0:
 			grounded_paths[entry["position"]] = true
+	# Incroci e buchi (2026-10-23, richiesta utente): un pezzo senza fondo suo prende il tile anche se almeno due pezzi di
+	# sentiero accanto ce l'hanno già. Un solo passaggio sull'elenco di prima: il fondo non si propaga lungo un sentiero
+	# nell'erba (il pezzo dopo un tratto col fondo ha un solo vicino col tile).
+	var filled_paths: Dictionary = {}
+	for entry in buildings:
+		if String(entry.get("building_type_name", "")) != "pebble_path" or not entry.get("is_complete", true):
+			continue
+		var gap_pos: Vector2i = entry["position"]
+		if grounded_paths.has(gap_pos):
+			continue
+		var gap_neighbors := int(entry.get("linear_neighbors", 0))
+		var grounded_count := 0
+		for side in range(4):
+			if gap_neighbors & (1 << side) and grounded_paths.has(gap_pos + Vector2i(LinearShape.SIDE_DIRECTIONS[side])):
+				grounded_count += 1
+		if grounded_count >= 2:
+			filled_paths[gap_pos] = true
+	grounded_paths.merge(filled_paths)
 	for entry in buildings:
 		if not entry.get("is_complete", true):
 			continue

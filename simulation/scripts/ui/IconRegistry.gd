@@ -102,6 +102,8 @@ const RESOURCE_ICON_NODES := {
 	"bone_awl": preload("res://simulation/scripts/ui/BoneAwlIcon.gd"),
 	# Sacca di pelle (2026-09-27, richiesta utente): sacchetto di cuoio chiuso da un laccio — vedi HideBagIcon.gd.
 	"hide_bag": preload("res://simulation/scripts/ui/HideBagIcon.gd"),
+	# Travois (2026-10-23).
+	"travois": preload("res://simulation/scripts/ui/TravoisIcon.gd"),
 	# Sacca di pelle essiccata (2026-10-04): modello migliore di hide_bag, stessa sagoma nel colore della pelle essiccata.
 	"dried_hide_bag": preload("res://simulation/scripts/ui/DriedHideBagIcon.gd"),
 	# Vestiario (2026-10-11, richiesta utente): pelliccia di base (pelle col pelo, toni grigi) e, per il secondo livello,
@@ -206,6 +208,8 @@ const BUILDING_ICON_NODES := {
 	"covered_depot": preload("res://simulation/scripts/ui/CoveredDepotIcon.gd"),
 	# Legnaia (2026-10-08, richiesta utente — segnaposto): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"woodshed": preload("res://simulation/scripts/ui/WoodshedIcon.gd"),
+	# Appoggio per travois (2026-10-23).
+	"travois_rack": preload("res://simulation/scripts/ui/TravoisRackIcon.gd"),
 	# Capanna del vestiario (2026-10-11, segnaposto): stesso schema della legnaia.
 	"clothing_hut": preload("res://simulation/scripts/ui/ClothingHutIcon.gd"),
 	# Macerie (2026-10-10, richiesta utente — crollo): stesso disegno della mappa (PlaceholderBuildingShapes).

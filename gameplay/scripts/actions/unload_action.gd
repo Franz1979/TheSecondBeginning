@@ -711,6 +711,9 @@ func _complete_unequip(individual: Variant, context: Dictionary) -> void:
 	# Usi residui conservati (2026-09-26, attrezzi come istanze): l'attrezzo entra nel magazzino con il
 	# suo stato (tra i nuovi se a usi pieni, come istanza se consumato). Un capo di vestiario (2026-10-11) entra con
 	# il suo consumo e il deperimento che aveva quando è stato indossato.
+	if unequip_slot_index == HumanIndividual.TOWED_SLOT:
+		_complete_towed_return(individual, context, tool_name)
+		return
 	var instance: Dictionary = individual.get_equipped_apparel_instance(unequip_slot_index) if unequip_apparel \
 		else individual.get_equipped_tool_instance(unequip_slot_index)
 	if not BuildingStorageService.store_tool_instance(target_building, tool_name, instance):
@@ -731,8 +734,27 @@ func _complete_unequip(individual: Variant, context: Dictionary) -> void:
 	context["pending_walk_away_position"] = _walk_away_destination(individual, building_position, PHYSICAL_WALK_AWAY_DISTANCE)
 
 
+# Mezzo da traino riportato (2026-10-23, travois): al suo appoggio (deposito che lo accetta per nome) non costa nulla; in
+# un magazzino qualsiasi costa 2 usi (riposto male). Se si rompe non resta niente da depositare.
+func _complete_towed_return(individual: Variant, context: Dictionary, tool_name: String) -> void:
+	var dedicated: bool = target_building.rules != null and target_building.rules.storage_accepted_resources.has(tool_name)
+	if not dedicated and individual.consume_towed_use(2, null):
+		var broken: Array[String] = [tool_name]
+		report_broken_tools(individual, broken)
+		return
+	if not BuildingStorageService.store_tool_instance(target_building, tool_name, individual.towed_instance):
+		return
+	individual.detach_towed(null)
+	resource_deposited.emit(target_building)
+	var macro_offset: Vector2 = Vector2(Vector2i(target_building.macro_x, target_building.macro_y) - individual.home_macro_coords) * World.WIDTH
+	var building_position: Vector2 = Vector2(target_building.micro_x, target_building.micro_y) + macro_offset + Vector2(0.5, 0.5)
+	context["pending_walk_away_position"] = _walk_away_destination(individual, building_position, PHYSICAL_WALK_AWAY_DISTANCE)
+
+
 # Nome di ciò che lo slot da svuotare contiene: capo di vestiario o attrezzo della cintura (vedi unequip_apparel).
 func _unequip_resource_name(individual: Variant) -> String:
+	if unequip_slot_index == HumanIndividual.TOWED_SLOT:
+		return individual.towed_resource
 	if unequip_apparel:
 		return individual.get_equipped_apparel(unequip_slot_index)
 	return individual.get_equipped_tool(unequip_slot_index)
@@ -748,6 +770,10 @@ func _consume_carrying_tool_use(individual: Variant) -> void:
 		return
 	var required: Array[TaskTypes.ToolCategory] = [TaskTypes.ToolCategory.CARRYING]
 	var broken := ToolGateService.consume_tool_uses(individual, required, GameSettings.active_game_data)
+	# Mezzo da traino (2026-10-23, travois): anch'esso 1 uso per viaggio carico.
+	var towed_name: String = individual.towed_resource
+	if towed_name != "" and individual.consume_towed_use(1, GameSettings.active_game_data):
+		broken.append(towed_name)
 	report_broken_tools(individual, broken)
 
 

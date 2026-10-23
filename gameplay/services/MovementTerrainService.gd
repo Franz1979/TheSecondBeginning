@@ -29,6 +29,12 @@ static var _next_version: int = 1
 # default -1 dell'individuo).
 const VERSION_NOT_LIVE: int = -2
 
+# Velocità di chi traina un mezzo (2026-10-23, richiesta utente — travois) fuori dai fondi (BuildingRules.
+# towing_speed_multiplier): prato 0.85, bosco (microcella con alberi o arbusti) 0.5. Si moltiplica con la velocità del
+# terreno.
+const TOWING_SPEED_GRASS: float = 0.85
+const TOWING_SPEED_FOREST: float = 0.5
+
 
 # Ricostruisce la mappa sparsa di UNA cella viva da macro_world.buildings. Solo edifici COMPLETI e
 # non demoliti (un cantiere non modifica il cammino), solo i tipi con un moltiplicatore diverso da
@@ -37,6 +43,7 @@ const VERSION_NOT_LIVE: int = -2
 # nuova fonte si aggiunge come un altro blocco di questa funzione, componendo per prodotto.
 static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 	var modifiers: Dictionary = {}
+	var towing_surfaces: Dictionary = {}
 	if macro_world != null:
 		for building in macro_world.buildings:
 			if building.macro_x != cell.macro_x or building.macro_y != cell.macro_y:
@@ -47,6 +54,9 @@ static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 			# BuildingMaintenanceService.sync_damaged_buildings).
 			var stamina: float = building.get_effective_multiplier(building.rules.movement_stamina_multiplier)
 			var speed: float = building.rules.movement_speed_multiplier
+			if building.rules.towing_speed_multiplier >= 0.0:
+				for key in BuildingFootprint.cells_of(building):
+					towing_surfaces[key] = building.rules.towing_speed_multiplier
 			if is_equal_approx(stamina, 1.0) and is_equal_approx(speed, 1.0):
 				continue
 			# Ingombro (2026-10-17): su tutte le microcelle del rettangolo.
@@ -54,6 +64,7 @@ static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 				var existing: Vector2 = modifiers.get(key, Vector2.ONE)
 				modifiers[key] = Vector2(existing.x * stamina, existing.y * speed)
 	cell.movement_modifiers = modifiers
+	cell.towing_surfaces = towing_surfaces
 	cell.movement_version = _next_version
 	_next_version += 1
 
@@ -76,13 +87,42 @@ static func update_individual(individual: HumanIndividual, live_cells: Dictionar
 
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
 	var version: int = cell.movement_version if cell != null else VERSION_NOT_LIVE
-	if key == individual.terrain_cache_key and version == individual.terrain_cache_version:
+	var towing: bool = individual.is_towing()
+	var vegetation_version: int = cell.vegetation_layout_version if towing and cell != null else -1
+	if key == individual.terrain_cache_key and version == individual.terrain_cache_version \
+			and towing == individual.terrain_cache_towing and vegetation_version == individual.terrain_cache_vegetation_version:
 		return
 	individual.terrain_cache_key = key
 	individual.terrain_cache_version = version
+	individual.terrain_cache_towing = towing
+	individual.terrain_cache_vegetation_version = vegetation_version
 
 	var modifier := Vector2.ONE
 	if cell != null:
 		modifier = cell.movement_modifiers.get(micro, Vector2.ONE)
 	individual.terrain_stamina_multiplier = modifier.x
-	individual.terrain_speed_multiplier = modifier.y
+	individual.terrain_speed_multiplier = modifier.y * (_towing_speed_at(cell, micro) if towing else 1.0)
+
+
+# Velocità di traino sulla microcella: il fondo se c'è, altrimenti bosco o prato. Cella non viva = prato.
+static func _towing_speed_at(cell: LiveMacroCell, micro: Vector2i) -> float:
+	if cell == null:
+		return TOWING_SPEED_GRASS
+	if cell.towing_surfaces.has(micro):
+		return float(cell.towing_surfaces[micro])
+	return TOWING_SPEED_FOREST if _forest_cells(cell).has(micro) else TOWING_SPEED_GRASS
+
+
+# Microcelle col bosco della cella (vedi LiveMacroCell.forest_cells): ricavate dall'elenco delle piante disegnate solo se
+# la vegetazione è cambiata dall'ultima volta. Chiamata solo per chi traina, al cambio di microcella.
+static func _forest_cells(cell: LiveMacroCell) -> Dictionary:
+	if cell.forest_cells_version == cell.vegetation_layout_version:
+		return cell.forest_cells
+	var forest: Dictionary = {}
+	for object_type in [GameTypes.WorldObjectType.TREE, GameTypes.WorldObjectType.SHRUB]:
+		for key in cell.cached_vegetation_positions.get(object_type, []):
+			var plant: Vector3i = key
+			forest[Vector2i(plant.x, plant.y)] = true
+	cell.forest_cells = forest
+	cell.forest_cells_version = cell.vegetation_layout_version
+	return forest

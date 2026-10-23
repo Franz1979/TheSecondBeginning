@@ -18,4 +18,5 @@ walkable = true
 leaves_rubble = false
 visibility_radius = 1
 movement_stamina_multiplier = 0.95
+towing_speed_multiplier = 0.95
 upgrades_to = "pebble_path"

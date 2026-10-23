@@ -25,6 +25,10 @@ const BORROWED_TOOL_RETURN_KEY := "borrowed_tool_return"
 const BAG_FETCH_KEY := "bag_fetch"
 # Capo preso con la regola "Indossa i capi disponibili" (try_wear_apparel): "id edificio:nome" nel context, la prenotazione.
 const APPAREL_FETCH_KEY := "apparel_fetch"
+# Mezzo da traino preso prima di un lavoro a più viaggi (start_towed_fetch): "id edificio:nome", la prenotazione.
+const TOWED_FETCH_KEY := "towed_fetch"
+# Riposizione automatica del mezzo da traino (return_towed): riga "Automatico" in "In corso".
+const TOWED_RETURN_KEY := "towed_return"
 # Ordine degli slot del vestiario per la regola: prima il corpo, poi calzari, testa, collo, polsi.
 const APPAREL_FETCH_ORDER: Array[int] = [
 	HumanIndividual.ApparelSlot.BODY, HumanIndividual.ApparelSlot.FEET, HumanIndividual.ApparelSlot.HEAD,
@@ -492,6 +496,108 @@ static func return_borrowed_tools(ctx: GameContext) -> Array[Dictionary]:
 					member.id, member.name, tool_name, destination.building_type_name, destination.id
 				])
 		member.borrowed_tools = remaining
+	return created
+
+
+# --- Mezzo da traino (2026-10-23, richiesta utente — travois) ---
+# Si prende prima di un lavoro che richiede più di un viaggio (ordini di zona con più viaggi, trasporti oltre il carico),
+# se ce n'è uno libero: prima dall'appoggio più vicino (deposito che lo accetta per nome), poi da un magazzino. Nessuno
+# libero = il lavoro parte lo stesso, senza. Si riporta sempre quando il pipottino è libero (return_towed), qualunque sia
+# la regola "Riponi gli attrezzi presi per un lavoro": all'appoggio più vicino con posto, altrimenti in un magazzino (2 usi,
+# UnloadAction._complete_towed_return). I rifornimenti dei materiali restano senza travois per ora.
+
+# true se `quantity` unità di `resource_name` non stanno nel carico attuale di `worker` (serve più di un viaggio).
+static func needs_towing_for(worker: HumanIndividual, resource_name: String, quantity: int) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return rules != null and float(quantity) * rules.space_per_unit > worker.max_carry_capacity
+
+
+# Task di presa del mezzo da traino, assegnata dopo il lavoro (che va in coda e riprende a presa finita), come start_fetch.
+# null se lo traina già, se lo sta già andando a prendere o se nessun mezzo libero è raggiungibile.
+static func start_towed_fetch(ctx: GameContext, worker: HumanIndividual, work_label: Variant) -> Task:
+	if ctx.world == null or worker.is_towing():
+		return null
+	for task in JobWorkScanService.open_tasks(worker):
+		if task.context.has(TOWED_FETCH_KEY):
+			return null
+	var towed_names := fetchable_tool_names(TaskTypes.ToolCategory.TOWING)
+	towed_names.sort_custom(func(a: String, b: String) -> bool:
+		return _carry_bonus_of(a) > _carry_bonus_of(b)
+	)
+	var reserved := _reserved_fetches(worker, TOWED_FETCH_KEY)
+	var reachability := PathfindingService.reachability_for(worker)
+	for towed_name in towed_names:
+		var source := _find_towed_source(ctx.world, worker, towed_name, reserved, reachability)
+		if source == null:
+			continue
+		var task := TaskBuilderService.build_equip_tool_task(worker, source, towed_name, HumanIndividual.TOWED_SLOT)
+		if task == null:
+			return null
+		task.context[TOWED_FETCH_KEY] = _fetch_key(source, towed_name)
+		if not worker.assign_task(task, ctx.age_band_of(worker)):
+			return null
+		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+			print("[JOB BOARD] #%d %s: va a prendere %s in %s #%d prima di %s." % [
+				worker.id, worker.name, towed_name, source.building_type_name, source.id,
+				("ordine del cassetto #%d" % int(work_label)) if work_label is int else str(work_label)
+			])
+		return task
+	return null
+
+
+# Sorgente del mezzo: l'appoggio raggiungibile più vicino con un mezzo non prenotato, altrimenti il deposito più vicino.
+static func _find_towed_source(
+	world: World, worker: HumanIndividual, towed_name: String, reserved: Dictionary, reachability: Callable
+) -> Building:
+	var not_dedicated: Array[int] = []
+	for building in world.buildings:
+		if building.rules == null or not building.rules.storage_accepted_resources.has(towed_name):
+			not_dedicated.append(building.id)
+	var excluded := not_dedicated.duplicate()
+	while true:
+		var rack := WarehouseSelectionService.find_source_for_retrieval(
+			world, worker.position, worker.home_macro_coords, towed_name, excluded, 1, -1, reachability
+		)
+		if rack == null:
+			break
+		if BuildingStorageService.get_available_quantity(rack, towed_name) > int(reserved.get(_fetch_key(rack, towed_name), 0)):
+			return rack
+		excluded.append(rack.id)
+	return _find_free_source(worker, world, towed_name, reserved, reachability)
+
+
+# Ogni pipottino libero (nessuna task in corso né in coda) che traina un mezzo lo riporta: all'appoggio più vicino con
+# posto (WarehouseSelectionService.find_best mette prima i depositi dedicati), altrimenti al deposito migliore. Senza
+# destinazione si riprova al giro dopo. Una volta al secondo, accanto a return_borrowed_tools. Ritorna {"member", "task"}.
+static func return_towed(ctx: GameContext) -> Array[Dictionary]:
+	var created: Array[Dictionary] = []
+	if ctx.world == null:
+		return created
+	for member in ctx.individuals:
+		if not member.is_towing():
+			continue
+		if member.current_task != null and not member.current_task.is_finished():
+			continue
+		if not member.task_queue.is_empty():
+			continue
+		var destination := WarehouseSelectionService.find_best(
+			ctx.world, member.position, member.home_macro_coords, member.towed_resource, 1, [], PathfindingService.reachability_for(member)
+		)
+		if destination == null:
+			continue
+		var task := TaskBuilderService.build_tool_task(
+			member, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, member.towed_resource, destination, HumanIndividual.TOWED_SLOT
+		)
+		if task == null:
+			continue
+		task.context[TOWED_RETURN_KEY] = true
+		if not member.assign_task(task, ctx.age_band_of(member)):
+			continue
+		created.append({"member": member, "task": task})
+		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+			print("[JOB BOARD] #%d %s: riporta %s in %s #%d." % [
+				member.id, member.name, member.towed_resource, destination.building_type_name, destination.id
+			])
 	return created
 
 

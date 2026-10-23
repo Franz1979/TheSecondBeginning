@@ -295,6 +295,10 @@ static func is_reachable(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> b
 # Percorso di microcelle da `from` a `to` (compresi), dentro la macrocella; vuoto se non esiste (verificato prima con
 # is_reachable, senza A*). Partenza e destinazione sono sempre attraversabili: se bloccate vengono sbloccate solo per
 # questa ricerca.
+# Barriere (2026-10-23, richiesta utente — MicrocellObstacles.is_barrier: palizzata, vallo, cancello chiuso): se `to` è
+# una loro microcella il percorso finisce sulla microcella libera prima, dal lato da cui si arriva (l'ultima cella è
+# allora diversa da `to`: chi chiama si ferma lì). Prima si poteva arrivare sopra la barriera e, ripartendo da lì,
+# uscire dall'altra parte.
 static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> Array[Vector2i]:
 	var empty: Array[Vector2i] = []
 	if cell == null or cell.path_grid == null or not _in_bounds(from) or not _in_bounds(to):
@@ -313,6 +317,8 @@ static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> Arra
 		grid.set_point_solid(from, true)
 	if to_was_blocked:
 		grid.set_point_solid(to, true)
+	if path.size() >= 2 and cell.path_obstacles != null and cell.path_obstacles.is_barrier(to):
+		path.resize(path.size() - 1)
 	# Lisciatura (2026-09-27): tutti i chiamanti (pipottini, visitatori, ricalcoli per cambio di blocco) ricevono il
 	# percorso già semplificato.
 	return simplify_path(cell, path)

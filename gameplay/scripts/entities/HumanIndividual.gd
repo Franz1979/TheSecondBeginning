@@ -90,6 +90,10 @@ var terrain_speed_multiplier: float = 1.0
 # microcella ogni ~0.1 giorno di gioco, cioè ogni migliaia di frame.
 var terrain_cache_key: Vector4i = Vector4i(-999999, -999999, -999999, -999999)
 var terrain_cache_version: int = -1
+# Memo del traino (2026-10-23, travois): se traina e versione della vegetazione della cella (-1 senza traino), così
+# agganciare/sganciare il mezzo o un taglio nel bosco riaggiornano la velocità anche senza cambiare microcella.
+var terrain_cache_towing: bool = false
+var terrain_cache_vegetation_version: int = -1
 var is_selected: bool = false
 
 # --- Dati anagrafici — solo campi per ora, nessuna logica di riproduzione/formazione coppie ---
@@ -421,6 +425,17 @@ const STARTING_APPAREL := {
 }
 var equipped_apparel: Array[String] = []
 var equipped_apparel_instances: Array[Dictionary] = []
+# Mezzo da traino (2026-10-23, richiesta utente — travois): nome della risorsa trainata ("" = nessuna) e la sua istanza
+# (ToolInstance, usi residui). Non sta in cintura né nello zaino: aggiunge il suo carry_capacity_bonus alla capacità
+# (HumanCarryCapacityIndividualService) e si disegna dietro al pipottino. Scritti SOLO da attach_towed/detach_towed/
+# consume_towed_use. PERSISTITI (GameSaveService/GameLoadService, vuoti per i save vecchi).
+# Morte con il mezzo agganciato (2026-10-23, deciso con l'utente, per ora): il mezzo si perde con il pipottino, nessuno lo
+# lascia a terra né lo riporta. Da rivedere quando gli oggetti del morto resteranno accanto al corpo.
+var towed_resource: String = ""
+var towed_instance: Dictionary = {}
+# "Slot" del mezzo da traino per RetrieveAction.equip_slot_index / UnloadAction.unequip_slot_index (prendi e riponi): fuori
+# dal campo della cintura e del vestiario, così le due azioni lo riconoscono. Salvato come numero: non cambiarlo.
+const TOWED_SLOT: int = 100
 # Ultimo avviso del controllo attrezzi (ToolGateService, 2026-09-25): testo già tradotto, mostrato nel
 # pannello individuo; "" = nessun avviso. Scritto da GameScene quando un'assegnazione viene rifiutata
 # per mancanza di attrezzi, azzerato alla prima assegnazione che lo supera. Transitorio, non salvato.
@@ -1415,7 +1430,8 @@ func get_apparel_walk_stamina_multiplier() -> float:
 
 func get_walk_load_space() -> float:
 	if carried_body_id != -1:
-		return maxf(max_carry_capacity, get_carried_space())
+		# Il corpo pesa quanto il carico pieno della persona, non del mezzo da traino (2026-10-23).
+		return maxf(max_carry_capacity - get_towed_carry_bonus(), get_carried_space())
 	return get_carried_space()
 
 
@@ -1606,6 +1622,17 @@ static func is_tool_resource(resource_name: String) -> bool:
 	return resource_rules != null and not resource_rules.tool_categories.is_empty()
 
 
+# Mezzo da traino (2026-10-23, travois): attrezzo con la categoria TOWING. Non va mai in cintura (vedi towed_resource).
+static func is_towing_resource(resource_name: String) -> bool:
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return resource_rules != null and resource_rules.tool_categories.has(TaskTypes.ToolCategory.TOWING)
+
+
+# Attrezzo da cintura: un attrezzo che non sia un mezzo da traino.
+static func is_belt_tool_resource(resource_name: String) -> bool:
+	return is_tool_resource(resource_name) and not is_towing_resource(resource_name)
+
+
 # Bonus di capacità che uno slot della cintura dà quando è VUOTO (HumanRules.
 # carry_bonus_per_empty_tool_slot) — 0 senza regole risolvibili, coerente col fallback della capacità.
 func _carry_bonus_per_empty_tool_slot() -> float:
@@ -1619,7 +1646,7 @@ func _carry_bonus_per_empty_tool_slot() -> float:
 # il massimo). Ricalcola poi la capacità di trasporto. Ritorna true se lo spostamento è avvenuto.
 func equip_tool_from_backpack(resource_name: String, game_data: GameData) -> bool:
 	_ensure_tool_slots()
-	if not is_tool_resource(resource_name) or get_carried_quantity(resource_name) <= 0:
+	if not is_belt_tool_resource(resource_name) or get_carried_quantity(resource_name) <= 0:
 		return false
 	var free_slot: int = equipped_tools.find("")
 	if free_slot == -1:
@@ -1670,7 +1697,7 @@ func unequip_tool_to_backpack(slot_index: int, game_data: GameData) -> bool:
 # slot (che toglie il suo bonus di capacità) porterebbe lo zaino attuale oltre il massimo.
 func find_slot_for_direct_equip(resource_name: String, preferred_slot: int) -> int:
 	_ensure_tool_slots()
-	if not is_tool_resource(resource_name):
+	if not is_belt_tool_resource(resource_name):
 		return -1
 	var slot: int = -1
 	if preferred_slot >= 0 and preferred_slot < equipped_tools.size() and equipped_tools[preferred_slot] == "":
@@ -1689,6 +1716,8 @@ func find_slot_for_direct_equip(resource_name: String, preferred_slot: int) -> i
 # withdraw_tool_units); vuota = pezzo nuovo, usi pieni.
 func equip_tool_direct(resource_name: String, slot_index: int, game_data: GameData, instance: Dictionary = {}) -> bool:
 	if get_equipped_tool(slot_index) != "" or slot_index < 0 or slot_index >= equipped_tools.size():
+		return false
+	if is_towing_resource(resource_name):
 		return false
 	var tool_bonus_before := HumanCalculator.get_equipped_carry_bonus(equipped_tools)
 	_set_tool_slot(slot_index, resource_name, instance)
@@ -1738,6 +1767,66 @@ func _recalculate_carry_capacity_after_tool_change(game_data: GameData, empty_sl
 	else:
 		max_carry_capacity += float(empty_slot_delta) * _carry_bonus_per_empty_tool_slot()
 		max_carry_capacity += HumanCalculator.get_equipped_carry_bonus(equipped_tools) - tool_bonus_before
+
+
+# --- Mezzo da traino (2026-10-23, richiesta utente — travois) — vedi towed_resource ---
+
+func is_towing() -> bool:
+	return towed_resource != ""
+
+
+# carry_capacity_bonus del mezzo trainato, 0 senza mezzo.
+func get_towed_carry_bonus() -> float:
+	if towed_resource == "":
+		return 0.0
+	var resource_rules := CaloricCalculator.get_caloric_source_rules(towed_resource)
+	return resource_rules.carry_capacity_bonus if resource_rules != null else 0.0
+
+
+# Aggancia il mezzo (già tolto dal deposito con la sua istanza; vuota = nuovo, usi pieni). False se ne traina già uno o
+# se la risorsa non è un mezzo da traino.
+func attach_towed(resource_name: String, instance: Dictionary, game_data: GameData) -> bool:
+	if towed_resource != "" or not is_towing_resource(resource_name):
+		return false
+	var bonus_before := get_towed_carry_bonus()
+	towed_resource = resource_name
+	towed_instance = ToolInstance.normalized(instance) if not instance.is_empty() else ToolInstance.create(ToolInstance.get_max_uses(resource_name))
+	_recalculate_carry_capacity_after_towed_change(game_data, bonus_before)
+	return true
+
+
+# Sgancia il mezzo e ne restituisce l'istanza (il chiamante lo deposita); {} se non ne trainava.
+func detach_towed(game_data: GameData) -> Dictionary:
+	if towed_resource == "":
+		return {}
+	var instance := towed_instance
+	var bonus_before := get_towed_carry_bonus()
+	towed_resource = ""
+	towed_instance = {}
+	_recalculate_carry_capacity_after_towed_change(game_data, bonus_before)
+	return instance
+
+
+# Toglie `uses` usi al mezzo (1 per viaggio carico, 2 se riportato a un magazzino). A 0 si rompe: sparisce e la capacità
+# si aggiorna. Ritorna true se si è rotto. No-op per un mezzo con max_uses <= 0.
+func consume_towed_use(uses: int, game_data: GameData) -> bool:
+	if towed_resource == "" or ToolInstance.get_max_uses(towed_resource) <= 0:
+		return false
+	var remaining: int = ToolInstance.get_remaining_uses(towed_instance) - uses
+	towed_instance[ToolInstance.KEY_REMAINING_USES] = remaining
+	if remaining > 0:
+		return false
+	detach_towed(game_data)
+	return true
+
+
+# Stesso schema di _recalculate_carry_capacity_after_tool_change: ricalcolo completo con game_data, altrimenti correzione
+# della capacità corrente con la differenza di bonus.
+func _recalculate_carry_capacity_after_towed_change(game_data: GameData, bonus_before: float) -> void:
+	if game_data != null:
+		HumanCarryCapacityIndividualService.recalculate_max_carry_capacity(self, game_data)
+	else:
+		max_carry_capacity += get_towed_carry_bonus() - bonus_before
 
 
 # --- Vestiario (2026-10-11, richiesta utente) — vedi equipped_apparel ---

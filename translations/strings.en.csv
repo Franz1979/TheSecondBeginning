@@ -19,6 +19,9 @@ build_bar_palisade_description,Sharpened stakes set in an earth bank.
 building_gate,Gate
 build_bar_gate_tooltip,Gate
 build_bar_gate_description,"Opening in the wall with two leaves: open you pass, closed you don't."
+building_travois_rack,Travois stand
+build_bar_travois_rack_tooltip,Travois stand
+build_bar_travois_rack_description,"Fence where travois lean, four per side: taken from here for heavy hauling and brought back here."
 building_campfire,Campfire
 building_pebble_circle,Pebble circle
 building_toolmaker_hut,Toolmaker's hut
@@ -432,6 +435,7 @@ carried_resource_tooltip_wooden_spear,Wooden spear
 carried_resource_tooltip_stone_knife,Stone knife
 carried_resource_tooltip_bone_awl,Bone awl
 carried_resource_tooltip_hide_bag,Hide bag
+carried_resource_tooltip_travois,Travois
 carried_resource_tooltip_meat,Raw meat
 carried_resource_tooltip_cooked_meat,Cooked meat
 carried_resource_tooltip_dried_meat,Dried meat
@@ -831,6 +835,7 @@ carried_resource_tooltip_stone_spear,Stone-tipped spear
 carried_resource_tooltip_bow,Bow
 carried_resource_tooltip_arrow_bundle,Bundle of arrows
 tool_category_ammo,ammunition
+tool_category_towing,towing
 tool_gate_hunt_no_ammo,{name}: no ammunition for {weapon}
 carried_resource_tooltip_stone_axe,Crude axe
 carried_resource_tooltip_wood,Log

@@ -1084,6 +1084,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 						else ToolInstance.create(ToolInstance.get_max_uses(apparel_name))
 				individual.equipped_apparel.append(apparel_name)
 				individual.equipped_apparel_instances.append(apparel_instance)
+			# Mezzo da traino (2026-10-23, travois): save precedenti = nessuno; istanza non valida = usi pieni.
+			var towed_name: String = String(individual_data.get("towed_resource", ""))
+			if towed_name != "" and HumanIndividual.is_towing_resource(towed_name):
+				var raw_towed = individual_data.get("towed_instance", {})
+				individual.towed_resource = towed_name
+				individual.towed_instance = ToolInstance.normalized(raw_towed) if raw_towed is Dictionary and ToolInstance.is_usable(raw_towed) \
+					else ToolInstance.create(ToolInstance.get_max_uses(towed_name))
 			# Task/Action in corso (2026-09-08, richiesta utente) — "current_task" assente (save
 			# precedente a questo campo) o esplicitamente null (individuo a Rest implicito al
 			# momento del salvataggio) lasciano individual.current_task al default null, nessuna

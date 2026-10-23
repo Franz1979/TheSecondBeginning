@@ -62,6 +62,12 @@ static func can_produce_at(building: Building, resource_name: String) -> bool:
 	# AUTOMATICO sotto.
 	if recipe_rules.recipe_auto_progress_days > 0:
 		return false
+	# Idea della ricetta (2026-10-23, richiesta utente — travois alla Capanna dell'attrezzista): una ricetta può chiedere
+	# un'idea successiva a quella del suo edificio; finché non è scoperta l'edificio non la mostra né la produce.
+	if recipe_rules.required_idea_id != "":
+		var folk: Folk = GameSettings.active_human_folk
+		if folk == null or not folk.completed_ideas.has(recipe_rules.required_idea_id):
+			return false
 	return recipe_rules.recipe_workstation_types.has(building.building_type_name)
 
 

@@ -717,6 +717,9 @@ func save_game_to_json(
 				# l'istanza intera del capo (consumo e deperimento congelato), parallela.
 				"equipped_apparel": Array(individual.equipped_apparel),
 				"equipped_apparel_instances": individual.equipped_apparel_instances.duplicate(true),
+				# Mezzo da traino (2026-10-23, travois): nome ("" = nessuno) e istanza.
+				"towed_resource": individual.towed_resource,
+				"towed_instance": individual.towed_instance.duplicate(true),
 				# Task/Action in corso (2026-09-08, richiesta utente — "salva anche lo stato della
 				# sua action") — null se l'individuo non ha una Task attiva (Rest implicito, vedi
 				# HumanIndividualActionService.apply_action), altrimenti l'intera sequenza di step

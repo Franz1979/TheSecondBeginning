@@ -102,6 +102,9 @@ const TORSO_RADIUS_SIDE: float = 1.15 # lungo Y locale (spalle)
 # TORSO_RADIUS_FORWARD che TORSO_RADIUS_SIDE, la testa ricade sempre per intero dentro la sagoma
 # del busto, mai a sporgere.
 const HEAD_RADIUS: float = 0.6
+# Travois trainato (2026-10-23): lunghezza dietro al centro e mezza apertura delle gambe a terra.
+const TRAVOIS_LENGTH: float = 4.5
+const TRAVOIS_HALF_SPREAD: float = 1.4
 
 # Corporatura femminile leggermente più sottile (richiesta utente, 2026-09-06) — applicato SOLO al
 # busto (gambe/braccia/testa restano identiche tra i sessi), un unico moltiplicatore invece di una
@@ -245,6 +248,8 @@ var game_data: GameData
 var _current_age_band: HumanTypes.AgeBand = HumanTypes.AgeBand.FERTILE_ADULT
 # Vestiario disegnato all'ultimo redraw (nomi dei capi del corpo e della testa): un capo tolto o indossato fa ridisegnare.
 var _last_drawn_apparel: String = ""
+# Mezzo da traino disegnato l'ultima volta (2026-10-23, travois).
+var _last_drawn_towed: String = ""
 
 # --- Colori del vestiario (2026-10-11, richiesta utente) ---
 # Il tratto clothing_color resta sull'individuo ma non colora più il busto finché non esistono capi tinti: chi indossa un
@@ -435,7 +440,8 @@ func _process(delta: float) -> void:
 		or individual.is_selected != _last_drawn_is_selected \
 		or _current_age_band != _last_drawn_age_band \
 		or individual.is_pregnant != _last_drawn_is_pregnant \
-		or _apparel_signature() != _last_drawn_apparel
+		or _apparel_signature() != _last_drawn_apparel \
+		or individual.towed_resource != _last_drawn_towed
 	_process_usec_accum += Time.get_ticks_usec() - _process_start_usec
 	if needs_redraw:
 		_last_drawn_walk_phase = walk_phase
@@ -443,6 +449,7 @@ func _process(delta: float) -> void:
 		_last_drawn_age_band = _current_age_band
 		_last_drawn_is_pregnant = individual.is_pregnant
 		_last_drawn_apparel = _apparel_signature()
+		_last_drawn_towed = individual.towed_resource
 		_has_drawn_once = true
 		queue_redraw()
 	_maybe_print_timing_window()
@@ -507,6 +514,9 @@ func _draw() -> void:
 	# la punta di volta in volta "in avanti" sporge di più di quella "indietro" (vedi
 	# LEG_SWING_*_AMPLITUDE sopra), sempre in controfase tra loro (sinistra +phase, destra -phase).
 	var phase := sin(walk_phase)
+	# Mezzo da traino (2026-10-23, travois) PRIMA di tutto: sta dietro al pipottino, sotto il busto.
+	if individual.towed_resource != "":
+		_draw_towed_travois()
 	_draw_ellipse(Vector2(LEG_BASE_FORWARD + _limb_swing_offset(phase, LEG_SWING_FORWARD_AMPLITUDE, LEG_SWING_BACKWARD_AMPLITUDE), -LEG_SIDE_OFFSET), LEG_RADIUS_FORWARD, LEG_RADIUS_SIDE, SKIN_COLOR)
 	_draw_ellipse(Vector2(LEG_BASE_FORWARD + _limb_swing_offset(-phase, LEG_SWING_FORWARD_AMPLITUDE, LEG_SWING_BACKWARD_AMPLITUDE), LEG_SIDE_OFFSET), LEG_RADIUS_FORWARD, LEG_RADIUS_SIDE, SKIN_COLOR)
 	# Busto: femmine leggermente piu' sottili (vedi FEMALE_TORSO_SCALE sopra) -- un solo
@@ -562,6 +572,23 @@ func _draw() -> void:
 		var selection_radius := TORSO_RADIUS_SIDE + 0.3 + LEG_SWING_FORWARD_AMPLITUDE
 		draw_arc(Vector2.ZERO, selection_radius, 0, TAU, 24, SELECTION_COLOR, SELECTION_WIDTH)
 	_draw_usec_accum += Time.get_ticks_usec() - _draw_start_usec
+
+
+# Travois trainato (2026-10-23): lo stesso disegno rustico dell'icona (TravoisIcon.draw_rustic), girato — l'incrocio dei
+# pali sulle spalle, traverse e fagotto dietro, i piedi a terra all'indietro (−X locale) per TRAVOIS_LENGTH. Pali sottili:
+# senza legature (sotto il pixel).
+const TRAVOIS_SHOULDER_X: float = 0.3
+const TRAVOIS_POLE_WIDTH: float = 0.22
+
+
+func _draw_towed_travois() -> void:
+	var length_per_unit := TRAVOIS_LENGTH / (TravoisIcon.LEFT_FOOT.y - TravoisIcon.CROSS.y)
+	var spread_per_unit := 2.0 * TRAVOIS_HALF_SPREAD / (TravoisIcon.RIGHT_FOOT.x - TravoisIcon.LEFT_FOOT.x)
+	var to_local := func(icon_point: Vector2) -> Vector2:
+		return Vector2(
+			TRAVOIS_SHOULDER_X + (TravoisIcon.CROSS.y - icon_point.y) * length_per_unit, (icon_point.x - 0.5) * spread_per_unit
+		)
+	TravoisIcon.draw_rustic(self, to_local, TRAVOIS_POLE_WIDTH)
 
 
 # Ampiezza di oscillazione di UN arto (gamba O braccio, vedi _draw()) dato il suo valore di fase

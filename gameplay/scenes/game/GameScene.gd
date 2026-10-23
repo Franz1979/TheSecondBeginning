@@ -9949,6 +9949,13 @@ func _start_zone_order_tool_fetch(worker: HumanIndividual, plan: Array[Dictionar
 		_refresh_selected_individual_panel()
 
 
+# Presa del travois prima di un lavoro a più viaggi (ToolFetchService.start_towed_fetch, 2026-10-23): qui i segnali.
+func _start_towed_fetch(worker: HumanIndividual, work_label: Variant) -> void:
+	var task := ToolFetchService.start_towed_fetch(_game_context(), worker, work_label)
+	if task != null:
+		_wire_transport_task(task, worker)
+
+
 # Bottone "Taglia" / "Estrai": lo strato dell'ordine con i limiti del popup del comando e il valore ricordato.
 var _drawer_zone_order_kind: String = DrawerOrderService.TYPE_CUT
 # Passo della carne nello strato "Caccia" (i valori del popup, HuntZoneService.MEAT_TARGET_OPTIONS: 5, 10, 15, 20).
@@ -10110,6 +10117,12 @@ func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 			var job_keys: Array[String] = [String(job["key"])]
 			_forget_job_board_wait(job_keys)
 			_start_zone_order_tool_fetch(worker, fetch_plan, order_id)
+			# Travois (2026-10-23): serie di più viaggi -> lo prende prima, se ce n'è uno libero. Caccia esclusa (si
+			# insegue la preda). Serie di raccolta: "stessi viaggi, più roba" (ogni viaggio porta di più, il numero non
+			# cambia). Ipotesi b, per il futuro: un viaggio col travois conta come più viaggi in proporzione al carico,
+			# così la serie finisce prima.
+			if order_type != DrawerOrderService.TYPE_HUNT and int(order.get("count", 1)) > 1:
+				_start_towed_fetch(worker, order_id)
 			return
 
 
@@ -12729,9 +12742,10 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		cell.vegetation_presence_sent = false
 		cell.vegetation_layout_version += 1
 		# Posizioni rigenerate: nel dubbio la geometria in memoria del renderer si butta tutta (passo B, 2026-10-03).
-		# Non al taglio (2026-10-18, scatti: ~10.000 alberi ricalcolati per uno solo): la geometria è per individuo e
-		# validata dalla firma (sottotipo, anno di nascita, lotto) e da anno/parametri d'età, gli altri restano uguali.
-		if cell.renderer != null and reason != "taglio":
+		# Non al taglio (2026-10-18, scatti: ~10.000 alberi ricalcolati per uno solo) né alla pulizia di un cantiere
+		# (2026-10-23, stesso motivo): la geometria è per individuo e validata dalla firma (sottotipo, anno di nascita,
+		# lotto) e da anno/parametri d'età; le piante tolte spariscono, le altre restano uguali.
+		if cell.renderer != null and reason != "taglio" and reason != "cantiere ripulito":
 			cell.renderer.clear_vegetation_geometry_cache()
 		var vegetation_service := VegetationPositionService.new()
 		cell.cached_vegetation_positions = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
@@ -14023,6 +14037,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Cancello (2026-10-23).
 		&"build_gate":
 			return "gate"
+		# Appoggio per travois (2026-10-23).
+		&"build_travois_rack":
+			return "travois_rack"
 		# Pietre impilate (2026-10-02, richiesta utente) — azione cablata in BuildBar._ready.
 		&"build_stacked_stones":
 			return "stacked_stones"
@@ -14691,6 +14708,9 @@ func _assign_drawer_transport_job(worker: HumanIndividual, job: Dictionary) -> v
 	DrawerOrderService.remove(game_data, order_id)
 	var job_keys: Array[String] = [String(job["key"])]
 	_forget_job_board_wait(job_keys)
+	# Travois (2026-10-23): più di un viaggio di carico -> lo prende prima, se ce n'è uno libero.
+	if ToolFetchService.needs_towing_for(worker, String(pick["resource"]), int(pick["quantity"])):
+		_start_towed_fetch(worker, "trasporto #%d" % order_id)
 	if worker == individual:
 		_refresh_selected_individual_panel()
 
@@ -16276,6 +16296,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"site_debris": WasteDisposalService.has_site_debris(building),
 				# Cancello (2026-10-23): disegnato aperto o chiuso.
 				"gate_open": building.gate_open,
+				# Appoggio per travois (2026-10-23): quanti travois disegnare appoggiati.
+				"travois_count": int((building.stored_resources.get("travois", {}) as Dictionary).get("quantity", 0)),
 				# Casa riscaldata oggi (2026-10-22, HouseHeatingService): fumo fermo sul tetto.
 				"heated": building.heated_today and building.is_complete,
 				# Affumicatoio al lavoro (2026-10-23, ProductionService.refresh_smoking): fumo dal foro.

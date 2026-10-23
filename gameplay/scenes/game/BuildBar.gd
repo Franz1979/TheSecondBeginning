@@ -110,7 +110,10 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	"palisade": 20,
 	# Cancello (2026-10-23, richiesta utente) — slot 21, submenu_row.slot_count portato a 23; Hut resta l'ultimo (slot 22).
 	"gate": 21,
-	"hut": 22,
+	# Appoggio per travois (2026-10-23, richiesta utente) — slot 22, submenu_row.slot_count portato a 24; Hut resta l'ultimo
+	# (slot 23). Categoria OTHER.
+	"travois_rack": 22,
+	"hut": 23,
 }
 
 # Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 10). RUINS esclusa:
@@ -243,7 +246,7 @@ func _ready() -> void:
 	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
 	# Legnaia (2026-10-08): richiede advanced_paleolithic_constructions, disabilitata da _refresh_building_slots_buildable.
 	# Capanna del vestiario (2026-10-11): richiede advanced_paleolithic_constructions, come la legnaia.
-	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit"]:
+	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack"]:
 		submenu_row.configure_slot(
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)

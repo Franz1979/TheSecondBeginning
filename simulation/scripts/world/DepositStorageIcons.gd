@@ -66,6 +66,7 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"stone_knife": "_draw_deposit_storage_stone_knife_icon",
 	"bone_awl": "_draw_deposit_storage_bone_awl_icon",
 	"hide_bag": "_draw_deposit_storage_hide_bag_icon",
+	"travois": "_draw_deposit_storage_travois_icon",
 	"dried_hide_bag": "_draw_deposit_storage_dried_hide_bag_icon",
 	# Vestiario (2026-10-11): pelliccia di base e pelli lavorate (secondo livello).
 	"fur_dress": "_draw_deposit_storage_fur_dress_icon",
@@ -536,6 +537,11 @@ static func _draw_deposit_storage_bone_awl_icon(canvas: CanvasItem, top_left: Ve
 # Sacca di pelle (2026-09-27): stessa geometria dell'icona del pannello (HideBagIcon.draw_into).
 static func _draw_deposit_storage_hide_bag_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	HideBagIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Travois (2026-10-23): stessa geometria dell'icona del pannello (TravoisIcon.draw_into).
+static func _draw_deposit_storage_travois_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	TravoisIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 # Lancia con punta di pietra (2026-10-04): stessa geometria dell'icona del pannello (StoneSpearIcon.draw_into); la usa

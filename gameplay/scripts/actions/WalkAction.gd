@@ -43,6 +43,11 @@ const STAMINA_DRAIN_PER_TOOL: float = 2.0
 # carico è used_carry_space × questo valore. Usato anche da RunAction.
 # Taratura 2026-09-27 (richiesta utente): da 0.5 a 0.25.
 const CARRY_STAMINA_MULTIPLIER: float = 0.25
+# Mezzo da traino (2026-10-23, richiesta utente — travois): il carico pesa meno (0.1 per spazio invece di 0.25) ma
+# trascinare costa 3 fissi a microcella, scalati dal terreno (strade e terra battuta li riducono). Vedi
+# get_load_stamina_per_microcell, usata anche da RunAction.
+const TOWING_CARRY_STAMINA_MULTIPLIER: float = 0.1
+const TOWING_DRAG_STAMINA_PER_MICROCELL: float = 3.0
 
 # Nessun effetto sull'happiness (2026-09-19, richiesta utente): le Action non toccano i parametri
 # vitali di happiness, solo le Task lo fanno al completamento (vedi TaskCompletionEffects,
@@ -121,12 +126,11 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 # allo stesso modo ma verso un bersaglio mobile). Ritorna il delta (negativo). `debug_label` = nome
 # dell'azione nella riga di MovementStaminaDebugLog.
 static func compute_walk_stamina_delta(individual: Variant, distance: float, debug_label: String) -> float:
-	var used_carry_space: float = individual.get_walk_load_space()
 	var cost_per_microcell: float = get_walk_cost_per_microcell(individual)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
 		MovementStaminaDebugLog.record(
 			individual, debug_label, distance, individual.terrain_stamina_multiplier, STAMINA_DRAIN_PER_MICROCELL_BASE,
-			used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+			get_load_stamina_per_microcell(individual) + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 		)
 	return -distance * cost_per_microcell
 
@@ -142,9 +146,17 @@ static func compute_walk_stamina_delta(individual: Variant, distance: float, deb
 # Vestiario (2026-10-20, calzari): anche individual.get_apparel_walk_stamina_multiplier() scala la sola quota BASE, come il
 # terreno — fattore generico, prodotto dei walk_stamina_multiplier dei capi indossati (1.0 senza capi).
 static func get_walk_cost_per_microcell(individual: Variant) -> float:
-	var used_carry_space: float = individual.get_walk_load_space()
-	var base_cost: float = STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier * individual.get_apparel_walk_stamina_multiplier() + used_carry_space * CARRY_STAMINA_MULTIPLIER + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+	var base_cost: float = STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier * individual.get_apparel_walk_stamina_multiplier() + get_load_stamina_per_microcell(individual) + STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	return base_cost / SkillEffectService.get_factor(walk_skill_effect_key(individual), individual)
+
+
+# Quota del carico nel costo per microcella: spazio occupato × CARRY_STAMINA_MULTIPLIER; con un mezzo da traino (2026-10-23)
+# spazio × TOWING_CARRY_STAMINA_MULTIPLIER più il trascinamento (TOWING_DRAG_STAMINA_PER_MICROCELL × terreno).
+static func get_load_stamina_per_microcell(individual: Variant) -> float:
+	var used_carry_space: float = individual.get_walk_load_space()
+	if individual.is_towing():
+		return used_carry_space * TOWING_CARRY_STAMINA_MULTIPLIER + TOWING_DRAG_STAMINA_PER_MICROCELL * individual.terrain_stamina_multiplier
+	return used_carry_space * CARRY_STAMINA_MULTIPLIER
 
 
 # Tolleranza di arrivo (2026-09-16, richiesta utente, fix bordo macrocella — robustezza generica,

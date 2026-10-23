@@ -19,4 +19,5 @@ required_space = 1
 has_door = false
 visibility_radius = 1
 movement_stamina_multiplier = 0.9
+towing_speed_multiplier = 1.0
 movement_speed_multiplier = 1.05

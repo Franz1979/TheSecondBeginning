@@ -33,6 +33,15 @@ var river_exterior_occupied: Dictionary = {}
 # stata disattivata e ricreata.
 var movement_modifiers: Dictionary = {}
 var movement_version: int = 0
+# Mezzo da traino (2026-10-23, travois): microcelle con un fondo (BuildingRules.towing_speed_multiplier >= 0) -> velocità
+# di traino, costruita insieme a movement_modifiers da MovementTerrainService.rebuild.
+var towing_surfaces: Dictionary = {}
+# Microcelle con almeno un albero o arbusto (Vector2i -> true), ricavate da cached_vegetation_positions SOLO quando un
+# pipottino che traina chiede il bosco qui (MovementTerrainService._forest_cells): niente lavoro al taglio né alla
+# rigenerazione. forest_cells_version = vegetation_layout_version da cui sono state ricavate (-1 = mai): se la vegetazione
+# si è rigenerata nel frattempo, la prossima domanda le rifà una volta sola.
+var forest_cells: Dictionary = {}
+var forest_cells_version: int = -1
 
 # Griglia di pathfinding di QUESTA cella (2026-09-27, pathfinding step 1 — vedi PathfindingService, l'unico che la
 # scrive): AStarGrid2D 100x100 (null = non ancora costruita), ostacoli raccolti una volta (path_obstacles), guadi

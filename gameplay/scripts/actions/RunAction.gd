@@ -60,22 +60,22 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	var distance: float = individual.position.distance_to(_last_position)
 	_last_position = individual.position
 
-	# Stesso identico lookup di WalkAction.get_stamina_delta per il carico trasportato.
-	var used_carry_space: float = individual.get_walk_load_space()
+	# Stessa quota del carico di WalkAction (mezzo da traino compreso, 2026-10-23).
+	var load_cost: float = WalkAction.get_load_stamina_per_microcell(individual)
 
 	var cost_per_microcell: float = (
 		# terrain_stamina_multiplier (2026-09-19, vedi MovementTerrainService): solo sulla quota base. Stessa cosa per il
 		# vestiario (2026-10-20, calzari — WalkAction.get_walk_cost_per_microcell).
 		RUN_INTENSITY_MULTIPLIER * WalkAction.STAMINA_DRAIN_PER_MICROCELL_BASE * individual.terrain_stamina_multiplier
 			* individual.get_apparel_walk_stamina_multiplier()
-		+ used_carry_space * WalkAction.CARRY_STAMINA_MULTIPLIER
+		+ load_cost
 		+ WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 	)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_STAMINA_LOGS:
 		MovementStaminaDebugLog.record(
 			individual, "Run", distance, individual.terrain_stamina_multiplier,
 			RUN_INTENSITY_MULTIPLIER * WalkAction.STAMINA_DRAIN_PER_MICROCELL_BASE,
-			used_carry_space * WalkAction.CARRY_STAMINA_MULTIPLIER + WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
+			load_cost + WalkAction.STAMINA_DRAIN_PER_TOOL * float(individual.equipped_tool_count)
 		)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_MOVEMENT_LOGS:
 		print("[RUN DEBUG] get_stamina_delta: distance=%.3f cost_per_microcell=%.2f (base Walk x%.1f + carico/utensili invariati) -> delta=%.2f" % [

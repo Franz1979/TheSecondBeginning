@@ -31,7 +31,7 @@ static func recalculate_max_carry_capacity(individual: HumanIndividual, game_dat
 	if individual.folk_ref != null:
 		human_rules = individual.folk_ref.human_rules_ref
 	if human_rules == null:
-		individual.max_carry_capacity = HumanIndividual.FALLBACK_MAX_CARRY_CAPACITY
+		individual.max_carry_capacity = HumanIndividual.FALLBACK_MAX_CARRY_CAPACITY + individual.get_towed_carry_bonus()
 		individual.food_space_capacity = HumanIndividual.FALLBACK_MAX_FOOD_SPACE
 		HumanFoodPouchService.on_capacity_recalculated(individual, false)
 		_recalculate_body_calories_capacity(individual, HumanIndividual.FALLBACK_MAX_BODY_CALORIES, false)
@@ -44,6 +44,8 @@ static func recalculate_max_carry_capacity(individual: HumanIndividual, game_dat
 	individual.max_carry_capacity = HumanCalculator.get_max_carry_capacity(
 		human_rules, age_band, individual.sex, individual.equipped_tool_count, 1.0, individual.equipped_tools
 	)
+	# Mezzo da traino (2026-10-23, travois): il suo bonus si somma a base e sacca.
+	individual.max_carry_capacity += individual.get_towed_carry_bonus()
 	# Saccoccia del cibo (2026-09-19, richiesta utente - ricalcolo spostato qui da
 	# HumanVitalsIndividualService): stessa eta'/regole gia' risolte sopra, stessa cadenza (creazione,
 	# ingresso in scena, ogni giorno). Il massimo (food_space_capacity) non e' persistito.

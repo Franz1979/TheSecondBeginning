@@ -1064,6 +1064,7 @@ func kill_individual_now(individual: HumanIndividual) -> void:
 func _kill_individual(
 	individual: HumanIndividual, index: int, cause: DeathTypes.DeathCause, day: int, age_at_death: int
 ) -> bool:
+	# Mezzo da traino (2026-10-23, travois): per ora si perde con il morto (vedi HumanIndividual.towed_resource).
 	# Custodia del figlio a carico (2026-09-19, richiesta utente): a OGNI morte, qualunque causa, mentre
 	# dependent_child_id e' ancora leggibile e l'individuo e' ancora nel roster (il padre e' cercato li').
 	# Se il padre non puo' prenderlo in carico il bambino resta orfano, vedi _apply_daily_starvation.

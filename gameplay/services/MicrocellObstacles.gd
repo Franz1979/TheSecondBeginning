@@ -22,6 +22,11 @@ var stones: Dictionary = {}
 var blocking_buildings: Dictionary = {}
 # Edifici calpestabili (BuildingRules.walkable, es. terra battuta, spiazzo): microcella -> id edificio.
 var movement_buildings: Dictionary = {}
+# Barriere (2026-10-23, richiesta utente): palizzata, vallo e cancello chiuso, tra quelli che bloccano. Un percorso che
+# finisce su una loro microcella si ferma sulla microcella libera prima, dal proprio lato (PathfindingService.find_path):
+# sopra una barriera non si arriva, quindi non la si attraversa ripartendo da lì. Microcella -> id edificio.
+const BARRIER_TYPES: Array[String] = ["palisade", "gate", "earthwork"]
+var barrier_buildings: Dictionary = {}
 
 
 # `river_positions`: microcelle del fiume (Array o Dictionary con le microcelle come chiavi, o null).
@@ -54,6 +59,7 @@ static func build(
 func refresh_buildings(macro_coords: Vector2i, macro_world: World) -> void:
 	blocking_buildings.clear()
 	movement_buildings.clear()
+	barrier_buildings.clear()
 	if macro_world == null:
 		return
 	for building in macro_world.buildings:
@@ -68,6 +74,13 @@ func refresh_buildings(macro_coords: Vector2i, macro_world: World) -> void:
 				movement_buildings[microcell] = building.id
 			else:
 				blocking_buildings[microcell] = building.id
+				if BARRIER_TYPES.has(building.building_type_name):
+					barrier_buildings[microcell] = building.id
+
+
+# true se sulla microcella c'è una barriera che blocca adesso (palizzata, vallo, cancello chiuso).
+func is_barrier(microcell: Vector2i) -> bool:
+	return barrier_buildings.has(microcell)
 
 
 # Regola dei Criteri 3-6 (vedi in testa). I flag allow_* corrispondono a BuildingRules.buildable_on_water/_river/

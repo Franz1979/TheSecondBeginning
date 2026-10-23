@@ -122,9 +122,19 @@ static func find_best(
 			and BuildingStorageService.can_accept(building, resource_name) \
 			and BuildingStorageService.get_max_depositable(building, resource_name) >= 1
 
+	# Deposito dedicato (2026-10-23, l'appoggio per travois): un edificio che accetta la risorsa per nome
+	# (BuildingRules.storage_accepted_resources) viene prima di ogni magazzino.
+	var dedicated_predicate := func(building: Building) -> bool:
+		return building.rules != null and building.rules.storage_accepted_resources.has(resource_name) and has_capacity.call(building)
+	var candidate: Variant = SpatialSelectionService.find_nearest(
+		world.buildings, origin_position, origin_macro_coords, dedicated_predicate, excluded_building_ids, reachable
+	)
+	if candidate != null:
+		return candidate as Building
+
 	var storage_predicate := func(building: Building) -> bool:
 		return building.rules != null and building.rules.category == BuildingTypes.Category.STORAGE and has_capacity.call(building)
-	var candidate: Variant = SpatialSelectionService.find_nearest(
+	candidate = SpatialSelectionService.find_nearest(
 		world.buildings, origin_position, origin_macro_coords, storage_predicate, excluded_building_ids, reachable
 	)
 	if candidate != null:

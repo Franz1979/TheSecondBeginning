@@ -153,4 +153,7 @@ enum ToolCategory {
 	# AMMO (2026-10-04, richiesta utente — mazzo di frecce, arrow_bundle.tres) aggiunto IN FONDO, stesso motivo: le
 	# munizioni di un'arma che non si lancia (l'arco). Nessuna logica la legge ancora: la caccia con l'arco arriva dopo.
 	AMMO,
+	# TOWING (2026-10-23, richiesta utente — travois, travois.tres) aggiunto IN FONDO, stesso motivo: un mezzo da trainare,
+	# non da cintura (per questo non CARRYING, che le regole della sacca mettono in cintura). Nessuna Action la richiede.
+	TOWING,
 }
