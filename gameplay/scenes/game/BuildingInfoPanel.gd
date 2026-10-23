@@ -2581,10 +2581,34 @@ const INFLUENCE_TYPE_NAME_KEYS := {
 }
 
 
+# Riga del riscaldamento (2026-10-22, HouseHeatingService): creata al primo uso, subito sotto l'influenza ricevuta. Solo
+# per le case riscaldabili: acceso o spento oggi.
+var _heating_label: Label = null
+
+
+func _refresh_heating(building: Building, is_house: bool) -> void:
+	var heatable := is_house and HouseHeatingService.is_heatable(building.rules)
+	if _heating_label == null:
+		if not heatable:
+			return
+		_heating_label = Label.new()
+		_heating_label.autowrap_mode = influence_received_label.autowrap_mode
+		_heating_label.add_theme_font_size_override("font_size", influence_received_label.get_theme_font_size("font_size"))
+		influence_received_label.add_sibling(_heating_label)
+	_heating_label.visible = heatable
+	if not heatable:
+		return
+	# Solo acceso/spento (2026-10-22, richiesta utente): il combustibile si vede già nel deposito qui sotto.
+	_heating_label.text = tr("building_heating_label").format({
+		"state": tr("building_heating_warm" if building.heated_today else "building_heating_cold"),
+	})
+
+
 func _refresh_influence_received(building: Building) -> void:
 	var is_house: bool = building.rules != null and building.rules.category == BuildingTypes.Category.RESIDENTIAL \
 		and building.is_complete and not building.is_demolished
 	influence_received_label.visible = is_house
+	_refresh_heating(building, is_house)
 	if not is_house:
 		return
 	var names: Array[String] = []

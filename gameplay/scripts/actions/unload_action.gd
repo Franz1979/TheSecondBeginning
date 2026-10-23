@@ -159,6 +159,9 @@ var unequip_slot_index: int = -1
 # Modalità "addosso" (2026-10-11, vestiario): con unequip_slot_index >= 0, true = lo slot è uno slot del vestiario
 # (HumanIndividual.ApparelSlot) e il capo si toglie di dosso; false = slot della cintura, come sempre. Persistito.
 var unequip_apparel: bool = false
+# Cambio stagionale del guardaroba (2026-10-22, ToolFetchService.try_swap_seasonal_apparel): capo nello zaino da indossare
+# nello stesso slot subito dopo aver riposto quello vecchio. "" = nessun cambio. Salvato.
+var replace_with_apparel: String = ""
 
 # Risorse per cui la ricerca del magazzino ha programmato QUESTO scarico (2026-09-27, richiesta utente — viaggi
 # doppi dopo la macellazione): scritto da HumanIndividualActionService._search_warehouse_for_resource. Serve a (1)
@@ -701,6 +704,10 @@ func _complete_unequip(individual: Variant, context: Dictionary) -> void:
 		return
 	if BuildingStorageService.get_max_depositable(target_building, tool_name) <= 0:
 		return
+	# Cambio del guardaroba (2026-10-22): mai nudi — il vecchio si toglie solo se il nuovo è già nello zaino.
+	if unequip_apparel and replace_with_apparel != "" and individual.get_carried_quantity(replace_with_apparel) <= 0:
+		print("[WARDROBE] #%d %s: %s non è nello zaino, si tiene %s." % [individual.id, individual.name, replace_with_apparel, tool_name])
+		return
 	# Usi residui conservati (2026-09-26, attrezzi come istanze): l'attrezzo entra nel magazzino con il
 	# suo stato (tra i nuovi se a usi pieni, come istanza se consumato). Un capo di vestiario (2026-10-11) entra con
 	# il suo consumo e il deperimento che aveva quando è stato indossato.
@@ -710,6 +717,12 @@ func _complete_unequip(individual: Variant, context: Dictionary) -> void:
 		return
 	if unequip_apparel:
 		individual.take_equipped_apparel(unequip_slot_index)
+		if replace_with_apparel != "":
+			var worn: bool = individual.equip_apparel_from_backpack(replace_with_apparel, unequip_slot_index)
+			print("[WARDROBE] #%d %s: %s riposto in %s #%d%s." % [
+				individual.id, individual.name, tool_name, target_building.get_display_name(), target_building.id,
+				(", indossa %s" % replace_with_apparel) if worn else ", %s non indossato" % replace_with_apparel,
+			])
 	else:
 		individual.take_equipped_tool(unequip_slot_index, null)
 	resource_deposited.emit(target_building)
@@ -798,6 +811,7 @@ func get_save_data() -> Dictionary:
 		# Modalità "cintura" (2026-09-25) — letta da TaskPersistenceService._build_step.
 		"unequip_slot_index": unequip_slot_index,
 		"unequip_apparel": unequip_apparel,
+		"replace_with_apparel": replace_with_apparel,
 	}
 	if target_building != null:
 		data["target_building_id"] = target_building.id

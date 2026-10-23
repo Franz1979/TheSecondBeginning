@@ -65,6 +65,50 @@ static func can_produce_at(building: Building, resource_name: String) -> bool:
 	return recipe_rules.recipe_workstation_types.has(building.building_type_name)
 
 
+# Ricetta conosciuta dal popolo (2026-10-22, richiesta utente — pelle affumicata ordinabile senza l'idea dell'affumicatoio):
+# true se la risorsa non è una ricetta (nessun recipe_workstation_types), oppure se la sua idea (required_idea_id) è
+# completata e almeno uno dei suoi tipi di postazione non chiede idee o ha la sua completata. Regola unica per la
+# Gestione scorte (riga nascosta) e il Warehouse Manager (nessun ordine).
+static func is_recipe_known(resource_name: String, folk: Folk) -> bool:
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if recipe_rules == null or recipe_rules.recipe_workstation_types.is_empty():
+		return true
+	if recipe_rules.required_idea_id != "" and (folk == null or not folk.completed_ideas.has(recipe_rules.required_idea_id)):
+		return false
+	for type_name in recipe_rules.recipe_workstation_types:
+		var building_rules := BuildingCalculator.get_building_rules(String(type_name))
+		if building_rules == null:
+			continue
+		if building_rules.required_idea_id == "" or (folk != null and folk.completed_ideas.has(building_rules.required_idea_id)):
+			return true
+	return false
+
+
+# Nome del primo tipo di postazione conosciuto per `resource_name` (tradotto), "" se nessuno.
+static func known_workstation_display_name(resource_name: String, folk: Folk) -> String:
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if recipe_rules == null:
+		return ""
+	for type_name in recipe_rules.recipe_workstation_types:
+		var building_rules := BuildingCalculator.get_building_rules(String(type_name))
+		if building_rules == null:
+			continue
+		if building_rules.required_idea_id == "" or (folk != null and folk.completed_ideas.has(building_rules.required_idea_id)):
+			return String(TranslationServer.translate(building_rules.building_name))
+	return ""
+
+
+# true se nel mondo c'è almeno una postazione completa, non demolita, di un tipo che fa `resource_name` (occupata o no).
+static func has_built_workstation_for(world: World, resource_name: String) -> bool:
+	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if world == null or recipe_rules == null:
+		return false
+	for building in world.buildings:
+		if not building.is_demolished and building.is_complete and recipe_rules.recipe_workstation_types.has(building.building_type_name):
+			return true
+	return false
+
+
 # --- AVANZAMENTO AUTOMATICO (2026-10-03, richiesta utente — essiccazione, passo 2) ---
 # Una ricetta con recipe_auto_progress_days > 0 non passa dalla Produce (esclusa da can_produce_at sopra): i suoi
 # ingredienti, depositati nello storage normale di una postazione elencata in recipe_workstation_types, portano nella
@@ -299,6 +343,9 @@ static func load_production_state(building: Building, raw_progress: Dictionary, 
 				# Ordine riservato a un rito sociale (2026-10-14, RESERVED_FOR_KEY): assente nei save precedenti.
 				if String(record.get(RESERVED_FOR_KEY, "")) != "":
 					orders[key][RESERVED_FOR_KEY] = String(record[RESERVED_FOR_KEY])
+				# Cottura automatica del gestore scorte (2026-10-22, AUTO_COOK_KEY): assente nei save precedenti.
+				if bool(record.get(AUTO_COOK_KEY, false)):
+					orders[key][AUTO_COOK_KEY] = true
 				if key.begins_with(ORDER_KEY_PREFIX) and key.substr(ORDER_KEY_PREFIX.length()).is_valid_int():
 					max_index = maxi(max_index, int(key.substr(ORDER_KEY_PREFIX.length())))
 			else:
@@ -427,6 +474,21 @@ static func mark_order_reserved(building: Building, order_key: String, reserved_
 
 static func is_order_reserved(building: Building, order_key: String) -> bool:
 	return has_order(building, order_key) and String((building.production_progress[order_key] as Dictionary).get(RESERVED_FOR_KEY, "")) != ""
+
+
+# Cottura automatica del gestore scorte (2026-10-22, richiesta utente): ordine nato dai giorni di cibo o dalla regola
+# "Cuoci la carne lasciata nelle postazioni". Se gli ingredienti vanno persi (carne marcita) l'Inventario lo toglie e libera
+# la postazione (WarehouseManagerService._cancel_stuck_auto_cook_orders); gli ordini del giocatore non si toccano. Salvato.
+const AUTO_COOK_KEY := "auto_cook"
+
+
+static func mark_order_auto_cook(building: Building, order_key: String) -> void:
+	if has_order(building, order_key):
+		(building.production_progress[order_key] as Dictionary)[AUTO_COOK_KEY] = true
+
+
+static func is_order_auto_cook(building: Building, order_key: String) -> bool:
+	return has_order(building, order_key) and bool((building.production_progress[order_key] as Dictionary).get(AUTO_COOK_KEY, false))
 
 
 static func free_slot_from_unclaimed(building: Building, claimed_keys: Dictionary) -> bool:
@@ -734,6 +796,11 @@ static func get_production_demand(building: Building, resource_name: String) -> 
 # alto (meno unità consumate), a parità in ordine di nome; unità intere, decremento esatto via
 # BuildingStorageService.withdraw_stored (la voce sparisce solo se arriva a 0). Chiamata DOPO il
 # prelievo dei materiali della ricetta, così non tocca le unità appena consumate come materiale.
+# Pubblica (2026-10-22): la usa anche il riscaldamento delle case (HouseHeatingService), stessa regola del focolare.
+static func consume_fuel(building: Building, required: float) -> void:
+	_consume_fuel(building, required)
+
+
 static func _consume_fuel(building: Building, required: float) -> void:
 	if required <= 0.0:
 		return

@@ -828,6 +828,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# controllo giornaliero/attivazione di SetupSiteAction lo ricalcola comunque da zero se
 			# necessario, vedi Building.gd).
 			building.is_awaiting_material = bool(building_data.get("is_awaiting_material", false))
+			# Riscaldamento (2026-10-22): assente nei save precedenti.
+			building.heating_fuel_due = float(building_data.get("heating_fuel_due", 0.0))
+			building.heated_today = bool(building_data.get("heated_today", false))
 			world.buildings.append(building)
 
 	var max_loaded_building_id := 0

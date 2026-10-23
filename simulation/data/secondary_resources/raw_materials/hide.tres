@@ -9,5 +9,5 @@ calories_per_unit = 0.0
 consuming_depletes_primary = false
 category = 1
 generation_source = 3
-day_durability = 300
+day_durability = 400
 space_per_unit = 3.0

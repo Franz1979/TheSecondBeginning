@@ -2,8 +2,9 @@ class_name FuelStockService
 extends RefCounted
 
 # Regola del gestore scorte "combustibile negli edifici che lo usano" (2026-10-16, richiesta utente): ogni edificio
-# completo e in servizio con almeno una ricetta che brucia combustibile (focolare, affumicatoio…) deve avere nel suo
-# deposito almeno il minimo del suo TIPO (in unità di fuel_value). Minimo per tipo modificabile nel cassetto Gestione
+# completo e in servizio con almeno una ricetta che brucia combustibile (focolare, affumicatoio…) o riscaldabile (la Hut,
+# 2026-10-22) deve avere nel suo deposito la scorta del suo TIPO (in unità di fuel_value); il trasporto parte quando
+# scende sotto la metà e la riporta piena (2026-10-22). Minimo per tipo modificabile nel cassetto Gestione
 # scorte (GameData.stock_fuel_min_by_type); un tipo mai toccato usa BuildingRules.fuel_stock_min. Regola accesa/spenta:
 # GameData.stock_fuel_rule_enabled.
 # Servizio senza stato: decide quali ordini creare o togliere; GameScene li mette nel cassetto come ordini "transport"
@@ -20,6 +21,9 @@ const FUEL_AMOUNT_KEY := "fuel_amount"
 # true se il tipo `type_name` ha almeno una ricetta che brucia combustibile.
 static func type_uses_fuel(type_name: String) -> bool:
 	var rules := BuildingCalculator.get_building_rules(type_name)
+	# Case riscaldabili (2026-10-22, HouseHeatingService): anche loro hanno una quantità di combustibile.
+	if HouseHeatingService.is_heatable(rules):
+		return true
 	if rules == null or not rules.is_workstation:
 		return false
 	for recipe_name in CaloricCalculator.list_secondary_resource_names():
@@ -40,7 +44,15 @@ static func get_rule_rows(game_data: GameData, completed_ideas: Array) -> Array[
 		if rules.required_idea_id != "" and not completed_ideas.has(rules.required_idea_id):
 			continue
 		rows.append({"type": type_name, "name": rules.building_name, "level": get_min_for_type(type_name, game_data)})
-	return rows
+	# Case riscaldabili in fondo (2026-10-22, richiesta utente), dopo le postazioni di lavoro.
+	var houses_last: Array[Dictionary] = []
+	for row in rows:
+		if not HouseHeatingService.is_heatable(BuildingCalculator.get_building_rules(String(row["type"]))):
+			houses_last.append(row)
+	for row in rows:
+		if HouseHeatingService.is_heatable(BuildingCalculator.get_building_rules(String(row["type"]))):
+			houses_last.append(row)
+	return houses_last
 
 
 # Minimo della partita per `type_name`, o quello del suo .tres se mai cambiato.
@@ -72,7 +84,13 @@ static func plan_orders(world: World, game_data: GameData, open_orders: Array, t
 			if not bool(uses_by_type[type_name]) or min_fuel <= 0:
 				continue
 			served[building.id] = true
-			var missing := float(min_fuel) - ProductionService.get_available_fuel(building) - float(traveling.get(building.id, 0.0))
+			var have := ProductionService.get_available_fuel(building) + float(traveling.get(building.id, 0.0))
+			var missing := float(min_fuel) - have
+			# Soglia della metà (2026-10-22, richiesta utente — per tutti gli edifici): il rifornimento parte solo sotto la
+			# metà della scorta e la riporta piena (niente viaggi per poco combustibile). Un ordine già aperto resta finché la
+			# scorta è piena.
+			if have >= float(min_fuel) * 0.5 and not open_by_target.has(building.id):
+				continue
 			if missing <= ProductionService.FUEL_EPSILON:
 				if open_by_target.has(building.id):
 					(result["remove"] as Array).append(int(open_by_target[building.id]["id"]))
@@ -99,12 +117,13 @@ static func pick_fuel(world: World, target: Building, fuel_amount: float, worker
 	var origin := worker.position if worker != null else Vector2.ZERO
 	var origin_macro := worker.home_macro_coords if worker != null else Vector2i.ZERO
 	var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
-	var source := WarehouseSelectionService.find_source_for_retrieval(
-		world, origin, origin_macro, WarehouseSelectionService.FUEL_CRITERION, [target.id], 1, -1, reachability, true
-	)
-	if source == null:
+	# Per resa (2026-10-22, MaterialSupplyService.find_fuel_source): la legna da ardere prima dei rametti.
+	var excluded: Array[int] = [target.id]
+	var found := MaterialSupplyService.find_fuel_source(world, origin, origin_macro, excluded, reachability)
+	if found.is_empty():
 		return {}
-	var fuel_name := MaterialSupplyService.best_fuel_in(source)
+	var source: Building = found["source"]
+	var fuel_name := String(found["resource"])
 	var fuel_value := ProductionService.get_fuel_value(fuel_name)
 	if fuel_name == "" or fuel_value <= 0.0:
 		return {}

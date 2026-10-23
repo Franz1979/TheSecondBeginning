@@ -365,21 +365,28 @@ static func has_available_in_area(area: WorkArea, macro_state: MacroCellState, n
 	return false
 
 
-# Celle della WorkArea con qualcosa tra `names`: [[cell, unità], ...]. Tenute per il solo fotogramma in corso
-# (2026-10-19, scatti: la lista dei lavori rifaceva la stessa scansione per ogni pipottino e ogni ordine di raccolta,
-# ~30.000 letture per fotogramma); la raggiungibilità, che dipende dal pipottino, resta fuori.
+# Celle della WorkArea con qualcosa tra `names`: [[cell, unità], ...]; la raggiungibilità, che dipende dal pipottino,
+# resta fuori. Tenute in memoria (2026-10-19 per fotogramma; 2026-10-22 tra un fotogramma e l'altro, scatti: la prima
+# scansione di ogni fotogramma costava ~40 ms, ~6000 letture) finché: non passano CELL_TOTALS_MAX_AGE_MSEC, non cambia
+# il giorno e nessuno raccoglie da terra (TerrainScatteredResourceService.consume_revision). Gli altri cambiamenti della
+# disponibilità (consumo degli animali, stagioni, cantieri...) arrivano entro la durata massima; la raccolta vera
+# ricontrolla comunque la disponibilità sul posto.
+const CELL_TOTALS_MAX_AGE_MSEC := 2000
+const CELL_TOTALS_CACHE_MAX := 256
 static var _cell_totals_cache: Dictionary = {}
-static var _cell_totals_frame: int = -1
 
 
 static func _area_cell_totals(area: WorkArea, macro_state: MacroCellState, names: Array[String]) -> Array:
-	var frame := Engine.get_process_frames()
-	if frame != _cell_totals_frame:
-		_cell_totals_cache.clear()
-		_cell_totals_frame = frame
+	var now_msec := Time.get_ticks_msec()
+	var day := GameSettings.active_game_data.get_absolute_day() if GameSettings.active_game_data != null else -1
+	var revision := TerrainScatteredResourceService.consume_revision
 	var cache_key := [area.id, area.macro_coords, area.rect, names]
-	if _cell_totals_cache.has(cache_key):
-		return _cell_totals_cache[cache_key]
+	var cached: Variant = _cell_totals_cache.get(cache_key)
+	if cached != null and now_msec - int(cached["time"]) < CELL_TOTALS_MAX_AGE_MSEC \
+			and int(cached["day"]) == day and int(cached["revision"]) == revision:
+		return cached["result"]
+	if _cell_totals_cache.size() >= CELL_TOTALS_CACHE_MAX:
+		_cell_totals_cache.clear()
 	var result: Array = []
 	for y in range(area.rect.position.y, area.rect.end.y):
 		for x in range(area.rect.position.x, area.rect.end.x):
@@ -389,7 +396,7 @@ static func _area_cell_totals(area: WorkArea, macro_state: MacroCellState, names
 				cell_total += maxi(PickUpAction.get_source_available_at(macro_state, cell, PickUpAction.SourceKind.TERRAIN, candidate_name), 0)
 			if cell_total > 0:
 				result.append([cell, cell_total])
-	_cell_totals_cache[cache_key] = result
+	_cell_totals_cache[cache_key] = {"result": result, "time": now_msec, "day": day, "revision": revision}
 	return result
 
 
@@ -407,11 +414,30 @@ static func work_area_has_available(area: WorkArea, macro_state: MacroCellState,
 # Scelta automatica della zona per un ordine di raccolta: valide le WorkArea con raccolta abilitata, intersezione dei
 # filtri non vuota e qualcosa di raggiungibile da raccogliere; punteggio = disponibile / (distanza pipottino–centro
 # zona + ZONE_DISTANCE_OFFSET) × ZONE_CROWDING_FACTOR per ogni altro pipottino che già raccoglie lì. null se nessuna.
+# Tenuta per il fotogramma in corso, per pipottino e scelta dell'ordine (2026-10-22, scatti: il coordinatore valutava lo
+# stesso pipottino per ogni ordine di raccolta, rifacendo ogni volta conteggi e raggiungibilità cella per cella).
+static var _chosen_area_cache: Dictionary = {}
+static var _chosen_area_frame: int = -1
+
+
 static func choose_work_area(
 	game_data: GameData, world: World, individual: HumanIndividual, criterion_kind: int, criterion_category: int, resource_name: String
 ) -> WorkArea:
 	if game_data == null or world == null or individual == null:
 		return null
+	var frame := Engine.get_process_frames()
+	if frame != _chosen_area_frame:
+		_chosen_area_cache.clear()
+		_chosen_area_frame = frame
+	var cache_key := [individual.get_instance_id(), criterion_kind, criterion_category, resource_name]
+	if not _chosen_area_cache.has(cache_key):
+		_chosen_area_cache[cache_key] = _choose_work_area(game_data, world, individual, criterion_kind, criterion_category, resource_name)
+	return _chosen_area_cache[cache_key]
+
+
+static func _choose_work_area(
+	game_data: GameData, world: World, individual: HumanIndividual, criterion_kind: int, criterion_category: int, resource_name: String
+) -> WorkArea:
 	var best: WorkArea = null
 	var best_score := -1.0
 	for area in game_data.work_areas:

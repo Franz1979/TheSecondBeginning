@@ -15,6 +15,9 @@ extends RefCounted
 # chi chiama, che ne collega i segnali (griglia del magazzino) e aggiorna i pannelli.
 
 const ZONE_ORDER_TOOL_FETCH_KEY := "zone_order_tool_fetch"
+# Attrezzo che un prelievo per un lavoro sta andando a prendere (start_fetch): "id edificio:nome" nel context, la
+# prenotazione (2026-10-23): due pipottini non puntano più allo stesso coltello.
+const TOOL_FETCH_SOURCE_KEY := "tool_fetch_source"
 # Riposizione automatica di un attrezzo in prestito (return_borrowed_tools): riga "Automatico" in "In corso".
 const BORROWED_TOOL_RETURN_KEY := "borrowed_tool_return"
 # Sacca presa con la regola "Prendi la sacca se disponibile" (try_take_bag): "id edificio:nome" nel context, la prenotazione.
@@ -127,15 +130,34 @@ static func fetchable_tool_names(category: int) -> Array[String]:
 
 
 # Deposito e attrezzo che copre `category` per `worker` (raggiungibile; tra i nomi, il deposito più vicino); con `worker`
-# null basta che un deposito ne abbia uno. {} se nessuno.
+# null basta che un deposito ne abbia uno. {} se nessuno. Gli attrezzi che altri stanno già andando a prendere
+# (TOOL_FETCH_SOURCE_KEY, 2026-10-23) non contano.
+# Tenuto per il fotogramma in corso, per pipottino e categoria (2026-10-22, scatti: stessa ricerca nei depositi ripetuta
+# da blocked_reason/rejection per ogni ordine e ogni pipottino).
+static var _storage_tool_cache: Dictionary = {}
+static var _storage_tool_frame: int = -1
+
+
 static func find_storage_tool(world: World, worker: HumanIndividual, category: int) -> Dictionary:
+	var frame := Engine.get_process_frames()
+	if frame != _storage_tool_frame:
+		_storage_tool_cache.clear()
+		_storage_tool_frame = frame
+	var cache_key := [worker.get_instance_id() if worker != null else 0, category]
+	if not _storage_tool_cache.has(cache_key):
+		_storage_tool_cache[cache_key] = _find_storage_tool(world, worker, category)
+	return _storage_tool_cache[cache_key]
+
+
+static func _find_storage_tool(world: World, worker: HumanIndividual, category: int) -> Dictionary:
 	var best: Dictionary = {}
 	var best_distance := INF
+	var reserved := _reserved_fetches(worker, TOOL_FETCH_SOURCE_KEY)
 	for tool_name in fetchable_tool_names(category):
 		var origin := worker.position if worker != null else Vector2.ZERO
 		var origin_macro := worker.home_macro_coords if worker != null else Vector2i.ZERO
 		var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
-		var source := WarehouseSelectionService.find_source_for_retrieval(world, origin, origin_macro, tool_name, [], 1, -1, reachability)
+		var source := _find_unreserved_source(world, origin, origin_macro, tool_name, reserved, reachability)
 		if source == null:
 			continue
 		if worker == null:
@@ -148,9 +170,41 @@ static func find_storage_tool(world: World, worker: HumanIndividual, category: i
 	return best
 
 
+# Deposito più vicino a `origin` con almeno un `tool_name` non prenotato (`reserved`: _fetch_key -> quanti); null se nessuno.
+static func _find_unreserved_source(
+	world: World, origin: Vector2, origin_macro: Vector2i, tool_name: String, reserved: Dictionary, reachability: Callable
+) -> Building:
+	var excluded: Array[int] = []
+	while true:
+		var source := WarehouseSelectionService.find_source_for_retrieval(world, origin, origin_macro, tool_name, excluded, 1, -1, reachability)
+		if source == null:
+			return null
+		if BuildingStorageService.get_available_quantity(source, tool_name) > int(reserved.get(_fetch_key(source, tool_name), 0)):
+			return source
+		excluded.append(source.id)
+	return null
+
+
 # Motivo per cui nessuno può fare un lavoro che richiede `categories` ("" = qualcuno può): una categoria che nessuno ha
 # addosso e nessun deposito ha; oppure nessuno in età con abbastanza posto in cintura per prenderle.
+# Tenuto per il fotogramma in corso (2026-10-22, scatti: il ridisegno della coda lo chiedeva per ogni ordine, quasi
+# sempre con le stesse categorie, e ognuno cercava gli attrezzi in tutti i depositi).
+static var _blocked_reason_cache: Dictionary = {}
+static var _blocked_reason_frame: int = -1
+
+
 static func blocked_reason(ctx: GameContext, categories: Array, age_kind: String) -> String:
+	var frame := Engine.get_process_frames()
+	if frame != _blocked_reason_frame:
+		_blocked_reason_cache.clear()
+		_blocked_reason_frame = frame
+	var cache_key := [categories, age_kind]
+	if not _blocked_reason_cache.has(cache_key):
+		_blocked_reason_cache[cache_key] = _compute_blocked_reason(ctx, categories, age_kind)
+	return _blocked_reason_cache[cache_key]
+
+
+static func _compute_blocked_reason(ctx: GameContext, categories: Array, age_kind: String) -> String:
 	if categories.is_empty() or ctx.world == null or has_equipped_member(ctx, categories, age_kind):
 		return ""
 	var nowhere: Array = []
@@ -229,9 +283,13 @@ static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[D
 		if task == null:
 			continue
 		task.context[ZONE_ORDER_TOOL_FETCH_KEY] = int(fetch["category"])
+		task.context[TOOL_FETCH_SOURCE_KEY] = _fetch_key(building, tool_name)
 		if not worker.assign_task(task, ctx.age_band_of(worker)):
 			continue
 		assigned.append(task)
+		# Prenotazione nuova: le ricerche tenute per il fotogramma non la vedono, si rifanno.
+		_storage_tool_frame = -1
+		_blocked_reason_frame = -1
 		worker.borrowed_tools.append({"tool_name": tool_name, "building_id": building.id})
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 			print("[JOB BOARD] #%d %s: va a prendere %s in %s #%d prima di %s." % [
@@ -239,6 +297,31 @@ static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[D
 				("ordine del cassetto #%d" % int(work_label)) if work_label is int else str(work_label)
 			])
 	return assigned
+
+
+# Prelievo ritentato (2026-10-23, richiesta utente — Ashi ferma al focolare con "Attrezzi mancanti: taglio" e 5 coltelli
+# in deposito): il prelievo si decideva solo alla presa del lavoro, e chi poi aspettava guardava solo cintura e zaino. Una
+# volta al secondo, chi è fermo su una produzione per attrezzi mancanti (MISSING_TOOLS, categorie già senza quelle
+# coperte dall'Attrezzeria dell'edificio) riprova plan_fetch: le categorie che sta già andando a prendere sono escluse da
+# member_missing_categories, quindi mai due prelievi per la stessa. Ritorna {"member", "task"} per ogni task creata
+# (chi chiama ne collega i segnali).
+static func retry_waiting_fetches(ctx: GameContext) -> Array[Dictionary]:
+	var created: Array[Dictionary] = []
+	if ctx.world == null:
+		return created
+	for member in ctx.individuals:
+		var task := member.current_task
+		if task == null or task.is_finished():
+			continue
+		var produce := task.get_current_action() as ProduceAction
+		if produce == null or produce.tool_wait_result != ToolGateService.Result.MISSING_TOOLS:
+			continue
+		var plan := plan_fetch(ctx.world, member, produce.tool_wait_missing_categories)
+		if plan.is_empty():
+			continue
+		for fetch_task in start_fetch(ctx, member, plan, "produrre %s (ritentato)" % produce.resource_name):
+			created.append({"member": member, "task": fetch_task})
+	return created
 
 
 # Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11, GameData.job_board_return_borrowed_tools): ogni individuo
@@ -361,12 +444,18 @@ static func try_wear_apparel(individual: HumanIndividual, age_band: HumanTypes.A
 	var reserved := _reserved_fetches(individual, APPAREL_FETCH_KEY)
 	var reachability := PathfindingService.reachability_for(individual)
 	var season := HumanVitalsInteractionService.current_season()
+	# Guardaroba di casa (2026-10-22, Hut): chi ci abita cerca prima lì, poi nei magazzini.
+	var home := HouseWardrobeService.home_wardrobe(world, individual)
 	var depot: Building = null
 	var plan: Array[Dictionary] = []
 	for slot in empty_slots:
 		var chosen := ""
 		var candidates := _convenient_apparel_for_slot(individual, slot, season)
 		if depot == null:
+			if home != null:
+				chosen = _best_free_in(home, candidates, reserved)
+				if chosen != "":
+					depot = home
 			# Fasce di punteggio dalla migliore: il deposito più vicino con un capo della fascia; la successiva solo se
 			# nessun capo della fascia è disponibile.
 			var index := 0
@@ -431,6 +520,99 @@ static func try_wear_apparel(individual: HumanIndividual, age_band: HumanTypes.A
 	return true
 
 
+# Primo capo di `candidates` ({"name", "score"}, dal migliore) con almeno un pezzo libero (meno le prenotazioni) in
+# `building`; "" se nessuno.
+static func _best_free_in(building: Building, candidates: Array, reserved: Dictionary) -> String:
+	for candidate in candidates:
+		var apparel_name := String(candidate["name"])
+		if BuildingStorageService.get_available_quantity(building, apparel_name) - int(reserved.get(_fetch_key(building, apparel_name), 0)) > 0:
+			return apparel_name
+	return ""
+
+
+# --- Guardaroba della Hut: cambio stagionale (2026-10-22, richiesta utente) ---
+# Chi vive in una casa di nucleo (HouseWardrobeService.home_wardrobe), dall'adolescenza in su, con la regola "Indossa i capi
+# disponibili", al primo momento libero cambia UN capo indossato con uno di punteggio stagionale strettamente migliore:
+# prima dal guardaroba di casa (a casa ripone il vecchio e indossa il nuovo), altrimenti dal magazzino più vicino (lo
+# mette nello zaino, torna a casa, ripone il vecchio e lo indossa — mai nudo). Guardaroba senza posto per il vecchio, o
+# zaino senza posto per il nuovo: nessun cambio. Mai un cambio senza un capo migliore (mai nudi). true = task assegnata.
+static func try_swap_seasonal_apparel(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null or world == null or not game_data.job_board_wear_apparel:
+		return false
+	if not HumanIndividual.is_apparel_age_band(age_band) or not JobBoardService.is_enabled(GameSettings.active_human_folk):
+		return false
+	var home := HouseWardrobeService.home_wardrobe(world, individual)
+	if home == null:
+		return false
+	var season := HumanVitalsInteractionService.current_season()
+	var reserved := _reserved_fetches(individual, APPAREL_FETCH_KEY)
+	var reachability := PathfindingService.reachability_for(individual)
+	for slot in APPAREL_FETCH_ORDER:
+		var current := individual.get_equipped_apparel(slot)
+		if current == "" or BuildingStorageService.get_max_depositable(home, current) < 1:
+			continue
+		var current_score := HumanVitalsInteractionService.apparel_season_score(current, season)
+		var better: Array[Dictionary] = []
+		for apparel_name in apparel_names_for_slot(slot):
+			var score := HumanVitalsInteractionService.apparel_season_score(apparel_name, season)
+			if score > current_score + 0.0001:
+				better.append({"name": apparel_name, "score": score})
+		if better.is_empty():
+			continue
+		better.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["score"]) > float(b["score"]))
+		var at_home := _best_free_in(home, better, reserved)
+		if at_home != "":
+			if not _has_backpack_room(individual, at_home):
+				continue
+			return _assign_depot_swap(individual, age_band, home, home, slot, current, at_home)
+		for candidate in better:
+			var apparel_name := String(candidate["name"])
+			if not _has_backpack_room(individual, apparel_name):
+				continue
+			var source := _find_free_source(individual, world, apparel_name, reserved, reachability)
+			if source != null and source != home:
+				return _assign_depot_swap(individual, age_band, home, source, slot, current, apparel_name)
+	return false
+
+
+static func _has_backpack_room(individual: HumanIndividual, apparel_name: String) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(apparel_name)
+	var space: float = rules.space_per_unit if rules != null else 0.0
+	return individual.can_carry_variety(apparel_name) and individual.max_carry_capacity - individual.get_carried_space() >= space
+
+
+# Cambio: prende il capo nuovo nello zaino da `source` (il guardaroba di casa o un magazzino, prenotato), poi a casa
+# ripone il vecchio e indossa il nuovo dallo zaino (seguito). Il vecchio si toglie solo se il nuovo è nello zaino
+# (UnloadAction.replace_with_apparel): mai nudi.
+static func _assign_depot_swap(
+	individual: HumanIndividual, age_band: HumanTypes.AgeBand, home: Building, source: Building, slot: int, current: String, new_name: String
+) -> bool:
+	var fetch := TaskBuilderService.build_tool_task(individual, TaskBuilderService.EQUIP_TOOL_TASK_DEFINITION_PATH, new_name, source, -1, true)
+	var store := TaskBuilderService.build_tool_task(individual, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, current, home, slot, true)
+	if fetch == null or store == null:
+		return false
+	var replaced := false
+	for step in store.steps:
+		if step is UnloadAction:
+			(step as UnloadAction).replace_with_apparel = new_name
+			replaced = true
+	if not replaced:
+		return false
+	fetch.context[APPAREL_FETCH_KEY] = _fetch_key(source, new_name)
+	if not individual.assign_task(fetch, age_band):
+		return false
+	TaskQueueService.push_follow_up_task(individual, store)
+	for task in [fetch, store]:
+		if storage_signal_connector.is_valid():
+			storage_signal_connector.call(task, individual)
+	print("[WARDROBE] #%d %s: cambio di stagione, prende %s %s #%d per sostituire %s." % [
+		individual.id, individual.name, new_name, "dal guardaroba di casa" if source == home else "in %s" % source.building_type_name,
+		source.id, current,
+	])
+	return true
+
+
 # Capi (categoria APPAREL) che vanno nello slot del vestiario `slot` (HumanIndividual.can_wear_in_slot).
 static func apparel_names_for_slot(slot: int) -> Array[String]:
 	var names: Array[String] = []
@@ -461,17 +643,7 @@ static func has_apparel_in_storage(world: World, slot: int) -> bool:
 
 # Deposito raggiungibile più vicino con almeno un `resource_name` non prenotato (`reserved`: chiave _fetch_key -> quanti).
 static func _find_free_source(individual: HumanIndividual, world: World, resource_name: String, reserved: Dictionary, reachability: Callable) -> Building:
-	var excluded: Array[int] = []
-	while true:
-		var source := WarehouseSelectionService.find_source_for_retrieval(
-			world, individual.position, individual.home_macro_coords, resource_name, excluded, 1, -1, reachability
-		)
-		if source == null:
-			return null
-		if BuildingStorageService.get_available_quantity(source, resource_name) > int(reserved.get(_fetch_key(source, resource_name), 0)):
-			return source
-		excluded.append(source.id)
-	return null
+	return _find_unreserved_source(world, individual.position, individual.home_macro_coords, resource_name, reserved, reachability)
 
 
 static func _fetch_key(building: Building, resource_name: String) -> String:

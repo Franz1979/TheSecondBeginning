@@ -38,9 +38,19 @@ const TAB_BUILDINGS := 3
 const TAB_INFLUENCE := 4
 # Colori delle tre serie e ordine di visualizzazione P, C, R.
 const INFLUENCE_DISPLAY := [
-	{"type": InfluenceService.InfluenceType.POLITICAL, "name": "Politico", "color": Color(0.9, 0.45, 0.35)},
-	{"type": InfluenceService.InfluenceType.CULTURAL, "name": "Culturale", "color": Color(0.95, 0.8, 0.3)},
-	{"type": InfluenceService.InfluenceType.RELIGIOUS, "name": "Religioso", "color": Color(0.6, 0.5, 0.95)},
+	{"type": InfluenceService.InfluenceType.POLITICAL, "name": "statistics_influence_political", "color": Color(0.9, 0.45, 0.35)},
+	{"type": InfluenceService.InfluenceType.CULTURAL, "name": "statistics_influence_cultural", "color": Color(0.95, 0.8, 0.3)},
+	{"type": InfluenceService.InfluenceType.RELIGIOUS, "name": "statistics_influence_religious", "color": Color(0.6, 0.5, 0.95)},
+]
+# Didascalie dei grafici nella scena: percorso del Label -> chiave di traduzione.
+const CHART_CAPTIONS := [
+	["MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent/CauseDistributionCaption", "statistics_caption_cause_distribution"],
+	["MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent/DeathsPerYearCaption", "statistics_caption_deaths_per_year"],
+	["MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/BirthsPerYearCaption", "statistics_caption_births_per_year"],
+	["MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/AgeBandDistributionCaption", "statistics_caption_age_band_distribution"],
+	["MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/PopulationPerYearCaption", "statistics_caption_population_per_year"],
+	["MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingsPerYearCaption", "statistics_caption_buildings_per_year"],
+	["MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingTypeDistributionCaption", "statistics_caption_building_type_distribution"],
 ]
 # Voce "tutto il popolo" del selettore (2026-10-12): Village.id parte da 1, quindi 0 è libero.
 const SCOPE_ALL := 0
@@ -67,6 +77,7 @@ const SCOPE_ALL := 0
 @onready var total_population_label: Label = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/TotalPopulationLabel
 @onready var male_count_label: Label = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/MaleCountLabel
 @onready var female_count_label: Label = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/FemaleCountLabel
+@onready var population_average_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/PopulationAverageAgeLabel
 @onready var age_band_distribution_chart: PieChart = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/AgeBandDistributionChart
 @onready var population_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/PopulationPerYearChart
 
@@ -118,13 +129,18 @@ func _ready() -> void:
 	tab_container.set_tab_title(TAB_BUILDINGS, tr("statistics_tab_buildings"))
 	tab_container.set_tab_title(TAB_INFLUENCE, tr("statistics_tab_influence"))
 	for i in range(INFLUENCE_DISPLAY.size()):
-		influence_checks[i].text = INFLUENCE_DISPLAY[i]["name"]
+		influence_checks[i].text = tr(INFLUENCE_DISPLAY[i]["name"])
 		influence_checks[i].add_theme_color_override("font_color", INFLUENCE_DISPLAY[i]["color"])
 		influence_checks[i].toggled.connect(func(_pressed: bool) -> void: _refresh_influence_chart())
-		influence_pie_captions[i].text = INFLUENCE_DISPLAY[i]["name"]
-	influence_pies_caption.text = "Ripartizione tra i villaggi"
-	influence_per_year_chart.set_axis_labels("Anno", "Valore")
-	cohesion_per_year_chart.set_axis_labels("Anno", "Coesione")
+		influence_pie_captions[i].text = tr(INFLUENCE_DISPLAY[i]["name"])
+	influence_pies_caption.text = tr("statistics_influence_pies_caption")
+	influence_per_year_chart.set_axis_labels(tr("statistics_axis_year"), tr("statistics_axis_value"))
+	cohesion_per_year_chart.set_axis_labels(tr("statistics_axis_year"), tr("statistics_axis_cohesion"))
+	# Titoli assi e didascalie dei grafici (2026-10-22, richiesta utente: tutti i testi del pannello in chiavi tr()).
+	for chart in [deaths_per_year_chart, births_per_year_chart, population_per_year_chart]:
+		chart.set_axis_labels(tr("statistics_axis_year"), tr("statistics_axis_people"))
+	for caption in CHART_CAPTIONS:
+		(get_node(String(caption[0])) as Label).text = tr(String(caption[1]))
 	cohesion_per_year_chart.min_axis_max = VillageCohesionService.MAX_COHESION
 	# Titoli lista donne fertili/lista morti (richiesta utente, 2026-09-06) — tr(), non hardcoded
 	# come il resto del CONTENUTO dati di questo pannello: sono più simili alla "chrome" strutturale
@@ -248,15 +264,15 @@ func _scoped_events(events: Array[Dictionary]) -> Array[Dictionary]:
 
 
 func _refresh_mortality_tab(death_events: Array[Dictionary]) -> void:
-	total_label.text = "Morti totali: %d" % death_events.size()
+	total_label.text = tr("statistics_total_deaths").format({"count": death_events.size()})
 
 	if death_events.is_empty():
-		average_age_label.text = "Età media alla morte: N/D"
+		average_age_label.text = tr("statistics_average_death_age").format({"age": tr("statistics_not_available")})
 	else:
 		var age_sum := 0
 		for event in death_events:
 			age_sum += int(event["age_at_death"])
-		average_age_label.text = "Età media alla morte: %.1f" % (float(age_sum) / death_events.size())
+		average_age_label.text = tr("statistics_average_death_age").format({"age": "%.1f" % (float(age_sum) / death_events.size())})
 
 	# Itera l'ENUM (non i soli valori presenti negli eventi) — una causa futura senza eventi
 	# registrati compare comunque a 0, invece di sparire silenziosamente dalla torta/legenda.
@@ -287,10 +303,10 @@ func _refresh_mortality_tab(death_events: Array[Dictionary]) -> void:
 	for event in death_events:
 		var label := Label.new()
 		label.add_theme_font_size_override("font_size", 10)
-		label.text = "%s — età %d, %s (anno %d, giorno %d)" % [
-			event["name"], event["age_at_death"], String(_cause_name(int(event["cause"]))).capitalize(),
-			event["year"], event["day"],
-		]
+		label.text = tr("statistics_death_row").format({
+			"name": event["name"], "age": int(event["age_at_death"]), "cause": String(_cause_name(int(event["cause"]))).capitalize(),
+			"year": int(event["year"]), "day": int(event["day"]),
+		})
 		death_list_container.add_child(label)
 
 
@@ -320,12 +336,12 @@ func _refresh_births_tab(
 	# child_survived è un dato reale (Step 3 effetto nato-morto) e non più sempre true. Testo
 	# rivisto su richiesta utente: "nati morti" era troppo esplicito/crudo per una label di UI —
 	# "Sopravvissuti" mostra solo il conteggio positivo, senza nominare l'esito negativo.
-	total_births_label.text = "Parti: %d" % birth_events.size()
+	total_births_label.text = tr("statistics_total_births").format({"count": birth_events.size()})
 	var live_births_count := 0
 	for event in birth_events:
 		if bool(event["child_survived"]):
 			live_births_count += 1
-	births_breakdown_label.text = "Sopravvissuti: %d" % live_births_count
+	births_breakdown_label.text = tr("statistics_survived").format({"count": live_births_count})
 
 	# _fill_missing_years — stesso motivo/meccanismo di _refresh_mortality_tab sopra, birth_events
 	# è anch'esso un log di eventi puntuali. Include ANCHE i nati morti (stesso criterio di
@@ -357,12 +373,12 @@ func _refresh_births_tab(
 	fertile_women_counts.sort_custom(func(a, b): return int(a["count"]) > int(b["count"]))
 
 	if fertile_women_counts.is_empty():
-		average_children_label.text = "Media figli per donna fertile: N/D"
+		average_children_label.text = tr("statistics_average_children").format({"value": tr("statistics_not_available")})
 	else:
 		var total_children := 0
 		for entry in fertile_women_counts:
 			total_children += int(entry["count"])
-		average_children_label.text = "Media figli per donna fertile: %.2f" % (float(total_children) / fertile_women_counts.size())
+		average_children_label.text = tr("statistics_average_children").format({"value": "%.2f" % (float(total_children) / fertile_women_counts.size())})
 
 	for child in fertile_women_list_container.get_children():
 		child.queue_free()
@@ -370,7 +386,7 @@ func _refresh_births_tab(
 		var woman: HumanIndividual = entry["woman"]
 		var label := Label.new()
 		label.add_theme_font_size_override("font_size", 10)
-		label.text = "%s — %d figli" % [woman.name, int(entry["count"])]
+		label.text = tr("statistics_fertile_woman_row").format({"name": woman.name, "count": int(entry["count"])})
 		fertile_women_list_container.add_child(label)
 
 
@@ -383,17 +399,24 @@ func _refresh_population_tab(
 	human_individuals: Array[HumanIndividual], population_snapshots: Dictionary, current_year: int,
 	durations_male: Array[float], durations_female: Array[float]
 ) -> void:
-	total_population_label.text = "Popolazione totale: %d" % human_individuals.size()
+	total_population_label.text = tr("statistics_total_population").format({"count": human_individuals.size()})
 
 	var male_count := 0
 	var female_count := 0
+	var age_sum := 0
 	for individual in human_individuals:
+		age_sum += current_year - individual.birth_year_virtual
 		if individual.sex == HumanTypes.Sex.MALE:
 			male_count += 1
 		else:
 			female_count += 1
-	male_count_label.text = "Maschi: %d" % male_count
-	female_count_label.text = "Femmine: %d" % female_count
+	male_count_label.text = tr("statistics_males").format({"count": male_count})
+	female_count_label.text = tr("statistics_females").format({"count": female_count})
+	# Età media dei vivi nell'ambito scelto (2026-10-22, richiesta utente): stessa età della torta per fascia.
+	if human_individuals.is_empty():
+		population_average_age_label.text = tr("statistics_average_age").format({"age": tr("statistics_not_available")})
+	else:
+		population_average_age_label.text = tr("statistics_average_age").format({"age": "%.1f" % (float(age_sum) / human_individuals.size())})
 
 	# Itera l'ENUM intero (non solo le fasce osservate) — stesso principio già seguito da
 	# _refresh_mortality_tab per le cause di morte: una fascia senza individui compare comunque a
@@ -440,7 +463,7 @@ func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dict
 			movement_count += 1
 		else:
 			counted_buildings.append(building)
-	total_buildings_label.text = "Edifici totali: %d" % counted_buildings.size()
+	total_buildings_label.text = tr("statistics_total_buildings").format({"count": counted_buildings.size()})
 	building_type_distribution_chart.set_footer(tr("statistics_movement_cells").format({"count": movement_count}))
 
 	# Itera l'ENUM intero (non solo le categorie osservate) — stesso principio già seguito sopra per
@@ -463,7 +486,7 @@ func _refresh_buildings_tab(buildings: Array[Building], building_snapshots: Dict
 	# per un conteggio edifici, a differenza degli altri tre usi (morti/nascite/popolazione, tutti
 	# "persone nel tempo") — primo consumatore reale di questo metodo, esisteva già pronto per
 	# "un futuro consumatore con semantica diversa" (vedi LineChart.gd).
-	buildings_per_year_chart.set_axis_labels("Anno", "Edifici")
+	buildings_per_year_chart.set_axis_labels(tr("statistics_axis_year"), tr("statistics_axis_buildings"))
 	buildings_per_year_chart.set_data(building_snapshots)
 
 
@@ -480,7 +503,9 @@ func _refresh_influence_tab() -> void:
 		for village in villages:
 			value += village.get_influence_value(influence_type)
 			projected += int(VillageInfluenceService.compute_annual_gains(village, _buildings)[influence_type])
-		influence_value_labels[i].text = "%s: %d (+%d a fine anno)" % [INFLUENCE_DISPLAY[i]["name"], roundi(value), projected]
+		influence_value_labels[i].text = tr("statistics_influence_value").format({
+			"name": tr(INFLUENCE_DISPLAY[i]["name"]), "value": roundi(value), "projected": projected,
+		})
 		influence_value_labels[i].add_theme_color_override("font_color", INFLUENCE_DISPLAY[i]["color"])
 	_refresh_influence_chart()
 	_refresh_cohesion()
@@ -514,7 +539,7 @@ func _refresh_influence_chart() -> void:
 			current += village.get_influence_value(influence_type)
 		if not villages.is_empty():
 			by_year[_game_data.year] = current
-		series.append({"data": by_year, "color": INFLUENCE_DISPLAY[i]["color"], "label": INFLUENCE_DISPLAY[i]["name"]})
+		series.append({"data": by_year, "color": INFLUENCE_DISPLAY[i]["color"], "label": tr(INFLUENCE_DISPLAY[i]["name"])})
 	influence_per_year_chart.set_series(series)
 
 
@@ -530,7 +555,8 @@ func _refresh_cohesion() -> void:
 		current += village.cohesion
 	if not villages.is_empty():
 		current /= float(villages.size())
-	cohesion_value_label.text = "Coesione: %.1f" % current if not villages.is_empty() else "Coesione: nessun villaggio"
+	cohesion_value_label.text = tr("statistics_cohesion_value").format({"value": "%.1f" % current}) if not villages.is_empty() \
+		else tr("statistics_cohesion_no_village")
 	var series: Array = []
 	var average_by_year := {}
 	var count_by_year := {}

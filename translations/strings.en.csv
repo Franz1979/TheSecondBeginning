@@ -325,6 +325,9 @@ building_stored_label,Stored: {entries}
 building_residents_caption,Residents
 building_influence_received_label,"Influence received: {types}"
 building_influence_received_none,none
+building_heating_label,Heating: {state}
+building_heating_warm,on
+building_heating_cold,off
 influence_type_political,political
 influence_type_cultural,cultural
 influence_type_religious,religious
@@ -991,6 +994,7 @@ drawer_produce_no_building,No production building
 drawer_produce_dialog_title,Produce
 drawer_order_produce_row,Produce {recipe} ×{quantity}
 drawer_order_no_free_building,No free building
+drawer_order_no_building_built,No {building} built
 drawer_order_cancel_tooltip,Cancel the order
 task_assignment_nobody_has_tool,Nobody has {tools}
 building_assign_hint_site_manual,To assign it: select an individual and right-click the construction site.
@@ -1241,9 +1245,41 @@ pending_village_without_center_detail,Build a new Pebble circle to restore it.
 statistics_scope_label,Show:
 statistics_scope_folk,{folk} (whole people)
 statistics_tab_influence,Influence
+statistics_influence_political,Political
+statistics_influence_cultural,Cultural
+statistics_influence_religious,Religious
+statistics_influence_pies_caption,Split between villages
+statistics_axis_year,Year
+statistics_axis_value,Value
+statistics_axis_cohesion,Cohesion
+statistics_axis_buildings,Buildings
+statistics_axis_people,People
+statistics_caption_cause_distribution,Distribution by cause
+statistics_caption_deaths_per_year,Deaths per year
+statistics_caption_births_per_year,Births per year
+statistics_caption_age_band_distribution,Distribution by age band
+statistics_caption_population_per_year,Population per year
+statistics_caption_buildings_per_year,Buildings per year
+statistics_caption_building_type_distribution,Distribution by type
+statistics_not_available,N/A
+statistics_total_deaths,Total deaths: {count}
+statistics_average_death_age,Average age at death: {age}
+statistics_death_row,"{name} — age {age}, {cause} (year {year}, day {day})"
+statistics_total_births,Births: {count}
+statistics_survived,Survived: {count}
+statistics_average_children,Average children per fertile woman: {value}
+statistics_fertile_woman_row,{name} — {count} children
+statistics_total_population,Total population: {count}
+statistics_males,Males: {count}
+statistics_females,Females: {count}
+statistics_average_age,Average age: {age}
+statistics_total_buildings,Total buildings: {count}
+statistics_influence_value,{name}: {value} (+{projected} by year end)
+statistics_cohesion_value,Cohesion: {value}
+statistics_cohesion_no_village,Cohesion: no village
 warehouse_rule_fuel,Fuel in buildings that use it
-warehouse_rule_fuel_tooltip,"Keep fuel in the storage of every building that burns it (campfire, smokehouse…). The minimum is set per building type; below it, the inventory starts a transport of the best available fuel from the warehouse."
-warehouse_rule_fuel_type_tooltip,"Minimum fuel for each building of this type (in fuel value: a stick is worth 1). 0 = this type is not supplied."
+warehouse_rule_fuel_tooltip,"Keep fuel in the storage of every building that burns it (campfire, smokehouse, hut to heat). The stock is set per building type; when it drops below half, the inventory starts a transport from the warehouse that fills it back up."
+warehouse_rule_fuel_type_tooltip,"Fuel stock for each building of this type. Supply starts when it drops below half. 0 = this type is not supplied."
 drawer_order_fuel_row,{building}: bring {quantity} {resource}
 pending_stock_fuel_blocked,Building not available or no fuel to bring
 building_teaching_stump,Teaching stump

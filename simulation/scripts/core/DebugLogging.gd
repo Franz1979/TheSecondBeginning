@@ -414,7 +414,7 @@ const SHOW_CLEAR_LOGS := false
 
 # Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
-const SHOW_JOB_BOARD_LOGS := true
+const SHOW_JOB_BOARD_LOGS := false
 
 # "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
 # quando la sua riga compare o cambia (task attiva, testo, coda o diretto e perché, chiavi del context). Solo log.

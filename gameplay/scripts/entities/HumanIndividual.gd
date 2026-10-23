@@ -127,10 +127,8 @@ var mother_id: int = -1
 var father_id: int = -1
 # Nessuna logica di formazione coppie qui: solo il campo, valorizzato da un futuro service.
 var partner_id: int = -1
-# Id della Building (hut) assegnata come casa di questo individuo (2026-09-12, richiesta utente —
-# campo base per la Rest Task esplicita, non ancora letto/scritto da nessuna logica: nessun
-# AssignHouseService esiste ancora, questo giro aggiunge solo il campo). -1 = nessuna casa
-# assegnata, stessa convenzione -1 già in uso per mother_id/father_id/partner_id sopra.
+# Id della Building residenziale (tenda o Hut) assegnata come casa di questo individuo (2026-09-12, richiesta utente),
+# scritto da AssignHouseService. -1 = nessuna casa, stessa convenzione di mother_id/father_id/partner_id sopra.
 var house_id: int = -1
 # Step 3 del piano riproduzione (2026-09-06): valorizzato da HumanConceptionIndividualService al giorno 110,
 # nessun'altra logica lo tocca in questo passo — il parto (che lo riazzererà) è un task separato,

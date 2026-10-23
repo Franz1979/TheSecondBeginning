@@ -4235,7 +4235,7 @@ func _on_quarry_count_chosen(count: int) -> void:
 	for area in areas:
 		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
 		for worker in workers:
-			if not QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved).is_empty():
+			if not QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved, true).is_empty():
 				valid_ids.append(area.id)
 				break
 	if valid_ids.is_empty():
@@ -4340,7 +4340,7 @@ func _on_cut_count_chosen(count: int) -> void:
 	var valid_ids: Array[int] = []
 	for area in areas:
 		for worker in workers:
-			if not CutZoneService.list_available_plants(area, live_cells, worker, reserved).is_empty():
+			if not CutZoneService.list_available_plants(area, live_cells, worker, reserved, "", true).is_empty():
 				valid_ids.append(area.id)
 				break
 	if valid_ids.is_empty():
@@ -9870,6 +9870,9 @@ func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var order_key := ProductionService.create_order(building, recipe, quantity, -1, false, deliver, true)
 	if order_key == "":
 		return
+	# Cottura dei giorni di cibo (2026-10-22): il segno passa all'ordine sulla postazione.
+	if (job["order"] as Dictionary).has(StockRequestService.FOOD_DAYS_KEY):
+		ProductionService.mark_order_auto_cook(building, order_key)
 	# Attrezzi da prendere in deposito prima di produrre (2026-10-11): decisi ora, partono dopo l'assegnazione.
 	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, BuildingToolkitService.filter_uncovered(building, ToolFetchService.recipe_tool_categories(recipe)))
 	_assign_produce_task(worker, building, recipe, quantity, deliver, order_key, false, true)
@@ -11684,12 +11687,16 @@ func _on_tool_from_storage_requested(target: HumanIndividual, slot_index: int) -
 
 # Capi di vestiario del tipo `kind` (SecondaryResourceTypes.ApparelKind) disponibili in tutti i magazzini, stesso conteggio
 # di _collect_tools_in_storage (2026-10-11): nome risorsa -> quantità totale.
-func _collect_apparel_in_storage(kind: int) -> Dictionary:
+func _collect_apparel_in_storage(kind: int, target: HumanIndividual = null) -> Dictionary:
 	var totals: Dictionary = {}
 	if macro_world == null:
 		return totals
 	for building in macro_world.buildings:
 		if not building.is_complete or building.is_demolished:
+			continue
+		# Guardaroba di una Hut abitata (2026-10-22): solo per i suoi abitanti.
+		if HouseWardrobeService.is_wardrobe_house(building) and HouseWardrobeService.is_inhabited(building) \
+				and (target == null or target.house_id != building.id):
 			continue
 		var names: Array = building.stored_resources.keys()
 		for output_name in building.production_output.keys():
@@ -11714,7 +11721,7 @@ func _collect_apparel_in_storage(kind: int) -> Dictionary:
 func _on_apparel_from_storage_requested(target: HumanIndividual, slot_index: int) -> void:
 	if target == null or not HumanIndividual.APPAREL_SLOT_KIND.has(slot_index):
 		return
-	var available := _collect_apparel_in_storage(int(HumanIndividual.APPAREL_SLOT_KIND[slot_index]))
+	var available := _collect_apparel_in_storage(int(HumanIndividual.APPAREL_SLOT_KIND[slot_index]), target)
 	if available.is_empty():
 		if UserOptions.show_notification_popups:
 			notification_popup.enqueue(NotificationTypes.NotificationPopupType.TOOL_REQUIRED, tr("apparel_storage_menu_empty"))
@@ -11782,6 +11789,10 @@ func _assign_equip_tool_task(target: HumanIndividual, slot_index: int, tool_name
 		PathfindingService.reachability_for(target)
 	)
 	var is_apparel := HumanIndividual.is_apparel_resource(tool_name)
+	# Guardaroba di casa (2026-10-22): per chi vive in una Hut, prima il proprio guardaroba.
+	var home := HouseWardrobeService.home_wardrobe(macro_world, target)
+	if is_apparel and home != null and BuildingStorageService.get_available_quantity(home, tool_name) > 0:
+		source = home
 	if source == null:
 		# Prima un return silenzioso (2026-09-26): ora il motivo — nessun magazzino raggiungibile ha l'attrezzo.
 		if is_apparel:
@@ -16185,6 +16196,15 @@ func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
 # selezionato tra i propri (set_selected_building/get_building_screen_position) senza dover
 # conoscere Building stesso — stesso principio "il renderer conosce solo le forme, mai gli oggetti
 # di gioco" già seguito per la vegetazione (individual_key, mai un riferimento a MacroCellState).
+# Case il cui riscaldamento è cambiato oggi (2026-10-22): ridisegno delle loro celle (fumo) e del pannello aperto.
+func _on_houses_heating_changed(buildings: Array) -> void:
+	for building in buildings:
+		var cell: LiveMacroCell = live_cells.get(Vector2i((building as Building).macro_x, (building as Building).macro_y))
+		if cell != null:
+			_refresh_building_visuals(cell)
+	_refresh_selected_building_panel()
+
+
 func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 	var result: Array = []
 	if macro_world == null:
@@ -16227,6 +16247,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"upgrading": is_upgrade_site,
 				# Detriti dei ceppi rimasti nel cantiere (2026-10-18): macerie disegnate sopra.
 				"site_debris": WasteDisposalService.has_site_debris(building),
+				# Casa riscaldata oggi (2026-10-22, HouseHeatingService): fumo fermo sul tetto.
+				"heated": building.heated_today and building.is_complete,
 			}
 			# "slot_breakdown" (2026-09-11, richiesta utente — "sul deposit site... disegna gli
 			# oggetti che ci sono, tipo mucchietti") — SOLO per deposit_site ("solo su questo",
@@ -16866,6 +16888,8 @@ func _setup_clock() -> void:
 	# Mancata sepoltura (2026-10-04): avviso al giocatore.
 	game_time_service.unburied_body_expired.connect(_on_unburied_body_expired)
 	game_time_service.unburied_body_warning.connect(_on_unburied_body_warning)
+	# Riscaldamento delle case (2026-10-22): fumo sul tetto e riga del pannello.
+	game_time_service.houses_heating_changed.connect(_on_houses_heating_changed)
 	# Livello del raggio religioso di un edificio (2026-10-03, punti e soglie): segnale dell'autoload, emesso da
 	# InfluenceService (rito completato o anno senza riti); scollegato da solo quando questa scena viene liberata.
 	if not GameSettings.influence_level_changed.is_connected(_on_influence_level_changed):

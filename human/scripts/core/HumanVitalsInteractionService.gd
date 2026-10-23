@@ -6,8 +6,11 @@ extends RefCounted
 # passaggio, in quest'ordine (ciascuna legge i valori GIA' aggiornati dalle precedenti, cosi' un solo
 # passaggio coerente per individuo):
 # 0. casa -> health e happiness (2026-09-20, richiesta utente): house_id != -1 ? +HOME_HEALTH_DELTA /
-#    +HOME_HAPPINESS_DELTA : -HOMELESS_HEALTH_PENALTY / -HOMELESS_HAPPINESS_PENALTY (+10/+5 con casa,
-#    -10/-5 senza) su current_health/current_happiness. Applicata PER PRIMA, cosi' le regole 1-4
+#    +HOME_HAPPINESS_DELTA × moltiplicatore della casa : -HOMELESS_HEALTH_PENALTY / -HOMELESS_HAPPINESS_PENALTY (dal
+#    2026-10-22 +4/+3 × BuildingRules.home_wellbeing_multiplier con casa, prima +10/+5; -10/-5 senza) su
+#    current_health/current_happiness, più +NUCLEUS_UNITED_HAPPINESS_DELTA a chi vive con tutto il suo nucleo
+#    famigliare (FamilyNucleusService.united_member_ids, qualsiasi casa). In autunno e inverno il bonus della casa è 0
+#    nelle case non riscaldate oggi (HouseHeatingService; il chiamante passa home_multiplier 0), mai il malus. Applicata PER PRIMA, cosi' le regole 1-4
 #    (soglie su health/happiness) leggono i valori gia' toccati dalla casa. Subito dopo, regola 0b (2026-10-11):
 #    bonus/malus per stagione dei capi di vestiario indossati (vedi _apply_apparel_bonuses). Il service non ha `world`:
 #    "ha casa" = house_id != -1, senza verificare che il Building esista ancora (la demolizione, vedi
@@ -46,8 +49,10 @@ const BODY_RESERVE_FULL_EPSILON: float = 0.001
 const BODY_RESERVE_FULL_HEALTH_DELTA: float = 10.0
 const BODY_RESERVE_NOT_FULL_HEALTH_PENALTY: float = 20.0
 
-const HOME_HEALTH_DELTA: float = 10.0
-const HOME_HAPPINESS_DELTA: float = 5.0
+const HOME_HEALTH_DELTA: float = 4.0
+const HOME_HAPPINESS_DELTA: float = 3.0
+# Nucleo unito (2026-10-22, richiesta utente): tutti i membri del nucleo famigliare nella stessa casa.
+const NUCLEUS_UNITED_HAPPINESS_DELTA: float = 1.0
 const HOMELESS_HEALTH_PENALTY: float = 10.0
 const HOMELESS_HAPPINESS_PENALTY: float = 5.0
 
@@ -96,18 +101,21 @@ const FALLBACK_MISSING_BODY_APPAREL_DELTA: Array[float] = [-4.0, 0.0, 0.0, -2.0]
 const FALLBACK_MISSING_HEAD_APPAREL_DELTA: Array[float] = [-1.0, 0.0, 0.0, 0.0]
 const FALLBACK_MISSING_FEET_APPAREL_DELTA: Array[float] = [-1.0, 0.0, 0.0, -0.5]
 
-static func apply_daily_interaction(individual: HumanIndividual) -> void:
+# `home_multiplier` = BuildingRules.home_wellbeing_multiplier della casa, `lives_with_nucleus` = vive con tutto il suo
+# nucleo (calcolati una volta per tutta la popolazione da GameTimeService._apply_daily_vitals_interaction).
+static func apply_daily_interaction(individual: HumanIndividual, home_multiplier: float = 1.0, lives_with_nucleus: bool = false) -> void:
 	var health_before := individual.current_health
 	var happiness_before := individual.current_happiness
 	var loyalty_before := individual.current_loyalty
 
 	var has_home: bool = individual.house_id != -1
 	individual.current_health = _add_clamped(
-		individual.current_health, HOME_HEALTH_DELTA if has_home else -HOMELESS_HEALTH_PENALTY, individual.max_health
+		individual.current_health, HOME_HEALTH_DELTA * home_multiplier if has_home else -HOMELESS_HEALTH_PENALTY, individual.max_health
 	)
-	individual.current_happiness = _add_clamped(
-		individual.current_happiness, HOME_HAPPINESS_DELTA if has_home else -HOMELESS_HAPPINESS_PENALTY, individual.max_happiness
-	)
+	var home_happiness: float = HOME_HAPPINESS_DELTA * home_multiplier if has_home else -HOMELESS_HAPPINESS_PENALTY
+	if lives_with_nucleus:
+		home_happiness += NUCLEUS_UNITED_HAPPINESS_DELTA
+	individual.current_happiness = _add_clamped(individual.current_happiness, home_happiness, individual.max_happiness)
 
 	var apparel_delta := _apply_apparel_bonuses(individual)
 

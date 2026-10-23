@@ -255,6 +255,8 @@ static func request_stock(ctx: GameContext, now: float, effects: GameEffects) ->
 		changed = true
 	if _request_toolkits(ctx, now):
 		changed = true
+	if _cancel_stuck_auto_cook_orders(ctx, stock):
+		changed = true
 	if _request_workstation_food(ctx, stock):
 		changed = true
 	if _request_food_days(ctx, now, stock):
@@ -489,6 +491,13 @@ static func _request_produce(ctx: GameContext, now: float, stock: Dictionary) ->
 			if String(order.get("type", "")) == DrawerOrderService.TYPE_PRODUCE and String(order.get("recipe", "")) == recipe \
 					and order.has(StockRequestService.ORDER_KEY):
 				wm_orders.append(order)
+		# Ricetta di una postazione non ancora scoperta (2026-10-22): nessun ordine, e via quelli del magazzino già in coda
+		# (salvataggi di prima). Il livello resta salvato e torna ad agire con l'idea. Gli ordini a mano non si toccano.
+		if not ProductionService.is_recipe_known(recipe, ctx.folk):
+			for order in wm_orders:
+				DrawerOrderService.remove(game_data, int(order["id"]))
+				changed = true
+			continue
 		var coverage := int(in_production.get(recipe, 0))
 		for index in range(wm_orders.size() - 1, -1, -1):
 			var order: Dictionary = wm_orders[index]
@@ -635,13 +644,23 @@ static func _best_produce_quantity(world: World, recipe: String) -> int:
 static func produce_static_reason(ctx: GameContext, recipe: String) -> String:
 	var building := DrawerOrderService.choose_produce_building(ctx.world, recipe, 1, {})
 	if building == null:
-		return GameContext.tr_text("drawer_order_no_free_building")
+		return no_building_reason(ctx, recipe)
 	var tool_reason := ToolFetchService.blocked_reason(
 		ctx, BuildingToolkitService.filter_uncovered(building, ToolFetchService.recipe_tool_categories(recipe)), DrawerOrderService.TYPE_PRODUCE
 	)
 	if tool_reason != "" and DrawerOrderService.choose_produce_building(ctx.world, recipe, 1, {}, true) == null:
 		return tool_reason
 	return ""
+
+
+# Nessuna postazione per `recipe` (2026-10-22): "Nessun Affumicatoio costruito" se non ce n'è nessuna completa,
+# "Nessun edificio libero" se ci sono ma sono occupate o piene.
+static func no_building_reason(ctx: GameContext, recipe: String) -> String:
+	if not ProductionService.has_built_workstation_for(ctx.world, recipe):
+		var building_name := ProductionService.known_workstation_display_name(recipe, ctx.folk)
+		if building_name != "":
+			return GameContext.tr_text("drawer_order_no_building_built").format({"building": building_name})
+	return GameContext.tr_text("drawer_order_no_free_building")
 
 
 # Motivo per cui l'ordine "Produci" del magazzino `order` è fermo ("" = no): postazione o attrezzo, altrimenti i materiali
@@ -850,6 +869,69 @@ static func _request_toolkits(ctx: GameContext, now: float) -> bool:
 	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
 
 
+# Cotture automatiche rimaste senza ingredienti (2026-10-22, richiesta utente — carne marcita prima della cottura): a ogni
+# Inventario si tolgono gli ordini sulle postazioni marcati ProductionService.AUTO_COOK_KEY (giorni di cibo, carne lasciata
+# nelle postazioni) che non possono fare più nemmeno un pezzo, liberando la postazione (la ProduceAction di chi ci lavorava
+# si chiude da sola: ordine sparito), e gli ordini "Produci" dei giorni di cibo non ancora presi nella stessa condizione.
+# Gli ordini del giocatore non si toccano. Riga [FOOD DAYS] sempre stampata. true se ha tolto qualcosa.
+static func _cancel_stuck_auto_cook_orders(ctx: GameContext, stock: Dictionary) -> bool:
+	var changed := false
+	for building in ctx.world.buildings:
+		if building.is_demolished or building.rules == null or not building.rules.is_workstation:
+			continue
+		for order_key in ProductionService.get_order_keys(building):
+			if not ProductionService.is_order_auto_cook(building, order_key) or ProductionService.is_order_reserved(building, order_key):
+				continue
+			if not order_lacks_ingredients(building, order_key, stock, ctx.individuals):
+				continue
+			print("[FOOD DAYS] Ordine automatico '%s' x%d su %s #%d tolto: ingredienti persi, postazione liberata." % [
+				ProductionService.get_order_recipe(building, order_key), ProductionService.get_order_units(building, order_key),
+				building.building_type_name, building.id,
+			])
+			ProductionService.cancel_order(building, order_key)
+			changed = true
+	for order in ctx.game_data.drawer_orders.duplicate():
+		if not order.has(StockRequestService.FOOD_DAYS_KEY) or bool(order.get("taken", false)):
+			continue
+		if _recipe_lacks_ingredients(String(order.get("recipe", "")), {}, stock):
+			print("[FOOD DAYS] Ordine del cassetto #%d '%s' tolto: ingredienti persi." % [int(order["id"]), String(order.get("recipe", ""))])
+			DrawerOrderService.remove(ctx.game_data, int(order["id"]))
+			changed = true
+	return changed
+
+
+# true se l'ordine della postazione non può fare nemmeno un pezzo: per un suo ingrediente, quello nel deposito della
+# postazione, nello zaino di chi lavora l'ordine (giro di rifornimento in corso) e nelle scorte del villaggio (`stock`,
+# VillageStockService) è meno di un ciclo.
+static func order_lacks_ingredients(building: Building, order_key: String, stock: Dictionary, individuals: Array = []) -> bool:
+	var stored: Dictionary = {}
+	for resource_name in building.stored_resources.keys():
+		var entry: Variant = building.stored_resources[resource_name]
+		stored[String(resource_name)] = int((entry as Dictionary).get("quantity", 0)) if entry is Dictionary else 0
+	var worker_id := ProductionService.get_order_worker_id(building, order_key)
+	for member in individuals:
+		var individual: HumanIndividual = member
+		if individual.id != worker_id:
+			continue
+		for resource_name in individual.carried_resources.keys():
+			var carried: Variant = individual.carried_resources[resource_name]
+			if carried is Dictionary:
+				stored[String(resource_name)] = int(stored.get(String(resource_name), 0)) + int((carried as Dictionary).get("quantity", 0))
+		break
+	return _recipe_lacks_ingredients(ProductionService.get_order_recipe(building, order_key), stored, stock)
+
+
+static func _recipe_lacks_ingredients(recipe: String, stored: Dictionary, stock: Dictionary) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(recipe)
+	if rules == null:
+		return false
+	for input_name in rules.recipe_inputs.keys():
+		var per_cycle := int(rules.recipe_inputs[input_name])
+		if per_cycle > 0 and int(stored.get(String(input_name), 0)) + int(stock.get(String(input_name), 0)) < per_cycle:
+			return true
+	return false
+
+
 # Regola "Cuoci la carne lasciata nelle postazioni" (2026-10-20, richiesta utente — GameData.
 # stock_workstation_food_rule_enabled): la carne in un focolare o in un affumicatoio non è nelle scorte
 # (VillageStockService) e nessun'altra regola la lavora, così marciva lì. A ogni Inventario, per ogni postazione con
@@ -887,8 +969,10 @@ static func _request_workstation_food(ctx: GameContext, stock: Dictionary) -> bo
 				units = mini(units, recipe_max - int(stock.get(recipe, 0)) - int(in_production.get(recipe, 0)))
 			if units <= 0:
 				continue
-			if ProductionService.create_order(building, recipe, units, -1, false, true, true) == "":
+			var order_key := ProductionService.create_order(building, recipe, units, -1, false, true, true)
+			if order_key == "":
 				break
+			ProductionService.mark_order_auto_cook(building, order_key)
 			in_production[recipe] = int(in_production.get(recipe, 0)) + units
 			changed = true
 			if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
@@ -1080,7 +1164,7 @@ static func _request_food_days(ctx: GameContext, now: float, stock: Dictionary) 
 		return changed
 	var target := food_days_target_calories(ctx, days)
 	var covered := VillageStockService.get_food_calories(stock) + _food_orders_arriving(ctx, claims, kcal_per_trip) \
-		+ _food_processing_calories(ctx)
+		+ _food_processing_calories(ctx, stock)
 	# Di troppo: i non presi, dal più nuovo, finché senza di loro i giorni restano coperti.
 	var candidates: Array = days_orders + meat_orders
 	for index in range(candidates.size() - 1, -1, -1):
@@ -1169,13 +1253,14 @@ static func _food_days_free_meat_cut(game_data: GameData, available: Dictionary)
 # (avanzamento automatico): pezzi nell'essiccatoio, in viaggio e negli ordini "transport" aperti; ricette con lavoro: pezzi
 # ancora da fare negli ordini già sulle postazioni (quelli del cassetto li conta _food_orders_arriving), tranne quelli
 # riservati (il banchetto: va ai presenti, non nelle scorte).
-static func _food_processing_calories(ctx: GameContext) -> float:
+static func _food_processing_calories(ctx: GameContext, stock: Dictionary) -> float:
 	var total := 0.0
 	for building in ctx.world.buildings:
 		if building.is_demolished or building.rules == null or not building.rules.is_workstation:
 			continue
 		for order_key in ProductionService.get_order_keys(building):
-			if ProductionService.is_order_reserved(building, order_key):
+			# Fermi senza ingredienti (2026-10-22): non sono cibo in arrivo.
+			if ProductionService.is_order_reserved(building, order_key) or order_lacks_ingredients(building, order_key, stock, ctx.individuals):
 				continue
 			var rules := CaloricCalculator.get_caloric_source_rules(ProductionService.get_order_recipe(building, order_key))
 			if rules != null and rules.category == SecondaryResourceTypes.Category.FOOD:

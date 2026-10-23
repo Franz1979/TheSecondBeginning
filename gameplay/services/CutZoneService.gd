@@ -187,8 +187,11 @@ static func collect_reserved_plants(individuals: Array) -> Dictionary:
 # non prenotate. Macrocella non viva = nessuna pianta (il taglio richiede la cella viva, come il clic destro).
 # Array di {"macro_coords": Vector2i, "object_type": WorldObjectType, "individual_key": Vector3i, "subtype": String}.
 # `yield_resource` (facoltativo, SERIES_YIELD_KEY): solo le piante il cui taglio dà quella risorsa.
+# `first_only` (2026-10-22, scatti: la coda chiedeva solo "ce n'è almeno una?" costruendo l'elenco intero): si ferma
+# alla prima pianta trovata.
 static func list_available_plants(
-	area: WorkArea, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary, yield_resource: String = ""
+	area: WorkArea, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary, yield_resource: String = "",
+	first_only: bool = false
 ) -> Array[Dictionary]:
 	var plants: Array[Dictionary] = []
 	if area == null:
@@ -196,6 +199,7 @@ static func list_available_plants(
 	var cell: LiveMacroCell = live_cells.get(area.macro_coords)
 	if cell == null or cell.macro_state == null:
 		return plants
+	var reachable_by_lot: Dictionary = {}
 	for object_type in PLANT_OBJECT_TYPES:
 		for key in cell.cached_vegetation_positions.get(object_type, []):
 			var individual_key: Vector3i = key
@@ -211,12 +215,18 @@ static func list_available_plants(
 				continue
 			if yield_resource != "" and not plant_yields(object_type, subtype_name, yield_resource):
 				continue
-			if individual != null and not HaulZoneService.is_cell_reachable(individual, area.macro_coords, lot):
-				continue
+			if individual != null:
+				# Una volta per microcella (2026-10-22, scatti: più piante sullo stesso lotto rifacevano la stessa ricerca).
+				if not reachable_by_lot.has(lot):
+					reachable_by_lot[lot] = HaulZoneService.is_cell_reachable(individual, area.macro_coords, lot)
+				if not bool(reachable_by_lot[lot]):
+					continue
 			plants.append({
 				"macro_coords": area.macro_coords, "object_type": object_type,
 				"individual_key": individual_key, "subtype": subtype_name,
 			})
+			if first_only:
+				return plants
 	return plants
 
 
@@ -253,11 +263,30 @@ static func choose_plant(
 # Scelta automatica della zona: valide le zone con il taglio attivo e almeno una pianta disponibile per `individual`;
 # punteggio come l'estrazione (piante disponibili / (distanza dal centro + offset) × fattore per ogni altro pipottino
 # che taglia già lì). null se nessuna.
+# Tenuta per il fotogramma in corso, per pipottino, prenotazioni e risorsa voluta (2026-10-22, scatti: il coordinatore
+# valutava lo stesso pipottino per ogni ordine di taglio, rifacendo ogni volta il giro su tutte le piante).
+static var _chosen_area_cache: Dictionary = {}
+static var _chosen_area_frame: int = -1
+
+
 static func choose_work_area(
 	game_data: GameData, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary, yield_resource: String = ""
 ) -> WorkArea:
 	if game_data == null or individual == null:
 		return null
+	var frame := Engine.get_process_frames()
+	if frame != _chosen_area_frame:
+		_chosen_area_cache.clear()
+		_chosen_area_frame = frame
+	var cache_key := [individual.get_instance_id(), reserved.hash(), yield_resource]
+	if not _chosen_area_cache.has(cache_key):
+		_chosen_area_cache[cache_key] = _choose_work_area(game_data, live_cells, individual, reserved, yield_resource)
+	return _chosen_area_cache[cache_key]
+
+
+static func _choose_work_area(
+	game_data: GameData, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary, yield_resource: String
+) -> WorkArea:
 	var best: WorkArea = null
 	var best_score := -1.0
 	for area in list_cut_work_areas(game_data):

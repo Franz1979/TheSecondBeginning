@@ -258,29 +258,23 @@ extends Resource
 # Service): quanti HumanIndividual.house_id possono puntare a UN'istanza di questo tipo
 # contemporaneamente. 0 = non residenziale (default), il comportamento invariato per ogni edificio
 # che non lo valorizza esplicitamente (pebble_circle/deposit_site restano a 0 — mai edifici dove
-# vivere). Valorizzato su hut.tres (5) e stick_tent.tres (4) — vedi AssignHouseService.
+# vivere). Valorizzato sulle case (stick_tent 4, hide_tent 5, hut 6) — vedi AssignHouseService.
 # assign_pending_residents, l'unico consumatore oggi (conta gli occupanti scandendo human_
 # individuals con house_id == building.id, confronta con questo tetto).
 @export var max_residents: int = 0
 
-# Tier del criterio di assegnazione residenziale (2026-09-12, richiesta utente) — SOLO
-# PREDISPOSIZIONE per ora: AssignHouseService.assign_pending_residents usa OGGI un unico criterio
-# per QUALUNQUE edificio residenziale, indipendentemente da questo valore (anzianità decrescente,
-# i più anziani hanno priorità — vedi lì, questo campo non viene nemmeno letto in quel file ancora).
-# L'idea è che tier PIÙ ALTI possano in futuro usare un criterio diverso (es. "famiglia/nucleo"
-# invece di anzianità pura per una casa "di pregio") — nessuna logica differenziata per tier
-# esiste ancora, questo è solo il dato pronto per quando servirà davvero. Int semplice (non enum,
-# a differenza di es. BuildingTypes.Category) — DECISIONE: un enum richiederebbe già nominare i
-# tier futuri (es. TIER_ANZIANITA/TIER_FAMIGLIA), una semantica non ancora decisa; un int libero
-# non presuppone nulla, stesso principio "non un caso ipotetico anticipato" già seguito altrove nel
-# progetto per campi di TIPO ancora privi di consumatori differenziati. Default 1 = valore neutro di
-# partenza. Valorizzato su stick_tent.tres (1) e hut.tres (2) — solo per marcare una futura gerarchia
-# di qualità, NESSUN effetto di gioco oggi.
+# Tier del criterio di assegnazione residenziale (2026-09-12, richiesta utente; letto dal 2026-10-22): 1 = casa comune
+# (le tende: chi è senza casa, dal più anziano); >= AssignHouseService.NUCLEUS_HOUSE_TIER (2, la Hut) = casa di un
+# solo nucleo famigliare, mai dei singoli (FamilyNucleusService, AssignHouseService "DUE PASSATE"). Int semplice.
 # DA FARE (2026-10-11, decisione dell'utente — vestiario automatico): chi abita in una casa di tier >= 2 (oggi la Capanna)
 # si veste, spoglia e cambia da solo (cambio di stagione, capo consumato, passaggio ad adolescente), prendendo i capi dal
 # guardaroba di casa o dai magazzini e riponendo i propri SOLO in casa, con deperimento bassissimo per APPAREL. Sotto il
 # tier 2 resta manuale. Nessuna idea nuova: è un dono della Capanna.
 @export var residency_assignment_tier: int = 1
+
+# Moltiplicatore del bonus giornaliero della casa (2026-10-22, richiesta utente): chi ci abita riceve
+# HumanVitalsInteractionService.HOME_HEALTH_DELTA/HOME_HAPPINESS_DELTA × questo valore. 1.0 = bonus base (tenda di rami).
+@export var home_wellbeing_multiplier: float = 1.0
 
 # Moltiplicatori di movimento per chi cammina su una microcella occupata da un edificio COMPLETO di
 # questo tipo (2026-09-19, richiesta utente — terra battuta: cammino meno faticoso). Default 1.0 =
@@ -313,6 +307,10 @@ extends Resource
 # FuelStockService), in unità di fuel_value. Solo il valore di partenza: nel cassetto Gestione scorte si cambia per tipo
 # (GameData.stock_fuel_min_by_type). Conta solo per i tipi con una ricetta che brucia combustibile.
 @export var fuel_stock_min: int = 0
+# Riscaldamento (2026-10-22, richiesta utente — Hut): combustibile (fuel_value) bruciato al giorno da una casa abitata, per
+# stagione (GameTypes.Season: WINTER, SPRING, SUMMER, AUTUMN). Vuoto o tutti 0 = casa non riscaldabile (le tende). Vedi
+# HouseHeatingService; il minimo di combustibile della casa per il gestore scorte è fuel_stock_min.
+@export var heating_fuel_per_day_by_season: Array[float] = []
 # Moltiplicatore del lavoro richiesto (SecondaryResourceRules.recipe_labor) quando si produce in
 # questo edificio — < 1.0 = serve meno lavoro, 1.0 = neutro.
 @export var production_labor_multiplier: float = 1.0

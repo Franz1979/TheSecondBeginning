@@ -330,6 +330,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			step = UnloadAction.new(
 				target_building, deposit_kind, int(step_data.get("unequip_slot_index", -1)), bool(step_data.get("unequip_apparel", false))
 			)
+			# Cambio stagionale del guardaroba (2026-10-22): assente nei save precedenti.
+			(step as UnloadAction).replace_with_apparel = String(step_data.get("replace_with_apparel", ""))
 			# planned_resources (2026-09-27): vuoto per i save precedenti = scarico mai saltato, come prima.
 			for planned_name in step_data.get("planned_resources", []):
 				(step as UnloadAction).planned_resources.append(String(planned_name))

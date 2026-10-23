@@ -8,7 +8,7 @@ secondary_resource_name = "dried_hide"
 calories_per_unit = 0.0
 category = 3
 generation_source = 2
-day_durability = 720
+day_durability = 1000
 space_per_unit = 3.0
 recipe_inputs = {
 "hide": 1

@@ -275,6 +275,10 @@ static func tick_second(ctx: GameContext, now: float, effects: GameEffects) -> v
 	# Attrezzi presi in deposito per un lavoro (2026-10-11): riposti da chi è libero, se la regola è accesa.
 	for created in ToolFetchService.return_borrowed_tools(ctx):
 		effects.wire_storage_task(created["task"], created["member"])
+	# Chi aspetta un attrezzo per produrre (2026-10-23): riprova a prenderlo in deposito.
+	for created in ToolFetchService.retry_waiting_fetches(ctx):
+		effects.wire_storage_task(created["task"], created["member"])
+		effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
 	# Coordinatori ai punti di assegnazione (2026-10-09, CoordinatorService). Con la sola idea, anche senza punti
 	# (2026-10-10): così, quando l'ultimo punto sparisce, chi va al punto o è in fila smette e il turno del coordinatore
 	# finisce.

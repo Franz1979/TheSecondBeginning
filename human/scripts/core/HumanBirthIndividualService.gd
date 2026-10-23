@@ -228,8 +228,8 @@ static func _create_newborn(mother: HumanIndividual, game_data: GameData, all_in
 	# HumanCalculator.get_age_band): un neonato ha per costruzione età 0 in questo stesso istante,
 	# sempre e comunque INFANT — nessuna ambiguità da risolvere, nessun bisogno delle durate
 	# effettive per età qui. `world` null: nessuna Task-bisogno/perditempo di oggi ne ha davvero
-	# bisogno per un neonato (house_id resta -1 di default, mai assegnato a un neonato — vedi
-	# NeedTaskAssignmentService.resolve_rest_target, ramo "nessuna casa"). In pratica, oggi, questa
+	# bisogno per un neonato (house_id resta -1 finché AssignHouseService, chiamato subito dopo la nascita, non lo
+	# sistema: nella Hut della madre se ci vive, altrimenti dove c'è posto). In pratica, oggi, questa
 	# chiamata è un no-op silenzioso: OGNI Task-bisogno/perditempo/Action coinvolta disallowed
 	# INFANT (vedi Action.disallowed_age_bands su WalkAction/RestAction/LookAroundAction/ecc.),
 	# quindi resolve_idle_individual ricade sul suo ultimo fallback (individual.stop(), no-op su

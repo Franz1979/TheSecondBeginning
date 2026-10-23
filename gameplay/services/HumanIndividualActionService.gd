@@ -1259,11 +1259,13 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 	# quindi se find_best restituisce per una seconda varietà lo stesso magazzino già scelto per una
 	# precedente, non si accoda un secondo Walk+Unload identico (viaggio sprecato).
 	var targeted_building_ids: Array[int] = []
-	# Cacce del gestore scorte (2026-10-19, HuntProductAllocationService): prima, per ogni risorsa, gli scarichi alle
-	# postazioni che coprono i minimi (con il tetto della loro parte), poi il resto al magazzino. In due giri, così ogni
-	# scarico al magazzino (che lascia tutto ciò che accetta) viene dopo quelli alle postazioni.
+	# Prodotti delle cacce (2026-10-19, HuntProductAllocationService; dal 2026-10-22 TUTTE le cacce, anche quelle comandate
+	# dal giocatore — stesse regole, richiesta utente): prima, per ogni risorsa, gli scarichi alle postazioni che coprono i
+	# minimi (con il tetto della loro parte), poi il resto alla destinazione scelta. In due giri, così ogni scarico al
+	# magazzino (che lascia tutto ciò che accetta) viene dopo quelli alle postazioni. Senza gestore scorte non ci sono
+	# livelli: i minimi sono solo gli ordini di produzione esistenti.
 	var auto_destination := ButcherDestinationService.get_destination(task.context)
-	if task.context.has(ButcherDestinationService.CONTEXT_KEY) and ButcherDestinationService.is_auto(auto_destination):
+	if task.context.has(ButcherDestinationService.CONTEXT_KEY):
 		var remainders: Array[Dictionary] = []
 		for entry in searches:
 			var resource_name := String(entry.get("resource_name", ""))
@@ -2382,6 +2384,9 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# assegnazione (già verificato alla partenza) né dopo un annullo con H del giocatore.
 	if not individual.skip_job_board_once and not arrived_at_assignment_point:
 		if ToolFetchService.try_wear_apparel(individual, age_band, world):
+			return
+		# Guardaroba della Hut (2026-10-22): cambio stagionale di un capo indossato.
+		if ToolFetchService.try_swap_seasonal_apparel(individual, age_band, world):
 			return
 		if ToolFetchService.try_take_bag(individual, age_band, world):
 			return

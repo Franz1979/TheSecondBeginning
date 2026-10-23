@@ -1474,6 +1474,9 @@ func _draw_buildings() -> void:
 		draw_polyline(outline_points, BUILDING_OUTLINE_COLOR, BUILDING_OUTLINE_WIDTH)
 		if is_toolmaker_hut:
 			_draw_toolmaker_hut_mark(ground)
+		# Casa riscaldata oggi (2026-10-22, HouseHeatingService): fumo fermo sopra il tetto.
+		if bool(entry.get("heated", false)):
+			_draw_house_smoke(ground)
 	# Sentieri (2026-10-17): corpo e poi ciottoli, in MultiMesh.
 	for mm in _path_body_multimeshes:
 		if (mm as MultiMesh).instance_count > 0:
@@ -1551,6 +1554,17 @@ const TOOLMAKER_HUT_MARK_COLOR := Color(0.88, 0.84, 0.76, 1.0)
 const TOOLMAKER_HUT_MARK_HALF_LENGTH: float = 1.3
 const TOOLMAKER_HUT_MARK_WIDTH: float = 0.35
 const TOOLMAKER_HUT_MARK_HEAD_RADIUS: float = 0.4
+
+# Fumo della casa riscaldata (2026-10-22): tre sbuffi fermi che escono dal centro del tetto (il centro della microcella,
+# lontano dalla porta) e salgono piegando un poco, stesso grigio del fumo dell'affumicatoio (PlaceholderBuildingShapes.
+# SMOKE). Disegnato solo quando cambia lo stato: nessun costo per fotogramma.
+const HOUSE_SMOKE_PUFFS: Array[Vector3] = [Vector3(0.0, -0.6, 0.85), Vector3(0.5, -1.9, 0.7), Vector3(0.9, -3.0, 0.5)]
+
+
+func _draw_house_smoke(ground: Vector2) -> void:
+	for puff in HOUSE_SMOKE_PUFFS:
+		draw_circle(ground + Vector2(puff.x, puff.y), puff.z, PlaceholderBuildingShapes.SMOKE)
+
 
 func _draw_toolmaker_hut_mark(ground: Vector2) -> void:
 	for diagonal in [Vector2(1, -1), Vector2(-1, -1)]:

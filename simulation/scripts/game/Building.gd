@@ -111,6 +111,11 @@ var rubble_origin: String = RUBBLE_ORIGIN_COLLAPSE
 # questo stato (edifici già completi, o senza required_materials valorizzato).
 var is_awaiting_material: bool = false
 
+# Riscaldamento (2026-10-22, HouseHeatingService): combustibile dovuto non ancora bruciato (mezze unità) e casa riscaldata
+# oggi. Salvati.
+var heating_fuel_due: float = 0.0
+var heated_today: bool = false
+
 # true dal momento in cui SetupSiteAction completa per questo edificio (impostato da SetupSiteAction.
 # on_complete insieme al consumo del materiale di setup — 2026-09-24, bugfix: prima lo impostava solo
 # GameScene._spawn_build_site_placeholders, gestore grafico del segnale site_setup_completed che non

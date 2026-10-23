@@ -109,6 +109,10 @@ static func evict_damaged_house_overflow(ctx: GameContext, effects: GameEffects)
 	for building in ctx.world.buildings:
 		if building.rules == null or building.rules.max_residents <= 0 or not building.is_complete or building.is_demolished:
 			continue
+		# Case di nucleo (Hut, 2026-10-22): il posto in meno lo gestisce AssignHouseService (escono i figli adulti più
+		# vecchi, senza penalità), non lo sfratto a caso.
+		if AssignHouseService.is_nucleus_house(building):
+			continue
 		var residents: Array[HumanIndividual] = []
 		for member in ctx.individuals:
 			if member.house_id == building.id:
@@ -656,6 +660,12 @@ static func start_upgrade(ctx: GameContext, building: Building, chosen_rotation:
 	building.production_suspended = {}
 	for material_name in (cost["credited"] as Dictionary).keys():
 		building.stored_resources[String(material_name)] = {"quantity": int(cost["credited"][material_name]), "decay_fraction": 0.0}
+	# Precedenza al rientro (2026-10-22, Hut per nucleo): chi ci abitava, letto al completamento.
+	var previous_residents: Array = []
+	for occupant in ctx.individuals:
+		if occupant.house_id == building.id:
+			previous_residents.append(occupant.id)
+	building.construction_progress[BuildingUpgradeService.UPGRADE_PREVIOUS_RESIDENTS_KEY] = previous_residents
 	release_residents(ctx, building, effects)
 	var recovered_entries: Dictionary = {}
 	for material_name in (cost["recovered"] as Dictionary).keys():
@@ -827,6 +837,7 @@ static func complete_construction(ctx: GameContext, building: Building, effects:
 					building.id, completing.id if completing != null else -1, other.id, other.name, float(other.skill_builder)
 				])
 	resolve_freed(ctx, close_tasks_on_building(ctx, building, JobWorkScanService.BUILD_TASK_NAMES, completing))
+	var previous_residents: Array = building.construction_progress.get(BuildingUpgradeService.UPGRADE_PREVIOUS_RESIDENTS_KEY, [])
 	for upgrade_key in BuildingUpgradeService.UPGRADE_KEYS:
 		building.construction_progress.erase(upgrade_key)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
@@ -836,7 +847,7 @@ static func complete_construction(ctx: GameContext, building: Building, effects:
 	effects.refresh_panel(GameEffects.PanelKind.BUILD_BAR)
 	village_center_completed(ctx, building, effects)
 	if building.rules != null and building.rules.max_residents > 0:
-		AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year)
+		AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year, {building.id: previous_residents})
 		effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 	effects.refresh_neighbors(building)
 	effects.refresh_building_cell(building)

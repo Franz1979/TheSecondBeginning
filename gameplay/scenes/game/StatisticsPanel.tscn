@@ -138,6 +138,9 @@ layout_mode = 2
 [node name="FemaleCountLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
 layout_mode = 2
 
+[node name="PopulationAverageAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+
 [node name="AgeBandDistributionCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
 layout_mode = 2
 text = "Distribuzione per fascia d'età"

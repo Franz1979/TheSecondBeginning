@@ -809,7 +809,9 @@ func _visible_resource_names() -> Array[String]:
 	var names: Array[String] = []
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		# Rifiuti (2026-10-18, detriti): mai in magazzino, nessuna riga.
-		if not TerrainScatteredResourceService.is_resource_locked(resource_name) and not WasteDisposalService.is_waste_only(resource_name):
+		# Ricette di postazioni non ancora scoperte (2026-10-22): nessuna riga (ProductionService.is_recipe_known).
+		if not TerrainScatteredResourceService.is_resource_locked(resource_name) and not WasteDisposalService.is_waste_only(resource_name) \
+				and ProductionService.is_recipe_known(resource_name, GameSettings.active_human_folk):
 			names.append(resource_name)
 	# In ordine alfabetico del nome mostrato, nella lingua scelta (2026-10-11, richiesta utente).
 	names.sort_custom(func(a: String, b: String) -> bool:

@@ -524,6 +524,9 @@ building_stored_label,Immagazzinato: {entries}
 building_residents_caption,Residenti
 building_influence_received_label,"Influenza ricevuta: {types}"
 building_influence_received_none,nessuna
+building_heating_label,Riscaldamento: {state}
+building_heating_warm,acceso
+building_heating_cold,spento
 influence_type_political,politica
 influence_type_cultural,culturale
 influence_type_religious,religiosa
@@ -1045,6 +1048,7 @@ drawer_produce_no_building,Nessun edificio di produzione
 drawer_produce_dialog_title,Produci
 drawer_order_produce_row,Produci {recipe} ×{quantity}
 drawer_order_no_free_building,Nessun edificio libero
+drawer_order_no_building_built,Nessun {building} costruito
 drawer_order_cancel_tooltip,Annulla l'ordine
 task_assignment_nobody_has_tool,Nessuno ha {tools}
 building_assign_hint_site_manual,Per assegnarlo: seleziona un individuo e fai clic destro sul cantiere.
@@ -1295,9 +1299,41 @@ pending_village_without_center_detail,Costruisci un nuovo Cerchio di sassi per r
 statistics_scope_label,Mostra:
 statistics_scope_folk,{folk} (tutto il popolo)
 statistics_tab_influence,Influenza
+statistics_influence_political,Politico
+statistics_influence_cultural,Culturale
+statistics_influence_religious,Religioso
+statistics_influence_pies_caption,Ripartizione tra i villaggi
+statistics_axis_year,Anno
+statistics_axis_value,Valore
+statistics_axis_cohesion,Coesione
+statistics_axis_buildings,Edifici
+statistics_axis_people,Persone
+statistics_caption_cause_distribution,Distribuzione per causa
+statistics_caption_deaths_per_year,Morti per anno
+statistics_caption_births_per_year,Nascite per anno
+statistics_caption_age_band_distribution,Distribuzione per fascia d'età
+statistics_caption_population_per_year,Popolazione per anno
+statistics_caption_buildings_per_year,Edifici per anno
+statistics_caption_building_type_distribution,Distribuzione per tipo
+statistics_not_available,N/D
+statistics_total_deaths,Morti totali: {count}
+statistics_average_death_age,Età media alla morte: {age}
+statistics_death_row,"{name} — età {age}, {cause} (anno {year}, giorno {day})"
+statistics_total_births,Parti: {count}
+statistics_survived,Sopravvissuti: {count}
+statistics_average_children,Media figli per donna fertile: {value}
+statistics_fertile_woman_row,{name} — {count} figli
+statistics_total_population,Popolazione totale: {count}
+statistics_males,Maschi: {count}
+statistics_females,Femmine: {count}
+statistics_average_age,Età media: {age}
+statistics_total_buildings,Edifici totali: {count}
+statistics_influence_value,{name}: {value} (+{projected} a fine anno)
+statistics_cohesion_value,Coesione: {value}
+statistics_cohesion_no_village,Coesione: nessun villaggio
 warehouse_rule_fuel,Combustibile negli edifici che lo usano
-warehouse_rule_fuel_tooltip,"Tieni del combustibile nel deposito di ogni edificio che lo brucia (focolare, affumicatoio…). Il minimo si sceglie per tipo di edificio; sotto il minimo, all'inventario parte un trasporto dal magazzino del combustibile migliore disponibile."
-warehouse_rule_fuel_type_tooltip,"Combustibile minimo per ogni edificio di questo tipo (in valore di combustibile: un rametto vale 1). 0 = questo tipo non viene rifornito."
+warehouse_rule_fuel_tooltip,"Tieni del combustibile nel deposito di ogni edificio che lo brucia (focolare, affumicatoio, capanna da scaldare). La scorta si sceglie per tipo di edificio; quando scende sotto la metà, all'inventario parte un trasporto dal magazzino che la riporta piena."
+warehouse_rule_fuel_type_tooltip,"Scorta di combustibile per ogni edificio di questo tipo. Il rifornimento parte quando scende sotto la metà. 0 = questo tipo non viene rifornito."
 drawer_order_fuel_row,{building}: porta {quantity} {resource}
 pending_stock_fuel_blocked,Edificio non disponibile o niente combustibile da portare
 building_teaching_stump,Ceppo dell'insegnamento

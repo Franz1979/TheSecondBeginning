@@ -595,6 +595,9 @@ static func _free_storage_allows(building: Building, resource_name: String, reso
 	# Deposito riservato agli eventi (2026-10-17): niente stoccaggio libero, entra solo la quota del rito.
 	if building.rules.storage_event_only:
 		return false
+	# Casa di nucleo (2026-10-22, HouseWardrobeService): solo combustibile e vestiario.
+	if HouseWardrobeService.is_wardrobe_house(building) and not HouseWardrobeService.accepts(resource_name):
+		return false
 	# Rifiuti (2026-10-18, detriti): nessun magazzino li accetta, vanno solo alla Fossa (WasteDisposalService).
 	if resource_rules != null and resource_rules.waste_only:
 		return false

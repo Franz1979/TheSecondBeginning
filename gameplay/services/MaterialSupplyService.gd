@@ -96,8 +96,9 @@ static func get_missing_materials(target_building: Building) -> Dictionary:
 #   (WarehouseSelectionService.find_source_for_retrieval), escludendo il bersaglio; da una workstation solo i suoi
 #   Prodotti finiti, mai il suo magazzino (2026-10-08, BuildingStorageService.withdraw_auto). source null
 #   = la risorsa manca ma nessuna sorgente la ha. Con più risorse mancanti vince la prima che ha una sorgente.
-# Combustibile (FUEL_KEY): sorgente = magazzino più vicino con almeno una risorsa con fuel_value > 0
-# (WarehouseSelectionService.FUEL_CRITERION); risorsa = quella con fuel_value più alto in quel magazzino; quantità =
+# Combustibile (FUEL_KEY): per resa (2026-10-22, find_fuel_source: fuel_value / spazio, la legna da ardere prima dei
+# rametti) la sorgente più vicina che ha il combustibile migliore, il successivo solo se quello non c'è da nessuna parte;
+# quantità =
 # combustibile mancante / fuel_value arrotondato per eccesso, limitata da get_max_depositable.
 # `carrier` (2026-10-16, materiali troppo pesanti): se c'è, le risorse di cui non porta nemmeno un'unità a zaino vuoto
 # (get_uncarryable_materials) sono saltate, così porta prima quelle che può.
@@ -228,12 +229,11 @@ static func _get_fuel_need(
 	world: World, target_building: Building, missing_fuel: float, origin_position: Vector2, origin_macro_coords: Vector2i,
 	excluded: Array[int], reachable: Callable
 ) -> Dictionary:
-	var source := WarehouseSelectionService.find_source_for_retrieval(
-		world, origin_position, origin_macro_coords, WarehouseSelectionService.FUEL_CRITERION, excluded, 1, -1, reachable, true
-	)
-	if source == null:
+	var found := find_fuel_source(world, origin_position, origin_macro_coords, excluded, reachable)
+	if found.is_empty():
 		return {"resource_name": FUEL_KEY, "quantity": 0, "source": null}
-	var fuel_name := best_fuel_in(source)
+	var source: Building = found["source"]
+	var fuel_name := String(found["resource"])
 	var fuel_value := ProductionService.get_fuel_value(fuel_name)
 	if fuel_name == "" or fuel_value <= 0.0:
 		return {}
@@ -246,16 +246,56 @@ static func _get_fuel_need(
 
 # Risorsa con fuel_value più alto tra quelle disponibili in `building` (a parità, in ordine di nome — stesso ordine
 # di ProductionService._consume_fuel); "" se nessuna.
+# Combustibile migliore presente in `building`, per resa (fuels_by_yield). "" se nessuno.
 static func best_fuel_in(building: Building) -> String:
-	var best_name := ""
-	var best_value := 0.0
-	for raw_name in WarehouseSelectionService.get_matching_stock(building, WarehouseSelectionService.FUEL_CRITERION, 1, true).keys():
-		var candidate := String(raw_name)
-		var value := ProductionService.get_fuel_value(candidate)
-		if value > best_value or (value == best_value and best_name != "" and candidate < best_name):
-			best_value = value
-			best_name = candidate
-	return best_name
+	var present := WarehouseSelectionService.get_matching_stock(building, WarehouseSelectionService.FUEL_CRITERION, 1, true)
+	for fuel_name in fuels_by_yield():
+		if present.has(fuel_name):
+			return fuel_name
+	return ""
+
+
+# Combustibili ordinati per RESA (2026-10-22, richiesta utente): fuel_value / space_per_unit decrescente, a parità per nome
+# (legna da ardere 1/3 prima dei rametti 1/10: a parità di calore pesano un terzo e i rametti servono per costruire).
+static var _fuels_by_yield_cache: Array[String] = []
+
+
+static func fuels_by_yield() -> Array[String]:
+	if not _fuels_by_yield_cache.is_empty():
+		return _fuels_by_yield_cache
+	var fuels: Array[String] = []
+	for resource_name in CaloricCalculator.list_secondary_resource_names():
+		if ProductionService.get_fuel_value(String(resource_name)) > 0.0:
+			fuels.append(String(resource_name))
+	fuels.sort_custom(func(a: String, b: String) -> bool:
+		var yield_a := _fuel_yield(a)
+		var yield_b := _fuel_yield(b)
+		return yield_a > yield_b if not is_equal_approx(yield_a, yield_b) else a < b
+	)
+	_fuels_by_yield_cache = fuels
+	return fuels
+
+
+static func _fuel_yield(resource_name: String) -> float:
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if rules == null or rules.space_per_unit <= 0.0:
+		return ProductionService.get_fuel_value(resource_name)
+	return rules.fuel_value / rules.space_per_unit
+
+
+# Sorgente di combustibile (2026-10-22): per ogni combustibile in ordine di resa, la sorgente raggiungibile più vicina che
+# lo ha (Prodotti finiti delle postazioni compresi, combustibile delle case escluso); vince il primo combustibile trovato.
+# {"source": Building, "resource": String} o {} se nessuna sorgente ha combustibile.
+static func find_fuel_source(
+	world: World, origin_position: Vector2, origin_macro_coords: Vector2i, excluded: Array[int], reachable: Callable
+) -> Dictionary:
+	for fuel_name in fuels_by_yield():
+		var source := WarehouseSelectionService.find_source_for_retrieval(
+			world, origin_position, origin_macro_coords, fuel_name, excluded, 1, -1, reachable, true
+		)
+		if source != null:
+			return {"source": source, "resource": fuel_name}
+	return {}
 
 
 # Id esclusi come sorgente: il solo bersaglio. Le workstation non sono più escluse in blocco (2026-10-03, essiccazione

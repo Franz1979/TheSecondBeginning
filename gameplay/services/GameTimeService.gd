@@ -85,6 +85,10 @@ signal individual_apparel_worn_out(individual: HumanIndividual, resource_name: S
 # lo trasforma in un popup di alert.
 signal individual_started_body_reserve(individual: HumanIndividual)
 
+# Riscaldamento delle case (2026-10-22, HouseHeatingService): case il cui stato "riscaldata" è cambiato oggi. GameScene
+# ridisegna le loro celle (fumo sul tetto) e il pannello dell'edificio.
+signal houses_heating_changed(buildings: Array)
+
 # Giorni consecutivi di fame dopo i quali un individuo muore per STARVATION (2026-09-19, richiesta
 # utente). Un individuo che consuma calorie conta i giorni con body_calories a 0; un INFANT senza nessun
 # adulto che lo porta conta i giorni da orfano. Vedi _apply_daily_starvation e HumanIndividual.starvation_days.
@@ -387,8 +391,27 @@ func _recalculate_daily_vitals() -> void:
 func _apply_daily_vitals_interaction() -> void:
 	if _human_individuals.is_empty():
 		return
+	# Una volta per tutta la popolazione (2026-10-22): moltiplicatore del bonus di ogni casa e chi vive con tutto il suo
+	# nucleo famigliare.
+	var home_multipliers: Dictionary = {}
+	if _world != null:
+		for building in _world.buildings:
+			if building.rules != null and building.rules.max_residents > 0:
+				home_multipliers[building.id] = building.rules.home_wellbeing_multiplier
+	var united := FamilyNucleusService.united_member_ids(FamilyNucleusService.compute_nuclei(_human_individuals))
+	# Riscaldamento (2026-10-22, HouseHeatingService): nelle stagioni fredde il bonus della casa vale solo nelle case
+	# riscaldate oggi, altrimenti 0 (moltiplicatore 0, mai il malus del senza casa).
+	var season := HumanVitalsInteractionService.current_season()
+	var heating := HouseHeatingService.daily_heating(_world, _human_individuals, season)
+	var heated: Dictionary = heating["heated"]
+	if not (heating["changed"] as Array).is_empty():
+		houses_heating_changed.emit(heating["changed"])
+	var cold := HouseHeatingService.is_cold_season(season)
 	for individual in _human_individuals:
-		HumanVitalsInteractionService.apply_daily_interaction(individual)
+		var home_multiplier := float(home_multipliers.get(individual.house_id, 1.0))
+		if cold and not heated.has(individual.house_id):
+			home_multiplier = 0.0
+		HumanVitalsInteractionService.apply_daily_interaction(individual, home_multiplier, united.has(individual.id))
 
 
 # Avanzamento giornaliero della decay_fraction di ogni varietà di HumanIndividual.carried_resources per l'INTERA popolazione

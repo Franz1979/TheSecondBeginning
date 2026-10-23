@@ -292,8 +292,8 @@ static func area_has_targets(
 		if not ctx.live_cells.has(area.macro_coords):
 			return false
 		var macro_state := ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		return not QuarryZoneService.list_available_rocks(area, macro_state, individual, reserved).is_empty()
-	return not CutZoneService.list_available_plants(area, ctx.live_cells, individual, reserved, order_cut_yield(order)).is_empty()
+		return not QuarryZoneService.list_available_rocks(area, macro_state, individual, reserved, true).is_empty()
+	return not CutZoneService.list_available_plants(area, ctx.live_cells, individual, reserved, order_cut_yield(order), true).is_empty()
 
 
 # Risorsa voluta da un ordine di taglio del magazzino (solo le piante che la danno, CutZoneService.SERIES_YIELD_KEY); ""

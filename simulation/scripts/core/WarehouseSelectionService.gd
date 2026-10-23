@@ -116,7 +116,9 @@ static func find_best(
 	# degli ingredienti, preferenza di scarico della macellazione — find_nearest_recipe_workstation sotto).
 	# Edificio "da demolire" escluso (2026-09-27, Building.is_marked_for_demolition): non funziona più.
 	var has_capacity := func(building: Building) -> bool:
+		# Case di nucleo (2026-10-22, HouseWardrobeService): non fanno più da magazzino di ripiego.
 		return building.is_complete and not building.is_out_of_service() and building.rules != null and not building.rules.is_workstation \
+			and not HouseWardrobeService.is_wardrobe_house(building) \
 			and BuildingStorageService.can_accept(building, resource_name) \
 			and BuildingStorageService.get_max_depositable(building, resource_name) >= 1
 
@@ -300,6 +302,11 @@ static func _get_matching_stock(building: Building, criterion: Variant, min_quan
 	for resource_name in candidate_names:
 		var quantity: int = BuildingStorageService.get_auto_available_quantity(building, String(resource_name)) if auto_rules \
 			else BuildingStorageService.get_available_quantity(building, String(resource_name))
+		# Combustibile di una casa riscaldabile (2026-10-22): riservato alla casa, mai una sorgente automatica. Vestiario di una
+		# casa di nucleo abitata: riservato ai suoi abitanti, che lo prendono direttamente da casa (HouseWardrobeService).
+		if HouseHeatingService.is_fuel_reserved(building, String(resource_name)) \
+				or HouseWardrobeService.is_apparel_reserved(building, String(resource_name)):
+			continue
 		if quantity < minimum:
 			continue
 		if criterion == null or (criterion is String and criterion == ""):

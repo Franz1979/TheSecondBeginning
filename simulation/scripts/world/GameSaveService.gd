@@ -514,7 +514,10 @@ func save_game_to_json(
 			# edificio mostra subito lo stato corretto dopo un reload, senza dover aspettare il
 			# prossimo controllo giornaliero (HumanIndividualActionService.
 			# retry_blocked_material_shortages) per ricalcolarlo da zero.
-			"is_awaiting_material": building.is_awaiting_material
+			"is_awaiting_material": building.is_awaiting_material,
+			# Riscaldamento (2026-10-22, HouseHeatingService).
+			"heating_fuel_due": building.heating_fuel_due,
+			"heated_today": building.heated_today,
 		})
 
 	# Fog of war (vedi FogOfWarMemory.gd/GameScene.fog_of_war_memories) — una entry per macrocella

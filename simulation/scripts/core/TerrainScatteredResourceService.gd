@@ -69,11 +69,17 @@ static func _get_available_unlocked(macro_state: MacroCellState, resource_name: 
 	return 0
 
 
+# Sale a ogni raccolta da terra (2026-10-22, scatti): chi tiene in memoria delle disponibilità
+# (HaulZoneService._area_cell_totals) sa che sono cambiate.
+static var consume_revision: int = 0
+
+
 # STESSO principio di get_available sopra — `rules` risolta una sola volta, passata a
 # LotCapacityService.consume invece di lasciarglielo ri-risolvere.
 static func consume(macro_state: MacroCellState, resource_name: String, position: Vector2i, quantity: int) -> void:
 	if quantity <= 0:
 		return
+	consume_revision += 1
 	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if rules != null and rules.lot_source != SecondaryResourceTypes.LotSource.NONE:
 		LotCapacityService.consume(macro_state, resource_name, position, quantity, rules)

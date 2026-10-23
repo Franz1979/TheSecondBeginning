@@ -98,7 +98,10 @@ static func collect_reserved_rocks(individuals: Array) -> Dictionary:
 
 # Rocce della zona estraibili da `individual`: con pietra rimasta (RockStoneService, cache per macrocella),
 # raggiungibili e non prenotate. Array[Vector2i] di microcelle locali alla macrocella della zona.
-static func list_available_rocks(area: WorkArea, macro_state: MacroCellState, individual: HumanIndividual, reserved: Dictionary) -> Array[Vector2i]:
+# `first_only` (2026-10-22, come CutZoneService.list_available_plants): si ferma alla prima roccia trovata.
+static func list_available_rocks(
+	area: WorkArea, macro_state: MacroCellState, individual: HumanIndividual, reserved: Dictionary, first_only: bool = false
+) -> Array[Vector2i]:
 	var rocks: Array[Vector2i] = []
 	if area == null or macro_state == null or not macro_state.stone_positions_generated:
 		return rocks
@@ -113,6 +116,8 @@ static func list_available_rocks(area: WorkArea, macro_state: MacroCellState, in
 		if individual != null and not HaulZoneService.is_cell_reachable(individual, area.macro_coords, rock):
 			continue
 		rocks.append(rock)
+		if first_only:
+			return rocks
 	return rocks
 
 
@@ -137,9 +142,25 @@ static func choose_rock(area: WorkArea, macro_state: MacroCellState, individual:
 # Scelta automatica della zona: valide le zone con l'estrazione attiva e almeno una roccia disponibile per `individual`;
 # punteggio come la raccolta (rocce disponibili / (distanza dal centro + offset) × fattore per ogni altro pipottino che
 # estrae già lì). null se nessuna.
+# Tenuta per il fotogramma in corso, per pipottino e prenotazioni (2026-10-22, come CutZoneService.choose_work_area).
+static var _chosen_area_cache: Dictionary = {}
+static var _chosen_area_frame: int = -1
+
+
 static func choose_work_area(game_data: GameData, world: World, individual: HumanIndividual, reserved: Dictionary) -> WorkArea:
 	if game_data == null or world == null or individual == null:
 		return null
+	var frame := Engine.get_process_frames()
+	if frame != _chosen_area_frame:
+		_chosen_area_cache.clear()
+		_chosen_area_frame = frame
+	var cache_key := [individual.get_instance_id(), reserved.hash()]
+	if not _chosen_area_cache.has(cache_key):
+		_chosen_area_cache[cache_key] = _choose_work_area(game_data, world, individual, reserved)
+	return _chosen_area_cache[cache_key]
+
+
+static func _choose_work_area(game_data: GameData, world: World, individual: HumanIndividual, reserved: Dictionary) -> WorkArea:
 	var best: WorkArea = null
 	var best_score := -1.0
 	for area in list_quarry_work_areas(game_data):

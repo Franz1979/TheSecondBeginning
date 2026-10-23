@@ -41,7 +41,7 @@ static func _produce_job(ctx: GameContext, provider: Dictionary, order: Dictiona
 	var recipe := String(order.get("recipe", ""))
 	var quantity := maxi(int(order.get("quantity", 1)), 1)
 	var building := DrawerOrderService.choose_produce_building(ctx.world, recipe, quantity, busy_counts)
-	var blocked_reason := "" if building != null else GameContext.tr_text("drawer_order_no_free_building")
+	var blocked_reason := "" if building != null else WarehouseManagerService.no_building_reason(ctx, recipe)
 	# Attrezzo (2026-10-11, stessa regola degli ordini di zona): addosso a qualcuno, nell'Attrezzeria dell'edificio, o da
 	# prendere in deposito; altrimenti un edificio la cui Attrezzeria lo copra; nessuno = "Nessuno ha <attrezzo>".
 	if building != null:

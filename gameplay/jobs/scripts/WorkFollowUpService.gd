@@ -44,7 +44,9 @@ static func butcher_after_hunt(ctx: GameContext, hunter: HumanIndividual, carcas
 		note_unbutchered_carcass(ctx.game_data, macro_coords, microcell, carcass_id)
 		return
 	var task := TaskBuilderService.build_butcher_task(
-		hunter, pile, carcass_id, cell.macro_state, String(carcass.get("butcher_destination", ButcherDestinationService.CAMPFIRE))
+		hunter, pile, carcass_id, cell.macro_state, String(carcass.get("butcher_destination",
+			# Carcassa senza destinazione (2026-10-22): la coppia predefinita, non più il focolare fisso.
+			ButcherDestinationService.resolve_default(ctx.game_data.last_butcher_destination, ctx.world, ctx.folk)))
 	)
 	if task == null:
 		HuntService.log_event(hunter, "macellazione non accodata: task non creata, la carcassa #%d resta a terra." % carcass_id)

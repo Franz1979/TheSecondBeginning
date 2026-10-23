@@ -39,6 +39,10 @@ static func get_village_stock(world: World) -> Dictionary:
 					_add(totals, String(resource_name), int(stored.get("quantity", 0)))
 		else:
 			for resource_name in building.stored_resources.keys():
+				# Combustibile di una casa riscaldabile (2026-10-22): riservato alla casa, non è una scorta.
+				if HouseHeatingService.is_fuel_reserved(building, String(resource_name)) \
+						or HouseWardrobeService.is_apparel_reserved(building, String(resource_name)):
+					continue
 				var entry: Dictionary = building.stored_resources[resource_name]
 				_add(totals, String(resource_name), int(entry.get("quantity", 0)))
 	return totals

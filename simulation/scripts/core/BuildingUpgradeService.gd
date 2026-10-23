@@ -25,9 +25,12 @@ const UPGRADE_CREDITED_KEY := "upgrade_credited"
 # Orientamento dell'edificio di partenza (2026-10-04): rimesso all'annullamento — il miglioramento da un edificio senza
 # porta a uno con porta può avere cambiato Building.rotation con la scelta dell'orientamento.
 const UPGRADE_FROM_ROTATION_KEY := "upgrade_from_rotation"
+# Id di chi ci abitava (2026-10-22, Hut per nucleo): al completamento il loro nucleo ha la precedenza sulla casa
+# (AssignHouseService.assign_pending_residents, priority_by_building).
+const UPGRADE_PREVIOUS_RESIDENTS_KEY := "upgrade_previous_residents"
 const UPGRADE_KEYS: Array[String] = [
 	UPGRADE_FROM_TYPE_KEY, UPGRADE_FROM_DURABILITY_KEY, UPGRADE_FROM_BUILT_YEAR_KEY, UPGRADE_CREDITED_KEY,
-	UPGRADE_FROM_ROTATION_KEY,
+	UPGRADE_FROM_ROTATION_KEY, UPGRADE_PREVIOUS_RESIDENTS_KEY,
 ]
 
 
