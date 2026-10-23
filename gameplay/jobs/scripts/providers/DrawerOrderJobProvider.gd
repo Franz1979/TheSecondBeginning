@@ -40,8 +40,21 @@ static func _produce_job(ctx: GameContext, provider: Dictionary, order: Dictiona
 	var order_id := int(order["id"])
 	var recipe := String(order.get("recipe", ""))
 	var quantity := maxi(int(order.get("quantity", 1)), 1)
-	var building := DrawerOrderService.choose_produce_building(ctx.world, recipe, quantity, busy_counts)
-	var blocked_reason := "" if building != null else WarehouseManagerService.no_building_reason(ctx, recipe)
+	# Ordine scalzato legato alla sua postazione (2026-10-23, ProductionEvictionService.EVICTED_FROM_KEY): solo lì.
+	var bound := ProductionEvictionService.bound_building(ctx.world, order)
+	var building := DrawerOrderService.choose_produce_building(ctx.world, recipe, quantity, busy_counts, false, bound)
+	# Nessun posto libero (2026-10-23, ProductionEvictionService): si prende il posto di un ordine in attesa di materiali,
+	# salvo per un ordine già scalzato (anti ping-pong: solo posti liberi).
+	var evict: Dictionary = {}
+	if building == null and not order.has(ProductionEvictionService.EVICTED_KEY):
+		evict = ProductionEvictionService.find_evictable(ctx.world, ctx.individuals, recipe, quantity)
+		if not evict.is_empty():
+			building = evict["building"]
+	var blocked_reason := ""
+	if building == null:
+		blocked_reason = GameContext.tr_text("drawer_order_waiting_evicted_building").format({
+			"building": "%s #%d" % [bound.get_display_name(), bound.id]
+		}) if bound != null else WarehouseManagerService.no_building_reason(ctx, recipe)
 	# Attrezzo (2026-10-11, stessa regola degli ordini di zona): addosso a qualcuno, nell'Attrezzeria dell'edificio, o da
 	# prendere in deposito; altrimenti un edificio la cui Attrezzeria lo copra; nessuno = "Nessuno ha <attrezzo>".
 	if building != null:
@@ -49,16 +62,17 @@ static func _produce_job(ctx: GameContext, provider: Dictionary, order: Dictiona
 			ctx, BuildingToolkitService.filter_uncovered(building, ToolFetchService.recipe_tool_categories(recipe)), DrawerOrderService.TYPE_PRODUCE
 		)
 		if tool_reason != "":
-			var covering := DrawerOrderService.choose_produce_building(ctx.world, recipe, quantity, busy_counts, true)
+			var covering := DrawerOrderService.choose_produce_building(ctx.world, recipe, quantity, busy_counts, true, bound)
 			if covering != null:
 				building = covering
+				evict = {}
 			else:
 				blocked_reason = tool_reason
-	# Ordine del magazzino (2026-10-11): fermo finché gli ingredienti (e il combustibile) non sono in deposito; nessuno va a
-	# procurarli. Gli ordini fatti a mano restano come prima.
+	# Ordine del magazzino: dal 2026-10-23 (richiesta utente — una regola sola con la costruzione) i materiali mancanti non lo
+	# bloccano più. Si assegna come un cantiere: chi lo prende porta i materiali man mano e, se non ce ne sono in nessun
+	# magazzino, va in pausa nella coda personale e riparte quando arrivano. "Mancano: …" (MISSING_KEY) resta per la
+	# campanella.
 	var from_warehouse := order.has(StockRequestService.ORDER_KEY)
-	if from_warehouse and blocked_reason == "" and building != null:
-		blocked_reason = String(order.get(StockRequestService.MISSING_KEY, ""))
 	var row_name := GameContext.tr_text("drawer_order_produce_row").format({"recipe": IconRegistry.get_resource_display_name(recipe), "quantity": quantity})
 	var building_text := (" @ %s #%d" % [building.building_type_name, building.id]) if building != null else ""
 	return {
@@ -71,6 +85,8 @@ static func _produce_job(ctx: GameContext, provider: Dictionary, order: Dictiona
 		"assigned": false, "hidden": false, "warehouse": from_warehouse,
 		"blocked_reason": blocked_reason,
 		"target": building, "provider": provider, "order": order, "recipe": recipe, "quantity": quantity,
+		# Ordine in attesa da scalzare alla presa ({} se c'è un posto libero), vedi ProductionEvictionService.
+		"evict": evict,
 	}
 
 

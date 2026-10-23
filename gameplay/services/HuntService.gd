@@ -309,12 +309,8 @@ static func write_weapon_drop(context: Dictionary, macro_coords: Vector2i, local
 # true se l'individuo ha ancora un'arma di caccia in cintura o nello zaino (dopo che quella scagliata si è rotta).
 static func has_hunting_weapon_available(individual: HumanIndividual) -> bool:
 	# Armi a munizioni (2026-10-04): find_belt_slot_for salta già quelle senza munizione; nello zaino idem.
-	if ToolGateService.find_belt_slot_for(individual, TaskTypes.ToolCategory.HUNTING) != -1:
-		return true
-	for tool_name in ToolGateService.get_tools_covering(TaskTypes.ToolCategory.HUNTING):
-		if individual.get_carried_quantity(tool_name) > 0 and ToolGateService.has_required_ammo(individual, tool_name):
-			return true
-	return false
+	# Dal 2026-10-23 anche l'arma con la munizione nello zaino (ToolGateService.has_tool_for la mette in cintura).
+	return ToolGateService.has_tool_for(individual, TaskTypes.ToolCategory.HUNTING)
 
 
 # --- Log di debug della caccia (DebugLogging.SHOW_HUNT_LOGS) — punto unico di stampa ---

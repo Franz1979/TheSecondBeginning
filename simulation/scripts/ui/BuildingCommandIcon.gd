@@ -23,6 +23,9 @@ const KIND_EMPTY_PIT := "empty_pit"
 const KIND_CANCEL_EMPTY_PIT := "cancel_empty_pit"
 const KIND_CLOSE_PIT := "close_pit"
 const KIND_OPEN_PIT := "open_pit"
+# Cancello (2026-10-23): ante aperte (comando "Apri") e chiuse (comando "Chiudi").
+const KIND_OPEN_GATE := "open_gate"
+const KIND_CLOSE_GATE := "close_gate"
 
 # Il disegno è pensato in un quadrato di DRAWING_SPAN unità, scalato al lato minore del rettangolo.
 const DRAWING_SPAN: float = 20.0
@@ -104,6 +107,22 @@ func _draw() -> void:
 		KIND_OPEN_PIT:
 			_draw_pit()
 			_down_arrow(10.0, 9.5, 0.6, 3.0, 1.2)
+		KIND_OPEN_GATE:
+			_draw_gate(true)
+		KIND_CLOSE_GATE:
+			_draw_gate(false)
+
+
+# Cancello (2026-10-23): due pali ai lati e due ante, aperte (girate verso il basso) o chiuse (che si toccano al centro).
+func _draw_gate(open: bool) -> void:
+	for post_x in [3.0, 17.0]:
+		_shape([Vector2(post_x - 1.6, 6.0), Vector2(post_x + 1.6, 6.0), Vector2(post_x + 1.6, 16.0), Vector2(post_x - 1.6, 16.0)], CRATE_WOOD)
+	if open:
+		_shape([Vector2(4.6, 9.0), Vector2(6.6, 9.0), Vector2(6.6, 17.0), Vector2(4.6, 17.0)], CRATE_WOOD)
+		_shape([Vector2(13.4, 9.0), Vector2(15.4, 9.0), Vector2(15.4, 17.0), Vector2(13.4, 17.0)], CRATE_WOOD)
+	else:
+		_shape([Vector2(4.6, 9.5), Vector2(9.6, 9.5), Vector2(9.6, 12.5), Vector2(4.6, 12.5)], CRATE_WOOD)
+		_shape([Vector2(10.4, 9.5), Vector2(15.4, 9.5), Vector2(15.4, 12.5), Vector2(10.4, 12.5)], CRATE_WOOD)
 
 
 # Migliora: casa a sinistra, freccia in su a destra.

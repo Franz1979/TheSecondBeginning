@@ -859,6 +859,7 @@ func _ready() -> void:
 	building_info_panel.empty_pit_requested.connect(_on_empty_pit_requested)
 	building_info_panel.cancel_empty_pit_requested.connect(_on_cancel_empty_pit_requested)
 	building_info_panel.waste_closed_toggle_requested.connect(_on_waste_closed_toggle_requested)
+	building_info_panel.gate_toggle_requested.connect(_on_gate_toggle_requested)
 	# Icone di influenza (2026-10-02): impronta temporanea del cerchio del tipo cliccato e anteprima fissa al passaggio
 	# del mouse. Il gruppo di icone vive nell'intestazione della scheda, accanto al 🎯.
 	game_info_tabs.header_actions.add_child(building_info_panel.influence_buttons_box)
@@ -3351,19 +3352,8 @@ func _on_production_order_assign_requested(building: Building, order_key: String
 func _on_production_order_cancel_requested(building: Building, order_key: String) -> void:
 	if building == null or not ProductionService.has_order(building, order_key):
 		return
-	var freed: Array[HumanIndividual] = []
-	for member in human_individuals:
-		if _task_has_production_order(member.current_task, order_key, building):
-			if CargoReturnService.release_cargo(member, member.current_task, macro_world) != CargoReturnService.Outcome.RETURNING:
-				member.stop(false)
-				freed.append(member)
-		for queued_task in member.task_queue.duplicate():
-			if _task_has_production_order(queued_task, order_key, building) \
-					and CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
-				member.task_queue.erase(queued_task)
+	ProductionEvictionService.release_order_workers(_game_context(), building, order_key)
 	ProductionService.cancel_order(building, order_key)
-	for member in freed:
-		HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 	_refresh_selected_building_panel()
 	_refresh_selected_individual_panel()
 
@@ -7699,7 +7689,7 @@ func _refresh_ground_pile_panel(force: bool = false) -> void:
 # true se l'edificio con questo id è percorribile (categoria MOVEMENT, es. sentiero): un mucchio ci può stare sopra.
 func _is_walkable_building_id(building_id: int) -> bool:
 	var building := _find_building_by_id(building_id)
-	return building != null and building.rules != null and building.rules.walkable
+	return building != null and building.is_walkable()
 
 
 # Righe del contenuto del mucchio a terra in una microcella (pannello dell'edificio), [] se lì non c'è un mucchio.
@@ -9867,9 +9857,15 @@ func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var quantity := int(job["quantity"])
 	if quantity > ProductionService.get_max_order_quantity(building):
 		return
+	# Posto di un ordine in attesa di materiali (2026-10-23): quello torna in coda, questo ne prende il posto.
+	var evict: Dictionary = job.get("evict", {})
+	if not evict.is_empty() and evict["building"] == building:
+		ProductionEvictionService.evict(_game_context(), building, String(evict["order_key"]))
 	var order_key := ProductionService.create_order(building, recipe, quantity, -1, false, deliver, true)
 	if order_key == "":
 		return
+	# Ordine del magazzino (2026-10-23): la sua chiave resta sull'ordine della postazione, per tornare in coda come tale.
+	ProductionService.mark_order_from_warehouse(building, order_key, String((job["order"] as Dictionary).get(StockRequestService.ORDER_KEY, "")))
 	# Cottura dei giorni di cibo (2026-10-22): il segno passa all'ordine sulla postazione.
 	if (job["order"] as Dictionary).has(StockRequestService.FOOD_DAYS_KEY):
 		ProductionService.mark_order_auto_cook(building, order_key)
@@ -14021,6 +14017,12 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 			return "burial"
 		&"build_earthwork":
 			return "earthwork"
+		# Palizzata (2026-10-23).
+		&"build_palisade":
+			return "palisade"
+		# Cancello (2026-10-23).
+		&"build_gate":
+			return "gate"
 		# Pietre impilate (2026-10-02, richiesta utente) — azione cablata in BuildBar._ready.
 		&"build_stacked_stones":
 			return "stacked_stones"
@@ -14172,7 +14174,9 @@ const UPGRADE_ORIENTATION_GHOST_ALPHA: float = 0.7
 
 func _upgrade_needs_orientation(building: Building) -> bool:
 	var target := BuildingUpgradeService.get_upgrade_rules(building)
-	return building != null and building.rules != null and target != null and target.has_door
+	# Palizzata (2026-10-23): anche il lato dei pali si sceglie col tasto di rotazione.
+	return building != null and building.rules != null and target != null \
+		and (target.has_door or LinearShapes.has_side(building.rules.upgrades_to))
 
 
 func _continue_upgrade_after_confirmation(building: Building) -> void:
@@ -14203,6 +14207,14 @@ func _enter_upgrade_orientation_mode(building: Building) -> void:
 	ghost.self_modulate = Color(1.0, 1.0, 1.0, UPGRADE_ORIENTATION_GHOST_ALPHA)
 	ghost.show_door_marker = true
 	cell.container.add_child(ghost)
+	# Destinazione lineare (2026-10-23, vallo → palizzata): la forma dai pezzi vicini, come nel piazzamento
+	# (_sync_linear_ghost); senza, il fantasma resterebbe un tratto orizzontale anche su un vallo verticale.
+	if target.is_linear:
+		var shape := _linear_shape_at(
+			Vector4i(building.macro_x, building.macro_y, building.micro_x, building.micro_y),
+			_collect_linear_tiles(_linear_link_group(target, building.rules.upgrades_to))
+		)
+		ghost.set_linear_preview(shape.x, shape.y, Vector2.ZERO)
 	_upgrade_orientation_ghost = ghost
 	_upgrade_orientation_building = building
 	build_bar.set_upgrade_orientation_mode(true, tr(target.building_name))
@@ -14340,6 +14352,18 @@ func _on_cancel_empty_pit_requested(building: Building) -> void:
 	_refresh_pending_entries()
 	_refresh_selected_building_panel()
 	_refresh_selected_individual_panel()
+
+
+# Apri/Chiudi il cancello (2026-10-23): chiuso non si attraversa. Ridisegno della cella: anche la griglia dei percorsi
+# (PathfindingService.sync_buildings) e chi stava camminando ricalcola il percorso.
+func _on_gate_toggle_requested(building: Building) -> void:
+	if building == null or building.rules == null or not building.rules.is_gate or not building.is_complete:
+		return
+	building.gate_open = not building.gate_open
+	var cell: LiveMacroCell = live_cells.get(Vector2i(building.macro_x, building.macro_y))
+	if cell != null:
+		_refresh_building_visuals(cell)
+	_refresh_selected_building_panel()
 
 
 # "Chiudi/Riapri ai rifiuti" (2026-10-18): una Fossa chiusa non riceve più nulla. Durante lo svuotamento resta chiusa.
@@ -14800,6 +14824,9 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.set_return_borrowed_tools(game_data.job_board_return_borrowed_tools)
 		_task_assignment_panel.return_borrowed_tools_changed.connect(func(enabled: bool) -> void:
 			game_data.job_board_return_borrowed_tools = enabled
+			# Spenta (2026-10-23): gli attrezzi presi finora diventano di chi li ha.
+			if not enabled:
+				ToolFetchService.forget_borrowed_tools(human_individuals)
 		)
 		# Prendi la sacca se disponibile (2026-10-19): dato della partita, letto da ToolFetchService.try_take_bag.
 		_task_assignment_panel.set_take_bag(game_data.job_board_take_bag)
@@ -16247,8 +16274,12 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"upgrading": is_upgrade_site,
 				# Detriti dei ceppi rimasti nel cantiere (2026-10-18): macerie disegnate sopra.
 				"site_debris": WasteDisposalService.has_site_debris(building),
+				# Cancello (2026-10-23): disegnato aperto o chiuso.
+				"gate_open": building.gate_open,
 				# Casa riscaldata oggi (2026-10-22, HouseHeatingService): fumo fermo sul tetto.
 				"heated": building.heated_today and building.is_complete,
+				# Affumicatoio al lavoro (2026-10-23, ProductionService.refresh_smoking): fumo dal foro.
+				"smoking": building.smoking_now and building.is_complete,
 			}
 			# "slot_breakdown" (2026-09-11, richiesta utente — "sul deposit site... disegna gli
 			# oggetti che ci sono, tipo mucchietti") — SOLO per deposit_site ("solo su questo",

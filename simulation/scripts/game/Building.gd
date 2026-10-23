@@ -115,6 +115,9 @@ var is_awaiting_material: bool = false
 # oggi. Salvati.
 var heating_fuel_due: float = 0.0
 var heated_today: bool = false
+# Affumicatoio al lavoro adesso (2026-10-23, ProductionService.refresh_smoking): fumo sulla mappa. Non salvato: dopo il
+# caricamento si ricalcola entro un secondo.
+var smoking_now: bool = false
 
 # true dal momento in cui SetupSiteAction completa per questo edificio (impostato da SetupSiteAction.
 # on_complete insieme al consumo del materiale di setup — 2026-09-24, bugfix: prima lo impostava solo
@@ -242,6 +245,14 @@ var waste_reserved: int = 0
 # un'altra Fossa) e chiusa ai rifiuti (non riceve nulla). Scritti da WasteDisposalService e dai comandi del pannello.
 var waste_emptying: bool = false
 var waste_closed: bool = false
+# Cancello (2026-10-23, BuildingRules.is_gate): aperto (si passa) o chiuso. Nasce aperto. Salvato.
+var gate_open: bool = true
+
+
+# Calpestabile (2026-10-23): dal flag BuildingRules.walkable, oppure cancello completo e aperto. Letto da
+# MicrocellObstacles (percorsi) e dai controlli dei mucchi a terra. Un cantiere blocca come ogni cantiere.
+func is_walkable() -> bool:
+	return rules != null and (rules.walkable or (rules.is_gate and is_complete and gate_open))
 # Cantiere nel bosco (2026-10-18, richiesta utente — "prima disbosca, poi costruisci"): piazzato su celle con alberi o
 # cespugli vivi, il cantiere aspetta il taglio: niente lavoro di costruzione finché le sue celle non sono libere (solo i
 # lavori di taglio, SiteCutJobProvider). Si spegne da solo (BuildingMaintenanceService.finish_site_cuts). Salvato.

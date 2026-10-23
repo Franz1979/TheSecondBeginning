@@ -9,9 +9,10 @@ extends RefCounted
 #   - nessuno: il primo che arriva dal coordinatore, con posti liberi in cintura per ciò che gli manca, prende il lavoro e
 #     prima va a prendere in deposito gli attrezzi mancanti (equip_tool.tres, in cintura), poi lavora;
 #   - una categoria che nessuno ha e nessun deposito ha, o nessuno con abbastanza posto in cintura: lavoro bloccato.
-# Le armi da caccia si prendono in deposito solo se non usano munizioni (le lance). Gli attrezzi presi restano "in
-# prestito" (HumanIndividual.borrowed_tools) e, con la regola "Riponi gli attrezzi presi per un lavoro", tornano al
-# deposito quando l'individuo è libero (return_borrowed_tools). Statico e senza stato; le task create si restituiscono a
+# Attrezzi a munizioni (2026-10-23, es. arco): si prendono solo insieme alla loro munizione, anche da due depositi; chi ha
+# già l'arma prende solo la munizione (category_fetch_option, vince il percorso più corto). Con la regola "Riponi gli
+# attrezzi presi per un lavoro" accesa gli attrezzi presi restano "in prestito" (HumanIndividual.borrowed_tools) e tornano
+# al deposito quando l'individuo è libero (return_borrowed_tools); spenta, diventano suoi. Statico e senza stato; le task create si restituiscono a
 # chi chiama, che ne collega i segnali (griglia del magazzino) e aggiorna i pannelli.
 
 const ZONE_ORDER_TOOL_FETCH_KEY := "zone_order_tool_fetch"
@@ -117,14 +118,15 @@ static func free_belt_slots(member: HumanIndividual) -> Array[int]:
 	return slots
 
 
-# Attrezzi che coprono `category` e si possono prendere in deposito per un lavoro (armi: solo senza munizioni).
+# Attrezzi che coprono `category` e si possono prendere da soli in deposito per un lavoro: mai quelli che richiedono una
+# munizione (per ogni categoria dal 2026-10-23; prima solo per la caccia), che si prendono solo insieme alla munizione
+# (category_fetch_option).
 static func fetchable_tool_names(category: int) -> Array[String]:
 	var names: Array[String] = []
 	for tool_name in ToolGateService.get_tools_covering(category):
-		if category == TaskTypes.ToolCategory.HUNTING:
-			var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
-			if rules == null or rules.required_ammo_category >= 0:
-				continue
+		var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+		if (rules == null and category == TaskTypes.ToolCategory.HUNTING) or (rules != null and rules.required_ammo_category >= 0):
+			continue
 		names.append(tool_name)
 	return names
 
@@ -214,7 +216,7 @@ static func _compute_blocked_reason(ctx: GameContext, categories: Array, age_kin
 			if age_ok(ctx, member, age_kind) and member_covers_tool(member, int(category)):
 				someone_has = true
 				break
-		if not someone_has and find_storage_tool(ctx.world, null, int(category)).is_empty():
+		if not someone_has and category_fetch_option(ctx.world, null, int(category)).is_empty():
 			nowhere.append(int(category))
 	if not nowhere.is_empty():
 		if nowhere.size() == 1 and ZONE_ORDER_TOOL_BLOCK_KEYS.has(nowhere[0]):
@@ -225,7 +227,7 @@ static func _compute_blocked_reason(ctx: GameContext, categories: Array, age_kin
 		if not age_ok(ctx, member, age_kind):
 			continue
 		var missing := member_missing_categories(member, categories)
-		if free_belt_slots(member).size() >= missing.size() and missing_tools_in_storage(ctx.world, member, missing):
+		if missing_tools_in_storage(ctx.world, member, missing):
 			return ""
 		for category in missing:
 			if not needed.has(category):
@@ -233,11 +235,122 @@ static func _compute_blocked_reason(ctx: GameContext, categories: Array, age_kin
 	return GameContext.tr_text("drawer_order_nobody_has_belt_room").format({"tools": describe_missing_categories(needed)})
 
 
+# true se per ogni categoria di `missing` c'è un prelievo possibile (category_fetch_option) e tutti insieme stanno nei
+# posti liberi della cintura di `member` (arma + munizione ne usano due).
 static func missing_tools_in_storage(world: World, member: HumanIndividual, missing: Array) -> bool:
+	var slots := free_belt_slots(member).size()
 	for category in missing:
-		if find_storage_tool(world, member, int(category)).is_empty():
+		var option := category_fetch_option(world, member, int(category), slots)
+		if option.is_empty():
 			return false
+		slots -= option.size()
 	return true
+
+
+# Prelievo per una categoria (2026-10-23, richiesta utente — arco e frecce per la caccia automatica, regola valida per ogni
+# arma con required_ammo_category): l'opzione col percorso più corto tra
+#   - un attrezzo senza munizioni (find_storage_tool, un posto);
+#   - la sola munizione per un'arma a munizioni che `worker` ha già, in cintura o nello zaino (un posto);
+#   - arma a munizioni + munizione (due posti), anche da due depositi: si va prima al più vicino e conta il giro intero
+#     (pipottino → primo deposito → secondo). Un'arma a munizioni senza munizione prendibile non si considera mai.
+# Le opzioni con più attrezzi dei `max_slots` si scartano. [{"building", "tool_name"}, ...] in ordine di tappa, vuoto se
+# nessuna. Con `worker` null basta che un'opzione esista (la sola munizione conta se qualcuno ha l'arma). Prenotazioni e
+# tenuta per il fotogramma come find_storage_tool.
+static func category_fetch_option(world: World, worker: HumanIndividual, category: int, max_slots: int = 99) -> Array[Dictionary]:
+	var frame := Engine.get_process_frames()
+	if frame != _storage_tool_frame:
+		_storage_tool_cache.clear()
+		_storage_tool_frame = frame
+	var cache_key := ["option", worker.get_instance_id() if worker != null else 0, category, max_slots]
+	if not _storage_tool_cache.has(cache_key):
+		_storage_tool_cache[cache_key] = _compute_fetch_option(world, worker, category, max_slots)
+	return _storage_tool_cache[cache_key]
+
+
+static func _compute_fetch_option(world: World, worker: HumanIndividual, category: int, max_slots: int) -> Array[Dictionary]:
+	var best: Array[Dictionary] = []
+	var best_distance := INF
+	if max_slots < 1:
+		return best
+	var origin := worker.position if worker != null else Vector2.ZERO
+	var origin_macro := worker.home_macro_coords if worker != null else Vector2i.ZERO
+	var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
+	var plain := find_storage_tool(world, worker, category)
+	if not plain.is_empty():
+		if worker == null:
+			best.append(plain)
+			return best
+		best_distance = _distance_to(worker, plain["building"])
+		best.append(plain)
+	var reserved := _reserved_fetches(worker, TOOL_FETCH_SOURCE_KEY)
+	for weapon_name in ToolGateService.get_tools_covering(category):
+		var rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
+		if rules == null or rules.required_ammo_category < 0:
+			continue
+		var ammo_names := ToolGateService.get_tools_covering(rules.required_ammo_category)
+		if _owns_tool(worker, weapon_name):
+			# Arma già sua: solo la munizione più vicina.
+			for ammo_name in ammo_names:
+				var ammo_source := _find_unreserved_source(world, origin, origin_macro, ammo_name, reserved, reachability)
+				if ammo_source == null:
+					continue
+				var ammo_only: Array[Dictionary] = [{"building": ammo_source, "tool_name": ammo_name}]
+				if worker == null:
+					return ammo_only
+				var distance := _distance_to(worker, ammo_source)
+				if distance < best_distance:
+					best_distance = distance
+					best = ammo_only
+			continue
+		if max_slots < 2:
+			continue
+		var weapon_source := _find_unreserved_source(world, origin, origin_macro, weapon_name, reserved, reachability)
+		if weapon_source == null:
+			continue
+		var weapon_entry := {"building": weapon_source, "tool_name": weapon_name}
+		var weapon_pos := Vector2(weapon_source.micro_x, weapon_source.micro_y)
+		var weapon_macro := Vector2i(weapon_source.macro_x, weapon_source.macro_y)
+		for ammo_name in ammo_names:
+			# Giro arma → munizione (munizione più vicina all'arma) e giro munizione → arma (munizione più vicina al pipottino).
+			var near_weapon := _find_unreserved_source(world, weapon_pos, weapon_macro, ammo_name, reserved, reachability)
+			if near_weapon == null:
+				continue
+			if worker == null:
+				return _two_stops(weapon_entry, {"building": near_weapon, "tool_name": ammo_name})
+			var weapon_first := _distance_to(worker, weapon_source) + _distance_between(weapon_source, near_weapon)
+			if weapon_first < best_distance:
+				best_distance = weapon_first
+				best = _two_stops(weapon_entry, {"building": near_weapon, "tool_name": ammo_name})
+			var near_worker := _find_unreserved_source(world, origin, origin_macro, ammo_name, reserved, reachability)
+			if near_worker != null and near_worker != near_weapon:
+				var ammo_first := _distance_to(worker, near_worker) + _distance_between(near_worker, weapon_source)
+				if ammo_first < best_distance:
+					best_distance = ammo_first
+					best = _two_stops({"building": near_worker, "tool_name": ammo_name}, weapon_entry)
+	return best
+
+
+static func _two_stops(first: Dictionary, second: Dictionary) -> Array[Dictionary]:
+	var stops: Array[Dictionary] = [first, second]
+	return stops
+
+
+# `worker` ha `tool_name` in cintura o nello zaino; con `worker` null, qualcuno della partita.
+static func _owns_tool(worker: HumanIndividual, tool_name: String) -> bool:
+	var members: Array[HumanIndividual] = []
+	if worker != null:
+		members.append(worker)
+	else:
+		members.assign(GameSettings.active_human_individuals)
+	for member in members:
+		if find_belt_slot_by_name(member, tool_name) != -1 or member.get_carried_quantity(tool_name) > 0:
+			return true
+	return false
+
+
+static func _distance_between(from: Building, to: Building) -> float:
+	var offset := Vector2(Vector2i(to.macro_x, to.macro_y) - Vector2i(from.macro_x, from.macro_y)) * World.WIDTH
+	return Vector2(from.micro_x, from.micro_y).distance_to(Vector2(to.micro_x, to.micro_y) + offset)
 
 
 # Idoneità di `worker` per gli attrezzi ("" = può): tutto addosso; oppure, se nessuno in età ha l'equipaggiamento, posti
@@ -251,28 +364,29 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, categories: Arr
 	if free_belt_slots(worker).size() < missing.size():
 		return "cintura piena per gli attrezzi da prendere"
 	if not missing_tools_in_storage(ctx.world, worker, missing):
-		return "attrezzo mancante e non raggiungibile in deposito"
+		return "attrezzo mancante e non raggiungibile in deposito (o cintura piena per arma e munizione)"
 	return ""
 
 
-# Attrezzi da prendere prima del lavoro: [{"category", "building", "tool_name", "slot"}], vuoto se ha già tutto.
+# Attrezzi da prendere prima del lavoro: [{"category", "building", "tool_name", "slot"}], vuoto se ha già tutto. Per
+# categoria l'opzione più corta di category_fetch_option (arma + munizione = due voci, in ordine di tappa).
 static func plan_fetch(world: World, worker: HumanIndividual, categories: Array) -> Array[Dictionary]:
 	var plan: Array[Dictionary] = []
 	var missing := member_missing_categories(worker, categories)
 	var slots := free_belt_slots(worker)
-	for index in range(mini(missing.size(), slots.size())):
-		var found := find_storage_tool(world, worker, int(missing[index]))
-		if found.is_empty():
-			continue
-		found["category"] = int(missing[index])
-		found["slot"] = slots[index]
-		plan.append(found)
+	for category in missing:
+		for found in category_fetch_option(world, worker, int(category), slots.size()):
+			var entry := found.duplicate()
+			entry["category"] = int(category)
+			entry["slot"] = slots.pop_front()
+			plan.append(entry)
 	return plan
 
 
 # Prelievi in deposito prima del lavoro appena assegnato: una task equip_tool per attrezzo, assegnata dopo il lavoro (che
 # è sospendibile e va in coda personale, riprendendo a prelievo finito). Prelievo fallito (attrezzo sparito): il lavoro
-# riparte lo stesso e aspetta l'attrezzo come ogni altro passo senza attrezzo. Ogni attrezzo preso è "in prestito".
+# riparte lo stesso e aspetta l'attrezzo come ogni altro passo senza attrezzo. Ogni attrezzo preso è "in prestito" se la
+# regola "Riponi gli attrezzi presi per un lavoro" è accesa.
 # `work_label` = cosa fa dopo, per il log. Ritorna le task assegnate (chi chiama ne collega i segnali).
 static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[Dictionary], work_label: Variant) -> Array[Task]:
 	var assigned: Array[Task] = []
@@ -290,7 +404,10 @@ static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[D
 		# Prenotazione nuova: le ricerche tenute per il fotogramma non la vedono, si rifanno.
 		_storage_tool_frame = -1
 		_blocked_reason_frame = -1
-		worker.borrowed_tools.append({"tool_name": tool_name, "building_id": building.id})
+		# In prestito solo con la regola "Riponi gli attrezzi presi per un lavoro" accesa (2026-10-23, richiesta utente):
+		# spenta, l'attrezzo preso diventa del pipottino e non torna in deposito nemmeno riaccendendola.
+		if ctx.game_data != null and ctx.game_data.job_board_return_borrowed_tools:
+			worker.borrowed_tools.append({"tool_name": tool_name, "building_id": building.id})
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 			print("[JOB BOARD] #%d %s: va a prendere %s in %s #%d prima di %s." % [
 				worker.id, worker.name, tool_name, building.building_type_name, building.id,
@@ -330,6 +447,8 @@ static func retry_waiting_fetches(ctx: GameContext) -> Array[Dictionary]:
 # altrimenti il deposito migliore. Le voci non più in cintura (rotte, spostate a mano) si tolgono; senza destinazione si
 # riprova al giro dopo. Una volta al secondo. Ritorna {"member": HumanIndividual, "task": Task} per ogni task creata (chi
 # chiama ne collega i segnali).
+# Spenta (2026-10-23): i prelievi non segnano più prestiti (start_fetch) e quelli già segnati si cancellano allo
+# spegnimento (forget_borrowed_tools): gli attrezzi restano a chi li ha.
 static func return_borrowed_tools(ctx: GameContext) -> Array[Dictionary]:
 	var created: Array[Dictionary] = []
 	if ctx.game_data == null or ctx.world == null:
@@ -374,6 +493,13 @@ static func return_borrowed_tools(ctx: GameContext) -> Array[Dictionary]:
 				])
 		member.borrowed_tools = remaining
 	return created
+
+
+# Regola "Riponi gli attrezzi presi per un lavoro" spenta (2026-10-23): i prestiti segnati si cancellano, gli attrezzi
+# diventano di chi li ha. Riaccendendola si ripone solo quello preso da quel momento.
+static func forget_borrowed_tools(individuals: Array[HumanIndividual]) -> void:
+	for member in individuals:
+		member.borrowed_tools.clear()
 
 
 # Regola "Prendi la sacca se disponibile" (2026-10-19, richiesta utente — GameData.job_board_take_bag): chiamata da

@@ -1422,7 +1422,11 @@ func _draw_buildings() -> void:
 		# pezzo di vallo, finito o cantiere ("linear_neighbors"/"linear_clip", calcolate da GameScene._buildings_for_cell
 		# per ogni edificio lineare). Dal 2026-10-16 ogni tipo lineare passa da LinearShapes (vallo, sentiero di ciottoli).
 		if LinearShapes.has_shape(building_type_name):
-			LinearShapes.draw(self, building_type_name, ground, int(entry.get("linear_neighbors", 0)), false, 1.0, 1.0, int(entry.get("linear_clip", 0)), false)
+			LinearShapes.draw(
+				self, building_type_name, ground, int(entry.get("linear_neighbors", 0)), false, 1.0, 1.0, int(entry.get("linear_clip", 0)),
+				false, PalisadeShape.side_vector(entry.get("rotation", GameTypes.Direction.SOUTH)) if LinearShapes.has_side(building_type_name) else Vector2.ZERO,
+				bool(entry.get("gate_open", true))
+			)
 			continue
 		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 			PlaceholderBuildingShapes.draw(self, building_type_name, ground, false, 1.0, entry.get("rotation", GameTypes.Direction.SOUTH))
@@ -1430,6 +1434,10 @@ func _draw_buildings() -> void:
 		# Capanna del vestiario (2026-10-20): vista dall'alto, ruota con la porta (ClothingHutShape).
 		if building_type_name == ClothingHutShape.TYPE:
 			ClothingHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			continue
+		# Affumicatoio (2026-10-23): vista dall'alto, ruota con la porta; fumo solo mentre produce (SmokehouseShape).
+		if building_type_name == SmokehouseShape.TYPE:
+			SmokehouseShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
 			continue
 		# Legnaia (2026-10-18, 2x1): tettoia con la catasta e spiazzo di lavoro, sul rettangolo intero.
 		if building_type_name == WoodshedShape.TYPE:
@@ -1772,7 +1780,7 @@ var _dirt_ground_speckles_by_variant: Dictionary = {}
 # battuta: dritti verso un edificio completo confinante ("dirt_neighbors", calcolata da GameScene),
 # irregolari verso le celle senza nulla.
 const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
-	"stick_tent", "hide_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones",
+	"stick_tent", "hide_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones",
 	# Capanna dell'attrezzista (2026-10-04, richiesta utente: si vedeva il verde sotto, come gli altri edifici).
 	"toolmaker_hut",
 	# Legnaia (2026-10-08, richiesta utente — segnaposto): stesso fondo degli altri edifici segnaposto.

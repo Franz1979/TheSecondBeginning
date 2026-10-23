@@ -112,6 +112,8 @@ signal clear_rubble_requested(building: Building)
 signal empty_pit_requested(building: Building)
 signal cancel_empty_pit_requested(building: Building)
 signal waste_closed_toggle_requested(building: Building)
+# Cancello (2026-10-23): Apri/Chiudi.
+signal gate_toggle_requested(building: Building)
 
 # Icone di influenza (2026-10-02, richiesta utente — sostituiscono il bottone "Mostra influenza"): una per tipo
 # (politica, cultura, religione), nell'intestazione della scheda accanto al 🎯. Clic: GameScene mostra per qualche
@@ -272,6 +274,7 @@ var clear_rubble_button: Button = null
 var empty_pit_button: Button = null
 var cancel_empty_pit_button: Button = null
 var waste_closed_button: Button = null
+var gate_button: Button = null
 var _repair_status_label: Label = null
 # Riparazione ferma per materiale (2026-10-10, passo 4): riga arancione subito sotto _repair_status_label.
 var _repair_wait_label: Label = null
@@ -709,12 +712,13 @@ func _refresh_command_icon_row(building: Building, demolition_started: bool) -> 
 		command_icon_row.move_child(demolish_button, spacer_index)
 	_refresh_repair_button(building)
 	_refresh_waste_pit_buttons(building)
+	_refresh_gate_button(building)
 	for button in [upgrade_button, repair_button, clear_rubble_button, empty_all_button, demolish_button, cancel_demolition_button,
-			empty_pit_button, cancel_empty_pit_button, waste_closed_button]:
+			empty_pit_button, cancel_empty_pit_button, waste_closed_button, gate_button]:
 		_style_command_icon_button(button)
 	command_icon_row.visible = upgrade_button.visible or repair_button.visible or clear_rubble_button.visible or empty_all_button.visible \
 		or demolish_button.visible or cancel_demolition_button.visible or empty_pit_button.visible or cancel_empty_pit_button.visible \
-		or waste_closed_button.visible
+		or waste_closed_button.visible or gate_button.visible
 	_update_command_bar_visibility()
 
 
@@ -791,6 +795,12 @@ func _build_repair_controls() -> void:
 	empty_pit_button.pressed.connect(func(): empty_pit_requested.emit(_current_building))
 	cancel_empty_pit_button.pressed.connect(func(): cancel_empty_pit_requested.emit(_current_building))
 	waste_closed_button.pressed.connect(func(): waste_closed_toggle_requested.emit(_current_building))
+	# Cancello (2026-10-23): a sinistra, dopo Sgombera.
+	gate_button = Button.new()
+	gate_button.visible = false
+	command_icon_row.add_child(gate_button)
+	command_icon_row.move_child(gate_button, clear_rubble_button.get_index() + 1)
+	gate_button.pressed.connect(func(): gate_toggle_requested.emit(_current_building))
 	_repair_status_label = Label.new()
 	_repair_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_repair_status_label.custom_minimum_size.x = 0.0
@@ -895,6 +905,7 @@ func _setup_command_icon_buttons() -> void:
 		empty_pit_button: BuildingCommandIcon.KIND_EMPTY_PIT,
 		cancel_empty_pit_button: BuildingCommandIcon.KIND_CANCEL_EMPTY_PIT,
 		waste_closed_button: BuildingCommandIcon.KIND_CLOSE_PIT,
+		gate_button: BuildingCommandIcon.KIND_CLOSE_GATE,
 		empty_all_button: BuildingCommandIcon.KIND_EMPTY_ALL,
 		demolish_button: BuildingCommandIcon.KIND_DEMOLISH,
 		cancel_demolition_button: BuildingCommandIcon.KIND_CANCEL_DEMOLITION,
@@ -1249,6 +1260,20 @@ func _build_durability_rows() -> void:
 	_durability_bar_margin.add_child(_durability_bar)
 	add_child(_durability_bar_margin)
 	move_child(_durability_bar_margin, _durability_label.get_index() + 1)
+
+
+# Apri/Chiudi del cancello (2026-10-23): solo a cancello completo. L'icona mostra il comando (ante aperte = "Apri"), il
+# tooltip anche lo stato attuale.
+func _refresh_gate_button(building: Building) -> void:
+	gate_button.visible = building.rules != null and building.rules.is_gate and building.is_complete and not building.is_demolished
+	if not gate_button.visible:
+		return
+	(_command_icons[gate_button] as BuildingCommandIcon).kind = \
+		BuildingCommandIcon.KIND_CLOSE_GATE if building.gate_open else BuildingCommandIcon.KIND_OPEN_GATE
+	gate_button.tooltip_text = TooltipText.wrap("%s\n%s" % [
+		tr("building_close_gate_button" if building.gate_open else "building_open_gate_button"),
+		tr("building_command_close_gate_detail" if building.gate_open else "building_command_open_gate_detail"),
+	])
 
 
 # Comandi della Fossa dei rifiuti (2026-10-18): Svuota (con rifiuti, non in svuotamento; spento senza un'altra Fossa con

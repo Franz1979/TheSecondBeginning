@@ -15,5 +15,5 @@ recipe_inputs = {
 "meat": 1
 }
 recipe_labor = 100.0
-recipe_fuel_required = 5.0
+recipe_fuel_required = 3.0
 recipe_workstation_types = Array[String](["smokehouse"])

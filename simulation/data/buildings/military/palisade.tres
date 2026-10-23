@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_palisade"]
+
+[resource]
+script = ExtResource("1_palisade")
+lifespan_years = 15
+max_durability = 400
+defense = 200
+building_name = "building_palisade"
+category = 5
+required_idea_id = "advanced_paleolithic_constructions"
+required_labor = 2000
+required_materials = {
+"fiber_rope": 4,
+"stick": 10,
+"wood": 4
+}
+is_linear = true
+linear_link_group = "defensive_wall"
+required_space = 1
+has_door = false
+visibility_radius = 2

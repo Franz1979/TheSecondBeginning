@@ -98,6 +98,34 @@ static func known_workstation_display_name(resource_name: String, folk: Folk) ->
 	return ""
 
 
+# Affumicatoi al lavoro (2026-10-23, richiesta utente — fumo sulla mappa solo mentre produce): un affumicatoio fuma se
+# qualcuno ci sta facendo la ProduceAction vera e propria, non ferma per materiali, attrezzi o Prodotti finiti pieni (la
+# stessa regola del suono della scheggiatura, WorkSoundController._detect_knapping). Aggiorna Building.smoking_now e
+# ritorna gli affumicatoi il cui stato è cambiato (cella da ridisegnare). Una volta al secondo (GameSimulation).
+static func refresh_smoking(world: World, individuals: Array[HumanIndividual]) -> Array[Building]:
+	var changed: Array[Building] = []
+	if world == null:
+		return changed
+	var working: Dictionary = {}
+	for member in individuals:
+		var task := member.current_task
+		if task == null or task.is_finished():
+			continue
+		var action := task.get_current_action() as ProduceAction
+		if action == null or action.target_building == null or action.target_building.building_type_name != SmokehouseShape.TYPE:
+			continue
+		if not action.is_blocked_by_materials() and not action.is_waiting_for_tools() and not is_output_blocking(action.target_building):
+			working[action.target_building.id] = true
+	for building in world.buildings:
+		if building.building_type_name != SmokehouseShape.TYPE:
+			continue
+		var smoking := working.has(building.id) and not building.is_demolished
+		if smoking != building.smoking_now:
+			building.smoking_now = smoking
+			changed.append(building)
+	return changed
+
+
 # true se nel mondo c'è almeno una postazione completa, non demolita, di un tipo che fa `resource_name` (occupata o no).
 static func has_built_workstation_for(world: World, resource_name: String) -> bool:
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
@@ -346,6 +374,9 @@ static func load_production_state(building: Building, raw_progress: Dictionary, 
 				# Cottura automatica del gestore scorte (2026-10-22, AUTO_COOK_KEY): assente nei save precedenti.
 				if bool(record.get(AUTO_COOK_KEY, false)):
 					orders[key][AUTO_COOK_KEY] = true
+				# Ordine nato dal magazzino (2026-10-23, WAREHOUSE_ORDER_KEY): assente nei save precedenti.
+				if String(record.get(WAREHOUSE_ORDER_KEY, "")) != "":
+					orders[key][WAREHOUSE_ORDER_KEY] = String(record[WAREHOUSE_ORDER_KEY])
 				if key.begins_with(ORDER_KEY_PREFIX) and key.substr(ORDER_KEY_PREFIX.length()).is_valid_int():
 					max_index = maxi(max_index, int(key.substr(ORDER_KEY_PREFIX.length())))
 			else:
@@ -489,6 +520,24 @@ static func mark_order_auto_cook(building: Building, order_key: String) -> void:
 
 static func is_order_auto_cook(building: Building, order_key: String) -> bool:
 	return has_order(building, order_key) and bool((building.production_progress[order_key] as Dictionary).get(AUTO_COOK_KEY, false))
+
+
+# Ordine nato da un ordine del magazzino (2026-10-23, ProductionEvictionService): la chiave del magazzino
+# (StockRequestService.ORDER_KEY, la ricetta), così se l'ordine viene scalzato torna in coda come ordine del magazzino.
+# Salvato.
+const WAREHOUSE_ORDER_KEY := "warehouse_order"
+
+
+static func mark_order_from_warehouse(building: Building, order_key: String, warehouse_key: String) -> void:
+	if has_order(building, order_key) and warehouse_key != "":
+		(building.production_progress[order_key] as Dictionary)[WAREHOUSE_ORDER_KEY] = warehouse_key
+
+
+# "" se l'ordine non viene dal magazzino.
+static func get_order_warehouse_key(building: Building, order_key: String) -> String:
+	if not has_order(building, order_key):
+		return ""
+	return String((building.production_progress[order_key] as Dictionary).get(WAREHOUSE_ORDER_KEY, ""))
 
 
 static func free_slot_from_unclaimed(building: Building, claimed_keys: Dictionary) -> bool:

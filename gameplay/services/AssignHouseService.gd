@@ -24,13 +24,12 @@ extends RefCounted
 #      moltiplicatore di riposo più alto; niente nuclei. Senza case di nucleo nel mondo il gioco va come prima.
 #   3. RESIDENTI SENZA NUCLEO: chi è ancora senza casa dopo le tende entra, dal più anziano, nelle case di nucleo che nessun nucleo usa,
 #      convivendo con altri residenti; un nucleo in attesa li fa uscire (passata 1). Hanno il bonus della casa come tutti.
-const NUCLEUS_HOUSE_TIER: int = 2
+const NUCLEUS_HOUSE_TIER: int = HouseWardrobeService.NUCLEUS_HOUSE_TIER
 
 
-# Casa riservata a un nucleo famigliare (oggi la Hut).
+# Casa riservata a un nucleo famigliare (oggi la Hut). La regola vive in simulation/ (HouseWardrobeService).
 static func is_nucleus_house(building: Building) -> bool:
-	return building != null and building.rules != null and building.rules.max_residents > 0 \
-		and building.rules.residency_assignment_tier >= NUCLEUS_HOUSE_TIER
+	return HouseWardrobeService.is_nucleus_house(building)
 
 
 # Posti effettivi di un edificio (2026-10-10, effetti dello stato "Danneggiato" — passo 5): rules.max_residents, a metà

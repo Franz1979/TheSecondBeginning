@@ -12,8 +12,9 @@ extends RefCounted
 # posizione non edificabile (tinta rossastra semitrasparente, come le altre sagome di BuildingGhost).
 
 # "clothing_hut" non è più qui (2026-10-20): sulla mappa e nell'anteprima usa ClothingHutShape (vista dall'alto); il suo ramo
-# di draw() resta per la sola icona della barra (ClothingHutIcon, vista di fronte).
-const TYPES: Array[String] = ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit"]
+# di draw() resta per la sola icona della barra (ClothingHutIcon, vista di fronte). Lo stesso per "smokehouse" (2026-10-23):
+# mappa e anteprima con SmokehouseShape, qui solo l'icona (SmokehouseIcon).
+const TYPES: Array[String] = ["drying_rack", "burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit"]
 
 # Ceppo dell'insegnamento (teaching_stump, 2026-10-16, richiesta utente): aula all'aperto vista dall'alto — il ceppo in
 # alto come cattedra (corteccia, sezione chiara con gli anelli) e davanti due file curve di pietre piatte come banchi

@@ -93,10 +93,15 @@ static func try_satisfy(individual: HumanIndividual, required: Array[TaskTypes.T
 		if _belt_covers(individual, category) or _tools_cover(planned_equips, category):
 			continue
 		var backpack_tool := _find_backpack_tool_for(individual, category, planned_equips)
-		if backpack_tool == "":
+		if backpack_tool != "":
+			planned_equips.append(backpack_tool)
+			continue
+		# Munizione nello zaino per un'arma che la richiede (2026-10-23): in cintura la munizione e, se serve, l'arma.
+		var with_ammo := _find_weapon_with_backpack_ammo(individual, category, planned_equips)
+		if with_ammo.is_empty():
 			missing.append(category)
 		else:
-			planned_equips.append(backpack_tool)
+			planned_equips.append_array(with_ammo)
 
 	if not missing.is_empty():
 		outcome["result"] = Result.MISSING_TOOLS
@@ -127,7 +132,8 @@ static func try_satisfy(individual: HumanIndividual, required: Array[TaskTypes.T
 static func has_tool_for(individual: HumanIndividual, category: TaskTypes.ToolCategory) -> bool:
 	if individual == null:
 		return false
-	return _belt_covers(individual, category) or _find_backpack_tool_for(individual, category, []) != ""
+	return _belt_covers(individual, category) or _find_backpack_tool_for(individual, category, []) != "" \
+		or not _find_weapon_with_backpack_ammo(individual, category, []).is_empty()
 
 
 static func _tool_categories(tool_name: String) -> Array:
@@ -232,6 +238,50 @@ static func _tools_cover(tool_names: Array[String], category: TaskTypes.ToolCate
 		if _tool_categories(tool_name).has(category):
 			return true
 	return false
+
+
+# Arma a munizioni che copre `category` senza la sua munizione in cintura, ma con la munizione nello zaino (2026-10-23,
+# richiesta utente — le frecce nello zaino non venivano mai usate): attrezzi da mettere in cintura, [munizione] se l'arma
+# è già in cintura, [arma, munizione] se anche l'arma è nello zaino. Vuoto se nessuna combinazione. Vale per ogni arma con
+# required_ammo_category, non solo per l'arco.
+static func _find_weapon_with_backpack_ammo(
+	individual: HumanIndividual, category: TaskTypes.ToolCategory, already_planned: Array[String]
+) -> Array[String]:
+	var result: Array[String] = []
+	for slot in range(individual.get_tool_slot_count()):
+		var tool_name := individual.get_equipped_tool(slot)
+		if tool_name == "" or not _tool_categories(tool_name).has(category):
+			continue
+		var belt_ammo := _backpack_ammo_for(individual, tool_name, already_planned)
+		if belt_ammo != "":
+			result.append(belt_ammo)
+			return result
+	for resource_name in individual.carried_resources.keys():
+		var candidate := String(resource_name)
+		if already_planned.has(candidate) or individual.get_carried_quantity(candidate) <= 0:
+			continue
+		if not HumanIndividual.is_tool_resource(candidate) or not _tool_categories(candidate).has(category):
+			continue
+		var ammo := _backpack_ammo_for(individual, candidate, already_planned)
+		if ammo != "":
+			result.append(candidate)
+			result.append(ammo)
+			return result
+	return result
+
+
+# Munizione nello zaino per l'arma `weapon_name` (la sua required_ammo_category), "" se l'arma non ne usa o non ce n'è.
+static func _backpack_ammo_for(individual: HumanIndividual, weapon_name: String, already_planned: Array[String]) -> String:
+	var rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
+	if rules == null or rules.required_ammo_category < 0:
+		return ""
+	for resource_name in individual.carried_resources.keys():
+		var candidate := String(resource_name)
+		if already_planned.has(candidate) or individual.get_carried_quantity(candidate) <= 0:
+			continue
+		if HumanIndividual.is_tool_resource(candidate) and _tool_categories(candidate).has(rules.required_ammo_category):
+			return candidate
+	return ""
 
 
 # Primo attrezzo nello zaino (ordine di inserimento) che copre la categoria e non è già pianificato.

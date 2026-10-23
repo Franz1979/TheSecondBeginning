@@ -292,7 +292,7 @@ const SHOW_REST_CHOICE_LOGS := false
 # (HumanIndividualActionService), [BUILD]/[BUILD DEBUG]/[TRANSPORT] (GameScene),
 # [BUILD PROGRESS DEBUG]/[OCCUPIED SPACE DEBUG] (SetupSiteAction/ClearAction/BuildAction),
 # [ASSIGN HOUSE] (AssignHouseService).
-const SHOW_TRANSPORT_BUILD_LOGS := false
+const SHOW_TRANSPORT_BUILD_LOGS := true
 # BUILDERS — solo le righe dei costruttori (2026-10-17, prove dei più costruttori): assegnazione della task di costruzione
 # (o demolizione), cella di lavoro di ciascuno, attesa del materiale già in arrivo con altri, effetti di fine costruzione
 # agli altri costruttori. Le stesse righe escono anche con TRANSPORT_BUILD.
@@ -343,7 +343,7 @@ const SHOW_NATURAL_EVENT_NONE_LOGS := false
 # mancanti, materiale mancante, buffer di uscita pieno, combustibile mancante — con le quantità in gioco (per
 # ciclo e per l'ordine intero), e una riga "ripresa" quando torna a lavorare. Una riga solo quando il messaggio
 # cambia, non a ogni tick. Solo stampa: rimuovere flag, variabile e funzioni in ProduceAction insieme.
-const SHOW_PRODUCTION_BLOCK_LOGS := false
+const SHOW_PRODUCTION_BLOCK_LOGS := true
 
 # RESOURCE_DECAY — [RESOURCE DECAY] (2026-09-26, richiesta utente): ogni giorno, per ogni edificio completo
 # (ResourceDecayService.advance_building_decay) e per ogni mucchio a terra (GroundPileService._advance_pile_decay)
@@ -414,7 +414,7 @@ const SHOW_CLEAR_LOGS := false
 
 # Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
-const SHOW_JOB_BOARD_LOGS := false
+const SHOW_JOB_BOARD_LOGS := true
 
 # "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
 # quando la sua riga compare o cambia (task attiva, testo, coda o diretto e perché, chiavi del context). Solo log.

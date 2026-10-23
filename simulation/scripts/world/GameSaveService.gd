@@ -471,6 +471,7 @@ func save_game_to_json(
 			"waste_reserved": building.waste_reserved,
 			"waste_emptying": building.waste_emptying,
 			"waste_closed": building.waste_closed,
+			"gate_open": building.gate_open,
 			"awaiting_site_cut": building.awaiting_site_cut,
 			"last_rite_absolute_day": building.last_rite_absolute_day,
 			"stored_resources": building.stored_resources,

@@ -22,7 +22,7 @@ required_materials = {
 "wood": 4
 }
 required_space = 1
-has_door = false
+has_door = true
 visibility_radius = 3
 is_workstation = true
 fuel_stock_min = 20

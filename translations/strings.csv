@@ -224,6 +224,12 @@ build_bar_smokehouse_tooltip,Affumicatoio
 build_bar_burial_tooltip,Cumulo sepolcrale
 build_bar_stacked_stones_tooltip,Pietre rituali
 build_bar_earthwork_tooltip,Vallo di terra
+building_palisade,Palizzata
+build_bar_palisade_tooltip,Palizzata
+build_bar_palisade_description,Pali appuntiti piantati in un argine di terra.
+building_gate,Cancello
+build_bar_gate_tooltip,Cancello
+build_bar_gate_description,"Varco nella cinta con due ante: aperto si passa, chiuso no."
 build_bar_dirt_ground_tooltip,Terra battuta
 build_bar_requires_idea_tooltip,Richiede: {idea}
 build_bar_requires_deposit_site_tooltip,Serve prima un deposito
@@ -1049,6 +1055,7 @@ drawer_produce_dialog_title,Produci
 drawer_order_produce_row,Produci {recipe} ×{quantity}
 drawer_order_no_free_building,Nessun edificio libero
 drawer_order_no_building_built,Nessun {building} costruito
+drawer_order_waiting_evicted_building,In attesa di un posto: {building}
 drawer_order_cancel_tooltip,Annulla l'ordine
 task_assignment_nobody_has_tool,Nessuno ha {tools}
 building_assign_hint_site_manual,Per assegnarlo: seleziona un individuo e fai clic destro sul cantiere.
@@ -1399,6 +1406,10 @@ building_close_pit_button,Chiudi ai rifiuti
 building_command_close_pit_detail,Nessuno ci porterà più rifiuti finché non la riapri
 building_open_pit_button,Riapri ai rifiuti
 building_command_open_pit_detail,Torna a ricevere rifiuti
+building_close_gate_button,Chiudi il cancello
+building_command_close_gate_detail,Aperto adesso: chiuso nessuno potrà più passare
+building_open_gate_button,Apri il cancello
+building_command_open_gate_detail,Chiuso adesso: aperto si torna a passare
 building_info_waste_emptying,In svuotamento: {debris} detriti da portare via
 building_info_waste_closed,Chiusa ai rifiuti
 pending_empty_pit,Svuotamento · {building}

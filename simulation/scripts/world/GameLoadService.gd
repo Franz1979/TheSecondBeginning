@@ -749,6 +749,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# Svuota la Fossa (2026-10-18): false nei salvataggi precedenti.
 			building.waste_emptying = bool(building_data.get("waste_emptying", false))
 			building.waste_closed = bool(building_data.get("waste_closed", false))
+			building.gate_open = bool(building_data.get("gate_open", true))
 			building.awaiting_site_cut = bool(building_data.get("awaiting_site_cut", false))
 			building.influence_last_gain_day = {}
 			var saved_last_gain_day: Variant = building_data.get("influence_last_gain_day", {})

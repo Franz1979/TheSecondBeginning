@@ -306,7 +306,10 @@ func _draw_shape() -> void:
 	# centrato sulla microcella sotto il mouse (set_linear_preview, da GameScene._sync_linear_ghost).
 	# Dal 2026-10-16 ogni tipo lineare (vallo, sentiero di ciottoli) passa da LinearShapes.
 	if LinearShapes.has_shape(building_type_name):
-		LinearShapes.draw(self, building_type_name, _linear_offset, _linear_mask, not is_buildable, COLOR.a, 1.0, _linear_clip)
+		# Palizzata (2026-10-23): i pali verso la direzione scelta col tasto di rotazione.
+		var outward := PalisadeShape.side_vector(rotation_dir) if LinearShapes.has_side(building_type_name) else Vector2.ZERO
+		# Il cancello si mostra sempre aperto, così si vede da che parte si aprono le ante.
+		LinearShapes.draw(self, building_type_name, _linear_offset, _linear_mask, not is_buildable, COLOR.a, 1.0, _linear_clip, true, outward, true)
 		return
 	if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 		PlaceholderBuildingShapes.draw(self, building_type_name, Vector2.ZERO, not is_buildable, 1.0, rotation_dir)
@@ -314,6 +317,10 @@ func _draw_shape() -> void:
 	# Capanna del vestiario (2026-10-20): lo stesso disegno della mappa, semitrasparente.
 	if building_type_name == ClothingHutShape.TYPE:
 		ClothingHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
+		return
+	# Affumicatoio (2026-10-23): lo stesso disegno della mappa, semitrasparente, senza fumo.
+	if building_type_name == SmokehouseShape.TYPE:
+		SmokehouseShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
 		return
 	# Legnaia (2026-10-18, 2x1): lo stesso disegno della mappa, centrato sul rettangolo, semitrasparente.
 	if building_type_name == WoodshedShape.TYPE:

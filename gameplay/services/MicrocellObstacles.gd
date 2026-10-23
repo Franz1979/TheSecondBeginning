@@ -61,7 +61,8 @@ func refresh_buildings(macro_coords: Vector2i, macro_world: World) -> void:
 			continue
 		# Ingombro (2026-10-17): tutte le microcelle del rettangolo (BuildingFootprint; 1x1 = la sola microcella).
 		# Calpestabili (2026-10-17): dal flag BuildingRules.walkable, non più dalla categoria MOVEMENT.
-		var is_walkable: bool = building.rules != null and building.rules.walkable
+		# Cancello (2026-10-23): calpestabile solo se aperto (Building.is_walkable).
+		var is_walkable: bool = building.is_walkable()
 		for microcell in BuildingFootprint.cells_of(building):
 			if is_walkable:
 				movement_buildings[microcell] = building.id

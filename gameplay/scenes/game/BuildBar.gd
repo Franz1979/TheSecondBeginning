@@ -105,7 +105,12 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Fossa dei rifiuti (2026-10-18, richiesta utente) — slot 19, submenu_row.slot_count portato a 21 in BuildBar.tscn;
 	# Hut resta l'ultimo a destra (slot 20). Categoria OTHER.
 	"waste_pit": 19,
-	"hut": 20,
+	# Palizzata (2026-10-23, richiesta utente) — slot 20, submenu_row.slot_count portato a 22 in BuildBar.tscn; Hut resta
+	# l'ultimo a destra (slot 21). Categoria MILITARY, evoluzione del vallo. Richiede advanced_paleolithic_constructions.
+	"palisade": 20,
+	# Cancello (2026-10-23, richiesta utente) — slot 21, submenu_row.slot_count portato a 23; Hut resta l'ultimo (slot 22).
+	"gate": 21,
+	"hut": 22,
 }
 
 # Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 10). RUINS esclusa:
@@ -238,7 +243,7 @@ func _ready() -> void:
 	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
 	# Legnaia (2026-10-08): richiede advanced_paleolithic_constructions, disabilitata da _refresh_building_slots_buildable.
 	# Capanna del vestiario (2026-10-11): richiede advanced_paleolithic_constructions, come la legnaia.
-	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit"]:
+	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit"]:
 		submenu_row.configure_slot(
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)

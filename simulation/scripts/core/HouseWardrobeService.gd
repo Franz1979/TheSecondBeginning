@@ -3,15 +3,25 @@ extends RefCounted
 
 # Guardaroba delle case di nucleo (2026-10-22, richiesta utente — Hut). Stateless salvo una piccola cache per fotogramma.
 #
-# Il deposito di una casa di nucleo (AssignHouseService.is_nucleus_house, oggi la Hut) accetta solo combustibile e
+# Il deposito di una casa di nucleo (is_nucleus_house, oggi la Hut) accetta solo combustibile e
 # vestiario e non fa più da magazzino di ripiego (WarehouseSelectionService.find_best la esclude). Il vestiario di una
 # casa ABITATA è riservato ai suoi abitanti: non è una sorgente per gli altri (WarehouseSelectionService) né una scorta
 # del villaggio (VillageStockService); gli abitanti lo prendono direttamente dalla propria casa (ToolFetchService). Casa
 # vuota: il suo vestiario torna una sorgente normale. Trasloco: i capi restano nella casa.
 
 
+# Casa di un solo nucleo famigliare (2026-10-22; qui dal 2026-10-23 perché simulation/ non deve chiamare gameplay/:
+# AssignHouseService.is_nucleus_house richiama questa): residency_assignment_tier >= NUCLEUS_HOUSE_TIER, oggi la Hut.
+const NUCLEUS_HOUSE_TIER: int = 2
+
+
+static func is_nucleus_house(building: Building) -> bool:
+	return building != null and building.rules != null and building.rules.max_residents > 0 \
+		and building.rules.residency_assignment_tier >= NUCLEUS_HOUSE_TIER
+
+
 static func is_wardrobe_house(building: Building) -> bool:
-	return AssignHouseService.is_nucleus_house(building)
+	return is_nucleus_house(building)
 
 
 static func is_apparel(resource_name: String) -> bool:

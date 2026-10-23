@@ -327,12 +327,18 @@ static func fixed_zone_exhausted(ctx: GameContext, order: Dictionary) -> bool:
 # -> ordini in lavorazione (dalle chiavi "id:ordine" di JobWorkScanService.collect_assignments). null se nessuno.
 # `covering_only` (2026-10-09): solo gli edifici la cui Attrezzeria copre tutti gli attrezzi della ricetta (quando nessun
 # pipottino adulto li ha: altrimenti nessuno potrebbe prendere l'ordine).
-static func choose_produce_building(world: World, recipe: String, quantity: int, busy_counts: Dictionary, covering_only: bool = false) -> Building:
+# `only_building` (2026-10-23, ordini scalzati legati alla loro postazione, ProductionEvictionService.EVICTED_FROM_KEY):
+# si considera solo quella, con gli stessi controlli.
+static func choose_produce_building(
+	world: World, recipe: String, quantity: int, busy_counts: Dictionary, covering_only: bool = false, only_building: Building = null
+) -> Building:
 	var categories := ToolFetchService.recipe_tool_categories(recipe)
 	var best: Building = null
 	var best_orders := 0
 	var best_covered := false
 	for building in world.buildings:
+		if only_building != null and building != only_building:
+			continue
 		if not ProductionService.can_produce_at(building, recipe) or ProductionService.get_max_order_quantity(building) < quantity:
 			continue
 		if ProductionService.has_max_concurrent_orders(building, int(busy_counts.get(building.id, 0))):

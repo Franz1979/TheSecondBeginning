@@ -13,6 +13,12 @@ build_bar_smokehouse_tooltip,Smokehouse
 build_bar_burial_tooltip,Burial mound
 build_bar_stacked_stones_tooltip,Ritual stones
 build_bar_earthwork_tooltip,Earthwork
+building_palisade,Palisade
+build_bar_palisade_tooltip,Palisade
+build_bar_palisade_description,Sharpened stakes set in an earth bank.
+building_gate,Gate
+build_bar_gate_tooltip,Gate
+build_bar_gate_description,"Opening in the wall with two leaves: open you pass, closed you don't."
 building_campfire,Campfire
 building_pebble_circle,Pebble circle
 building_toolmaker_hut,Toolmaker's hut
@@ -995,6 +1001,7 @@ drawer_produce_dialog_title,Produce
 drawer_order_produce_row,Produce {recipe} ×{quantity}
 drawer_order_no_free_building,No free building
 drawer_order_no_building_built,No {building} built
+drawer_order_waiting_evicted_building,Waiting for a slot: {building}
 drawer_order_cancel_tooltip,Cancel the order
 task_assignment_nobody_has_tool,Nobody has {tools}
 building_assign_hint_site_manual,To assign it: select an individual and right-click the construction site.
@@ -1345,6 +1352,10 @@ building_close_pit_button,Close to waste
 building_command_close_pit_detail,Nobody will bring waste here until you reopen it
 building_open_pit_button,Reopen to waste
 building_command_open_pit_detail,It accepts waste again
+building_close_gate_button,Close the gate
+building_command_close_gate_detail,Open now: closed nobody can pass
+building_open_gate_button,Open the gate
+building_command_open_gate_detail,Closed now: open people can pass again
 building_info_waste_emptying,Being emptied: {debris} debris to carry away
 building_info_waste_closed,Closed to waste
 pending_empty_pit,Emptying · {building}

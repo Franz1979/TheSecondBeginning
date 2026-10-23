@@ -190,6 +190,10 @@ const BUILDING_ICON_NODES := {
 	"smokehouse": preload("res://simulation/scripts/ui/SmokehouseIcon.gd"),
 	"burial": preload("res://simulation/scripts/ui/BurialIcon.gd"),
 	"earthwork": preload("res://simulation/scripts/ui/EarthworkIcon.gd"),
+	# Palizzata (2026-10-23): evoluzione del vallo, stesso disegno a pezzi.
+	"palisade": preload("res://simulation/scripts/ui/PalisadeIcon.gd"),
+	# Cancello (2026-10-23).
+	"gate": preload("res://simulation/scripts/ui/GateIcon.gd"),
 	# Sentiero di ciottoli (2026-10-16, richiesta utente): tratto dritto del disegno della mappa (LinearShapes).
 	"pebble_path": preload("res://simulation/scripts/ui/PebblePathIcon.gd"),
 	# Spiazzo delle feste (2026-10-17): stesso disegno della mappa (FeastGroundShape).

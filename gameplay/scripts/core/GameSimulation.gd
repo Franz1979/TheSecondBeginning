@@ -275,6 +275,9 @@ static func tick_second(ctx: GameContext, now: float, effects: GameEffects) -> v
 	# Attrezzi presi in deposito per un lavoro (2026-10-11): riposti da chi è libero, se la regola è accesa.
 	for created in ToolFetchService.return_borrowed_tools(ctx):
 		effects.wire_storage_task(created["task"], created["member"])
+	# Fumo degli affumicatoi (2026-10-23): ridisegno solo delle celle il cui affumicatoio ha iniziato o smesso di lavorare.
+	for building in ProductionService.refresh_smoking(ctx.world, ctx.individuals):
+		effects.refresh_building_cell(building)
 	# Chi aspetta un attrezzo per produrre (2026-10-23): riprova a prenderlo in deposito.
 	for created in ToolFetchService.retry_waiting_fetches(ctx):
 		effects.wire_storage_task(created["task"], created["member"])

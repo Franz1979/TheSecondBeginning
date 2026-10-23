@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_gate"]
+
+[resource]
+script = ExtResource("1_gate")
+lifespan_years = 15
+max_durability = 300
+defense = 150
+building_name = "building_gate"
+category = 5
+required_idea_id = "advanced_paleolithic_constructions"
+required_labor = 2400
+required_materials = {
+"fiber_rope": 6,
+"stick": 10,
+"stone": 4,
+"wood": 8
+}
+is_linear = true
+linear_link_group = "defensive_wall"
+is_gate = true
+required_space = 1
+has_door = false
+visibility_radius = 2
