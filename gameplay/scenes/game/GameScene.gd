@@ -11673,8 +11673,13 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		# lotto) e da anno/parametri d'età; le piante tolte spariscono, le altre restano uguali.
 		if cell.renderer != null and reason != "taglio" and reason != "cantiere ripulito":
 			cell.renderer.clear_vegetation_geometry_cache()
-		var vegetation_service := VegetationPositionService.new()
-		cell.cached_vegetation_positions = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
+		# Progetto B fase 1 (2026-10-24): il generatore solo quando i numeri della vegetazione possono essere cambiati
+		# (prima attivazione, checkpoint) o la disposizione non c'è ancora; altrimenti la disposizione tenuta.
+		if cell.needs_vegetation_layout_rebuild or not cell.macro_state.vegetation_layout_ready:
+			cell.cached_vegetation_positions = VegetationLayoutService.rebuild(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
+			cell.needs_vegetation_layout_rebuild = false
+		else:
+			cell.cached_vegetation_positions = VegetationLayoutService.read(cell.macro_state, occupied, game_data.year, building_positions)
 		# Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — ricalcolati
 		# alla STESSA cadenza delle posizioni GRASS appena sopra (mai una cadenza a parte: i nidi sono
 		# per costruzione un sottoinsieme di QUESTE posizioni, vedi TerrainScatteredResourceService.
@@ -16029,6 +16034,7 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 			# diventate vive, anche dopo anni di crescita/mortalità mai riflessi.
 			for cell in live_cells.values():
 				cell.needs_full_vegetation_recompute = true
+				cell.needs_vegetation_layout_rebuild = true
 
 		# Proposta "prossimità" (2026-08-30, idea utente): il ridisegno vero (posizioni+MultiMesh,
 		# costoso) si limita alle celle che il player sta EFFETTIVAMENTE esplorando — il centro più
@@ -16084,10 +16090,9 @@ func _maybe_prune_fog_of_war_memories() -> void:
 	var max_known_memory_days := FogOfWarCalculator.get_max_known_memory_days()
 	for coords in fog_of_war_memories:
 		var memory: FogOfWarMemory = fog_of_war_memories[coords]
-		# "aveva ancora qualcosa PRIMA di potare, non ha più nulla DOPO" — il segnale preciso che
-		# questa macrocella, nel suo insieme, è appena diventata del tutto dimenticata (non solo
-		# "questa specifica entry era già vuota da prima", che non è un evento, solo uno stato).
-		var had_positions_before: bool = not memory.last_seen_by_position.is_empty()
+		# Una macrocella del tutto dimenticata non perde più le sue piante (2026-10-24, progetto B fase 1, scelta
+		# dell'utente): si dimentica solo ciò che il giocatore vede, gli individui e la disposizione restano (prima
+		# _forget_vegetation_identity li svuotava e la cella si rigenerava da zero alla visita successiva).
 		# Step 3.3 (2026-09-03, quarto trigger del dirty-tracking, discrepanza 1 discussa con
 		# l'utente): prune_stale ora RESTITUISCE le posizioni potate invece di scartarle — sono
 		# l'UNICO altro punto (oltre ai tre già noti in FogOfWarRenderer: mark_seen, cambio
@@ -16100,40 +16105,10 @@ func _maybe_prune_fog_of_war_memories() -> void:
 		var pruned_positions := memory.prune_stale(current_absolute_day, max_known_memory_days)
 		if not pruned_positions.is_empty() and live_cells.has(coords):
 			live_cells[coords].fog_of_war_renderer.mark_positions_dirty(pruned_positions)
-		if had_positions_before and memory.last_seen_by_position.is_empty():
-			_forget_vegetation_identity(coords)
 
 	game_data.fog_of_war_last_prune_absolute_day = current_absolute_day
 
 
-# Svuota SOLO l'identità "ordinaria" di TREE/SHRUB per (mx,my) — mai le eccezioni di taglio/morte,
-# vedi IndividualVegetationService.forget_known_individuals per il dettaglio completo. Chiamata
-# SOLO quando il FogOfWarMemory di questa macrocella è appena diventato completamente vuoto (vedi
-# sopra): per costruzione questo non può mai capitare per una macrocella attualmente viva — una
-# cella viva ha sempre almeno le posizioni nel raggio di visibilità marcate "viste" in questo
-# stesso giorno (mark_seen scatta ogni frame lì), quindi la sua età è sempre 0, mai oltre
-# max_known_memory_days — nessun controllo esplicito "è viva?" necessario qui.
-func _forget_vegetation_identity(coords: Vector2i) -> void:
-	if macro_world == null:
-		return
-	var state := macro_world.get_cell_state_at(coords.x, coords.y)
-	if state == null:
-		return
-	IndividualVegetationService.forget_known_individuals(state, GameTypes.WorldObjectType.TREE)
-	IndividualVegetationService.forget_known_individuals(state, GameTypes.WorldObjectType.SHRUB)
-
-	# DEBUG TEMPORANEO — vedi _debug_individual_counts_by_macro: senza questo il contatore di
-	# debug non saprebbe mai che questa macrocella è stata svuotata (si aggiorna solo quando la
-	# cella torna viva e viene rinfrescata, mai su un evento di pulizia) — resterebbe fermo al
-	# vecchio conteggio per sempre, facendo sembrare che la pulizia non stia facendo nulla.
-	if _debug_individual_counts_by_macro.has(coords):
-		_debug_individual_counts_by_macro.erase(coords)
-		var total: int = 0
-		for c in _debug_individual_counts_by_macro.values():
-			total += c
-		print("[DEBUG INDIVIDUI] macrocella (%d,%d) dimenticata dal fog -> rimossa dal conteggio | totale sessione: %d" % [
-			coords.x, coords.y, total
-		])
 
 
 func _on_advance_year_pressed() -> void:

@@ -291,6 +291,10 @@ func save_game_to_json(
 			for pos in state.shrub_claimed_lots.keys():
 				shrub_claimed_lots_data.append({"x": pos.x, "y": pos.y})
 			state_data["shrub_claimed_lots"] = shrub_claimed_lots_data
+		# Disposizione salvata della vegetazione (2026-10-24, progetto B fase 1): forma compatta di
+		# VegetationLayoutService (lotti come y*100+x), solo se pronta.
+		if state.vegetation_layout_ready:
+			state_data["vegetation_layout"] = VegetationLayoutService.to_save_data(state)
 		# Registro unificato "capacità per lotto" (2026-09-19, richiesta utente — refactor
 		# lot_source: sostituisce le sezioni separate pebble_quantities/stick_quantities/
 		# plant_fiber_quantities/mushroom_quantities/wild_vegetables_harvested_by_lot, due formati

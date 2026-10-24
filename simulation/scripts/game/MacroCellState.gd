@@ -146,6 +146,14 @@ var shrub_individual_subtype: Dictionary = {}
 # riassegnato altrove non appena l'eccezione scade.
 var tree_claimed_lots: Dictionary = {}
 var shrub_claimed_lots: Dictionary = {}
+# Disposizione salvata della vegetazione (2026-10-24, progetto B fase 1 — VegetationLayoutService): l'ultima uscita di
+# VegetationPositionService, tenuta invece di rigenerata a ogni taglio/cantiere/edificio. Lotto (Vector2i) -> numero di
+# posti (indici 0..n-1) per TREE/SHRUB; lotti d'erba (Vector2i -> true). vegetation_layout_ready = false: la disposizione
+# va (ri)fatta col generatore (prima vista, vecchi salvataggi).
+var tree_lot_slots: Dictionary = {}
+var shrub_lot_slots: Dictionary = {}
+var grass_lots: Dictionary = {}
+var vegetation_layout_ready: bool = false
 # Registro unico "risorse a capacità per lotto" (2026-09-19, richiesta utente — refactor
 # lot_source: prima pebble/stick/plant_fiber/mushroom/wild_vegetables avevano ciascuna il proprio
 # campo/formato — pebble_quantities/stick_quantities/plant_fiber_quantities/mushroom_quantities/

@@ -501,6 +501,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				state.tree_claimed_lots[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = true
 			for pos_data in state_data.get("shrub_claimed_lots", []):
 				state.shrub_claimed_lots[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = true
+			# Disposizione salvata della vegetazione (2026-10-24, progetto B fase 1). Assente (salvataggi precedenti) =
+			# non pronta: la rifà il generatore alla prima vista.
+			VegetationLayoutService.load_save_data(state, state_data.get("vegetation_layout", {}))
 			# Registro unificato "capacita per lotto" (2026-09-19, richiesta utente, refactor
 			# lot_source) - un solo loop su tutte le entry salvate (una per resource_name presente:
 			# pebble/stick/plant_fiber/mushroom/wild_vegetables), stesso principio gia in uso per

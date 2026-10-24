@@ -74,6 +74,10 @@ var path_block_version: int = 0
 # cella). Un refresh da movimento (nessuno di questi eventi) trova il flag false e riusa
 # cached_vegetation_positions senza richiamare generate_positions.
 var needs_full_vegetation_recompute: bool = true
+# Progetto B fase 1 (2026-10-24, VegetationLayoutService): col ricalcolo sopra, true = rifare la disposizione col
+# generatore (prima attivazione, checkpoint: i numeri della vegetazione possono essere cambiati); false = basta
+# rileggere la disposizione tenuta (taglio, cantiere ripulito, edificio: cambiano solo individui e lotti bloccati).
+var needs_vegetation_layout_rebuild: bool = true
 # Valore di FogOfWarRenderer.visible_set_version letto dall'ULTIMO _refresh_resource_visuals di questa cella
 # (2026-09-20): il refresh da movimento in GameScene._process parte solo se la versione corrente e' diversa,
 # cioe' se dall'ultimo refresh e' comparsa almeno una cella visibile nuova (o e' cambiato il giorno). -1 =
