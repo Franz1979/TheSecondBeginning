@@ -2420,7 +2420,12 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 		# Senza punto di assegnazione nessuno prende lavori dalla coda (2026-10-10, richiesta utente — tolto il ripiego della
 		# presa diretta): la coda non è attiva (JobBoardService.is_enabled).
 
-	if IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world):
+	# Tempi (2026-10-24, fase 0 dell'assegnatore): lo svago si somma alla lista a fine rito.
+	var fallback_started := JobBoardTimingService.now() if JobBoardTimingService.is_enabled() else 0
+	var fallback_assigned := IdleTaskAssignmentService.assign_idle_fallback(individual, age_band, world)
+	if JobBoardTimingService.is_enabled():
+		JobBoardTimingService.add("svago (assign_idle_fallback)", fallback_started)
+	if fallback_assigned:
 		return
 	individual.stop()
 

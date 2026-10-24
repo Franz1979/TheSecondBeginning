@@ -19,6 +19,10 @@ var waits_initialized: bool = false
 # Lavori prendibili all'ultimo giro della lista (chiave -> true), per accorgersi di quelli nuovi (richiamo del
 # coordinatore, 2026-10-09).
 var open_job_keys: Dictionary = {}
+# Chi cerca lavoro adesso, in tutto il villaggio (2026-10-24, assegnatore fase 1 — JobBoardService.can_depart_to_seek):
+# "Cerca lavoro" in cammino o in fila al punto. Ricontato al giro al secondo (JobBoardService.recount_seekers), +1 a ogni
+# partenza (start_seek_job) nel frattempo.
+var seekers_count: int = 0
 # Mucchi svuotati dall'ultima raccolta con la consegna ancora in corso (2026-10-09): la riga "Mucchio" resta in "In corso"
 # finché chi porta il carico non l'ha consegnato (PileJobProvider). Chiave del mucchio -> {"id", "name", "macro",
 # "microcell"} dell'ultima volta che era elencato.

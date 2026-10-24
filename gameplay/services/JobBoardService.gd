@@ -352,6 +352,7 @@ static func sort_for_display(game_data: GameData, jobs: Array) -> void:
 # Con un punto di assegnazione (BuildingRules.is_assignment_point, completo e non da demolire) raggiungibile e almeno un
 # lavoro della lista che l'individuo può prendere (job_available_checker, gli stessi filtri della presa), l'individuo
 # libero riceve "Cerca lavoro" verso il punto più vicino; arrivato, prende il lavoro con try_take_job come prima.
+# Dal 2026-10-24 (assegnatore fase 1) la partenza non chiede più job_available_checker: can_depart_to_seek più sotto.
 
 const SEEK_JOB_TASK_PATH := "res://gameplay/scripts/tasks/definitions/seek_job.tres"
 const SEEK_JOB_TASK_NAME := "task_seek_job_name"
@@ -405,6 +406,40 @@ static func open_jobs_count() -> int:
 	return int(open_jobs_counter.call()) if open_jobs_counter.is_valid() else 0
 
 
+# --- Partenza verso il punto (2026-10-24, assegnatore fase 1, docs/progetto_assegnatore_unico_lavori.md) ---
+# Il pipottino libero va a vedere al punto senza chiedersi se un lavoro è adatto a lui (lo decide il coordinatore, al
+# punto; viaggio a vuoto accettato). Parte solo se i lavori aperti dell'ultimo giro della lista (open_job_keys, giro al
+# secondo) sono più di chi cerca già lavoro in tutto il villaggio (seekers_count: in cammino o in fila).
+
+# true se i lavori aperti dell'ultimo giro sono più di chi cerca già lavoro.
+static func can_depart_to_seek(game_data: GameData) -> bool:
+	if game_data == null:
+		return false
+	var runtime := game_data.job_board_runtime
+	return runtime.open_job_keys.size() > runtime.seekers_count
+
+
+# Lavori aperti all'ultimo giro della lista (richiamo del coordinatore): letti, mai ricalcolati.
+static func last_open_jobs_count(game_data: GameData) -> int:
+	return game_data.job_board_runtime.open_job_keys.size() if game_data != null else 0
+
+
+# Riconta chi ha "Cerca lavoro" in corso (in cammino o in fila al punto, non ancora rilasciato): giro al secondo.
+static func recount_seekers(game_data: GameData, individuals: Array[HumanIndividual]) -> void:
+	if game_data == null:
+		return
+	var count := 0
+	for member in individuals:
+		var task := member.current_task
+		if task == null or task.is_finished() or task.task_name != SEEK_JOB_TASK_NAME:
+			continue
+		var wait_action := task.get_current_action() as WaitAtPointAction
+		if wait_action != null and wait_action.released:
+			continue
+		count += 1
+	game_data.job_board_runtime.seekers_count = count
+
+
 # Punto di assegnazione completo, non da demolire e raggiungibile più vicino a `individual`; null se nessuno.
 static func find_assignment_point(individual: HumanIndividual, world: World) -> Building:
 	if individual == null or world == null:
@@ -418,12 +453,18 @@ static func find_assignment_point(individual: HumanIndividual, world: World) -> 
 	) as Building
 
 
+# Assegnatore fase 1 (2026-10-24): niente più domanda "c'è un lavoro per lui?" (job_available_checker) prima di partire;
+# basta can_depart_to_seek, letto dall'ultimo giro della lista. L'idoneità la verifica il coordinatore al punto.
 static func try_seek_job(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> SeekOutcome:
+	if not can_depart_to_seek(GameSettings.active_game_data):
+		return SeekOutcome.NOTHING
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var point := find_assignment_point(individual, world)
+	if timing:
+		JobBoardTimingService.add("punto più vicino", started)
 	if point == null:
 		return SeekOutcome.NO_POINT
-	if not job_available_checker.is_valid() or not bool(job_available_checker.call(individual)):
-		return SeekOutcome.NOTHING
 	return SeekOutcome.STARTED if start_seek_job(individual, age_band, point) else SeekOutcome.NOTHING
 
 
@@ -441,9 +482,14 @@ static func start_seek_job(individual: HumanIndividual, age_band: HumanTypes.Age
 	})
 	if not individual.assign_task(task, age_band):
 		return false
+	# Assegnatore fase 1 (2026-10-24): conta subito tra chi cerca lavoro, fino al prossimo riconteggio (recount_seekers).
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data != null:
+		game_data.job_board_runtime.seekers_count += 1
 	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-		print("[JOB BOARD] #%d %s: c'è un lavoro per lui — va a cercarlo al punto di assegnazione %s #%d." % [
-			individual.id, individual.name, point.building_type_name, point.id
+		print("[JOB BOARD] #%d %s: va a vedere al punto di assegnazione %s #%d (%d lavori aperti, %d cercano lavoro)." % [
+			individual.id, individual.name, point.building_type_name, point.id, last_open_jobs_count(game_data),
+			game_data.job_board_runtime.seekers_count if game_data != null else 0,
 		])
 	return true
 
@@ -452,6 +498,7 @@ static func start_seek_job(individual: HumanIndividual, age_band: HumanTypes.Age
 static func try_take_job(individual: HumanIndividual) -> bool:
 	if individual == null or not job_taker.is_valid():
 		return false
+	JobBoardTimingService.caller = "arrivo"
 	return bool(job_taker.call(individual))
 
 
@@ -579,10 +626,16 @@ static func has_open_jobs(game_data: GameData, candidates: Dictionary) -> bool:
 # l'assegnazione a mano, idoneità con una task di prova per tipo di task ("rejection" del fornitore: età ed energia
 # dipendono dal pipottino e dalla task, non dal singolo lavoro), raggiungibilità, materiali troppo pesanti.
 # `now`: momento di gioco per l'età dei lavori (stamp_entered).
+# Tempi (2026-10-24, fase 0 dell'assegnatore, JobBoardTimingService): attese ed età, idoneità per tipo di lavoro
+# ("idoneità:<tipo>"), raggiungibilità e materiali troppo pesanti.
 static func find_takeable_jobs(worker: HumanIndividual, game_data: GameData, candidates: Dictionary, now: float) -> Dictionary:
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	sync_waits(game_data, candidates)
 	# Età (2026-10-08): un lavoro comparso dopo l'ultimo giro del cassetto viene segnato qui, prima della scelta.
 	stamp_entered(game_data, candidates.values(), now)
+	if timing:
+		JobBoardTimingService.add("attese ed età", started)
 	var open_jobs: Array[Dictionary] = []
 	var locked_count := 0
 	var waiting_count := 0
@@ -609,7 +662,10 @@ static func find_takeable_jobs(worker: HumanIndividual, game_data: GameData, can
 	for job in open_jobs:
 		var probe_key := String(job["provider"]["probe_key"].call(job))
 		if not rejection_by_probe.has(probe_key):
+			started = JobBoardTimingService.now() if timing else 0
 			rejection_by_probe[probe_key] = String(job["provider"]["rejection"].call(worker, job))
+			if timing:
+				JobBoardTimingService.add("idoneità:%s" % String(job["kind"]), started)
 		if String(rejection_by_probe[probe_key]) == HumanIndividual.ASSIGN_OK:
 			suitable_jobs.append(job)
 	if suitable_jobs.is_empty():
@@ -623,6 +679,7 @@ static func find_takeable_jobs(worker: HumanIndividual, game_data: GameData, can
 	# Materiali troppo pesanti (2026-10-16): costruzione e riparazione solo a chi porta almeno un'unità di ogni
 	# materiale ancora mancante (MaterialSupplyService.get_uncarryable_materials, cintura attuale).
 	var too_heavy: Array[String] = []
+	started = JobBoardTimingService.now() if timing else 0
 	for job in suitable_jobs:
 		if not reachable.call(job["reach_target"]):
 			continue
@@ -633,6 +690,8 @@ static func find_takeable_jobs(worker: HumanIndividual, game_data: GameData, can
 				too_heavy.append("%s: %s" % [String(job["log_name"]), ", ".join(heavy)])
 				continue
 		takeable_jobs.append(job)
+	if timing:
+		JobBoardTimingService.add("raggiungibilità e materiali", started)
 	if takeable_jobs.is_empty():
 		if too_heavy.is_empty():
 			none["log"] = "%s — nessuno preso: non adatto (nessun lavoro raggiungibile)." % found_text
