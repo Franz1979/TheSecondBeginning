@@ -2413,6 +2413,8 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 			CoordinatorService.report_departure(individual, received.get_activity_description() if received != null else "?")
 			return
 		CoordinatorService.report_departure(individual, "")
+		# Viaggio a vuoto (2026-10-24, richiesta utente): non riparte finché i lavori aperti non cambiano.
+		JobBoardService.note_empty_trip(GameSettings.active_game_data, individual)
 	else:
 		var seek_outcome := JobBoardService.try_seek_job(individual, age_band, world)
 		if seek_outcome == JobBoardService.SeekOutcome.STARTED:

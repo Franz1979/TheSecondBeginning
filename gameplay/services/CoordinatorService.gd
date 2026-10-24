@@ -384,6 +384,9 @@ static func _call_idle_individuals(
 		var task := member.current_task
 		if task == null or task.is_finished() or not task.is_idle_activity:
 			continue
+		# Viaggio a vuoto con gli stessi lavori aperti (2026-10-24, richiesta utente): non si richiama.
+		if JobBoardService.is_waiting_after_empty_trip(GameSettings.active_game_data, member):
+			continue
 		var distance := member.position.distance_to(SpatialSelectionService._position_relative_to(point, member.home_macro_coords))
 		if distance <= radius:
 			candidates.append({"member": member, "distance": distance})

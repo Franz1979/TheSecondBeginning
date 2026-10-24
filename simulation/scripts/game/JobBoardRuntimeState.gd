@@ -23,6 +23,11 @@ var open_job_keys: Dictionary = {}
 # "Cerca lavoro" in cammino o in fila al punto. Ricontato al giro al secondo (JobBoardService.recount_seekers), +1 a ogni
 # partenza (start_seek_job) nel frattempo.
 var seekers_count: int = 0
+# Viaggi a vuoto (2026-10-24, assegnatore, richiesta utente): `open_jobs_revision` cresce a ogni giro della lista in cui
+# l'insieme dei lavori aperti cambia (entrato o uscito un lavoro); `empty_trip_revision` (id individuo -> revisione) è la
+# revisione al suo ultimo arrivo al punto senza lavoro: finché è la stessa non riparte né viene richiamato.
+var open_jobs_revision: int = 0
+var empty_trip_revision: Dictionary = {}
 # Mucchi svuotati dall'ultima raccolta con la consegna ancora in corso (2026-10-09): la riga "Mucchio" resta in "In corso"
 # finché chi porta il carico non l'ha consegnato (PileJobProvider). Chiave del mucchio -> {"id", "name", "macro",
 # "microcell"} dell'ultima volta che era elencato.

@@ -411,12 +411,36 @@ static func open_jobs_count() -> int:
 # punto; viaggio a vuoto accettato). Parte solo se i lavori aperti dell'ultimo giro della lista (open_job_keys, giro al
 # secondo) sono più di chi cerca già lavoro in tutto il villaggio (seekers_count: in cammino o in fila).
 
-# true se i lavori aperti dell'ultimo giro sono più di chi cerca già lavoro.
-static func can_depart_to_seek(game_data: GameData) -> bool:
+# true se i lavori aperti dell'ultimo giro sono più di chi cerca già lavoro e `individual` non ha già fatto un viaggio a
+# vuoto con gli stessi lavori aperti (is_waiting_after_empty_trip).
+static func can_depart_to_seek(game_data: GameData, individual: HumanIndividual) -> bool:
 	if game_data == null:
 		return false
 	var runtime := game_data.job_board_runtime
-	return runtime.open_job_keys.size() > runtime.seekers_count
+	if runtime.open_job_keys.size() <= runtime.seekers_count:
+		return false
+	return not is_waiting_after_empty_trip(game_data, individual)
+
+
+# Viaggio a vuoto (2026-10-24, richiesta utente): `individual` è arrivato al punto e non ha preso nessun lavoro. Non
+# riparte (né viene richiamato) finché l'insieme dei lavori aperti non cambia (open_jobs_revision).
+static func note_empty_trip(game_data: GameData, individual: HumanIndividual) -> void:
+	if game_data != null and individual != null:
+		game_data.job_board_runtime.empty_trip_revision[individual.id] = game_data.job_board_runtime.open_jobs_revision
+
+
+# true se `individual` ha fatto un viaggio a vuoto e i lavori aperti sono ancora gli stessi; a lavori cambiati il segno
+# si toglie.
+static func is_waiting_after_empty_trip(game_data: GameData, individual: HumanIndividual) -> bool:
+	if game_data == null or individual == null:
+		return false
+	var runtime := game_data.job_board_runtime
+	if not runtime.empty_trip_revision.has(individual.id):
+		return false
+	if int(runtime.empty_trip_revision[individual.id]) == runtime.open_jobs_revision:
+		return true
+	runtime.empty_trip_revision.erase(individual.id)
+	return false
 
 
 # Lavori aperti all'ultimo giro della lista (richiamo del coordinatore): letti, mai ricalcolati.
@@ -456,7 +480,7 @@ static func find_assignment_point(individual: HumanIndividual, world: World) -> 
 # Assegnatore fase 1 (2026-10-24): niente più domanda "c'è un lavoro per lui?" (job_available_checker) prima di partire;
 # basta can_depart_to_seek, letto dall'ultimo giro della lista. L'idoneità la verifica il coordinatore al punto.
 static func try_seek_job(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> SeekOutcome:
-	if not can_depart_to_seek(GameSettings.active_game_data):
+	if not can_depart_to_seek(GameSettings.active_game_data, individual):
 		return SeekOutcome.NOTHING
 	var timing := JobBoardTimingService.is_enabled()
 	var started := JobBoardTimingService.now() if timing else 0
@@ -608,6 +632,9 @@ static func notify_new_open_jobs(game_data: GameData, folk: Folk, jobs: Array[Di
 		if not runtime.open_job_keys.has(job_key):
 			has_new = true
 			break
+	# Viaggi a vuoto (2026-10-24): insieme dei lavori aperti cambiato (entrato o uscito un lavoro), nuova revisione.
+	if has_new or open_keys.size() != runtime.open_job_keys.size():
+		runtime.open_jobs_revision += 1
 	runtime.open_job_keys = open_keys
 	if has_new:
 		CoordinatorService.on_jobs_available()
@@ -719,5 +746,6 @@ static func take_job(worker: HumanIndividual, game_data: GameData, found: Dictio
 	if taken:
 		# Lavoro preso: le risposte in memoria di job_available_checker non valgono più (2026-10-23).
 		take_revision += 1
-		return {"taken": true, "log": "%s — preso %s — %s." % [found_text, job_text, String(pick["reason"])]}
+		# "key" (2026-10-24, assegnatore fase 2): la scena toglie solo questo lavoro dalla lista in memoria.
+		return {"taken": true, "key": String(best["key"]), "log":"%s — preso %s — %s." % [found_text, job_text, String(pick["reason"])]}
 	return {"taken": false, "log": "%s — scelto %s — %s, ma rifiutato: passa alle attività di ripiego." % [found_text, job_text, String(pick["reason"])]}

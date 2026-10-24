@@ -7500,6 +7500,8 @@ func _refresh_pending_entries() -> void:
 		JobBoardTimingService.caller = "cassetto"
 		JobBoardTimingService.begin_call(null)
 	var board_jobs := _collect_job_board_jobs(assigned)
+	# Lista unica (2026-10-24, assegnatore fase 2): la stessa lista vale per le domande fino al prossimo cambiamento.
+	_store_job_board_candidates(board_jobs, assigned)
 	_update_job_board_waits(board_jobs)
 	# Richiamo del coordinatore (2026-10-09): un lavoro diventato prendibile (nuovo in coda o finita la sua attesa) è
 	# un evento per i coordinatori che aspettano senza fila.
@@ -8187,6 +8189,8 @@ func _take_listed_job_for(worker: HumanIndividual) -> bool:
 		return false
 	var started := JobBoardTimingService.now() if JobBoardTimingService.is_enabled() else 0
 	var result := JobBoardService.take_job(worker, game_data, found)
+	if bool(result["taken"]):
+		_patch_job_board_candidates_after_take(String(result["key"]))
 	if JobBoardTimingService.is_enabled():
 		JobBoardTimingService.add("presa (assign)", started)
 	_log_job_board(worker, String(result["log"]))
@@ -8227,13 +8231,19 @@ func _job_board_has_open_jobs() -> bool:
 
 
 # Candidati della lista adesso (JobBoardService.collect_candidates su tutti i lavori dei fornitori).
-# Tenuti per il fotogramma in corso finché le assegnazioni restano le stesse (2026-10-19, scatti: il coordinatore li
-# ricostruiva da capo per ogni pipottino, fino a 9 volte per fotogramma); un lavoro preso cambia le assegnazioni, gli
-# ordini del cassetto o il contatore delle prese (JobBoardService.take_revision) e la lista si rifà.
-# Sola lettura per chi la riceve.
+# Lista unica (2026-10-24, assegnatore fase 2 — prima valeva solo per il fotogramma in corso): la fa il giro al secondo
+# del cassetto (_store_job_board_candidates) e resta valida finché non cambiano le assegnazioni, gli ordini del cassetto
+# o il contatore delle prese (JobBoardService.take_revision); dopo una presa si toglie solo il lavoro preso
+# (_patch_job_board_candidates_after_take). Un lavoro finito senza cambiare le assegnazioni (es. un mucchio raccolto a
+# mano) può restarci fino al giro dopo: la presa lo rifiuta. Sola lettura per chi la riceve.
 var _job_board_candidates_cache: Dictionary = {}
-var _job_board_candidates_frame: int = -1
-var _job_board_candidates_assigned_hash: int = 0
+var _job_board_candidates_signature: int = 0
+var _job_board_candidates_valid: bool = false
+
+
+# Firma delle condizioni che invalidano la lista (vedi sopra).
+func _job_board_candidates_signature_of(assigned: Dictionary) -> int:
+	return [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0, JobBoardService.take_revision].hash()
 
 
 func _current_job_board_candidates() -> Dictionary:
@@ -8242,22 +8252,41 @@ func _current_job_board_candidates() -> Dictionary:
 	var assigned := JobWorkScanService.collect_assignments(human_individuals)
 	if timing:
 		JobBoardTimingService.add("assegnazioni", started)
-	var frame := Engine.get_process_frames()
-	# Prese dalla lista (JobBoardService.take_revision) al posto delle task di tutti (2026-10-24, scatti: a fine rito 18
-	# pipottini liberi insieme, ognuno con una task di ripiego, la facevano rifare 13 volte, ~85 ms). Chi va a riposare o
-	# a un ripiego non cambia la lista; un lavoro appena finito può restarci fino al fotogramma dopo (la presa lo rifiuta).
-	var task_signature: Array = [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0, JobBoardService.take_revision]
-	var assigned_hash := task_signature.hash()
-	if frame == _job_board_candidates_frame and assigned_hash == _job_board_candidates_assigned_hash:
+	var signature := _job_board_candidates_signature_of(assigned)
+	if _job_board_candidates_valid and signature == _job_board_candidates_signature:
 		if timing:
 			JobBoardTimingService.count("lista in memoria")
 		return _job_board_candidates_cache
 	if timing:
 		JobBoardTimingService.count("lista rifatta")
-	_job_board_candidates_cache = JobBoardService.collect_candidates(_collect_job_board_jobs(assigned))
-	_job_board_candidates_frame = frame
-	_job_board_candidates_assigned_hash = assigned_hash
+	_store_job_board_candidates(_collect_job_board_jobs(assigned), assigned)
 	return _job_board_candidates_cache
+
+
+# Lista appena fatta (`jobs`: tutti i lavori dei fornitori con le assegnazioni `assigned`): in memoria per chi la chiede.
+func _store_job_board_candidates(jobs: Array[Dictionary], assigned: Dictionary) -> void:
+	_job_board_candidates_cache = JobBoardService.collect_candidates(jobs)
+	_job_board_candidates_signature = _job_board_candidates_signature_of(assigned)
+	_job_board_candidates_valid = true
+
+
+# Presa riuscita del lavoro `job_key` (2026-10-24, assegnatore fase 2): fuori dalla lista in memoria (o un posto in meno,
+# "open_slots" dei cantieri con più costruttori) invece di rifarla; la firma si aggiorna con le assegnazioni nuove. Se la
+# lista in memoria non era valida, resta da rifare alla prossima domanda.
+func _patch_job_board_candidates_after_take(job_key: String) -> void:
+	if not _job_board_candidates_valid:
+		return
+	var job: Variant = _job_board_candidates_cache.get(job_key)
+	if job != null:
+		var slots := int((job as Dictionary).get("open_slots", 0)) - 1
+		if slots > 0:
+			var patched := (job as Dictionary).duplicate()
+			patched["open_slots"] = slots
+			patched["assigned"] = true
+			_job_board_candidates_cache[job_key] = patched
+		else:
+			_job_board_candidates_cache.erase(job_key)
+	_job_board_candidates_signature = _job_board_candidates_signature_of(JobWorkScanService.collect_assignments(human_individuals))
 
 
 # Con la risposta in memoria se ancora valida (2026-10-23, JobBoardService.cached_availability), altrimenti calcolata.
