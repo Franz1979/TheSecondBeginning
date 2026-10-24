@@ -360,20 +360,7 @@ static func _compute_fruit_stock_weights(resource_name: String, macro_state: Mac
 		if subtype_store[key] != subtype_name:
 			continue
 
-		var weight: float = subtype_rule.production_coefficient_adult
-		if subtype_rule.track_age_bands and birth_year_store.has(key):
-			var years_lived: int = current_year - int(birth_year_store[key])
-			var age_band: GameTypes.AgeBand = AgeBandVisualService.band_for_age(
-				years_lived, subtype_rule.youth_duration_years, subtype_rule.adult_duration_years
-			)
-			match age_band:
-				GameTypes.AgeBand.YOUNG:
-					weight = subtype_rule.production_coefficient_young
-				GameTypes.AgeBand.OLD:
-					weight = subtype_rule.production_coefficient_old
-				_:
-					weight = subtype_rule.production_coefficient_adult
-
+		var weight := _individual_fruit_weight(subtype_rule, birth_year_store, key, current_year)
 		if weight <= 0.0:
 			continue
 
@@ -382,6 +369,102 @@ static func _compute_fruit_stock_weights(resource_name: String, macro_state: Mac
 		total += weight
 
 	return {"total": total, "by_lot": by_lot}
+
+
+# Peso di un individuo per fascia d'età (coefficienti di SubtypeRules), condiviso dal ricalcolo completo sopra e dal
+# taglio (prepare_cut_fruit_weights).
+static func _individual_fruit_weight(subtype_rule: SubtypeRules, birth_year_store: Dictionary, key: Vector3i, current_year: int) -> float:
+	if not subtype_rule.track_age_bands or not birth_year_store.has(key):
+		return subtype_rule.production_coefficient_adult
+	var years_lived: int = current_year - int(birth_year_store[key])
+	var age_band: GameTypes.AgeBand = AgeBandVisualService.band_for_age(
+		years_lived, subtype_rule.youth_duration_years, subtype_rule.adult_duration_years
+	)
+	match age_band:
+		GameTypes.AgeBand.YOUNG:
+			return subtype_rule.production_coefficient_young
+		GameTypes.AgeBand.OLD:
+			return subtype_rule.production_coefficient_old
+		_:
+			return subtype_rule.production_coefficient_adult
+
+
+# Taglio di una pianta (2026-10-24, progetto B fase 2a): invece di buttare la cache dei pesi (due giri completi sugli
+# alberi, ~50 ms), le si toglie il peso della sola pianta tagliata. In due tempi perché il taglio dimentica sottotipo e
+# anno di nascita: prepare PRIMA di PlayerHarvestService.cut_individual (legge il peso, solo per le cache valide ora),
+# apply DOPO (sottrae e allinea la quantità della cache a quella nuova, così la cache resta valida). Le cache non valide
+# restano come sono: si ricalcolano alla prossima richiesta, come prima.
+static func prepare_cut_fruit_weights(macro_state: MacroCellState, object_type: GameTypes.WorldObjectType, key: Vector3i) -> Array:
+	var patches: Array = []
+	if GameSettings.active_game_data == null:
+		return patches
+	var checkpoint_absolute_day := VegetationPoolService.most_recent_growth_checkpoint_absolute_day(GameSettings.active_game_data)
+	var quantity: int = macro_state.get_resource_quantity(object_type)
+	var subtype_store := _individual_subtype_store(macro_state, object_type)
+	for resource_name in FRUIT_STOCK_SOURCES.keys():
+		var source: Dictionary = FRUIT_STOCK_SOURCES[resource_name]
+		if source["object_type"] != object_type:
+			continue
+		var cache: Dictionary = macro_state.berry_weight_cache.get(resource_name, {})
+		if cache.is_empty() or int(cache.get("checkpoint_day", -1)) != checkpoint_absolute_day \
+				or int(cache.get("primary_resource_quantity", -1)) != quantity:
+			continue
+		var weight := 0.0
+		if subtype_store.get(key, "") == source["subtype_name"]:
+			var subtype_rule := ResourceCalculator.get_subtype_rule(object_type, source["subtype_name"])
+			if subtype_rule != null:
+				weight = maxf(_individual_fruit_weight(subtype_rule, _individual_birth_year_store(macro_state, object_type), key, GameSettings.active_game_data.year), 0.0)
+		patches.append({"resource_name": resource_name, "lot": Vector2i(key.x, key.y), "weight": weight})
+	return patches
+
+
+# Solo diagnostica (VegetationCutPatchService.verify): per ogni cache dei pesi valida, differenze dal ricalcolo completo.
+static func fruit_weight_cache_mismatches(macro_state: MacroCellState) -> Array[String]:
+	var mismatches: Array[String] = []
+	if GameSettings.active_game_data == null:
+		return mismatches
+	var checkpoint_absolute_day := VegetationPoolService.most_recent_growth_checkpoint_absolute_day(GameSettings.active_game_data)
+	for resource_name in FRUIT_STOCK_SOURCES.keys():
+		var cache: Dictionary = macro_state.berry_weight_cache.get(resource_name, {})
+		var object_type: GameTypes.WorldObjectType = FRUIT_STOCK_SOURCES[resource_name]["object_type"]
+		if cache.is_empty() or int(cache.get("checkpoint_day", -1)) != checkpoint_absolute_day \
+				or int(cache.get("primary_resource_quantity", -1)) != macro_state.get_resource_quantity(object_type):
+			continue
+		var full := _compute_fruit_stock_weights(resource_name, macro_state, GameSettings.active_game_data.year)
+		var cached_lots: Dictionary = cache["by_lot"]
+		var full_lots: Dictionary = full["by_lot"]
+		var different_lots := 0
+		for lot in full_lots.keys():
+			if absf(float(cached_lots.get(lot, 0.0)) - float(full_lots[lot])) > 0.0001:
+				different_lots += 1
+		for lot in cached_lots.keys():
+			if not full_lots.has(lot):
+				different_lots += 1
+		if different_lots > 0 or absf(float(cache["total"]) - float(full["total"])) > 0.001:
+			mismatches.append("pesi %s: totale %.3f invece di %.3f, lotti diversi %d" % [
+				resource_name, float(cache["total"]), float(full["total"]), different_lots
+			])
+	return mismatches
+
+
+static func apply_cut_fruit_weights(macro_state: MacroCellState, object_type: GameTypes.WorldObjectType, patches: Array) -> void:
+	var quantity: int = macro_state.get_resource_quantity(object_type)
+	for patch in patches:
+		var cache: Dictionary = macro_state.berry_weight_cache.get(patch["resource_name"], {})
+		if cache.is_empty():
+			continue
+		var weight: float = patch["weight"]
+		if weight > 0.0:
+			var by_lot: Dictionary = cache["by_lot"]
+			var lot: Vector2i = patch["lot"]
+			var lot_weight: float = float(by_lot.get(lot, 0.0)) - weight
+			# Il ricalcolo completo tiene solo i lotti con peso > 0: un lotto rimasto senza frutto esce.
+			if lot_weight <= 0.000001:
+				by_lot.erase(lot)
+			else:
+				by_lot[lot] = lot_weight
+			cache["total"] = maxf(float(cache["total"]) - weight, 0.0)
+		cache["primary_resource_quantity"] = quantity
 
 
 # "Nidi" per eggs (2026-09-18, richiesta utente — uova raccoglibili per microcella, STESSO modello

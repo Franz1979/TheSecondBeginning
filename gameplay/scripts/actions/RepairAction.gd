@@ -171,6 +171,10 @@ func _allowed_repaired() -> float:
 			else:
 				target_building.repair_materials.erase(material_name)
 			used += 1
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+				print("[MATERIAL USE] Building #%d %s: riparazione, consumata 1 unità di '%s' (%d/%d, ne restano %d nel contenitore)." % [
+					target_building.id, target_building.get_display_name(), material_name, used, required, maxi(left, 0)
+				])
 		consumed[material_name] = used
 		allowed_ratio = minf(allowed_ratio, float(used) / float(required))
 	plan[PLAN_CONSUMED] = consumed

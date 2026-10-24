@@ -531,6 +531,16 @@ func set_vegetation_presence(positions: Dictionary) -> void:
 	_hint_layer.queue_redraw()
 
 
+# Un lotto rimasto senza piante dopo un taglio (2026-10-24, progetto B fase 2a — VegetationCutPatchService): toglie solo
+# quello, senza riscrivere tutta la presenza; stesso aggiornamento degli hint di set_vegetation_presence.
+func remove_vegetation_presence(lot: Vector2i) -> void:
+	if not _vegetation_presence.erase(lot):
+		return
+	_hint_layer_dirty = true
+	_rebuild_hint_multimesh()
+	_hint_layer.queue_redraw()
+
+
 func set_building_visible_positions(positions: Dictionary) -> void:
 	# Visibilità degli edifici cambiata: l'elenco delle microcelle entrate non vale più (2026-10-04).
 	if positions != _building_visible_positions:

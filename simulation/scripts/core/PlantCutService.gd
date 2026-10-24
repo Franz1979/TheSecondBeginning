@@ -104,7 +104,10 @@ static func cut(macro_state: MacroCellState, object_type: GameTypes.WorldObjectT
 	var yield_data := compute_yield(macro_state, object_type, individual_key, current_year)
 	var stump_size := compute_stump_size(macro_state, object_type, individual_key, current_year)
 	var subtype_name := get_subtype_name(macro_state, object_type, individual_key)
+	# Pesi dei frutti aggiornati per la sola pianta tagliata (progetto B fase 2a), letti prima che il taglio la dimentichi.
+	var fruit_weight_patches := TerrainScatteredResourceService.prepare_cut_fruit_weights(macro_state, object_type, individual_key)
 	PlayerHarvestService.cut_individual(macro_state, object_type, individual_key, subtype_name, stump_size, current_year)
+	TerrainScatteredResourceService.apply_cut_fruit_weights(macro_state, object_type, fruit_weight_patches)
 	if object_type == GameTypes.WorldObjectType.TREE:
 		LotCapacityService.add_extra_units(
 			macro_state, EXTRA_STICK_RESOURCE_NAME, Vector2i(individual_key.x, individual_key.y), EXTRA_STICKS_PER_TREE

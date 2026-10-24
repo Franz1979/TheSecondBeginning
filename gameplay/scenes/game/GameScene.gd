@@ -5028,8 +5028,12 @@ func _on_plant_cut(macro_coords: Vector2i, object_type: GameTypes.WorldObjectTyp
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
 	if cell == null:
 		return
-	cell.needs_full_vegetation_recompute = true
-	_refresh_resource_visuals(cell, "taglio")
+	# Progetto B fase 2a (2026-10-24): si toglie la sola pianta dall'elenco; il ricalcolo completo solo se non si può.
+	if VegetationCutPatchService.remove_individual(cell, object_type, individual_key, game_data.year):
+		_refresh_resource_visuals(cell, "taglio", Vector2i(individual_key.x, individual_key.y))
+	else:
+		cell.needs_full_vegetation_recompute = true
+		_refresh_resource_visuals(cell, "taglio")
 	if not selected_vegetation.is_empty() and selected_vegetation["macro_coords"] == macro_coords \
 			and selected_vegetation["object_type"] == object_type and selected_vegetation["individual_key"] == individual_key:
 		_clear_vegetation_selection()
@@ -8195,8 +8199,8 @@ func _job_board_has_open_jobs() -> bool:
 
 # Candidati della lista adesso (JobBoardService.collect_candidates su tutti i lavori dei fornitori).
 # Tenuti per il fotogramma in corso finché le assegnazioni restano le stesse (2026-10-19, scatti: il coordinatore li
-# ricostruiva da capo per ogni pipottino, fino a 9 volte per fotogramma); un lavoro preso cambia le assegnazioni o le
-# task di qualcuno (non tutti i lavori compaiono nelle assegnazioni, es. gli ordini del cassetto) e la lista si rifà.
+# ricostruiva da capo per ogni pipottino, fino a 9 volte per fotogramma); un lavoro preso cambia le assegnazioni, gli
+# ordini del cassetto o il contatore delle prese (JobBoardService.take_revision) e la lista si rifà.
 # Sola lettura per chi la riceve.
 var _job_board_candidates_cache: Dictionary = {}
 var _job_board_candidates_frame: int = -1
@@ -8206,9 +8210,10 @@ var _job_board_candidates_assigned_hash: int = 0
 func _current_job_board_candidates() -> Dictionary:
 	var assigned := JobWorkScanService.collect_assignments(human_individuals)
 	var frame := Engine.get_process_frames()
-	var task_signature: Array = [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0]
-	for member in human_individuals:
-		task_signature.append([member.id, member.current_task.get_instance_id() if member.current_task != null else 0, member.task_queue.size()])
+	# Prese dalla lista (JobBoardService.take_revision) al posto delle task di tutti (2026-10-24, scatti: a fine rito 18
+	# pipottini liberi insieme, ognuno con una task di ripiego, la facevano rifare 13 volte, ~85 ms). Chi va a riposare o
+	# a un ripiego non cambia la lista; un lavoro appena finito può restarci fino al fotogramma dopo (la presa lo rifiuta).
+	var task_signature: Array = [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0, JobBoardService.take_revision]
 	var assigned_hash := task_signature.hash()
 	if frame == _job_board_candidates_frame and assigned_hash == _job_board_candidates_assigned_hash:
 		return _job_board_candidates_cache
@@ -11541,9 +11546,13 @@ func _build_lot_availability_map(macro_state: MacroCellState, resource_name: Str
 
 
 # `reason` (2026-10-03, richiesta utente — diagnostica): chi ha chiesto il ridisegno, solo per la riga [VEG REFRESH TIMING].
-func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void:
+# `cut_lot` (2026-10-24, progetto B fase 2a): lotto di una pianta già tolta dall'elenco (VegetationCutPatchService). Si
+# salta ciò che un taglio non cambia: capacità dei lotti, insieme visibile da rifare, sassi/uova/lotti d'erba; degli
+# stick si aggiorna solo quel lotto. Il renderer della vegetazione si rimonta ancora tutto (passo 2b).
+func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut_lot: Variant = null) -> void:
 	if cell.macro_state == null:
 		return
+	var cut_patched: bool = cut_lot != null
 	# Inizio del ridisegno, per il totale della riga [VEG REFRESH TIMING] (tutto, capacità dei lotti comprese).
 	var _refresh_total_start_usec := Time.get_ticks_usec()
 	# SALTO DEL RIMONTAGGIO (2026-10-03, richiesta utente — passo 1): solo per il motivo "movimento/nebbia".
@@ -11564,7 +11573,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# agganciato, richiesta esplicita utente — questo refresh serve comunque a mantenere la loro
 	# capacità fresca per pickup/ispezione microcella).
 	var _lot_capacity_start_usec := Time.get_ticks_usec()
-	LotCapacityService.refresh_all_vegetation_lot_capacities(cell.macro_state, game_data)
+	# Taglio per lotto: i lotti rivendicati e il checkpoint non cambiano, il rinfresco sarebbe un giro a vuoto.
+	if not cut_patched:
+		LotCapacityService.refresh_all_vegetation_lot_capacities(cell.macro_state, game_data)
 	var _lot_capacity_ms: float = (Time.get_ticks_usec() - _lot_capacity_start_usec) / 1000.0
 	# Insieme "visibile in dettaglio" calcolato UNA SOLA VOLTA per refresh (2026-09-20, richiesta utente —
 	# prima veniva ricalcolato per ognuno dei 6 filtri sotto: stick, pebble, uova, ogni risorsa GRASS_PATCH e
@@ -11577,7 +11588,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	if cell.fog_of_war_renderer != null:
 		# Per aggiunta nei ridisegni per movimento/nebbia, ricalcolato negli altri (2026-10-04, FogOfWarRenderer.
 		# compute_visible_positions_cached).
-		visible_positions = cell.fog_of_war_renderer.compute_visible_positions_cached(game_data.get_absolute_day(), reason == "movimento/nebbia")
+		# Anche per aggiunta al taglio per lotto: un taglio non cambia la visibilità.
+		visible_positions = cell.fog_of_war_renderer.compute_visible_positions_cached(game_data.get_absolute_day(), reason == "movimento/nebbia" or cut_patched)
 		cell.last_refresh_visible_version = cell.fog_of_war_renderer.visible_set_version
 	# Tenuto per il ridisegno leggero dopo una raccolta (2026-10-03, _refresh_collected_resource_visuals).
 	cell.last_visible_positions = visible_positions
@@ -11610,7 +11622,13 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	_scattered_new_lots_added = 0
 	# Tempo dei MultiMesh di bastoni/sassi (qui) e uova/lotti d'erba (sotto), sommati in "1c_scattered_multimeshes".
 	var _scattered_start_usec := Time.get_ticks_usec()
-	if cell.renderer != null:
+	if cell.renderer != null and cut_patched:
+		# Taglio per lotto: solo gli stick del lotto tagliato (PlantCutService ne aggiunge per un albero), come una raccolta.
+		var stick_apply := func(availability: Dictionary) -> void: cell.renderer.set_stick_availability(availability)
+		if _patch_scattered_lot(cell, "stick", "stick", "stick", cell.macro_state.tree_claimed_lots, cut_lot, visible_positions, stick_apply) == "":
+			_apply_scattered_availability(cell, "stick", _visible_lot_availability(cell, "stick", cell.macro_state.tree_claimed_lots.keys(), visible_positions), false, stick_apply)
+		skipped.append("pebble")
+	elif cell.renderer != null:
 		if not _apply_scattered_availability(cell, "stick", _scattered_availability_for(cell, "stick", "stick", cell.macro_state.tree_claimed_lots, visible_positions, scattered_newly_visible), allow_scattered_skip, func(availability: Dictionary) -> void: cell.renderer.set_stick_availability(availability)):
 			skipped.append("stick")
 		if not _apply_scattered_availability(cell, "pebble", _scattered_availability_for(cell, "pebble", "pebble", cell.macro_state.stone_positions, visible_positions, scattered_newly_visible), allow_scattered_skip, func(availability: Dictionary) -> void: cell.renderer.set_pebble_availability(availability)):
@@ -11700,6 +11718,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 				cell.macro_state, resource_name, cell.cached_vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
 			)
 		cell.needs_full_vegetation_recompute = false
+	if cut_patched and DebugLogging.CHECK_VEGETATION_CUT_PATCH:
+		VegetationCutPatchService.verify(cell, occupied, building_positions, game_data.year)
 	var vegetation_positions: Dictionary = cell.cached_vegetation_positions
 	_veg_timings_ms["1_position_generation"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
@@ -11713,7 +11733,11 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# così un nido fuori stagione/senza birds/già raccolto semplicemente non compare (mai un'istanza
 	# multimesh sprecata per un nido vuoto).
 	_scattered_start_usec = Time.get_ticks_usec()
-	if cell.renderer != null:
+	# Taglio per lotto: nidi e lotti d'erba stanno solo su lotti d'erba, che un taglio di albero o arbusto non tocca.
+	if cut_patched:
+		skipped.append("eggs")
+		skipped.append("grass_patch")
+	elif cell.renderer != null:
 		if not _apply_scattered_availability(cell, "eggs", _scattered_availability_for(cell, "eggs", "eggs", cell.macro_state.egg_nest_positions, visible_positions, scattered_newly_visible), allow_scattered_skip, func(availability: Dictionary) -> void: cell.renderer.set_egg_nest_availability(availability)):
 			skipped.append("eggs")
 
@@ -11808,7 +11832,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# fasce). Con motivo movimento/nebbia e già inviata dopo l'ultima rigenerazione, si salta.
 	_step_start_usec = Time.get_ticks_usec()
 	if not skip_vegetation:
-		if reason == "movimento/nebbia" and not regenerated_now and cell.vegetation_presence_sent:
+		# Taglio per lotto: la presenza l'ha già aggiornata VegetationCutPatchService.
+		if (reason == "movimento/nebbia" or cut_patched) and not regenerated_now and cell.vegetation_presence_sent:
 			skipped.append("fog_vegetation_presence")
 		else:
 			cell.fog_of_war_renderer.set_vegetation_presence(vegetation_positions)
@@ -11924,6 +11949,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 			parts.append("insieme_visibile=%s" % cell.fog_of_war_renderer.last_visible_set_mode)
 		# Disponibilità di bastoni/sassi/uova/lotti d'erba: ricalcolate o dalla memoria più i lotti entrati in vista.
 		parts.append("disponibilita=%s" % scattered_mode_text)
+		if cut_patched:
+			parts.append("taglio=solo il lotto %s" % str(cut_lot))
 		# Cosa è stato saltato (passo 1): il totale sopra è il tempo del ridisegno, salti compresi.
 		if not skipped.is_empty():
 			parts.append("saltato=%s" % ", ".join(skipped))

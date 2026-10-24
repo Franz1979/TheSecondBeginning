@@ -798,8 +798,13 @@ static func finish_building(building: Building) -> void:
 static func _consume_build_materials(building: Building) -> void:
 	if building.rules == null:
 		return
+	var used: Dictionary = {}
 	for resource_name in building.rules.required_materials.keys():
+		if building.stored_resources.has(resource_name):
+			used[resource_name] = int(building.stored_resources[resource_name].get("quantity", 0))
 		building.stored_resources.erase(resource_name)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[MATERIAL USE] Building #%d %s: costruzione finita, consumati %s." % [building.id, building.get_display_name(), str(used)])
 
 
 # Controllo giornaliero: completa gli edifici in finitura con i giorni minimi passati. Ritorna quelli completati, per cui
