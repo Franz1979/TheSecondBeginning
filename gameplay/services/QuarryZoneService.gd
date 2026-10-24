@@ -124,11 +124,20 @@ static func list_available_rocks(
 # Roccia per `individual` nella zona: tra quelle disponibili, la più vicina con la penalità di affollamento; null se
 # nessuna.
 static func choose_rock(area: WorkArea, macro_state: MacroCellState, individual: HumanIndividual, reserved: Dictionary) -> Variant:
+	return choose_rock_from(area, macro_state, individual.home_macro_coords, individual.position, individual, reserved)
+
+
+# Come choose_rock, ma la distanza si misura da `origin_pos` (locale a `origin_macro`) invece che dal pipottino
+# (2026-10-23, bersaglio scelto dall'ordine: DrawerOrderTargetService). `individual` solo per la raggiungibilità (null =
+# nessun controllo).
+static func choose_rock_from(
+	area: WorkArea, macro_state: MacroCellState, origin_macro: Vector2i, origin_pos: Vector2, individual: HumanIndividual, reserved: Dictionary
+) -> Variant:
 	var best: Variant = null
 	var best_score := INF
-	var offset := HaulZoneService.macro_offset_for(individual, area.macro_coords)
+	var offset := Vector2(area.macro_coords - origin_macro) * World.WIDTH
 	for rock in list_available_rocks(area, macro_state, individual, reserved):
-		var score := individual.position.distance_to(Vector2(rock) + Vector2(0.5, 0.5) + offset)
+		var score := origin_pos.distance_to(Vector2(rock) + Vector2(0.5, 0.5) + offset)
 		for dy in range(-1, 2):
 			for dx in range(-1, 2):
 				if (dx != 0 or dy != 0) and reserved.has(_rock_key(area.macro_coords, rock + Vector2i(dx, dy))):
@@ -156,11 +165,17 @@ static func choose_work_area(game_data: GameData, world: World, individual: Huma
 		_chosen_area_frame = frame
 	var cache_key := [individual.get_instance_id(), reserved.hash()]
 	if not _chosen_area_cache.has(cache_key):
-		_chosen_area_cache[cache_key] = _choose_work_area(game_data, world, individual, reserved)
+		_chosen_area_cache[cache_key] = choose_work_area_from(
+			game_data, world, individual.home_macro_coords, individual.position, individual, reserved
+		)
 	return _chosen_area_cache[cache_key]
 
 
-static func _choose_work_area(game_data: GameData, world: World, individual: HumanIndividual, reserved: Dictionary) -> WorkArea:
+# Come choose_work_area, ma la distanza si misura da `origin_pos` (locale a `origin_macro`) e senza memoria (2026-10-23,
+# bersaglio scelto dall'ordine). `individual` solo per raggiungibilità e affollamento (null = nessun controllo).
+static func choose_work_area_from(
+	game_data: GameData, world: World, origin_macro: Vector2i, origin_pos: Vector2, individual: HumanIndividual, reserved: Dictionary
+) -> WorkArea:
 	var best: WorkArea = null
 	var best_score := -1.0
 	for area in list_quarry_work_areas(game_data):
@@ -168,8 +183,8 @@ static func _choose_work_area(game_data: GameData, world: World, individual: Hum
 		var available := list_available_rocks(area, macro_state, individual, reserved).size()
 		if available <= 0:
 			continue
-		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + HaulZoneService.macro_offset_for(individual, area.macro_coords)
-		var score := float(available) / (individual.position.distance_to(center) + ZONE_DISTANCE_OFFSET)
+		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - origin_macro) * World.WIDTH
+		var score := float(available) / (origin_pos.distance_to(center) + ZONE_DISTANCE_OFFSET)
 		for other in GameSettings.active_human_individuals:
 			if other != individual and is_quarrying_in(other, area.id):
 				score *= ZONE_CROWDING_FACTOR
@@ -184,6 +199,11 @@ static func is_quarrying_in(individual: HumanIndividual, area_id: int) -> bool:
 	if individual == null or individual.current_task == null or individual.current_task.is_finished():
 		return false
 	return int(individual.current_task.context.get(CONTEXT_WORK_AREA_ID, -1)) == area_id
+
+
+# Chiave di prenotazione di una roccia, come in collect_reserved_rocks (2026-10-23, DrawerOrderTargetService).
+static func rock_reservation_key(macro_coords: Vector2i, rock: Vector2i) -> String:
+	return _rock_key(macro_coords, rock)
 
 
 static func _rock_key(macro_coords: Vector2i, rock: Vector2i) -> String:

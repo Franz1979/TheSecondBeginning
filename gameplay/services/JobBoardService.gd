@@ -366,6 +366,31 @@ static var job_available_checker: Callable = Callable()
 # Callable() -> bool, registrato da GameScene (2026-10-09, coordinatore): la coda ha almeno un lavoro non bloccato.
 static var queue_has_jobs_checker: Callable = Callable()
 
+# --- Risposte di job_available_checker in memoria (2026-10-23, scatti: il coordinatore e "Cerca lavoro" facevano la
+# domanda per più pipottini nello stesso fotogramma, 25–70 ms l'una) ---
+# Una risposta vale fino a AVAILABILITY_MAX_AGE_MSEC e finché nessuno prende un lavoro (take_revision). La presa vera
+# (take_job) ricalcola sempre da capo: una risposta vecchia sposta solo una decisione di al massimo ~1,5 s. (Il
+# riscaldamento a turno su più fotogrammi, provato lo stesso giorno, è stato tolto su richiesta dell'utente: tanti
+# piccoli scatti invece di uno raro.)
+const AVAILABILITY_MAX_AGE_MSEC := 1500
+static var take_revision: int = 0
+static var _availability: Dictionary = {}  # id individuo -> {"result": bool, "time": int msec, "revision": int}
+
+
+# Risposta in memoria per `worker` (null se manca o non vale più).
+static func cached_availability(worker: HumanIndividual) -> Variant:
+	var entry: Variant = _availability.get(worker.id)
+	if entry == null or int(entry["revision"]) != take_revision \
+			or Time.get_ticks_msec() - int(entry["time"]) >= AVAILABILITY_MAX_AGE_MSEC:
+		return null
+	return bool(entry["result"])
+
+
+static func store_availability(worker: HumanIndividual, result: bool) -> void:
+	if _availability.size() > 512:
+		_availability.clear()
+	_availability[worker.id] = {"result": result, "time": Time.get_ticks_msec(), "revision": take_revision}
+
 
 static func queue_has_jobs() -> bool:
 	return queue_has_jobs_checker.is_valid() and bool(queue_has_jobs_checker.call())
@@ -633,5 +658,7 @@ static func take_job(worker: HumanIndividual, game_data: GameData, found: Dictio
 	var taken := (worker.current_task != null and worker.current_task != task_before) or worker.task_queue.size() > queue_size_before
 	var job_text := "%s %s" % [String(best["key"]), String(best["log_name"])]
 	if taken:
+		# Lavoro preso: le risposte in memoria di job_available_checker non valgono più (2026-10-23).
+		take_revision += 1
 		return {"taken": true, "log": "%s — preso %s — %s." % [found_text, job_text, String(pick["reason"])]}
 	return {"taken": false, "log": "%s — scelto %s — %s, ma rifiutato: passa alle attività di ripiego." % [found_text, job_text, String(pick["reason"])]}

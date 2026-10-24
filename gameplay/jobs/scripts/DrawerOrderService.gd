@@ -17,6 +17,8 @@ extends RefCounted
 # Nessuno la porta più (H, interruzione senza ripresa, serie fermata) o "Rimetti in coda" = l'ordine torna in coda con
 # quello che resta e la stessa zona (settle_zone_orders, return_order). Interruzione da bisogno (2026-10-09): l'ordine
 # resta a chi lo porta, nella sua coda personale, e lo riprende dopo il bisogno come gli altri lavori della lista.
+# Taglio ed estrazione non presi (2026-10-23): zona e pianta/roccia le sceglie l'ordine vicino al punto di assegnazione e
+# le tiene nei campi "target_*" finché valgono (DrawerOrderTargetService); tolti alla presa e al ritorno in coda.
 
 # "Produci" senza edificio: "recipe", "quantity", "deliver_to_warehouse"; l'edificio si sceglie alla presa.
 const TYPE_PRODUCE := "produce"
@@ -241,6 +243,8 @@ static func return_order(ctx: GameContext, order: Dictionary, end_if_zone_exhaus
 	order["count"] = remaining
 	order["taken"] = false
 	order["done_seen"] = 0
+	# Bersaglio scelto di nuovo alla prossima lettura della coda (2026-10-23, DrawerOrderTargetService).
+	DrawerOrderTargetService.clear_target(order)
 
 
 # Zone di lavoro con il lavoro del tipo d'ordine.

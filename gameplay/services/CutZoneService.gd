@@ -235,6 +235,16 @@ static func list_available_plants(
 static func choose_plant(
 	area: WorkArea, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary, yield_resource: String = ""
 ) -> Dictionary:
+	return choose_plant_from(area, live_cells, individual.home_macro_coords, individual.position, individual, reserved, yield_resource)
+
+
+# Come choose_plant, ma la distanza si misura da `origin_pos` (locale a `origin_macro`) invece che dal pipottino
+# (2026-10-23, bersaglio scelto dall'ordine: DrawerOrderTargetService, origine = punto di assegnazione). `individual`
+# solo per la raggiungibilità (null = nessun controllo).
+static func choose_plant_from(
+	area: WorkArea, live_cells: Dictionary, origin_macro: Vector2i, origin_pos: Vector2, individual: HumanIndividual,
+	reserved: Dictionary, yield_resource: String = ""
+) -> Dictionary:
 	var available := list_available_plants(area, live_cells, individual, reserved, yield_resource)
 	if available.is_empty():
 		return {}
@@ -244,13 +254,13 @@ static func choose_plant(
 		if parts.size() == 6 and int(parts[0]) == area.macro_coords.x and int(parts[1]) == area.macro_coords.y:
 			var lot := Vector2i(int(parts[3]), int(parts[4]))
 			reserved_by_lot[lot] = int(reserved_by_lot.get(lot, 0)) + 1
-	var offset := HaulZoneService.macro_offset_for(individual, area.macro_coords)
+	var offset := Vector2(area.macro_coords - origin_macro) * World.WIDTH
 	var best: Dictionary = {}
 	var best_score := INF
 	for plant in available:
 		var individual_key: Vector3i = plant["individual_key"]
 		var lot := Vector2i(individual_key.x, individual_key.y)
-		var score := individual.position.distance_to(Vector2(lot) + Vector2(0.5, 0.5) + offset)
+		var score := origin_pos.distance_to(Vector2(lot) + Vector2(0.5, 0.5) + offset)
 		for dy in range(-1, 2):
 			for dx in range(-1, 2):
 				score += NEIGHBOR_RESERVED_PENALTY * float(reserved_by_lot.get(lot + Vector2i(dx, dy), 0))
@@ -280,12 +290,18 @@ static func choose_work_area(
 		_chosen_area_frame = frame
 	var cache_key := [individual.get_instance_id(), reserved.hash(), yield_resource]
 	if not _chosen_area_cache.has(cache_key):
-		_chosen_area_cache[cache_key] = _choose_work_area(game_data, live_cells, individual, reserved, yield_resource)
+		_chosen_area_cache[cache_key] = choose_work_area_from(
+			game_data, live_cells, individual.home_macro_coords, individual.position, individual, reserved, yield_resource
+		)
 	return _chosen_area_cache[cache_key]
 
 
-static func _choose_work_area(
-	game_data: GameData, live_cells: Dictionary, individual: HumanIndividual, reserved: Dictionary, yield_resource: String
+# Come choose_work_area, ma la distanza si misura da `origin_pos` (locale a `origin_macro`) e senza memoria (2026-10-23,
+# bersaglio scelto dall'ordine). `individual` solo per raggiungibilità e affollamento (null = nessun controllo, tutti
+# contano per l'affollamento).
+static func choose_work_area_from(
+	game_data: GameData, live_cells: Dictionary, origin_macro: Vector2i, origin_pos: Vector2, individual: HumanIndividual,
+	reserved: Dictionary, yield_resource: String = ""
 ) -> WorkArea:
 	var best: WorkArea = null
 	var best_score := -1.0
@@ -293,8 +309,8 @@ static func _choose_work_area(
 		var available := list_available_plants(area, live_cells, individual, reserved, yield_resource).size()
 		if available <= 0:
 			continue
-		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + HaulZoneService.macro_offset_for(individual, area.macro_coords)
-		var score := float(available) / (individual.position.distance_to(center) + ZONE_DISTANCE_OFFSET)
+		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - origin_macro) * World.WIDTH
+		var score := float(available) / (origin_pos.distance_to(center) + ZONE_DISTANCE_OFFSET)
 		for other in GameSettings.active_human_individuals:
 			if other != individual and is_cutting_in(other, area.id):
 				score *= ZONE_CROWDING_FACTOR
@@ -333,6 +349,11 @@ static func list_subtype_names(object_type: GameTypes.WorldObjectType) -> Array[
 	for rule in ResourceCalculator.get_subtype_rules(object_type):
 		names.append(String(rule.subtype_name))
 	return names
+
+
+# Chiave di prenotazione di una pianta, come in collect_reserved_plants (2026-10-23, DrawerOrderTargetService).
+static func plant_reservation_key(macro_coords: Vector2i, object_type: int, individual_key: Vector3i) -> String:
+	return _plant_reservation_key(macro_coords, object_type, individual_key)
 
 
 static func _plant_reservation_key(macro_coords: Vector2i, object_type: int, individual_key: Vector3i) -> String:

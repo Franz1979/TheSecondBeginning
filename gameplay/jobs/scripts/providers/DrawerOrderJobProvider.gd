@@ -202,6 +202,8 @@ static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary,
 		microcell = area.rect.position + area.rect.size / 2
 	# Ordine creato dal magazzino (2026-10-11): magazzino nell'angolo dell'icona della riga.
 	var from_warehouse := order.has(StockRequestService.ORDER_KEY)
+	# Prima della voce: per taglio/estrazione sceglie anche il bersaglio dell'ordine, letto da reach_target.
+	var blocked_reason := "" if is_assigned else zone_blocked_reason(ctx, order_type, zone_id, area, order)
 	return {
 		"key": JobBoardService.drawer_order_key(order_id), "kind": order_type, "name": row_name,
 		"warehouse": from_warehouse, "progress": progress,
@@ -210,11 +212,13 @@ static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary,
 		"icon": {"command": icon_key}, "macro": macro, "microcell": microcell,
 		# Raggiungibilità vera nel controllo di idoneità (zona e bersaglio per chi lo prende): qui un bersaglio fuori dalla
 		# macrocella, che PathfindingService.reachability_for dà sempre per raggiungibile.
-		"reach_target": {"macro_x": -1, "macro_y": -1, "micro_x": 0, "micro_y": 0},
+		# Taglio/estrazione (2026-10-23): il bersaglio scelto dall'ordine (DrawerOrderTargetService, scelto in
+		# zone_blocked_reason qui sotto), così la raggiungibilità la controlla find_takeable_jobs; senza bersaglio, come prima.
+		"reach_target": DrawerOrderTargetService.reach_target(order),
 		"entry_kind": "work_area" if area != null else "drawer_order", "id": area.id if area != null else order_id,
 		"sort": float(order_id) + float(DrawerOrderService.ZONE_JOB_SORT_OFFSET.get(order_type, 4500000.0)),
 		"assigned": is_assigned, "hidden": false,
-		"blocked_reason": "" if is_assigned else zone_blocked_reason(ctx, order_type, zone_id, area, order),
+		"blocked_reason": blocked_reason,
 		"target": area, "provider": provider, "order": order,
 	}
 
@@ -242,6 +246,10 @@ static func zone_blocked_reason(ctx: GameContext, order_type: String, zone_id: i
 	var tool_reason := ToolFetchService.blocked_reason(ctx, DrawerOrderService.tool_categories(order_type), order_type)
 	if tool_reason != "":
 		return tool_reason
+	# Taglio/estrazione di un ordine non preso (2026-10-23): valido se l'ordine ha (o trova) il suo bersaglio
+	# (DrawerOrderTargetService), invece del giro su tutte le zone.
+	if DrawerOrderTargetService.uses_order_target(order_type) and order.has("id") and not bool(order.get("taken", false)):
+		return "" if DrawerOrderTargetService.ensure_target(ctx, order) else GameContext.tr_text("drawer_cut_no_valid_zone")
 	var areas := DrawerOrderService.zone_areas(ctx.game_data, order_type)
 	var reserved := DrawerOrderService.zone_reserved(ctx.individuals, order_type)
 	if zone_id >= 0:
@@ -302,6 +310,23 @@ static func pick_zone_target(ctx: GameContext, worker: HumanIndividual, job: Dic
 	return {"area": area, "plant": plant}
 
 
+# Chiave di prova (JobBoardService.find_takeable_jobs: stessa chiave = stessa idoneità per lo stesso pipottino). Ordini di
+# zona (2026-10-23, scatti: il coordinatore rifaceva la stessa scelta di zona e bersaglio per ogni ordine uguale): la
+# forma dell'ordine, cioè i soli campi letti da zone_rejection — tipo, zona, scelta della raccolta e viaggi, risorsa
+# voluta del taglio. Gli altri ordini: la loro chiave, come prima.
+static func probe_key(job: Dictionary) -> String:
+	var order: Dictionary = job["order"]
+	var order_type := String(order.get("type", ""))
+	if not DrawerOrderService.is_zone_order_type(order_type):
+		return String(job["key"])
+	# Taglio/estrazione (2026-10-23): anche il bersaglio scelto dall'ordine, che entra nella task di prova.
+	return "zone|%s|%d|%d|%d|%s|%s|%d|%s" % [
+		order_type, int(order.get("zone_id", -1)), int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)),
+		int(order.get("criterion_category", -1)), String(order.get("resource_name", "")), DrawerOrderService.order_cut_yield(order),
+		maxi(int(order.get("count", 1)), 1), DrawerOrderTargetService.target_signature(order),
+	]
+
+
 # Idoneità: ordine di zona (zone_rejection), "transport" (transport_rejection), "Produci" come gli ordini dei pannelli — la Produce Task di prova sull'edificio scelto passa il
 # controllo di età/energia, e ogni attrezzo che l'Attrezzeria di quell'edificio non copre il pipottino ce l'ha o può
 # prenderlo in deposito.
@@ -344,7 +369,10 @@ static func zone_rejection(ctx: GameContext, worker: HumanIndividual, job: Dicti
 	if order_type == DrawerOrderService.TYPE_HUNT and ToolFetchService.member_missing_categories(worker, categories).is_empty() \
 			and HuntZoneService.get_hunt_rejection(worker) != "":
 		return "coltello o arma mancanti, o cintura piena"
-	var pick := pick_zone_target(ctx, worker, job)
+	# Taglio/estrazione (2026-10-23): il bersaglio scelto dall'ordine (DrawerOrderTargetService), uguale per tutti; la
+	# raggiungibilità la controlla find_takeable_jobs con reach_target. Raccolta/caccia: zona scelta per lui, come prima.
+	var pick := DrawerOrderTargetService.get_pick(ctx, order) if DrawerOrderTargetService.uses_order_target(order_type) \
+		else pick_zone_target(ctx, worker, job)
 	if pick.is_empty():
 		return "nessuna zona valida"
 	var area: WorkArea = pick["area"]

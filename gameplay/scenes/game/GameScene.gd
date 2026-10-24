@@ -8958,7 +8958,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		# Ordini creati dal cassetto (2026-10-09): GameData.drawer_orders, vedi DrawerOrderJobProvider.
 		_job_board_provider_list.append({
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return DrawerOrderJobProvider.collect(_game_context(), provider, assigned),
-			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"probe_key": func(job: Dictionary) -> String: return DrawerOrderJobProvider.probe_key(job),
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return DrawerOrderJobProvider.rejection(_game_context(), worker, job),
 			"assign": _assign_drawer_order_job,
 			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return DrawerOrderJobProvider.workers(_game_context(), job),
@@ -9193,7 +9193,17 @@ func _current_job_board_candidates() -> Dictionary:
 	return _job_board_candidates_cache
 
 
+# Con la risposta in memoria se ancora valida (2026-10-23, JobBoardService.cached_availability), altrimenti calcolata.
 func _has_listed_job_for(worker: HumanIndividual) -> bool:
+	var cached: Variant = JobBoardService.cached_availability(worker)
+	if cached != null:
+		return bool(cached)
+	var result := _compute_listed_job_for(worker)
+	JobBoardService.store_availability(worker, result)
+	return result
+
+
+func _compute_listed_job_for(worker: HumanIndividual) -> bool:
 	return not (_takeable_jobs_for(worker, false).get("jobs", []) as Array).is_empty()
 
 
@@ -10072,7 +10082,13 @@ func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var order_id := int(order["id"])
 	if DrawerOrderService.find(game_data, order_id).is_empty() or bool(order.get("taken", false)):
 		return
-	var pick := DrawerOrderJobProvider.pick_zone_target(_game_context(), worker, job)
+	# Taglio/estrazione (2026-10-23): il bersaglio scelto dall'ordine (DrawerOrderTargetService); raccolta/caccia come prima.
+	var pick: Dictionary = {}
+	if DrawerOrderTargetService.uses_order_target(order_type):
+		if DrawerOrderTargetService.ensure_target(_game_context(), order):
+			pick = DrawerOrderTargetService.get_pick(_game_context(), order)
+	else:
+		pick = DrawerOrderJobProvider.pick_zone_target(_game_context(), worker, job)
 	if pick.is_empty():
 		return
 	var area: WorkArea = pick["area"]
@@ -10112,6 +10128,8 @@ func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 			order["taken"] = true
 			order["started"] = true
 			order["done_seen"] = 0
+			# Da qui il bersaglio lo prenota la CutAction/QuarryAction del pipottino (2026-10-23).
+			DrawerOrderTargetService.clear_target(order)
 			# L'avviso "nessuna preda" sparisce quando l'ordine riprende.
 			order.erase(HuntOrderService.NO_PREY_KEY)
 			var job_keys: Array[String] = [String(job["key"])]
