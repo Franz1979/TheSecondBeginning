@@ -64,9 +64,10 @@ static var _log_info: Dictionary = {}  # id individuo -> {"coordinator": bool, "
 static var _last_now: float = -1.0
 
 
-# Un giorno sarà il ruolo "coordinatore"; per ora chiunque.
-static func can_coordinate(_individual: HumanIndividual) -> bool:
-	return true
+# Un giorno sarà il ruolo "coordinatore"; per ora chiunque non malato (2026-10-24, HumanIndividual.is_sick). Chi si
+# ammala mentre coordina finisce comunque il turno.
+static func can_coordinate(individual: HumanIndividual) -> bool:
+	return not individual.is_sick()
 
 
 static func is_valid_point(building: Building) -> bool:

@@ -24,6 +24,7 @@ conception_base_probability = 0.5
 childbirth_survival_child_base_probability = 0.995
 childbirth_survival_mother_base_probability = 0.9999
 stamina_multiplier_by_age = Array[float]([0.0, 0.4, 0.6, 1.0, 1.0, 0.7])
+health_multiplier_by_age = Array[float]([0.5, 0.7, 1.0, 1.0, 0.8, 0.6])
 spontaneous_rite_max_distance = 40.0
 idea_culture_gain_fraction = 0.5
 accepted_adult_political_gain = 10.0

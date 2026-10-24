@@ -990,6 +990,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.max_thirst = float(individual_data.get("max_thirst", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.current_health = float(individual_data.get("current_health", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.max_health = float(individual_data.get("max_health", HumanIndividual.FALLBACK_MAX_VITAL))
+			individual.illness_id = String(individual_data.get("illness_id", ""))
+			individual.illness_days_remaining = int(individual_data.get("illness_days_remaining", 0))
 			individual.current_happiness = float(individual_data.get("current_happiness", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.max_happiness = float(individual_data.get("max_happiness", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.current_loyalty = float(individual_data.get("current_loyalty", HumanIndividual.FALLBACK_MAX_VITAL))

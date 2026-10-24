@@ -55,6 +55,9 @@ signal resource_retrieved(resource_name: String, building: Building, quantity: i
 #     produzione) lo rende uno step vuoto, completato subito.
 const CONTEXT_DELIVER_TO_WAREHOUSE := "production_deliver_to_warehouse"
 const CONTEXT_PRODUCED_COUNT := "production_produced_count"
+# Modalità "cintura" col pezzo più pieno (2026-10-24, munizioni per la caccia — ToolFetchService.start_fetch): true = esce
+# l'unità con più usi rimasti invece della più consumata (BuildingStorageService.withdraw_tool_units, fullest_first).
+const CONTEXT_EQUIP_FULLEST := "equip_fullest"
 
 var target_building: Building = null
 var resource_name: String = ""
@@ -308,7 +311,7 @@ func _complete_retrieve(individual: Variant, context: Dictionary) -> void:
 		_complete_delivery(individual, context)
 		return
 	if equip_slot_index >= 0:
-		_complete_equip(individual)
+		_complete_equip(individual, bool(context.get(CONTEXT_EQUIP_FULLEST, false)))
 		return
 	if ToolInstance.uses_instances(resource_name):
 		_complete_tool_retrieve(individual)
@@ -361,13 +364,13 @@ func _complete_delivery(individual: Variant, context: Dictionary) -> void:
 	}
 
 
-func _complete_equip(individual: Variant) -> void:
+func _complete_equip(individual: Variant, fullest_first: bool = false) -> void:
 	var slot: int = _find_equip_slot(individual)
 	if slot == -1:
 		return
 	# Usi residui conservati (2026-09-26, attrezzi come istanze): esce l'unità più consumata del
-	# magazzino, con il suo stato, e rientra con lo stesso stato se la cintura la rifiuta.
-	var units: Array = BuildingStorageService.withdraw_tool_units(target_building, resource_name, 1)
+	# magazzino (la più piena con `fullest_first`), con il suo stato, e rientra con lo stesso stato se la cintura la rifiuta.
+	var units: Array = BuildingStorageService.withdraw_tool_units(target_building, resource_name, 1, fullest_first)
 	if units.is_empty():
 		return
 	var equipped: bool = false

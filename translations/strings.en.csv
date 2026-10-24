@@ -417,13 +417,15 @@ building_construction_phase_clear_site,Clearing site
 building_construction_phase_build,Building
 building_awaiting_material_build_label,"Still needed to complete construction: {list}"
 transport_selection_banner_text,"🚚 Transport: select the destination building (H to cancel)"
-debug_idle_fallback_button_tooltip,"Toggle automatic assignment of idle-time tasks (Wandering, Explore, Playing, Leisure rest, Daydreaming, Restocking, Spontaneous rite) to free individuals"
+debug_sick_button_tooltip,Makes the selected individual sick (health 500) or heals them (full health)
 random_event_test_name,Test event
 random_event_test_popup,Test event (day {day}): the event system works.
+random_event_illness_name,Illness
+random_event_illness_popup,{name} falls ill ({illness}): they must rest until they recover.
+illness_fever,fever
+individual_health_sick_suffix,unwell
 debug_random_event_apply,Apply event
 debug_random_event_apply_tooltip,Trigger the chosen event now
-debug_idle_fallback_on,Idle fallback: ON
-debug_idle_fallback_off,Idle fallback: OFF
 category_name_food,Food
 category_name_raw_material,Raw materials
 category_name_medicinal,Medicinal
@@ -544,6 +546,7 @@ tool_gate_hunt_weapon_examples,(e.g. {tools})
 task_reject_too_young,{name} is too young to {activity}.
 task_reject_age_not_allowed,{name} is not the right age to {activity}.
 task_reject_low_stamina,{name} does not have enough energy to {activity}: rest first.
+task_reject_sick,{name} is too weak to {activity}: sick and must rest.
 task_reject_generic,{name} cannot {activity} right now.
 task_activity_hunt,go hunting
 task_activity_produce,produce

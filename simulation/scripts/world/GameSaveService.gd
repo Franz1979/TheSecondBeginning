@@ -676,6 +676,9 @@ func save_game_to_json(
 				"max_thirst": individual.max_thirst,
 				"current_health": individual.current_health,
 				"max_health": individual.max_health,
+				# Malattia in corso (2026-10-24, IllnessService).
+				"illness_id": individual.illness_id,
+				"illness_days_remaining": individual.illness_days_remaining,
 				"current_happiness": individual.current_happiness,
 				"max_happiness": individual.max_happiness,
 				"current_loyalty": individual.current_loyalty,

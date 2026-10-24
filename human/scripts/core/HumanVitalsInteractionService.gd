@@ -95,6 +95,7 @@ const FALLBACK_STAMINA_DAILY_HAPPINESS_GAIN: float = 30.0
 const FALLBACK_STAMINA_DAILY_HAPPINESS_LOSS: float = 30.0
 const FALLBACK_HEALTH_DAILY_HAPPINESS_GAIN: float = 10.0
 const FALLBACK_HEALTH_DAILY_HAPPINESS_LOSS: float = 20.0
+const FALLBACK_SICK_DAILY_HAPPINESS_LOSS: float = 50.0
 const FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY: float = 5.0
 # Senza vestiario, senza HumanRules risolvibile: gli stessi default dei campi di HumanRules.
 const FALLBACK_MISSING_BODY_APPAREL_DELTA: Array[float] = [-4.0, 0.0, 0.0, -2.0]
@@ -118,6 +119,12 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 	individual.current_happiness = _add_clamped(individual.current_happiness, home_happiness, individual.max_happiness)
 
 	var apparel_delta := _apply_apparel_bonuses(individual)
+	# Malattia in corso (2026-10-24, IllnessService): la salute del giorno e un giorno in meno; letta per il log PRIMA,
+	# perché a fine durata la malattia sparisce.
+	var illness_log := ""
+	if individual.illness_id != "":
+		illness_log = "%s (%d gg)" % [individual.illness_id, individual.illness_days_remaining]
+		illness_log += " -%.1f" % IllnessService.advance_daily(individual)
 
 	var body_reserve_full: bool = individual.body_calories >= individual.body_calories_capacity - BODY_RESERVE_FULL_EPSILON
 	individual.current_health = _add_clamped(
@@ -139,6 +146,11 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 	individual.current_happiness = _add_clamped(
 		individual.current_happiness, health_gain if individual.current_health > health_threshold else -health_loss, individual.max_happiness
 	)
+	# Malato (2026-10-24, richiesta utente — HumanIndividual.is_sick): − HumanRules.sick_daily_happiness_loss in più,
+	# oltre alla regola 3 (altrimenti il bonus della stamina piena di chi riposa lo rendeva più felice).
+	if individual.is_sick():
+		var sick_loss: float = human_rules.sick_daily_happiness_loss if human_rules != null else FALLBACK_SICK_DAILY_HAPPINESS_LOSS
+		individual.current_happiness = _add_clamped(individual.current_happiness, -sick_loss, individual.max_happiness)
 
 	if has_home and InfluenceService.is_house_covered(individual.house_id, InfluenceService.InfluenceType.CULTURAL):
 		var happiness_bonus: float = human_rules.cultural_coverage_daily_happiness if human_rules != null else FALLBACK_CULTURAL_COVERAGE_DAILY_HAPPINESS
@@ -169,8 +181,10 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 
 	if not DebugLogging.ENABLED or not DebugLogging.SHOW_VITALS_INTERACTION_LOGS:
 		return
-	print("[VITALS INTERACTION] #%d %s: casa=%s | vestiario: salute %+.1f, felicità %+.1f | riserva_corpo=%.1f/%.1f | stamina=%.1f/soglia=%.1f | health %.1f -> %.1f (soglia=%.1f) | happiness %.1f -> %.1f | loyalty %.1f -> %.1f" % [
-		individual.id, individual.name, str(has_home), apparel_delta.x, apparel_delta.y, individual.body_calories, individual.body_calories_capacity,
+	if DebugLogging.VITALS_INTERACTION_LOG_ONLY_ILL and illness_log == "":
+		return
+	print("[VITALS INTERACTION] #%d %s: malato=%s malattia=%s | casa=%s | vestiario: salute %+.1f, felicità %+.1f | riserva_corpo=%.1f/%.1f | stamina=%.1f/soglia=%.1f | health %.1f -> %.1f (soglia=%.1f) | happiness %.1f -> %.1f | loyalty %.1f -> %.1f" % [
+		individual.id, individual.name, str(individual.is_sick()), illness_log if illness_log != "" else "-", str(has_home), apparel_delta.x, apparel_delta.y, individual.body_calories, individual.body_calories_capacity,
 		individual.current_stamina, stamina_threshold,
 		health_before, individual.current_health, health_threshold,
 		happiness_before, individual.current_happiness, loyalty_before, individual.current_loyalty

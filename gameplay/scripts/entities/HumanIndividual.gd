@@ -282,6 +282,10 @@ var current_thirst: float = 0.0
 var max_thirst: float = 0.0
 var current_health: float = 0.0
 var max_health: float = 0.0
+# Malattia in corso (2026-10-24, IllnessService): id di IllnessRules ("" = nessuna) e giorni che restano (il giocatore
+# non li vede). Salvati con la partita.
+var illness_id: String = ""
+var illness_days_remaining: int = 0
 var current_happiness: float = 0.0
 var max_happiness: float = 0.0
 var current_loyalty: float = 0.0
@@ -891,6 +895,26 @@ const ASSIGN_REJECT_TOO_YOUNG := "too_young"
 # Fascia d'età non ammessa per altri motivi: vietata da uno step ma non giovane, oppure esclusa da
 # Task.allowed_age_bands (es. Play solo per bambini).
 const ASSIGN_REJECT_AGE_NOT_ALLOWED := "age_not_allowed"
+# Malato (2026-10-24, is_sick): sono ammesse solo le Task-bisogno.
+const ASSIGN_REJECT_SICK := "sick"
+
+# Malato (2026-10-24, richiesta utente): soglia senza HumanRules risolvibile, stesso default di
+# HumanRules.sick_health_threshold.
+const FALLBACK_SICK_HEALTH_THRESHOLD: float = 1000.0
+# Task-bisogno senza priorità di interruzione che un malato può ricevere: riposo lungo (leisure_rest) e
+# provviste del tasto F (leisure_restock, leisure_restock_backpack). Riconosciute dal task_name.
+const SICK_ALLOWED_TASK_NAMES: Array[String] = ["task_leisure_rest_name", "task_leisure_restock_name"]
+
+
+# Malattia in corso (IllnessService) oppure salute sotto HumanRules.sick_health_threshold: solo bisogni (riposo, provviste), nessun lavoro, svago, rito o
+# comando diretto (vedi get_assign_rejection_reason). Il compito già in corso si finisce.
+func is_sick() -> bool:
+	if illness_id != "":
+		return true
+	var threshold := FALLBACK_SICK_HEALTH_THRESHOLD
+	if folk_ref != null and folk_ref.human_rules_ref != null:
+		threshold = folk_ref.human_rules_ref.sick_health_threshold
+	return current_health < threshold
 
 
 # Stessi controlli (e stessi log [TASK GUARD]) di sempre, nello stesso ordine, ma restituisce il MOTIVO
@@ -917,6 +941,17 @@ func get_assign_rejection_reason(task: Task, age_band: HumanTypes.AgeBand) -> St
 					id, name, current_stamina, max_stamina, task.task_name
 				])
 			return ASSIGN_REJECT_LOW_STAMINA
+	# Malato (2026-10-24): stesse Task-bisogno della soglia di stamina sopra, più riposo lungo e provviste del tasto F.
+	if is_sick() and not [
+		HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_REST,
+		HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_RESTOCK,
+		HumanIndividualActionService.INTERRUPT_PRIORITY_REST,
+	].has(task.interrupt_priority) and not SICK_ALLOWED_TASK_NAMES.has(task.task_name):
+		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+			print("[TASK GUARD] Individuo #%d %s: malato (salute %.1f) — solo Task-bisogno ammesse, '%s' rifiutata." % [
+				id, name, current_health, task.task_name
+			])
+		return ASSIGN_REJECT_SICK
 	for step in task.steps:
 		if step.disallowed_age_bands.has(age_band):
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:

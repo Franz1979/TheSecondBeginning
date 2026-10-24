@@ -88,7 +88,7 @@ const SHOW_DAILY_TIMING_LOGS := false
 # Riacceso il 2026-10-03 (richiesta utente — diagnostica del rallentamento sulla raccolta): la riga [VEG REFRESH
 # TIMING] ora dice anche chi ha chiesto il ridisegno (motivo=...). Rispento il 2026-10-04 (richiesta utente): il codice
 # delle misure resta, basta rimettere true.
-const SHOW_VEGETATION_REFRESH_TIMING_LOGS := true
+const SHOW_VEGETATION_REFRESH_TIMING_LOGS := false
 
 # Progetto B fase 2a (2026-10-24, richiesta utente: spento di default): a ogni taglio aggiornato per lotto rifà anche la
 # lettura completa della vegetazione e i pesi dei frutti, e avvisa ([CUT PATCH]) se differiscono. Costa quanto prima.
@@ -163,7 +163,10 @@ const SHOW_VITALS_RECALC_LOGS := false
 # due regole scatta comunque in un verso o nell'altro, quindi la riga è sempre stampata per ognuno,
 # non solo quando cambia qualcosa). A false: nessun comportamento di simulazione cambia, solo il
 # print viene soppresso.
-const SHOW_VITALS_INTERACTION_LOGS := false
+const SHOW_VITALS_INTERACTION_LOGS := true
+# Riga [VITALS INTERACTION] solo per chi ha una malattia in corso (2026-10-24, prova dell'evento malattia), compreso il
+# giorno in cui guarisce; false = tutti.
+const VITALS_INTERACTION_LOG_ONLY_ILL := true
 
 # Filtro dedicato per [SELECTED PANEL REFRESH] (GameScene._on_day_advanced, refresh giornaliero del
 # pannello individuo selezionato) — riga diretta (stesso stile di SHOW_STAMINA_RECALC_LOGS sopra:
@@ -321,7 +324,7 @@ const SHOW_UNLOAD_PROGRESS_LOGS := false
 # RecoverWeaponAction), quale Task/step la consuma, la ricezione in GameScene (e il rifiuto se la carcassa ha già
 # una macellazione in corso o in coda), l'accodamento, e [BUTCHER] a macellazione compiuta. Ogni riga ha anno,
 # giorno e frame del motore (HuntService.describe_now).
-const SHOW_HUNT_LOGS := false
+const SHOW_HUNT_LOGS := true
 # Intervallo tra due righe di avvicinamento, in GIORNI DI GIOCO (1 giorno = 8 s reali a 1x): 0.125 =
 # circa una riga al secondo a velocità 1x.
 const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
@@ -428,7 +431,7 @@ const SHOW_JOB_BOARD_LOGS := false
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per
 # voce) e un riepilogo al secondo (chiamanti, liste rifatte, picco del fotogramma). Acceso per la misura; solo log.
-const SHOW_JOB_BOARD_TIMING_LOGS := false
+const SHOW_JOB_BOARD_TIMING_LOGS := true
 
 # "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
 # quando la sua riga compare o cambia (task attiva, testo, coda o diretto e perché, chiavi del context). Solo log.

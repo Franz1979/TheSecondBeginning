@@ -246,6 +246,9 @@ static func _spontaneous_rite_max_distance(individual: HumanIndividual) -> float
 static func can_celebrate(rules: RiteRules, individual: HumanIndividual, age_band: int) -> bool:
 	if rules == null or individual == null:
 		return false
+	# Malato (2026-10-24, HumanIndividual.is_sick): non celebra né insegna.
+	if individual.is_sick():
+		return false
 	if not rules.allowed_age_bands.is_empty() and not rules.allowed_age_bands.has(age_band):
 		return false
 	# Lezione (2026-10-16): insegna chi ha una skill insegnabile abbastanza alta (TeachingRiteService.can_teach).

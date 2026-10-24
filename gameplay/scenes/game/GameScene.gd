@@ -591,11 +591,6 @@ func _ready() -> void:
 	# solo il pannello che lo mostra e' cambiato.
 	debug_bar.set_slot_toggled(0, flora_daily_updates_enabled)
 	debug_bar.set_slot_toggled(1, animals_visible)
-	# Toggle "Perditempo" (2026-09-16, richiesta utente) — stato SOLO di sessione (IdleTaskAssignmentService.
-	# fallback_enabled, mai letto da GameSettings/un salvataggio): riparte sempre acceso ad ogni
-	# avvio, questa riga si limita a riflettere nel testo del bottone il default con cui la classe è
-	# già stata caricata, stesso principio delle due righe sopra per flora/animali.
-	debug_bar.set_idle_fallback_label(IdleTaskAssignmentService.fallback_enabled)
 	# daydream_step_appended_connector (2026-09-16, richiesta utente, "Daydreaming nel fallback
 	# perditempo") — IdleTaskAssignmentService è uno stateless service senza riferimento alla scena:
 	# non può chiamare da sé _reconnect_unload_action_signals (side-effect UI: refresh griglia
@@ -13090,18 +13085,28 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			_on_macro_cell_debug_pressed()
 		&"advance_year":
 			_on_advance_year_pressed()
-		&"toggle_idle_fallback":
-			# Interruttore GLOBALE del fallback perditempo (2026-09-16, richiesta utente) — SOLO
-			# stato di sessione su IdleTaskAssignmentService (mai GameSettings/un salvataggio, a
-			# differenza di toggle_animals_visibility/toggle_flora_updates sopra): set_fallback_
-			# enabled stampa già il log [IDLE FALLBACK], questa riga si limita a rispecchiare il
-			# nuovo stato nel testo del bottone.
-			IdleTaskAssignmentService.set_fallback_enabled(not IdleTaskAssignmentService.fallback_enabled)
-			debug_bar.set_idle_fallback_label(IdleTaskAssignmentService.fallback_enabled)
+		# Malato (2026-10-24, richiesta utente): fa ammalare o guarire l'individuo selezionato.
+		&"toggle_sick":
+			_debug_toggle_sick()
 		# Gruppi di visitatori (2026-09-27): spawn di prova; l'esito si sceglie nel popup di decisione.
 		&"visitor_spawn":
 			_debug_spawn_visitor_party()
 
+
+# Pulsante 🤒 della barra di debug (2026-10-24, richiesta utente): l'individuo selezionato, se sano, scende a
+# DEBUG_SICK_HEALTH (malato, coda liberata subito invece che al giorno dopo); se malato torna a salute piena.
+const DEBUG_SICK_HEALTH: float = 500.0
+
+
+func _debug_toggle_sick() -> void:
+	if individual == null:
+		return
+	if individual.is_sick():
+		individual.current_health = individual.max_health
+	else:
+		individual.current_health = DEBUG_SICK_HEALTH
+		SicknessService.release_queued_tasks(individual, human_individuals)
+	_refresh_selected_individual_panel()
 
 # Tasto 🛖 nel sottomenu costruzione di BuildBar — per ora SOLO l'anteprima visiva (vedi
 # BuildingGhost/_building_ghost), toggle on/off allo stesso click: nessun piazzamento reale,

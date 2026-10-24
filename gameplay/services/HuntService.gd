@@ -112,41 +112,70 @@ static func compute_hit_chance(attack_power: float, skill_factor: float, species
 # --- Arma della caccia (2026-09-27, richiesta utente — scelta dell'arma) ---
 # Una sola arma per tutta la caccia, salvata in Task.context[CONTEXT_HUNT_WEAPON] (nome della risorsa): la usano
 # avvicinamento (gittata), mira, lancio (gittata, attacco, usura), log e recupero. Scelta con choose_weapon: tra gli
-# attrezzi della categoria IN CINTURA (lo zaino non conta), quello con la probabilità di colpire più alta contro la
-# preda (compute_hit_chance); a parità, quello con più usi rimasti. Se l'arma salvata non è più in cintura (persa,
-# rotta), resolve_weapon sceglie di nuovo con la stessa regola; nessuna arma = "" (la caccia si chiude come prima).
+# attrezzi della categoria IN CINTURA (lo zaino non conta), quello con l'efficacia più alta (weapon_score, attacco ×
+# gittata, la stessa regola della scelta in deposito — dal 2026-10-24; prima la probabilità di colpire); a parità, quello
+# con più usi rimasti. Se l'arma salvata non è più in cintura (persa, rotta, senza munizioni), resolve_weapon sceglie di
+# nuovo con la stessa regola; nessuna arma = "" (la caccia si chiude come prima).
 const CONTEXT_HUNT_WEAPON := "hunt_weapon"
 
 
-# Migliore arma in cintura della categoria contro la preda `species`/`age_band` (vedi sopra). "" se nessuna. Con
-# species "" o age_band -1 i fattori della preda valgono 1: il confronto resta sull'attacco dell'arma.
-static func choose_weapon(individual: Variant, category: TaskTypes.ToolCategory, species: String, age_band: int) -> String:
+# Migliore arma in cintura della categoria (vedi sopra). "" se nessuna. Abilità del cacciatore e preda
+# (`species`/`age_band`, tenuti nella firma per i chiamanti) non contano: moltiplicano allo stesso modo tutte le armi,
+# quindi non cambiano la classifica; contano nel tiro (compute_hit_chance in ThrowAction).
+# Tempi (2026-10-25, solo misura — JobBoardTimingService, con SHOW_JOB_BOARD_TIMING_LOGS): voce "caccia: arma (scelta)".
+static func choose_weapon(individual: Variant, category: TaskTypes.ToolCategory, _species: String, _age_band: int) -> String:
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var best_name := ""
-	var best_chance := -1.0
+	var best_score := -1.0
 	var best_uses := -1
-	var skill_factor := SkillEffectService.get_factor(SKILL_EFFECT_KEY, individual)
 	for slot in range(individual.get_tool_slot_count()):
 		var tool_name: String = individual.get_equipped_tool(slot)
 		if tool_name == "" or not ToolGateService._tool_categories(tool_name).has(category):
 			continue
-		# Armi a munizioni (2026-10-04): senza la sua munizione in cintura non è sceglibile; la forza è quella della munizione.
+		# Armi a munizioni (2026-10-04): senza la sua munizione in cintura non è sceglibile; l'attacco è quello della
+		# munizione che tirerà (la più consumata, ToolGateService.find_ammo_slot).
 		if not ToolGateService.has_required_ammo(individual, tool_name):
 			continue
-		var chance := compute_hit_chance(get_attack_power(individual, tool_name), skill_factor, species, age_band)
+		var score := _belt_weapon_score(individual, tool_name)
 		var uses: int = individual.get_equipped_tool_uses(slot)
-		if chance > best_chance + 0.000001 or (absf(chance - best_chance) <= 0.000001 and uses > best_uses):
+		if score > best_score + 0.000001 or (absf(score - best_score) <= 0.000001 and uses > best_uses):
 			best_name = tool_name
-			best_chance = chance
+			best_score = score
 			best_uses = uses
+	if timing:
+		JobBoardTimingService.add("caccia: arma (scelta)", started)
 	return best_name
+
+
+# weapon_score di un'arma in cintura, con la munizione in uso se ne richiede una.
+static func _belt_weapon_score(individual: Variant, weapon_name: String) -> float:
+	var rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
+	if rules == null or rules.required_ammo_category < 0:
+		return weapon_score(weapon_name)
+	var ammo_slot := ToolGateService.find_ammo_slot(individual, rules.required_ammo_category)
+	return weapon_score(weapon_name, individual.get_equipped_tool(ammo_slot) if ammo_slot != -1 else "")
 
 
 # Arma della caccia per questo step: quella salvata nel context se è ancora in cintura, altrimenti una nuova scelta
 # (salvata nel context, con un log se cambia). "" = nessuna arma della categoria in cintura.
+# Tempi (2026-10-25, solo misura — JobBoardTimingService): voce "caccia: arma (passo)" per l'intera chiamata (compresa
+# l'eventuale nuova scelta, che conta anche in "caccia: arma (scelta)") e contatore "caccia: arma scelta di nuovo".
 static func resolve_weapon(individual: Variant, context: Dictionary, category: TaskTypes.ToolCategory, species: String, age_band: int) -> String:
+	if not JobBoardTimingService.is_enabled():
+		return _resolve_weapon(individual, context, category, species, age_band)
+	var started := JobBoardTimingService.now()
+	var weapon := _resolve_weapon(individual, context, category, species, age_band)
+	JobBoardTimingService.add("caccia: arma (passo)", started)
+	return weapon
+
+
+static func _resolve_weapon(individual: Variant, context: Dictionary, category: TaskTypes.ToolCategory, species: String, age_band: int) -> String:
 	var saved: String = String(context.get(CONTEXT_HUNT_WEAPON, ""))
 	if saved != "" and find_weapon_slot(individual, saved) != -1 and ToolGateService.has_required_ammo(individual, saved):
 		return saved
+	if JobBoardTimingService.is_enabled():
+		JobBoardTimingService.count("caccia: arma scelta di nuovo")
 	var chosen := choose_weapon(individual, category, species, age_band)
 	if chosen == "":
 		context.erase(CONTEXT_HUNT_WEAPON)
@@ -213,6 +242,20 @@ static func get_attack_power(individual: Variant, weapon_name: String) -> float:
 		return 0.0
 	var ammo_rules := CaloricCalculator.get_caloric_source_rules(individual.get_equipped_tool(ammo_slot))
 	return ammo_rules.attack_power if ammo_rules != null else 0.0
+
+
+# Efficacia di un'arma (2026-10-24, richiesta utente — arco e frecce mai presi): attacco × gittata, con l'attacco della
+# munizione `ammo_name` se l'arma ne richiede una. Unico punto della regola: la usano la scelta dell'arma in deposito
+# (ToolFetchService) e in cintura (choose_weapon); oggi arco+frecce 90, lancia di pietra 54, lancia di legno 36. 0 per un attrezzo senza attacco o gittata.
+static func weapon_score(weapon_name: String, ammo_name: String = "") -> float:
+	var rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
+	if rules == null:
+		return 0.0
+	var attack := rules.attack_power
+	if rules.required_ammo_category >= 0:
+		var ammo_rules := CaloricCalculator.get_caloric_source_rules(ammo_name) if ammo_name != "" else null
+		attack = ammo_rules.attack_power if ammo_rules != null else 0.0
+	return attack * rules.max_range
 
 
 # Consuma un uso della munizione dell'arma (la più consumata in cintura). Ritorna il nome della munizione se si è rotta

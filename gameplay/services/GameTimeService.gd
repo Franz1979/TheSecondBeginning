@@ -165,6 +165,11 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	_apply_daily_starvation()
 	_log_daily_food_need()
 	_apply_daily_vitals_interaction()
+	# Morte per malattia (2026-10-24, richiesta utente): dopo l'interazione dei vitali, che cambia la salute.
+	_apply_daily_illness_deaths()
+	# Malati (2026-10-24, richiesta utente): dopo l'interazione dei vitali, che cambia la salute, i lavori in coda di chi
+	# è malato tornano agli altri.
+	SicknessService.release_sick_queues(_human_individuals)
 	_advance_daily_individual_resource_decay()
 	_run_daily_random_events()
 	# Mucchi a terra (2026-09-26, ground drop): deperimento a velocità doppia e durata massima, vedi
@@ -1286,6 +1291,34 @@ func _apply_daily_starvation() -> void:
 			removed_log_lines.append("#%d %s (eta'=%d, causa=%s%s)" % [
 				individual.id, individual.name, age_at_death,
 				_cause_debug_name(DeathTypes.DeathCause.STARVATION), ", coniuge liberato" if partner_freed else ""
+			])
+	if DebugLogging.ENABLED and not removed_log_lines.is_empty():
+		print("[HUMAN DEATH] giorno=%d: %s" % [_game_data.current_day, ", ".join(removed_log_lines)])
+	human_population_changed.emit()
+
+
+# Morte per malattia (2026-10-24, richiesta utente): chi ha la salute a 0 muore lo stesso giorno, causa ILLNESS. Stesso
+# percorso della fame (_kill_individual: death_events, corpo, popup "death_cause_illness", figlio a carico).
+func _apply_daily_illness_deaths() -> void:
+	var doomed: Array[HumanIndividual] = []
+	for individual in _human_individuals:
+		if individual.current_health <= 0.0:
+			doomed.append(individual)
+	if doomed.is_empty():
+		return
+	var removed_log_lines: Array[String] = []
+	for individual in doomed:
+		var index := _human_individuals.find(individual)
+		if index == -1:
+			continue
+		var age_at_death := _game_data.year - individual.birth_year_virtual
+		var partner_freed := _kill_individual(
+			individual, index, DeathTypes.DeathCause.ILLNESS, _game_data.current_day, age_at_death
+		)
+		if DebugLogging.ENABLED:
+			removed_log_lines.append("#%d %s (eta'=%d, causa=%s%s)" % [
+				individual.id, individual.name, age_at_death,
+				_cause_debug_name(DeathTypes.DeathCause.ILLNESS), ", coniuge liberato" if partner_freed else ""
 			])
 	if DebugLogging.ENABLED and not removed_log_lines.is_empty():
 		print("[HUMAN DEATH] giorno=%d: %s" % [_game_data.current_day, ", ".join(removed_log_lines)])

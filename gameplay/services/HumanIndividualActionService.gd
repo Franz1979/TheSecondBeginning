@@ -2319,6 +2319,18 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 		if NeedTaskAssignmentService.assign_emergency_restock_task(individual, world, age_band, true):
 			return
 
+	# Malato (2026-10-24, richiesta utente — HumanIndividual.is_sick): dopo i bisogni sopra riporta il carico rimasto
+	# senza proprietario, poi solo provviste (stessa regola dello svago: sacca non quasi piena) o riposo, un giorno alla
+	# volta. Niente coda (liberata da SicknessService), attrezzi, lista dei lavori né svago.
+	if individual.is_sick():
+		if CargoReturnService.release_orphan_cargo(individual, world):
+			return
+		if IdleTaskAssignmentService._is_leisure_restock_eligible(individual) \
+				and NeedTaskAssignmentService.assign_leisure_restock_task(individual, world, age_band):
+			return
+		NeedTaskAssignmentService.assign_sick_rest_task(individual, world, age_band)
+		return
+
 	var resumed_task := TaskQueueService.pop_suspended_task(individual)
 	# Cantieri rimandati per materiale (2026-10-16): restano in coda finché il materiale non c'è, si passa alla successiva.
 	var held_for_material: Array[Task] = []

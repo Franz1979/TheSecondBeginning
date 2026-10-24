@@ -590,13 +590,15 @@ building_construction_phase_clear_site,Pulizia del terreno
 building_construction_phase_build,Costruzione
 building_awaiting_material_build_caption,Per completare la costruzione servono:
 transport_selection_banner_text,"🚚 Trasporto: seleziona l'edificio di destinazione (H per annullare)"
-debug_idle_fallback_button_tooltip,"Attiva/disattiva l'assegnazione automatica di task perditempo (Passeggiata, Esplorazione, Gioco, Oziare, Sognare a occhi aperti, Rifornirsi, Rito spontaneo) agli individui liberi"
+debug_sick_button_tooltip,Fa ammalare l'individuo selezionato (salute 500) o lo guarisce (salute piena)
 random_event_test_name,Evento di prova
 random_event_test_popup,Evento di prova (giorno {day}): il sistema degli eventi funziona.
+random_event_illness_name,Malattia
+random_event_illness_popup,{name} si ammala ({illness}): dovrà riposare finché non guarisce.
+illness_fever,febbre
+individual_health_sick_suffix,sta male
 debug_random_event_apply,Applica evento
 debug_random_event_apply_tooltip,Scatena subito l'evento scelto nel menu
-debug_idle_fallback_on,Perditempo: ON
-debug_idle_fallback_off,Perditempo: OFF
 building_awaiting_fuel_production_label,"Combustibile mancante: {amount} ({fuels})"
 building_production_suspended_label,"Produzione sospesa: {resource}, {percent}% completata"
 building_delivered_materials_caption,Materiali di partenza:
@@ -660,6 +662,7 @@ tool_gate_hunt_weapon_examples,(es. {tools})
 task_reject_too_young,{name} è troppo giovane per {activity}.
 task_reject_age_not_allowed,{name} non ha l'età adatta per {activity}.
 task_reject_low_stamina,{name} non ha abbastanza energie per {activity}: prima deve riposare.
+task_reject_sick,{name} è troppo debole per {activity}: sta male e deve riposare.
 task_reject_generic,{name} non può {activity} adesso.
 task_activity_hunt,andare a caccia
 task_activity_produce,produrre

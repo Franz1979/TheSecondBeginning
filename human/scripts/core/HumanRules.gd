@@ -196,6 +196,11 @@ extends Resource
 @export var base_max_health: float = 5000.0
 @export var health_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 @export var health_multiplier_by_sex: Array[float] = [1.0, 1.0]
+# Malato (2026-10-24, richiesta utente): sotto questa salute niente lavori, svago, riti né comandi diretti, solo
+# bisogni (riposo, provviste). Vedi HumanIndividual.is_sick.
+@export var sick_health_threshold: float = 1000.0
+# Felicità persa ogni giorno da un malato, in più della regola salute -> felicità (HumanVitalsInteractionService).
+@export var sick_daily_happiness_loss: float = 50.0
 
 @export var base_max_happiness: float = 5000.0
 @export var happiness_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]

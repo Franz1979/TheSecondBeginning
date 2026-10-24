@@ -3,14 +3,15 @@ extends RefCounted
 
 # Attrezzi per i lavori della coda (2026-10-11; spostati da GameScene il 2026-10-17, refactoring GameScene blocco 2d —
 # regole invariate). Categorie richieste: quelle del comando per gli ordini di zona (Taglia CHOPPING, Estrai DIGGING,
-# Caccia BUTCHERING + HUNTING), quelle della ricetta per la produzione. Regola:
-#   - qualcuno in età ha addosso tutte le categorie (o le sta andando a prendere, task con ZONE_ORDER_TOOL_FETCH_KEY):
-#     il lavoro lo prende solo chi ce le ha; gli altri non lo vedono come prendibile (nemmeno si incamminano);
-#   - nessuno: il primo che arriva dal coordinatore, con posti liberi in cintura per ciò che gli manca, prende il lavoro e
-#     prima va a prendere in deposito gli attrezzi mancanti (equip_tool.tres, in cintura), poi lavora;
-#   - una categoria che nessuno ha e nessun deposito ha, o nessuno con abbastanza posto in cintura: lavoro bloccato.
-# Attrezzi a munizioni (2026-10-23, es. arco): si prendono solo insieme alla loro munizione, anche da due depositi; chi ha
-# già l'arma prende solo la munizione (category_fetch_option, vince il percorso più corto). Con la regola "Riponi gli
+# Caccia BUTCHERING + HUNTING), quelle della ricetta per la produzione. Regola (dal 2026-10-24 senza "lo ha già un altro"):
+#   - chi arriva e ha addosso tutte le categorie lavora subito;
+#   - a chi manca qualcosa prende il lavoro se ha posti liberi in cintura e un deposito raggiungibile per ciò che gli
+#     manca (rejection): prima va a prenderlo (equip_tool.tres, in cintura), poi lavora;
+#   - nessuno lo ha addosso e nessuno può prenderlo (nessun deposito, cintura piena): lavoro bloccato (blocked_reason).
+# Scelta in deposito (category_fetch_option, 2026-10-24): l'attrezzo più efficace (HuntService.weapon_score, attacco ×
+# gittata), la strada solo a parità. Attrezzi a munizioni (es. arco): solo insieme ad abbastanza munizioni (MIN_AMMO_SHOTS
+# colpi, fino a MAX_AMMO_BUNDLES mazzi dai più pieni, da un deposito), anche da due depositi; chi ha già l'arma prende solo
+# le munizioni, e per la caccia integra se ne ha poche (plan_fetch). Con la regola "Riponi gli
 # attrezzi presi per un lavoro" accesa gli attrezzi presi restano "in prestito" (HumanIndividual.borrowed_tools) e tornano
 # al deposito quando l'individuo è libero (return_borrowed_tools); spenta, diventano suoi. Statico e senza stato; le task create si restituiscono a
 # chi chiama, che ne collega i segnali (griglia del magazzino) e aggiorna i pannelli.
@@ -238,15 +239,23 @@ static func missing_tools_in_storage(world: World, member: HumanIndividual, miss
 	return true
 
 
-# Prelievo per una categoria (2026-10-23, richiesta utente — arco e frecce per la caccia automatica, regola valida per ogni
-# arma con required_ammo_category): l'opzione col percorso più corto tra
-#   - un attrezzo senza munizioni (find_storage_tool, un posto);
-#   - la sola munizione per un'arma a munizioni che `worker` ha già, in cintura o nello zaino (un posto);
-#   - arma a munizioni + munizione (due posti), anche da due depositi: si va prima al più vicino e conta il giro intero
-#     (pipottino → primo deposito → secondo). Un'arma a munizioni senza munizione prendibile non si considera mai.
-# Le opzioni con più attrezzi dei `max_slots` si scartano. [{"building", "tool_name"}, ...] in ordine di tappa, vuoto se
-# nessuna. Con `worker` null basta che un'opzione esista (la sola munizione conta se qualcuno ha l'arma). Prenotazioni e
-# tenuta per il fotogramma come find_storage_tool.
+# Prelievo per una categoria (2026-10-23, arco e frecce per la caccia automatica; 2026-10-24, richiesta utente — scelta per
+# efficacia, regola valida per ogni arma con required_ammo_category). Vince l'attrezzo col punteggio più alto
+# (HuntService.weapon_score, attacco × gittata: per le categorie senza armi tutti 0, quindi decide la strada come prima);
+# la strada decide solo tra attrezzi con lo stesso punteggio. La classifica dei tipi presenti nei depositi è comune a tutti
+# (_weapon_ranking), qui si cerca solo il deposito per `worker`, tipo per tipo dal migliore. Opzioni:
+#   - un attrezzo senza munizioni (un posto);
+#   - la sola munizione per un'arma a munizioni che `worker` ha già, in cintura o nello zaino;
+#   - arma a munizioni + munizione, anche da due depositi: conta il giro intero (pipottino → primo deposito → secondo).
+# Munizioni: almeno MIN_AMMO_SHOTS colpi con al massimo MAX_AMMO_BUNDLES mazzi dai più pieni, tutti da un deposito (il
+# più vicino che ci arriva); qui solo i mazzi che servono alla soglia, quelli in più li aggiunge plan_fetch. Un'arma a
+# munizioni senza abbastanza colpi prendibili non si considera. Le opzioni con più attrezzi dei `max_slots` si scartano.
+# [{"building", "tool_name", "fullest"?}, ...] in ordine di tappa, vuoto se nessuna. Con `worker` null basta che un'opzione
+# esista (la sola munizione conta se qualcuno ha l'arma). Prenotazioni e tenuta per il fotogramma come find_storage_tool.
+const MIN_AMMO_SHOTS := 5
+const MAX_AMMO_BUNDLES := 3
+
+
 static func category_fetch_option(world: World, worker: HumanIndividual, category: int, max_slots: int = 99) -> Array[Dictionary]:
 	var frame := Engine.get_process_frames()
 	if frame != _storage_tool_frame:
@@ -260,7 +269,6 @@ static func category_fetch_option(world: World, worker: HumanIndividual, categor
 
 static func _compute_fetch_option(world: World, worker: HumanIndividual, category: int, max_slots: int) -> Array[Dictionary]:
 	var best: Array[Dictionary] = []
-	var best_distance := INF
 	if max_slots < 1:
 		return best
 	var origin := worker.position if worker != null else Vector2.ZERO
@@ -270,64 +278,189 @@ static func _compute_fetch_option(world: World, worker: HumanIndividual, categor
 	var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
 	if timing:
 		JobBoardTimingService.add("deposito: raggiungibilità", started)
-	var plain := find_storage_tool(world, worker, category)
-	if not plain.is_empty():
-		if worker == null:
-			best.append(plain)
-			return best
-		best_distance = _distance_to(worker, plain["building"])
-		best.append(plain)
 	var reserved := _reserved_fetches(worker, TOOL_FETCH_SOURCE_KEY)
-	for weapon_name in ToolGateService.get_tools_covering(category):
-		var rules := CaloricCalculator.get_caloric_source_rules(weapon_name)
-		if rules == null or rules.required_ammo_category < 0:
-			continue
-		var ammo_names := ToolGateService.get_tools_covering(rules.required_ammo_category)
-		if _owns_tool(worker, weapon_name):
-			# Arma già sua: solo la munizione più vicina.
-			for ammo_name in ammo_names:
-				var ammo_source := _find_unreserved_source(world, origin, origin_macro, ammo_name, reserved, reachability)
-				if ammo_source == null:
-					continue
-				var ammo_only: Array[Dictionary] = [{"building": ammo_source, "tool_name": ammo_name}]
-				if worker == null:
-					return ammo_only
-				var distance := _distance_to(worker, ammo_source)
-				if distance < best_distance:
-					best_distance = distance
-					best = ammo_only
-			continue
-		if max_slots < 2:
-			continue
-		var weapon_source := _find_unreserved_source(world, origin, origin_macro, weapon_name, reserved, reachability)
-		if weapon_source == null:
-			continue
-		var weapon_entry := {"building": weapon_source, "tool_name": weapon_name}
-		var weapon_pos := Vector2(weapon_source.micro_x, weapon_source.micro_y)
-		var weapon_macro := Vector2i(weapon_source.macro_x, weapon_source.macro_y)
-		for ammo_name in ammo_names:
-			# Giro arma → munizione (munizione più vicina all'arma) e giro munizione → arma (munizione più vicina al pipottino).
-			var near_weapon := _find_unreserved_source(world, weapon_pos, weapon_macro, ammo_name, reserved, reachability)
-			if near_weapon == null:
+	var ranking := _weapon_ranking(world, category)
+	var index := 0
+	while index < ranking.size():
+		# Un gruppo di tipi con lo stesso punteggio: vince il giro più corto; il primo gruppo con un'opzione chiude la ricerca.
+		var tier_score := float(ranking[index]["score"])
+		var best_distance := INF
+		while index < ranking.size() and is_equal_approx(float(ranking[index]["score"]), tier_score):
+			var option := _option_for(world, worker, ranking[index], max_slots, origin, origin_macro, reserved, reachability)
+			index += 1
+			if option.is_empty():
 				continue
 			if worker == null:
-				return _two_stops(weapon_entry, {"building": near_weapon, "tool_name": ammo_name})
-			var weapon_first := _distance_to(worker, weapon_source) + _distance_between(weapon_source, near_weapon)
-			if weapon_first < best_distance:
-				best_distance = weapon_first
-				best = _two_stops(weapon_entry, {"building": near_weapon, "tool_name": ammo_name})
-			var near_worker := _find_unreserved_source(world, origin, origin_macro, ammo_name, reserved, reachability)
-			if near_worker != null and near_worker != near_weapon:
-				var ammo_first := _distance_to(worker, near_worker) + _distance_between(near_worker, weapon_source)
-				if ammo_first < best_distance:
-					best_distance = ammo_first
-					best = _two_stops({"building": near_worker, "tool_name": ammo_name}, weapon_entry)
+				return option
+			var distance := _route_length(worker, option)
+			if distance < best_distance:
+				best_distance = distance
+				best = option
+		if not best.is_empty():
+			return best
 	return best
 
 
-static func _two_stops(first: Dictionary, second: Dictionary) -> Array[Dictionary]:
-	var stops: Array[Dictionary] = [first, second]
+# Classifica comune dei tipi di attrezzo di `category` prendibili da un deposito (2026-10-24): [{"tool_name", "ammo_name",
+# "score"}] per punteggio decrescente (HuntService.weapon_score), a parità in ordine di nome. Un attrezzo senza munizioni
+# entra se almeno un deposito ne ha un pezzo; un'arma a munizioni entra una volta per tipo di munizione se un deposito ha
+# abbastanza colpi (_bundles_for), anche se l'arma non è in deposito (può averla già il pipottino: lo vede _option_for).
+# Raggiungibilità e prenotazioni non contano qui (sono del singolo pipottino). Tenuta per il fotogramma.
+static func _weapon_ranking(world: World, category: int) -> Array[Dictionary]:
+	var frame := Engine.get_process_frames()
+	if frame != _storage_tool_frame:
+		_storage_tool_cache.clear()
+		_storage_tool_frame = frame
+	var cache_key := ["ranking", category]
+	if _storage_tool_cache.has(cache_key):
+		return _storage_tool_cache[cache_key]
+	var ranking: Array[Dictionary] = []
+	for tool_name in ToolGateService.get_tools_covering(category):
+		var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+		if rules == null:
+			continue
+		if rules.required_ammo_category < 0:
+			if _any_building_has(world, tool_name):
+				ranking.append({"tool_name": tool_name, "ammo_name": "", "score": HuntService.weapon_score(tool_name)})
+			continue
+		for ammo_name in ToolGateService.get_tools_covering(rules.required_ammo_category):
+			for building in world.buildings:
+				if _bundles_for(_ammo_shots_in(building, ammo_name, 0), MIN_AMMO_SHOTS, MAX_AMMO_BUNDLES) > 0:
+					ranking.append({"tool_name": tool_name, "ammo_name": ammo_name, "score": HuntService.weapon_score(tool_name, ammo_name)})
+					break
+	ranking.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return float(a["score"]) > float(b["score"])
+	)
+	_storage_tool_cache[cache_key] = ranking
+	return ranking
+
+
+static func _any_building_has(world: World, resource_name: String) -> bool:
+	for building in world.buildings:
+		if BuildingStorageService.get_available_quantity(building, resource_name) > 0:
+			return true
+	return false
+
+
+# Opzione di prelievo per una voce della classifica (vedi category_fetch_option), [] se non c'è per `worker`.
+static func _option_for(
+	world: World, worker: HumanIndividual, entry: Dictionary, max_slots: int, origin: Vector2, origin_macro: Vector2i,
+	reserved: Dictionary, reachability: Callable
+) -> Array[Dictionary]:
+	var stops: Array[Dictionary] = []
+	var tool_name := String(entry["tool_name"])
+	var ammo_name := String(entry["ammo_name"])
+	if ammo_name == "":
+		var source := _find_unreserved_source(world, origin, origin_macro, tool_name, reserved, reachability)
+		if source != null:
+			stops.append({"building": source, "tool_name": tool_name})
+		return stops
+	if _owns_tool(worker, tool_name):
+		# Arma già sua: solo i mazzi, dal deposito più vicino che arriva alla soglia.
+		var own_ammo := _find_ammo_source(world, origin, origin_macro, ammo_name, MIN_AMMO_SHOTS, mini(MAX_AMMO_BUNDLES, max_slots), reserved, reachability)
+		return _ammo_stops(own_ammo, ammo_name)
+	if max_slots < 2:
+		return stops
+	var weapon_source := _find_unreserved_source(world, origin, origin_macro, tool_name, reserved, reachability)
+	if weapon_source == null:
+		return stops
+	var weapon_entry := {"building": weapon_source, "tool_name": tool_name}
+	var max_bundles := mini(MAX_AMMO_BUNDLES, max_slots - 1)
+	# Giro arma → mazzi (deposito dei mazzi più vicino all'arma) e giro mazzi → arma (più vicino al pipottino).
+	var near_weapon := _find_ammo_source(
+		world, Vector2(weapon_source.micro_x, weapon_source.micro_y), Vector2i(weapon_source.macro_x, weapon_source.macro_y),
+		ammo_name, MIN_AMMO_SHOTS, max_bundles, reserved, reachability
+	)
+	if near_weapon.is_empty():
+		return stops
+	stops.append(weapon_entry)
+	stops.append_array(_ammo_stops(near_weapon, ammo_name))
+	if worker == null:
+		return stops
+	var near_worker := _find_ammo_source(world, origin, origin_macro, ammo_name, MIN_AMMO_SHOTS, max_bundles, reserved, reachability)
+	if not near_worker.is_empty() and near_worker["building"] != near_weapon["building"]:
+		var ammo_first := _ammo_stops(near_worker, ammo_name)
+		ammo_first.append(weapon_entry)
+		if _route_length(worker, ammo_first) < _route_length(worker, stops):
+			return ammo_first
 	return stops
+
+
+# Una tappa per mazzo ({"building", "count"} di _find_ammo_source), da prelevare dal più pieno; [] se nessun deposito.
+static func _ammo_stops(source: Dictionary, ammo_name: String) -> Array[Dictionary]:
+	var stops: Array[Dictionary] = []
+	if source.is_empty():
+		return stops
+	for i in range(int(source["count"])):
+		stops.append({"building": source["building"], "tool_name": ammo_name, "fullest": true})
+	return stops
+
+
+# Deposito più vicino a `origin` i cui mazzi di `ammo_name` (dai più pieni, senza i prenotati da altri) danno almeno
+# `need_shots` colpi con al massimo `max_bundles` mazzi: {"building", "count"} (mazzi necessari), {} se nessuno.
+static func _find_ammo_source(
+	world: World, origin: Vector2, origin_macro: Vector2i, ammo_name: String, need_shots: int, max_bundles: int,
+	reserved: Dictionary, reachability: Callable
+) -> Dictionary:
+	if max_bundles < 1:
+		return {}
+	var excluded: Array[int] = []
+	while true:
+		var source := WarehouseSelectionService.find_source_for_retrieval(world, origin, origin_macro, ammo_name, excluded, 1, -1, reachability)
+		if source == null:
+			break
+		var shots := _ammo_shots_in(source, ammo_name, int(reserved.get(_fetch_key(source, ammo_name), 0)))
+		var count := _bundles_for(shots, need_shots, max_bundles)
+		if count > 0:
+			return {"building": source, "count": count}
+		excluded.append(source.id)
+	return {}
+
+
+# Usi rimasti dei pezzi di `ammo_name` nel deposito (magazzino + prodotti finiti, questi sempre nuovi), dal più pieno,
+# senza i primi `reserved_count` (prenotati da altri, che prelevano anche loro dal più pieno).
+static func _ammo_shots_in(building: Building, ammo_name: String, reserved_count: int) -> Array[int]:
+	var shots: Array[int] = []
+	if BuildingStorageService.get_available_quantity(building, ammo_name) <= 0:
+		return shots
+	var max_uses := ToolInstance.get_max_uses(ammo_name)
+	shots = _unit_uses(building.stored_resources.get(ammo_name, {}), max_uses)
+	for i in range(int(building.production_output.get(ammo_name, 0))):
+		shots.append(max_uses)
+	shots.sort()
+	shots.reverse()
+	return shots.slice(mini(reserved_count, shots.size()))
+
+
+# Usi rimasti di ogni pezzo di una voce (magazzino o zaino): istanze usate utilizzabili + nuovi a `max_uses`.
+static func _unit_uses(entry: Dictionary, max_uses: int) -> Array[int]:
+	var uses: Array[int] = []
+	var used := ToolInstance.get_used_instances(entry)
+	for instance in used:
+		if ToolInstance.is_usable(instance):
+			uses.append(ToolInstance.get_remaining_uses(instance))
+	for i in range(maxi(int(entry.get("quantity", 0)) - used.size(), 0)):
+		uses.append(max_uses)
+	return uses
+
+
+# Mazzi necessari (dai primi di `shots`, già dal più pieno) per arrivare a `need_shots` colpi, al massimo `max_bundles`;
+# 0 se non ci si arriva.
+static func _bundles_for(shots: Array[int], need_shots: int, max_bundles: int) -> int:
+	var total := 0
+	for i in range(mini(shots.size(), max_bundles)):
+		total += shots[i]
+		if total >= need_shots:
+			return i + 1
+	return 0
+
+
+# Lunghezza del giro di `worker` lungo le tappe (pipottino → prima → seconda…; tappe consecutive nello stesso deposito 0).
+static func _route_length(worker: HumanIndividual, stops: Array[Dictionary]) -> float:
+	var length := _distance_to(worker, stops[0]["building"])
+	for i in range(1, stops.size()):
+		length += _distance_between(stops[i - 1]["building"], stops[i]["building"])
+	return length
 
 
 # `worker` ha `tool_name` in cintura o nello zaino; con `worker` null, qualcuno della partita.
@@ -377,6 +510,7 @@ static func rejection(_ctx: GameContext, worker: HumanIndividual, categories: Ar
 
 # Attrezzi da prendere prima del lavoro: [{"category", "building", "tool_name", "slot"}], vuoto se ha già tutto. Per
 # categoria l'opzione più corta di category_fetch_option (arma + munizione = due voci, in ordine di tappa).
+# Caccia (2026-10-24): mazzi in più dopo le categorie mancanti (_plan_extra_ammo).
 static func plan_fetch(world: World, worker: HumanIndividual, categories: Array) -> Array[Dictionary]:
 	var plan: Array[Dictionary] = []
 	var missing := member_missing_categories(worker, categories)
@@ -387,7 +521,78 @@ static func plan_fetch(world: World, worker: HumanIndividual, categories: Array)
 			entry["category"] = int(category)
 			entry["slot"] = slots.pop_front()
 			plan.append(entry)
+	if categories.has(TaskTypes.ToolCategory.HUNTING):
+		# Posti tenuti per gli attrezzi che ha nello zaino e che la caccia metterà in cintura (es. il coltello).
+		var keep := 0
+		for category in categories:
+			if not missing.has(int(category)) and ToolGateService.find_belt_slot_for(worker, int(category)) == -1:
+				keep += 1
+		_plan_extra_ammo(world, worker, plan, slots, keep)
 	return plan
+
+
+# Mazzi in più per la caccia (2026-10-24, richiesta utente), sempre dal più pieno e senza superare MAX_AMMO_BUNDLES mazzi
+# in cintura né i posti liberi (meno `keep`):
+#   - il piano prende un'arma a munizioni: altri mazzi dallo stesso deposito dei suoi, oltre la soglia;
+#   - il piano non prende armi e l'arma con cui caccerebbe (HuntService.choose_weapon) è a munizioni con meno di
+#     MIN_AMMO_SHOTS colpi in cintura: integrazione dal deposito più vicino che ha mazzi (anche se non arriva alla soglia).
+static func _plan_extra_ammo(world: World, worker: HumanIndividual, plan: Array[Dictionary], slots: Array[int], keep: int) -> void:
+	var building: Building = null
+	var ammo_name := ""
+	var planned := 0
+	var hunting_in_plan := false
+	for entry in plan:
+		if int(entry["category"]) != TaskTypes.ToolCategory.HUNTING:
+			continue
+		hunting_in_plan = true
+		if bool(entry.get("fullest", false)):
+			building = entry["building"]
+			ammo_name = String(entry["tool_name"])
+			planned += 1
+	var reserved := {}
+	var belt_bundles := 0
+	if building == null:
+		if hunting_in_plan:
+			return
+		var weapon := HuntService.choose_weapon(worker, TaskTypes.ToolCategory.HUNTING, "", -1)
+		var rules := CaloricCalculator.get_caloric_source_rules(weapon) if weapon != "" else null
+		if rules == null or rules.required_ammo_category < 0:
+			return
+		var belt := _belt_ammo(worker, rules.required_ammo_category)
+		if belt.y >= MIN_AMMO_SHOTS:
+			return
+		belt_bundles = belt.x
+		reserved = _reserved_fetches(worker, TOOL_FETCH_SOURCE_KEY)
+		var reachability := PathfindingService.reachability_for(worker)
+		for candidate in ToolGateService.get_tools_covering(rules.required_ammo_category):
+			var source := _find_ammo_source(world, worker.position, worker.home_macro_coords, candidate, 1, 1, reserved, reachability)
+			if not source.is_empty() and (building == null or _distance_to(worker, source["building"]) < _distance_to(worker, building)):
+				building = source["building"]
+				ammo_name = candidate
+		if building == null:
+			return
+	else:
+		var ammo_categories := ToolGateService._tool_categories(ammo_name)
+		belt_bundles = _belt_ammo(worker, int(ammo_categories[0])).x if not ammo_categories.is_empty() else 0
+		reserved = _reserved_fetches(worker, TOOL_FETCH_SOURCE_KEY)
+	var available :=_ammo_shots_in(building, ammo_name, int(reserved.get(_fetch_key(building, ammo_name), 0))).size() - planned
+	var extra := mini(mini(available, slots.size() - keep), MAX_AMMO_BUNDLES - belt_bundles - planned)
+	for i in range(extra):
+		plan.append({
+			"building": building, "tool_name": ammo_name, "fullest": true,
+			"category": TaskTypes.ToolCategory.HUNTING, "slot": slots.pop_front(),
+		})
+
+
+# Munizioni della categoria `ammo_category` in cintura: Vector2i(mazzi, colpi).
+static func _belt_ammo(worker: HumanIndividual, ammo_category: int) -> Vector2i:
+	var result := Vector2i.ZERO
+	for slot in range(worker.get_tool_slot_count()):
+		var tool_name := worker.get_equipped_tool(slot)
+		if tool_name != "" and ToolGateService._tool_categories(tool_name).has(ammo_category):
+			result.x += 1
+			result.y += worker.get_equipped_tool_uses(slot)
+	return result
 
 
 # Prelievi in deposito prima del lavoro appena assegnato: una task equip_tool per attrezzo, assegnata dopo il lavoro (che
@@ -405,6 +610,9 @@ static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[D
 			continue
 		task.context[ZONE_ORDER_TOOL_FETCH_KEY] = int(fetch["category"])
 		task.context[TOOL_FETCH_SOURCE_KEY] = _fetch_key(building, tool_name)
+		# Munizioni (2026-10-24): esce il mazzo più pieno, quello contato dalla scelta (_ammo_shots_in).
+		if bool(fetch.get("fullest", false)):
+			task.context[RetrieveAction.CONTEXT_EQUIP_FULLEST] = true
 		if not worker.assign_task(task, ctx.age_band_of(worker)):
 			continue
 		assigned.append(task)

@@ -404,15 +404,24 @@ static func store_tool_units(building: Building, resource_name: String, units: A
 # stored_resources (istanze più consumate, poi pezzi nuovi — vedi _take_stored_tool_units), poi il
 # buffer di uscita della produzione (sempre pezzi nuovi), poi il travaso del buffer nello storage.
 # Array vuoto se la risorsa non è un attrezzo o non c'è nulla da prelevare.
-static func withdraw_tool_units(building: Building, resource_name: String, quantity_requested: int) -> Array:
+# `fullest_first` (2026-10-24, munizioni per la caccia): prima i pezzi più pieni — il buffer di uscita (sempre nuovi),
+# poi stored_resources con nuovi e istanze per usi decrescenti (ToolInstance.take_units_from_entry).
+static func withdraw_tool_units(building: Building, resource_name: String, quantity_requested: int, fullest_first: bool = false) -> Array:
 	var units: Array = []
 	if building == null or quantity_requested <= 0 or not ToolInstance.uses_instances(resource_name):
 		return units
 	if building.is_out_of_service():
 		return units
+	var max_uses: int = ToolInstance.get_max_uses(resource_name)
+	if fullest_first:
+		for i in range(ProductionService.withdraw_output(building, resource_name, quantity_requested)):
+			units.append(ToolInstance.create(max_uses))
+		units.append_array(_take_stored_tool_units(building, resource_name, quantity_requested - units.size(), true))
+		if not units.is_empty():
+			ProductionService.flush_output_to_storage(building)
+		return units
 	units = _take_stored_tool_units(building, resource_name, quantity_requested)
 	var from_output: int = ProductionService.withdraw_output(building, resource_name, quantity_requested - units.size())
-	var max_uses: int = ToolInstance.get_max_uses(resource_name)
 	for i in range(from_output):
 		units.append(ToolInstance.create(max_uses))
 	if not units.is_empty():
@@ -479,11 +488,11 @@ static func take_stored_tool_unit(building: Building, resource_name: String) -> 
 # Prelievo di un attrezzo dal SOLO stored_resources (ToolInstance.take_units_from_entry: prima le istanze
 # più consumate, poi i pezzi nuovi). Ritorna le unità prelevate come istanze (i nuovi a usi pieni).
 # decay_fraction della voce invariata, stesso principio "lotto unico" di withdraw_stored.
-static func _take_stored_tool_units(building: Building, resource_name: String, quantity_requested: int) -> Array:
+static func _take_stored_tool_units(building: Building, resource_name: String, quantity_requested: int, fullest_first: bool = false) -> Array:
 	if not building.stored_resources.has(resource_name) or quantity_requested <= 0:
 		return []
 	var entry: Dictionary = (building.stored_resources[resource_name] as Dictionary).duplicate(true)
-	var units: Array = ToolInstance.take_units_from_entry(entry, quantity_requested, ToolInstance.get_max_uses(resource_name))
+	var units: Array = ToolInstance.take_units_from_entry(entry, quantity_requested, ToolInstance.get_max_uses(resource_name), fullest_first)
 	if int(entry.get("quantity", 0)) <= 0:
 		building.stored_resources.erase(resource_name)
 	else:

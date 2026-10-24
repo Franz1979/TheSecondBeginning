@@ -82,10 +82,10 @@ text = "FPS: -"
 [node name="VSeparator3" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
 layout_mode = 2
 
-[node name="IdleFallbackButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
-custom_minimum_size = Vector2(120, 32)
+[node name="SickButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
+custom_minimum_size = Vector2(44, 32)
 layout_mode = 2
-text = "Perditempo: ON"
+text = "🤒"
 
 [node name="VSeparatorEvents" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
 layout_mode = 2

@@ -136,6 +136,9 @@ static func _exclusion_reason(
 ) -> String:
 	if member.home_macro_coords != caller.home_macro_coords:
 		return "in un'altra macrocella"
+	# Malato (2026-10-24, HumanIndividual.is_sick): non chiacchiera.
+	if member.is_sick():
+		return "malato"
 	var distance := member.position.distance_to(caller.position)
 	if distance > radius:
 		return "fuori raggio (%.1f)" % distance

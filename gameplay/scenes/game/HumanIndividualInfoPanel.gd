@@ -600,7 +600,13 @@ func show_individual(
 	thirst_bar.value = current_thirst
 	thirst_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_thirst), int(max_thirst)])
 
+	# Malattia in corso (2026-10-24, IllnessService): il suo nome accanto a "Salute", senza i giorni (il giocatore non sa
+	# quando guarirà); malato per salute bassa: "sta male".
 	health_label.text = tr("individual_health_label")
+	if individual != null and individual.illness_id != "":
+		health_label.text += " " + IllnessService.display_name(individual)
+	elif individual != null and individual.is_sick():
+		health_label.text += " " + tr("individual_health_sick_suffix")
 	health_bar.max_value = max_health
 	health_bar.value = current_health
 	health_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_health), int(max_health)])

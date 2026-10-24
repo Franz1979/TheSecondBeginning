@@ -651,6 +651,9 @@ static func _skip_reason(individual: HumanIndividual, game_data: GameData) -> St
 		return "neonato"
 	if individual.carried_body_id != -1:
 		return "porta un corpo"
+	# Malato (2026-10-24, HumanIndividual.is_sick): non va ai riti.
+	if individual.is_sick():
+		return "malato"
 	var task := individual.current_task
 	if task != null and not task.is_finished() and task.interrupt_priority != -1:
 		return "bisogno urgente"
@@ -667,6 +670,9 @@ static func _skip_reason(individual: HumanIndividual, game_data: GameData) -> St
 
 
 static func _counts_as_adult(individual: HumanIndividual, game_data: GameData) -> bool:
+	# Malato (2026-10-24): non conta per gli adulti minimi del villaggio, al rito non verrebbe.
+	if individual.is_sick():
+		return false
 	var age_band := _age_band(individual, game_data)
 	return age_band != HumanTypes.AgeBand.INFANT and age_band != HumanTypes.AgeBand.CHILD
 

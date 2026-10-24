@@ -49,6 +49,8 @@ static func assign_rejection(worker: HumanIndividual, reason: String, activity_k
 			reason_key = "task_reject_age_not_allowed"
 		HumanIndividual.ASSIGN_REJECT_LOW_STAMINA:
 			reason_key = "task_reject_low_stamina"
+		HumanIndividual.ASSIGN_REJECT_SICK:
+			reason_key = "task_reject_sick"
 	reject(worker, GameContext.tr_text(reason_key).format({
 		"name": worker.name, "activity": GameContext.tr_text(activity_key),
 	}), effects)

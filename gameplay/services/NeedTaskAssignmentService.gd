@@ -272,6 +272,26 @@ static func assign_rest_task(individual: HumanIndividual, world: World, age_band
 	return assigned
 
 
+# Riposo da malato (2026-10-24, richiesta utente — HumanIndividual.is_sick): la stessa rest.tres, ma con lo stesso
+# bersaglio di leisure_rest (a casa se c'è, senza la scelta per costo della Rest da bisogno), senza il limite della
+# stamina piena (altrimenti a stamina piena finirebbe subito, in un giro Walk/Rest/Walk) e per un giorno fisso: finito,
+# resolve_idle_individual rivede se è ancora malato.
+const SICK_REST_DURATION_DAYS: float = 1.0
+
+
+static func assign_sick_rest_task(individual: HumanIndividual, world: World, age_band: HumanTypes.AgeBand) -> bool:
+	var target_data := resolve_rest_target(individual, world)
+	var task := TaskFactory.build_task(TaskDefinitionCache.get_definition(REST_TASK_DEFINITION_PATH), {
+		"target_position": target_data["target_position"],
+		"rest_multiplier": target_data["rest_multiplier"],
+		# "Allontanati" sul posto: il malato resta dove riposa (a casa).
+		"walk_away_target_position": target_data["target_position"],
+		"rest_max_duration_days": SICK_REST_DURATION_DAYS,
+		"rest_ignore_stamina_cap": true,
+	})
+	return individual.assign_task(task, age_band, true)
+
+
 # Costruisce e assegna la Emergency Rest Task completa [Walk, Rest] — STESSO meccanismo già usato
 # dal trigger manuale tasto E (GameScene._assign_emergency_rest_task, ora un thin wrapper su
 # questa funzione). rest_multiplier SEMPRE 1.0 letterale (nessun bonus casa, mai un lookup

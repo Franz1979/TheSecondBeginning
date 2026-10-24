@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="IllnessRules" format=3]
+
+[ext_resource type="Script" path="res://human/scripts/core/IllnessRules.gd" id="1_illness"]
+
+[resource]
+script = ExtResource("1_illness")
+id = "fever"
+display_name = "illness_fever"
+daily_health_loss = 200.0
+min_duration_days = 5
+max_duration_days = 12

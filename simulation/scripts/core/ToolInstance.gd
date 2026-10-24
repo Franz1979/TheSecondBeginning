@@ -98,7 +98,9 @@ static func set_used_instances(entry: Dictionary, used_instances: Array) -> void
 # (usciti come istanze a `max_uses`). MUTA `entry` (quantity e used_instances); decay_fraction invariata.
 # Un'istanza non utilizzabile non dovrebbe mai esistere (rifiutata in ingresso, scartata al caricamento):
 # se capitasse resta nella voce, mai consegnata né scambiata per un pezzo nuovo.
-static func take_units_from_entry(entry: Dictionary, quantity_requested: int, max_uses: int) -> Array:
+# `fullest_first` (2026-10-24, munizioni per la caccia — il mazzo con più colpi): ordine opposto, prima i pezzi nuovi,
+# poi le istanze in ordine di usi residui DECRESCENTI.
+static func take_units_from_entry(entry: Dictionary, quantity_requested: int, max_uses: int, fullest_first: bool = false) -> Array:
 	var units: Array = []
 	var current_quantity: int = int(entry.get("quantity", 0))
 	if current_quantity <= 0 or quantity_requested <= 0:
@@ -106,11 +108,20 @@ static func take_units_from_entry(entry: Dictionary, quantity_requested: int, ma
 
 	var used_instances: Array = get_used_instances(entry).duplicate()
 	var new_available: int = maxi(current_quantity - used_instances.size(), 0)
+	# I pezzi nuovi escono con il deperimento del loro lotto (la decay_fraction della voce), che da qui in poi
+	# viaggia con il pezzo (vestiario, 2026-10-11).
+	var lot_decay: float = float(entry.get("decay_fraction", 0.0))
+	if fullest_first:
+		for i in range(mini(quantity_requested, new_available)):
+			units.append(create(max_uses, lot_decay))
+		new_available -= units.size()
 	var usable_indices: Array[int] = []
 	for i in range(used_instances.size()):
 		if is_usable(used_instances[i]):
 			usable_indices.append(i)
 	usable_indices.sort_custom(func(a: int, b: int) -> bool:
+		if fullest_first:
+			return get_remaining_uses(used_instances[a]) > get_remaining_uses(used_instances[b])
 		return get_remaining_uses(used_instances[a]) < get_remaining_uses(used_instances[b])
 	)
 	var taken_indices: Array[int] = []
@@ -125,10 +136,7 @@ static func take_units_from_entry(entry: Dictionary, quantity_requested: int, ma
 	for index in taken_indices:
 		used_instances.remove_at(index)
 
-	# I pezzi nuovi escono con il deperimento del loro lotto (la decay_fraction della voce), che da qui in poi
-	# viaggia con il pezzo (vestiario, 2026-10-11).
 	var new_taken: int = mini(quantity_requested - units.size(), new_available)
-	var lot_decay: float = float(entry.get("decay_fraction", 0.0))
 	for i in range(new_taken):
 		units.append(create(max_uses, lot_decay))
 

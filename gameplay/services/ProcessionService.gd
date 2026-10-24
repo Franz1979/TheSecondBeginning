@@ -287,6 +287,9 @@ static func _skip_reason(individual: HumanIndividual, guide: HumanIndividual, ma
 		return "è la guida"
 	if individual.carried_body_id != -1:
 		return "porta un corpo"
+	# Malato (2026-10-24, HumanIndividual.is_sick): non segue il corteo.
+	if individual.is_sick():
+		return "malato"
 	if HumanIndividualActionService._resolve_age_band(individual, game_data) == HumanTypes.AgeBand.INFANT:
 		return "non cammina (neonato)"
 	var current := individual.current_task
