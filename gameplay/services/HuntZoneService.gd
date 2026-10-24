@@ -333,6 +333,30 @@ static func choose_work_area(
 	return best
 
 
+# Zona di caccia scelta dall'ordine del cassetto (2026-10-24, assegnatore fase 3 — DrawerOrderTargetService): come
+# choose_work_area ma da un punto (`origin_macro`/`origin_pos`, il punto di assegnazione) invece che dal cacciatore,
+# così le prede di ogni zona si contano una volta per ordine e non per ogni pipottino che arriva al punto.
+static func choose_work_area_from(game_data: GameData, live_cells: Dictionary, origin_macro: Vector2i, origin_pos: Vector2) -> WorkArea:
+	var best: WorkArea = null
+	var best_prey := -1.0
+	var best_distance_score := -1.0
+	for area in list_hunt_work_areas(game_data):
+		if not live_cells.has(area.macro_coords):
+			continue
+		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - origin_macro) * World.WIDTH
+		var crowding := 1.0
+		for other in GameSettings.active_human_individuals:
+			if is_zone_hunt_task(other.current_task) and int(other.current_task.context.get(CONTEXT_WORK_AREA_ID, -1)) == area.id:
+				crowding *= ZONE_CROWDING_FACTOR
+		var prey_score := float(list_prey_in_area(area, live_cells).size()) * crowding
+		var distance_score := crowding / (origin_pos.distance_to(center) + ZONE_DISTANCE_OFFSET)
+		if prey_score > best_prey + 0.000001 or (absf(prey_score - best_prey) <= 0.000001 and distance_score > best_distance_score):
+			best_prey = prey_score
+			best_distance_score = distance_score
+			best = area
+	return best
+
+
 # WorkArea della Task di caccia in zona (null se eliminata o se la Task non lo è).
 static func resolve_task_area(task: Task) -> WorkArea:
 	if not is_zone_hunt_task(task):
