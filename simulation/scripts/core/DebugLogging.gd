@@ -428,7 +428,7 @@ const SHOW_JOB_BOARD_LOGS := false
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per
 # voce) e un riepilogo al secondo (chiamanti, liste rifatte, picco del fotogramma). Acceso per la misura; solo log.
-const SHOW_JOB_BOARD_TIMING_LOGS := true
+const SHOW_JOB_BOARD_TIMING_LOGS := false
 
 # "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
 # quando la sua riga compare o cambia (task attiva, testo, coda o diretto e perché, chiavi del context). Solo log.
