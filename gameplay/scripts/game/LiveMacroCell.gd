@@ -93,6 +93,10 @@ var last_visible_positions: Variant = null
 # "grass_patch:<nome>"). Azzerati a ogni rigenerazione completa.
 var last_render_vegetation_positions: Variant = null
 var last_vegetation_rebuild_day: int = -1
+# Inizi dei gruppi per zona di alberi e arbusti in last_render_vegetation_positions (2026-10-24, progetto B fase 2b): al
+# taglio per lotto si riusano, spostati di uno, invece di rifare il filtro (VegetationCutPatchService.patch_render_positions).
+var last_tree_group_starts: Array = []
+var last_shrub_group_starts: Array = []
 var last_scattered_availability: Dictionary = {}
 # true dopo aver passato al fog of war la vegetazione sfocata (set_vegetation_presence) con le posizioni correnti; false
 # a ogni rigenerazione completa. Il ridisegno per movimento/nebbia la salta se è true (2026-10-03).

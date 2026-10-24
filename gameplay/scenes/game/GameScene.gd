@@ -5030,7 +5030,7 @@ func _on_plant_cut(macro_coords: Vector2i, object_type: GameTypes.WorldObjectTyp
 		return
 	# Progetto B fase 2a (2026-10-24): si toglie la sola pianta dall'elenco; il ricalcolo completo solo se non si può.
 	if VegetationCutPatchService.remove_individual(cell, object_type, individual_key, game_data.year):
-		_refresh_resource_visuals(cell, "taglio", Vector2i(individual_key.x, individual_key.y))
+		_refresh_resource_visuals(cell, "taglio", {"object_type": object_type, "key": individual_key})
 	else:
 		cell.needs_full_vegetation_recompute = true
 		_refresh_resource_visuals(cell, "taglio")
@@ -11546,13 +11546,17 @@ func _build_lot_availability_map(macro_state: MacroCellState, resource_name: Str
 
 
 # `reason` (2026-10-03, richiesta utente — diagnostica): chi ha chiesto il ridisegno, solo per la riga [VEG REFRESH TIMING].
-# `cut_lot` (2026-10-24, progetto B fase 2a): lotto di una pianta già tolta dall'elenco (VegetationCutPatchService). Si
-# salta ciò che un taglio non cambia: capacità dei lotti, insieme visibile da rifare, sassi/uova/lotti d'erba; degli
-# stick si aggiorna solo quel lotto. Il renderer della vegetazione si rimonta ancora tutto (passo 2b).
-func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut_lot: Variant = null) -> void:
+# `cut` (2026-10-24, progetto B fase 2a/2b): {"object_type", "key"} di una pianta già tolta dall'elenco
+# (VegetationCutPatchService), {} = nessuna. Si salta ciò che un taglio non cambia: capacità dei lotti, insieme visibile
+# da rifare, sassi/uova/lotti d'erba, filtro della nebbia (elenco filtrato precedente meno la pianta); degli stick si
+# aggiorna solo quel lotto, e del renderer solo il gruppo della zona tagliata.
+func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Dictionary = {}) -> void:
 	if cell.macro_state == null:
 		return
-	var cut_patched: bool = cut_lot != null
+	var cut_patched: bool = not cut.is_empty()
+	var cut_lot: Variant = Vector2i(cut["key"].x, cut["key"].y) if cut_patched else null
+	# Esito degli stick al taglio, per la riga di log.
+	var cut_stick_outcome := ""
 	# Inizio del ridisegno, per il totale della riga [VEG REFRESH TIMING] (tutto, capacità dei lotti comprese).
 	var _refresh_total_start_usec := Time.get_ticks_usec()
 	# SALTO DEL RIMONTAGGIO (2026-10-03, richiesta utente — passo 1): solo per il motivo "movimento/nebbia".
@@ -11625,8 +11629,10 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut_lot
 	if cell.renderer != null and cut_patched:
 		# Taglio per lotto: solo gli stick del lotto tagliato (PlantCutService ne aggiunge per un albero), come una raccolta.
 		var stick_apply := func(availability: Dictionary) -> void: cell.renderer.set_stick_availability(availability)
-		if _patch_scattered_lot(cell, "stick", "stick", "stick", cell.macro_state.tree_claimed_lots, cut_lot, visible_positions, stick_apply) == "":
+		cut_stick_outcome = _patch_scattered_lot(cell, "stick", "stick", "stick", cell.macro_state.tree_claimed_lots, cut_lot, visible_positions, stick_apply)
+		if cut_stick_outcome == "":
 			_apply_scattered_availability(cell, "stick", _visible_lot_availability(cell, "stick", cell.macro_state.tree_claimed_lots.keys(), visible_positions), false, stick_apply)
+			cut_stick_outcome = "rimontato (calcolo completo)"
 		skipped.append("pebble")
 	elif cell.renderer != null:
 		if not _apply_scattered_availability(cell, "stick", _scattered_availability_for(cell, "stick", "stick", cell.macro_state.tree_claimed_lots, visible_positions, scattered_newly_visible), allow_scattered_skip, func(availability: Dictionary) -> void: cell.renderer.set_stick_availability(availability)):
@@ -11773,7 +11779,10 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut_lot
 	var tree_group_starts: Array = []
 	# Inizi dei gruppi di arbusti (2026-10-04, rimontaggio a gruppi degli arbusti), dallo stesso giro del filtro.
 	var shrub_group_starts: Array = []
-	var render_vegetation_positions := _filter_vegetation_positions_by_visibility(cell, vegetation_positions, visible_positions, tree_group_starts, shrub_group_starts)
+	# Taglio per lotto (2026-10-24, progetto B fase 2b): la visibilità non cambia, vale l'elenco filtrato precedente meno la
+	# pianta tagliata (VegetationCutPatchService.patch_render_positions); null = filtro come sempre.
+	var reused_render: Variant = VegetationCutPatchService.patch_render_positions(cell, cut["object_type"], cut["key"], tree_group_starts, shrub_group_starts) if cut_patched else null
+	var render_vegetation_positions: Dictionary = reused_render if reused_render != null else _filter_vegetation_positions_by_visibility(cell, vegetation_positions, visible_positions, tree_group_starts, shrub_group_starts)
 	_veg_timings_ms["1b_fog_visibility_filter"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	# Salto del rimontaggio della vegetazione (passo 1, vedi in testa): nello stesso giorno sottotipi, età, stagione e
@@ -11788,6 +11797,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut_lot
 	else:
 		cell.last_render_vegetation_positions = render_vegetation_positions
 		cell.last_vegetation_rebuild_day = current_absolute_day
+		cell.last_tree_group_starts = tree_group_starts
+		cell.last_shrub_group_starts = shrub_group_starts
 
 	# begin_vegetation_batch()/end_vegetation_batch() (vedi MicroCellRenderer.gd): senza batching, i
 	# 6 setter chiamati in questa funzione (qui + set_shrub_subtypes/set_shrub_age_params/
@@ -11799,10 +11810,12 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut_lot
 	if not skip_vegetation:
 		cell.renderer.begin_vegetation_batch()
 		_step_start_usec = Time.get_ticks_usec()
-		# Rimontaggio a gruppi degli alberi (2026-10-04): solo con motivo movimento/nebbia si riusano i gruppi già fatti.
-		cell.renderer.set_tree_group_layout(cell.vegetation_layout_version, tree_group_starts, reason == "movimento/nebbia")
+		# Rimontaggio a gruppi degli alberi (2026-10-04): solo con motivo movimento/nebbia si riusano i gruppi già fatti; dal
+		# 2026-10-24 anche al taglio per lotto (gruppi per zona: si rifà solo quello della pianta tagliata).
+		var allow_group_reuse: bool = reason == "movimento/nebbia" or cut_patched
+		cell.renderer.set_tree_group_layout(cell.vegetation_layout_version, tree_group_starts, allow_group_reuse)
 		# Arbusti a gruppi (2026-10-04): stessa regola.
-		cell.renderer.set_shrub_group_layout(cell.vegetation_layout_version, shrub_group_starts, reason == "movimento/nebbia")
+		cell.renderer.set_shrub_group_layout(cell.vegetation_layout_version, shrub_group_starts, allow_group_reuse)
 		cell.renderer.set_vegetation_positions(render_vegetation_positions)
 		_veg_timings_ms["2_multimesh_positions_set"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
@@ -11950,7 +11963,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut_lot
 		# Disponibilità di bastoni/sassi/uova/lotti d'erba: ricalcolate o dalla memoria più i lotti entrati in vista.
 		parts.append("disponibilita=%s" % scattered_mode_text)
 		if cut_patched:
-			parts.append("taglio=solo il lotto %s" % str(cut_lot))
+			parts.append("taglio=solo il lotto %s (stick %s, filtro %s)" % [
+				str(cut_lot), cut_stick_outcome, "riusato" if reused_render != null else "rifatto"
+			])
 		# Cosa è stato saltato (passo 1): il totale sopra è il tempo del ridisegno, salti compresi.
 		if not skipped.is_empty():
 			parts.append("saltato=%s" % ", ".join(skipped))
@@ -11989,49 +12004,96 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut_lot
 # filtri dello stesso refresh; null = calcolalo qui (comportamento di prima, per un eventuale chiamante che non
 # lo ha).
 # `tree_group_starts` (2026-10-04, rimontaggio a gruppi degli alberi — MicroCellRenderer.set_tree_group_layout): se è un
-# Array, viene riempito con l'inizio della fetta filtrata di ogni gruppo di MicroCellRenderer.TREE_GROUP_SIZE alberi
-# consecutivi dell'elenco NON filtrato, più la fine. Calcolato nello stesso giro del filtro; filtro invariato.
+# Array, viene riempito con l'inizio della fetta filtrata di ogni gruppo, più la fine. Dal 2026-10-24 (progetto B fase
+# 2b) un gruppo per zona (MicroCellRenderer.vegetation_zone_of, VEGETATION_ZONE_COUNT gruppi, anche vuoti), con l'elenco
+# già ordinato per zona (VegetationLayoutService). Calcolato nello stesso giro del filtro; filtro invariato.
 # `shrub_group_starts` (2026-10-04, rimontaggio a gruppi degli arbusti — MicroCellRenderer.set_shrub_group_layout): come
-# tree_group_starts, per gli arbusti e gruppi di MicroCellRenderer.SHRUB_GROUP_SIZE.
+# tree_group_starts, per gli arbusti.
 func _filter_vegetation_positions_by_visibility(cell: LiveMacroCell, positions: Dictionary, visible_positions: Variant = null, tree_group_starts: Variant = null, shrub_group_starts: Variant = null) -> Dictionary:
-	if cell.fog_of_war_renderer == null and shrub_group_starts is Array:
-		var shrub_count: int = (positions.get(GameTypes.WorldObjectType.SHRUB, []) as Array).size()
-		for start in range(0, shrub_count, MicroCellRenderer.SHRUB_GROUP_SIZE):
-			shrub_group_starts.append(start)
-		shrub_group_starts.append(shrub_count)
 	if cell.fog_of_war_renderer == null:
 		if tree_group_starts is Array:
-			var tree_count: int = (positions.get(GameTypes.WorldObjectType.TREE, []) as Array).size()
-			for start in range(0, tree_count, MicroCellRenderer.TREE_GROUP_SIZE):
-				tree_group_starts.append(start)
-			tree_group_starts.append(tree_count)
+			_append_zone_group_slices(positions.get(GameTypes.WorldObjectType.TREE, []), null, PackedInt32Array(), [], tree_group_starts)
+		if shrub_group_starts is Array:
+			_append_zone_group_slices(positions.get(GameTypes.WorldObjectType.SHRUB, []), null, PackedInt32Array(), [], shrub_group_starts)
 		return positions
 	var visible: Dictionary = visible_positions if visible_positions != null else cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
 	var filtered: Dictionary = {}
+	var visible_by_zone: PackedInt32Array = _visible_count_by_zone(visible) if tree_group_starts is Array or shrub_group_starts is Array else PackedInt32Array()
 	for object_type in positions:
 		var kept: Array = []
 		if object_type == GameTypes.WorldObjectType.TREE and tree_group_starts is Array:
-			var source: Array = positions[object_type]
-			for start in range(0, source.size(), MicroCellRenderer.TREE_GROUP_SIZE):
-				tree_group_starts.append(kept.size())
-				for entry in source.slice(start, start + MicroCellRenderer.TREE_GROUP_SIZE):
-					if visible.has(Vector2i(entry.x, entry.y)):
-						kept.append(entry)
-			tree_group_starts.append(kept.size())
+			_append_zone_group_slices(positions[object_type], visible, visible_by_zone, kept, tree_group_starts)
 		elif object_type == GameTypes.WorldObjectType.SHRUB and shrub_group_starts is Array:
-			var shrub_source: Array = positions[object_type]
-			for start in range(0, shrub_source.size(), MicroCellRenderer.SHRUB_GROUP_SIZE):
-				shrub_group_starts.append(kept.size())
-				for entry in shrub_source.slice(start, start + MicroCellRenderer.SHRUB_GROUP_SIZE):
-					if visible.has(Vector2i(entry.x, entry.y)):
-						kept.append(entry)
-			shrub_group_starts.append(kept.size())
+			_append_zone_group_slices(positions[object_type], visible, visible_by_zone, kept, shrub_group_starts)
 		else:
 			for entry in positions[object_type]:
 				if visible.has(Vector2i(entry.x, entry.y)):
 					kept.append(entry)
 		filtered[object_type] = kept
 	return filtered
+
+
+# Filtro di un elenco ordinato per zona con gli inizi dei gruppi per zona (2026-10-24, progetto B fase 2b): `kept` riceve
+# le voci visibili (tutte con `visible` null), `starts` l'inizio in `kept` della fetta di ogni zona, più la fine.
+# Senza calcolare la zona voce per voce (~40 ms su decine di migliaia di voci): i confini delle zone con una ricerca
+# binaria sull'elenco ordinato (_zone_bounds), poi per zona: tutta visibile -> fetta copiata in blocco, nessuna
+# microcella visibile -> saltata, solo le zone di bordo voce per voce come il filtro di prima. Stesso risultato.
+# `visible_by_zone`: _visible_count_by_zone(visible), calcolato una volta per filtro.
+func _append_zone_group_slices(source: Array, visible: Variant, visible_by_zone: PackedInt32Array, kept: Array, starts: Array) -> void:
+	var bounds := _zone_bounds(source)
+	var full_zone: int = MicroCellRenderer.VEGETATION_ZONE_SIZE * MicroCellRenderer.VEGETATION_ZONE_SIZE
+	for zone in range(MicroCellRenderer.VEGETATION_ZONE_COUNT):
+		starts.append(kept.size())
+		var from: int = bounds[zone]
+		var to: int = bounds[zone + 1]
+		if to <= from:
+			continue
+		var zone_visible: int = full_zone if visible == null else visible_by_zone[zone]
+		if zone_visible == 0:
+			continue
+		if zone_visible >= full_zone:
+			kept.append_array(source.slice(from, to))
+			continue
+		for entry in source.slice(from, to):
+			if (visible as Dictionary).has(Vector2i(entry.x, entry.y)):
+				kept.append(entry)
+	starts.append(kept.size())
+
+
+# Inizio in `source` (ordinato per zona) di ogni zona, più la fine: ricerca binaria per zona. Sempre crescenti, così le
+# fette coprono tutto l'elenco anche se l'ordine non fosse quello atteso (disegno uguale, solo meno gruppi riusati).
+func _zone_bounds(source: Array) -> PackedInt32Array:
+	var bounds := PackedInt32Array()
+	bounds.resize(MicroCellRenderer.VEGETATION_ZONE_COUNT + 1)
+	var low_limit := 0
+	for zone in range(MicroCellRenderer.VEGETATION_ZONE_COUNT):
+		var low := low_limit
+		var high := source.size()
+		while low < high:
+			var middle := (low + high) / 2
+			var entry = source[middle]
+			if MicroCellRenderer.vegetation_zone_of(entry.x, entry.y) < zone:
+				low = middle + 1
+			else:
+				high = middle
+		bounds[zone] = low
+		low_limit = low
+	bounds[MicroCellRenderer.VEGETATION_ZONE_COUNT] = source.size()
+	return bounds
+
+
+# Microcelle visibili per zona, in un giro sull'insieme visibile.
+func _visible_count_by_zone(visible: Dictionary) -> PackedInt32Array:
+	var counts := PackedInt32Array()
+	counts.resize(MicroCellRenderer.VEGETATION_ZONE_COUNT)
+	var zone_size: int = MicroCellRenderer.VEGETATION_ZONE_SIZE
+	var per_side: int = MicroCellRenderer.VEGETATION_ZONES_PER_SIDE
+	for pos in visible:
+		var micro: Vector2i = pos
+		if micro.x < 0 or micro.y < 0 or micro.x >= zone_size * per_side or micro.y >= zone_size * per_side:
+			continue
+		counts[(micro.y / zone_size) * per_side + micro.x / zone_size] += 1
+	return counts
 
 
 # Gemella di _filter_vegetation_positions_by_visibility sopra, ma per un Dictionary FLAT

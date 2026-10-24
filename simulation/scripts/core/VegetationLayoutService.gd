@@ -12,7 +12,7 @@ extends RefCounted
 #     un individuo (tagliato, ripulito): non ne crea di nuovi, lo fa solo rebuild. L'erba salta i lotti con un edificio o
 #     un blocco attivo (come VegetationPositionService._exclude_blocked_lots), senza rimpiazzarli altrove.
 # Stessa forma di risultato di VegetationPositionService.generate_positions: TREE/SHRUB Array di Vector3i, GRASS Array di
-# Vector2i, nello stesso ordine (lotti nell'ordine in cui il generatore li ha restituiti, indici crescenti).
+# Vector2i. TREE/SHRUB ordinati per zona del renderer (dal 2026-10-24, _ordered_by_zone), sia in rebuild sia in read.
 # Stateless.
 
 # Lotto nel salvataggio: y * LOT_CODE_WIDTH + x (microcelle 0..99).
@@ -24,6 +24,7 @@ const LAYOUT_TYPES: Array[GameTypes.WorldObjectType] = [GameTypes.WorldObjectTyp
 static func rebuild(macro_state: MacroCellState, occupied: Dictionary, current_year: int, current_day: int, building_positions: Dictionary) -> Dictionary:
 	var positions: Dictionary = VegetationPositionService.new().generate_positions(macro_state, occupied, current_year, current_day, building_positions)
 	for object_type in LAYOUT_TYPES:
+		positions[object_type] = _ordered_by_zone(positions.get(object_type, []))
 		var slots := _lot_slots_store(macro_state, object_type)
 		slots.clear()
 		for key in positions.get(object_type, []):
@@ -70,7 +71,7 @@ static func read(macro_state: MacroCellState, occupied: Dictionary, current_year
 			# Come il generatore: i lotti rivendicati restano occupati per chi viene dopo.
 			for lot in _claimed_lots_store(macro_state, object_type).keys():
 				occupied[lot] = true
-		result[object_type] = individuals
+		result[object_type] = _ordered_by_zone(individuals)
 	var blocked_lots: Dictionary = {}
 	for key in death_exceptions.keys():
 		blocked_lots[Vector2i(key.x, key.y)] = true
@@ -122,6 +123,21 @@ static func load_save_data(macro_state: MacroCellState, data: Dictionary) -> voi
 
 
 # --- Interni ---
+
+# Alberi/arbusti ordinati per zona del renderer (2026-10-24, progetto B fase 2b — MicroCellRenderer.vegetation_zone_of),
+# nell'ordine di prima dentro ogni zona: i gruppi del rimontaggio sono le zone, quindi un taglio ne cambia uno solo.
+static func _ordered_by_zone(individuals: Array) -> Array:
+	var buckets: Array = []
+	buckets.resize(MicroCellRenderer.VEGETATION_ZONE_COUNT)
+	for i in range(buckets.size()):
+		buckets[i] = []
+	for key in individuals:
+		(buckets[MicroCellRenderer.vegetation_zone_of(key.x, key.y)] as Array).append(key)
+	var ordered: Array = []
+	for bucket in buckets:
+		ordered.append_array(bucket)
+	return ordered
+
 
 static func _save_key(object_type: GameTypes.WorldObjectType) -> String:
 	return "tree" if object_type == GameTypes.WorldObjectType.TREE else "shrub"

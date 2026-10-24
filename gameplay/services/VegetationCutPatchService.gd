@@ -36,6 +36,38 @@ static func remove_individual(cell: LiveMacroCell, object_type: GameTypes.WorldO
 	return true
 
 
+# Elenco filtrato per la nebbia dopo il taglio (2026-10-24, progetto B fase 2b): il taglio non cambia la visibilità, quindi
+# vale quello dell'ultimo ridisegno (LiveMacroCell.last_render_vegetation_positions) meno la pianta tagliata, con gli
+# inizi dei gruppi per zona spostati di uno dopo di lei (scritti in `tree_starts_out`/`shrub_starts_out`). null = niente
+# elenco precedente coerente: il chiamante filtra come sempre. Le zone entrate in vista dopo l'ultimo ridisegno restano
+# come erano a schermo fino al prossimo ridisegno per movimento, come già oggi tra un ridisegno e l'altro.
+static func patch_render_positions(cell: LiveMacroCell, object_type: GameTypes.WorldObjectType, individual_key: Vector3i, tree_starts_out: Array, shrub_starts_out: Array) -> Variant:
+	if cell.last_render_vegetation_positions == null:
+		return null
+	var previous: Dictionary = cell.last_render_vegetation_positions
+	var expected_size: int = MicroCellRenderer.VEGETATION_ZONE_COUNT + 1
+	for check in [[cell.last_tree_group_starts, GameTypes.WorldObjectType.TREE], [cell.last_shrub_group_starts, GameTypes.WorldObjectType.SHRUB]]:
+		var starts: Array = check[0]
+		if starts.size() != expected_size or int(starts[expected_size - 1]) != (previous.get(check[1], []) as Array).size():
+			return null
+	var patched: Dictionary = previous.duplicate()
+	var tree_starts: Array = cell.last_tree_group_starts.duplicate()
+	var shrub_starts: Array = cell.last_shrub_group_starts.duplicate()
+	var individuals: Array = previous.get(object_type, [])
+	var index: int = individuals.find(individual_key)
+	if index >= 0:
+		var updated: Array = individuals.duplicate()
+		updated.remove_at(index)
+		patched[object_type] = updated
+		var starts: Array = tree_starts if object_type == GameTypes.WorldObjectType.TREE else shrub_starts
+		for i in range(starts.size()):
+			if int(starts[i]) > index:
+				starts[i] = int(starts[i]) - 1
+	tree_starts_out.append_array(tree_starts)
+	shrub_starts_out.append_array(shrub_starts)
+	return patched
+
+
 # Controllo di debug (DebugLogging.CHECK_VEGETATION_CUT_PATCH): rifà la lettura completa e i pesi dei frutti e avvisa se
 # il risultato aggiornato a mano è diverso. `occupied` viene modificato (come VegetationLayoutService.read).
 static func verify(cell: LiveMacroCell, occupied: Dictionary, building_positions: Dictionary, current_year: int) -> void:

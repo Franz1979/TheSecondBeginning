@@ -3196,20 +3196,52 @@ func _rebuild_tree_multimeshes() -> void:
 	_tree_fruit_entries_valid = true
 
 
-# RIMONTAGGIO A GRUPPI DEGLI ALBERI (2026-10-04, richiesta utente). L'elenco NON filtrato degli alberi (posizioni della
-# cella, nell'ordine di sempre) è diviso in gruppi consecutivi di TREE_GROUP_SIZE; l'elenco filtrato per la nebbia, che
-# ne conserva l'ordine, è quindi la concatenazione delle "fette visibili" dei gruppi. GameScene calcola dove comincia la
-# fetta di ogni gruppo nello stesso giro del filtro e la passa qui (set_tree_group_layout). Per ogni gruppo si
-# conservano tronchi, chiome (col colore), chiome conifer, voci dei frutti e puntini dei frutti già concatenati; a ogni
-# rimontaggio si rifanno solo i gruppi da rifare e si concatenano i blocchi nell'ordine dei gruppi: stesso ordine
-# delle istanze del giro di sempre.
+# RIMONTAGGIO A GRUPPI DEGLI ALBERI (2026-10-04, richiesta utente). L'elenco filtrato per la nebbia è la concatenazione
+# delle "fette visibili" dei gruppi. GameScene calcola dove comincia la fetta di ogni gruppo nello stesso giro del filtro
+# e la passa qui (set_tree_group_layout). Per ogni gruppo si conservano tronchi, chiome (col colore), chiome conifer,
+# voci dei frutti e puntini dei frutti già concatenati; a ogni rimontaggio si rifanno solo i gruppi da rifare e si
+# concatenano i blocchi nell'ordine dei gruppi.
+# Gruppi per ZONA (2026-10-24, progetto B fase 2b): prima erano fette consecutive di 256 alberi dell'elenco, e togliere
+# un albero faceva scorrere tutti i gruppi dopo di lui; ora il gruppo N sono gli alberi della zona N (riquadri di
+# VEGETATION_ZONE_SIZE microcelle, vegetation_zone_of), con l'elenco ordinato per zona da VegetationLayoutService. Un
+# taglio cambia solo il gruppo della sua zona.
 #
-# Un gruppo si rifà se la sua fetta visibile è diversa da quella conservata (confronto nativo di array). Si rifanno
-# TUTTI se cambia anche uno solo di: versione delle posizioni (rigenerazione), anno, parametri d'età, colore stagionale
-# delle chiome, ceppi o piante morte degli alberi (contano nel numero di individui del lotto), numero di gruppi; se il
-# motivo del ridisegno non è movimento/nebbia (allow_reuse false); se la memoria della geometria viene svuotata.
-# I puntini dei frutti di un gruppo si rifanno anche quando cambiano i rapporti dei frutti per lotto (ghiande, frutta).
-const TREE_GROUP_SIZE := 256
+# Un gruppo si rifà se la sua fetta visibile è diversa da quella conservata (confronto nativo di array) o se è cambiato
+# il numero di individui (vivi + ceppi + morti, _lot_extent_counts) di uno dei suoi lotti, da cui dipende la taglia: dal
+# 2026-10-24 è questo a coprire ceppi e piante morte, prima nei dati globali (un ceppo nuovo li rifaceva tutti). Si
+# rifanno TUTTI se cambia anche uno solo di: versione delle posizioni (rigenerazione), anno, parametri d'età, colore
+# stagionale delle chiome, numero di gruppi; se il motivo del ridisegno non lo permette (allow_reuse false); se la
+# memoria della geometria viene svuotata. I puntini dei frutti di un gruppo si rifanno anche quando cambiano i rapporti
+# dei frutti per lotto (ghiande, frutta).
+const VEGETATION_ZONE_SIZE := 10
+const VEGETATION_ZONES_PER_SIDE := 10
+const VEGETATION_ZONE_COUNT := VEGETATION_ZONES_PER_SIDE * VEGETATION_ZONES_PER_SIDE
+
+
+# Zona di una microcella (0..VEGETATION_ZONE_COUNT-1), per riga: condivisa da VegetationLayoutService (ordine
+# dell'elenco) e da GameScene (inizi dei gruppi).
+static func vegetation_zone_of(x: int, y: int) -> int:
+	return clampi(y / VEGETATION_ZONE_SIZE, 0, VEGETATION_ZONES_PER_SIDE - 1) * VEGETATION_ZONES_PER_SIDE \
+		+ clampi(x / VEGETATION_ZONE_SIZE, 0, VEGETATION_ZONES_PER_SIDE - 1)
+
+
+# Numero di individui dei lotti di `members` (vedi _lot_extent_counts), conservato nel gruppo.
+static func _group_lot_counts(members: Array, lot_counts: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for individual_key in members:
+		var lot := Vector2i(individual_key.x, individual_key.y)
+		if not result.has(lot):
+			result[lot] = int(lot_counts.get(lot, 0))
+	return result
+
+
+# true se nessun lotto del gruppo ha cambiato numero di individui.
+static func _group_lot_counts_match(group: Dictionary, lot_counts: Dictionary) -> bool:
+	var stored: Dictionary = group["lot_counts"]
+	for lot in stored.keys():
+		if int(lot_counts.get(lot, 0)) != int(stored[lot]):
+			return false
+	return true
 
 var _tree_group_layout_version: int = -1
 var _tree_group_starts: Array = []
@@ -3235,9 +3267,7 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 	_check_geometry_cache_globals()
 	var group_count: int = _tree_group_starts.size() - 1
 	var globals: Array = [
-		_tree_group_layout_version, tree_current_year, tree_age_params.hash(), deciduous_canopy_color,
-		cut_positions.get(GameTypes.WorldObjectType.TREE, []), dead_positions.get(GameTypes.WorldObjectType.TREE, []),
-		group_count,
+		_tree_group_layout_version, tree_current_year, tree_age_params.hash(), deciduous_canopy_color, group_count,
 	]
 	if not _tree_group_allow_reuse or globals != _tree_groups_globals or _tree_groups.size() != group_count:
 		_tree_groups.clear()
@@ -3251,7 +3281,10 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 	_tree_groups_fruit_stamp = fruit_stamp
 
 	var loop_start_usec := Time.get_ticks_usec()
-	var lot_counts: Variant = null
+	# Sempre (2026-10-24): serve anche al controllo dei gruppi da riusare (_group_lot_counts_match).
+	var lot_counts_start_usec := Time.get_ticks_usec()
+	var lot_counts: Dictionary = _lot_extent_counts(GameTypes.WorldObjectType.TREE)
+	last_batch_timings_ms["tree_lot_counts"] = (Time.get_ticks_usec() - lot_counts_start_usec) / 1000.0
 	var trunk_buffer := PackedFloat32Array()
 	var canopy_buffer := PackedFloat32Array()
 	var conifer_buffer := PackedFloat32Array()
@@ -3265,11 +3298,7 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 	for group_index in range(group_count):
 		var members: Array = positions.slice(int(_tree_group_starts[group_index]), int(_tree_group_starts[group_index + 1]))
 		var group: Variant = _tree_groups[group_index]
-		if group == null or group["members"] != members:
-			if lot_counts == null:
-				var lot_counts_start_usec := Time.get_ticks_usec()
-				lot_counts = _lot_extent_counts(GameTypes.WorldObjectType.TREE)
-				last_batch_timings_ms["tree_lot_counts"] = (Time.get_ticks_usec() - lot_counts_start_usec) / 1000.0
+		if group == null or group["members"] != members or not _group_lot_counts_match(group, lot_counts):
 			group = _build_tree_group(members, lot_counts, deciduous_canopy_color)
 			_tree_groups[group_index] = group
 			rebuilt_count += 1
@@ -3277,7 +3306,9 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 			reused_individuals += int(group["reused"])
 		else:
 			reused_count += 1
-			if fruit_changed:
+			# Solo i gruppi con un lotto il cui rapporto è cambiato davvero (2026-10-24, progetto B fase 2b: un taglio cambia di
+			# poco il peso totale e quindi la mappa dei rapporti, ma pochi lotti cambiano valore).
+			if fruit_changed and not _group_fruit_ratios_match(group):
 				_refresh_tree_group_fruit(group)
 		trunk_buffer.append_array(group["trunk"])
 		canopy_buffer.append_array(group["canopy"])
@@ -3333,7 +3364,7 @@ func _build_tree_group(members: Array, lot_counts: Dictionary, deciduous_canopy_
 		})
 	var group := {
 		"members": members, "trunk": trunk, "canopy": canopy, "conifer": conifer, "fruit_entries": fruit_entries,
-		"computed": computed, "reused": reused,
+		"computed": computed, "reused": reused, "lot_counts": _group_lot_counts(members, lot_counts),
 	}
 	_refresh_tree_group_fruit(group)
 	return group
@@ -3354,6 +3385,33 @@ func _refresh_tree_group_fruit(group: Dictionary) -> void:
 			wild.append_array(_cached_tree_fruit_packed(entry))
 	group["wild_fruit"] = wild
 	group["domesticable_fruit"] = domesticable
+	group["fruit_ratios"] = _group_fruit_ratios(group["fruit_entries"], "")
+
+
+# Rapporti dei frutti per lotto letti dalle voci del gruppo (2026-10-24, progetto B fase 2b), come li legge
+# _fruit_stock_shows (lotto assente = 1.0): risorsa -> {lotto: rapporto}. `default_resource` per le voci senza
+# "resource_name" (bacche degli arbusti).
+func _group_fruit_ratios(fruit_entries: Array, default_resource: String) -> Dictionary:
+	var result: Dictionary = {}
+	for entry in fruit_entries:
+		var resource_name: String = entry.get("resource_name", default_resource)
+		var lot := Vector2i(entry["key"].x, entry["key"].y)
+		if not result.has(resource_name):
+			result[resource_name] = {}
+		result[resource_name][lot] = float(fruit_stock_available_ratio_by_lot.get(resource_name, {}).get(lot, 1.0))
+	return result
+
+
+# true se nessun lotto con frutti del gruppo ha cambiato rapporto dall'ultima volta che i suoi puntini sono stati fatti.
+func _group_fruit_ratios_match(group: Dictionary) -> bool:
+	var stored: Dictionary = group.get("fruit_ratios", {})
+	for resource_name in stored.keys():
+		var current: Dictionary = fruit_stock_available_ratio_by_lot.get(resource_name, {})
+		var stored_lots: Dictionary = stored[resource_name]
+		for lot in stored_lots.keys():
+			if float(current.get(lot, 1.0)) != float(stored_lots[lot]):
+				return false
+	return true
 
 
 # Chioma decidua impacchettata con il colore della stagione (12 valori: trasformazione + colore). Rifatta solo quando il
@@ -3880,13 +3938,12 @@ func _compute_shrub_geometry(individual_key: Vector3i, lot_counts: Dictionary, p
 
 
 # RIMONTAGGIO A GRUPPI DEGLI ARBUSTI (2026-10-04, richiesta utente) — stesso schema degli alberi (vedi
-# _rebuild_tree_multimeshes_grouped e il commento su TREE_GROUP_SIZE): gruppi di SHRUB_GROUP_SIZE arbusti consecutivi
-# dell'elenco NON filtrato, fette visibili da GameScene (set_shrub_group_layout), per gruppo lobi (con colore), voci
-# delle bacche e bacche già concatenati. Un gruppo si rifà se la sua fetta visibile cambia; tutti se cambiano versione
-# delle posizioni, anno, parametri d'età, ceppi o piante morte degli arbusti, numero di gruppi, se il motivo non è
-# movimento/nebbia o se la memoria della geometria viene svuotata (gli arbusti non hanno colore stagionale). Le bacche
-# dei gruppi riusati si rifanno quando cambiano i rapporti delle bacche per lotto (stessa scelta dei frutti degli alberi).
-const SHRUB_GROUP_SIZE := 256
+# _rebuild_tree_multimeshes_grouped e il commento su VEGETATION_ZONE_SIZE): un gruppo per zona (dal 2026-10-24), fette
+# visibili da GameScene (set_shrub_group_layout), per gruppo lobi (con colore), voci delle bacche e bacche già
+# concatenati. Un gruppo si rifà se la sua fetta visibile cambia o un suo lotto cambia numero di individui; tutti se
+# cambiano versione delle posizioni, anno, parametri d'età, numero di gruppi, se il motivo non lo permette o se la
+# memoria della geometria viene svuotata (gli arbusti non hanno colore stagionale). Le bacche dei gruppi riusati si
+# rifanno quando cambiano i rapporti delle bacche per lotto (stessa scelta dei frutti degli alberi).
 
 var _shrub_group_layout_version: int = -1
 var _shrub_group_starts: Array = []
@@ -3909,11 +3966,7 @@ func set_shrub_group_layout(layout_version: int, starts: Array, allow_reuse: boo
 func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 	_check_geometry_cache_globals()
 	var group_count: int = _shrub_group_starts.size() - 1
-	var globals: Array = [
-		_shrub_group_layout_version, shrub_current_year, shrub_age_params.hash(),
-		cut_positions.get(GameTypes.WorldObjectType.SHRUB, []), dead_positions.get(GameTypes.WorldObjectType.SHRUB, []),
-		group_count,
-	]
+	var globals: Array = [_shrub_group_layout_version, shrub_current_year, shrub_age_params.hash(), group_count]
 	if not _shrub_group_allow_reuse or globals != _shrub_groups_globals or _shrub_groups.size() != group_count:
 		_shrub_groups.clear()
 		_shrub_groups.resize(group_count)
@@ -3923,7 +3976,8 @@ func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 	var berry_changed: bool = berry_stamp != _shrub_groups_berry_stamp
 	_shrub_groups_berry_stamp = berry_stamp
 
-	var lot_counts: Variant = null
+	# Sempre (2026-10-24): serve anche al controllo dei gruppi da riusare (_group_lot_counts_match).
+	var lot_counts: Dictionary = _lot_extent_counts(GameTypes.WorldObjectType.SHRUB)
 	var blob_buffer := PackedFloat32Array()
 	var berry_buffer := PackedFloat32Array()
 	_shrub_fruit_entries.clear()
@@ -3934,9 +3988,7 @@ func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 	for group_index in range(group_count):
 		var members: Array = positions.slice(int(_shrub_group_starts[group_index]), int(_shrub_group_starts[group_index + 1]))
 		var group: Variant = _shrub_groups[group_index]
-		if group == null or group["members"] != members:
-			if lot_counts == null:
-				lot_counts = _lot_extent_counts(GameTypes.WorldObjectType.SHRUB)
+		if group == null or group["members"] != members or not _group_lot_counts_match(group, lot_counts):
 			group = _build_shrub_group(members, lot_counts)
 			_shrub_groups[group_index] = group
 			rebuilt_count += 1
@@ -3944,7 +3996,7 @@ func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 			reused_individuals += int(group["reused"])
 		else:
 			reused_count += 1
-			if berry_changed:
+			if berry_changed and not _group_fruit_ratios_match(group):
 				_refresh_shrub_group_berries(group)
 		blob_buffer.append_array(group["blobs"])
 		berry_buffer.append_array(group["berries"])
@@ -3978,7 +4030,10 @@ func _build_shrub_group(members: Array, lot_counts: Dictionary) -> Dictionary:
 				"key": individual_key, "jitter_pos": geometry["jitter_pos"], "center": geometry["center"],
 				"density_scale": geometry["density_scale"], "size_multiplier": geometry["size_multiplier"],
 			})
-	var group := {"members": members, "blobs": blobs, "fruit_entries": fruit_entries, "computed": computed, "reused": reused}
+	var group := {
+		"members": members, "blobs": blobs, "fruit_entries": fruit_entries, "computed": computed, "reused": reused,
+		"lot_counts": _group_lot_counts(members, lot_counts),
+	}
 	_refresh_shrub_group_berries(group)
 	return group
 
@@ -3990,6 +4045,7 @@ func _refresh_shrub_group_berries(group: Dictionary) -> void:
 		if _fruit_stock_shows("berry", entry["key"], entry["jitter_pos"]):
 			berries.append_array(_cached_shrub_berry_packed(entry))
 	group["berries"] = berries
+	group["fruit_ratios"] = _group_fruit_ratios(group["fruit_entries"], "berry")
 
 
 # Bacche di un arbusto (estratta il 2026-10-03 da _rebuild_shrub_multimeshes, formula invariata, per riusarla nella
