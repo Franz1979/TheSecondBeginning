@@ -76,7 +76,7 @@ idea_plant_lore_summary,The group learns to recognize medicinal herbs.
 idea_plant_lore_description,"By observing plants, the group learns to tell medicinal herbs apart and where to find them. They can now be gathered, but no one knows yet how to use them."
 idea_herbal_medicine,Herbal Medicine
 idea_herbal_medicine_summary,The group learns to use medicinal herbs to heal itself.
-idea_herbal_medicine_description,"Through trial and error, the group discovers how to prepare medicinal herbs to treat wounds and ailments."
+idea_herbal_medicine_description,"Through trial and error, the group discovers how to prepare medicinal herbs to treat wounds and ailments. Working them requires a stone bowl."
 idea_work_areas_summary,Unlocks food gathering areas.
 idea_work_areas_description,The group learns to mark out zones where food is gathered.
 idea_work_areas_advanced_summary,Unlocks work areas for every resource.
@@ -436,6 +436,7 @@ carried_resource_tooltip_stone_knife,Stone knife
 carried_resource_tooltip_bone_awl,Bone awl
 carried_resource_tooltip_hide_bag,Hide bag
 carried_resource_tooltip_travois,Travois
+carried_resource_tooltip_stone_bowl,Stone bowl
 carried_resource_tooltip_meat,Raw meat
 carried_resource_tooltip_cooked_meat,Cooked meat
 carried_resource_tooltip_dried_meat,Dried meat
@@ -836,6 +837,7 @@ carried_resource_tooltip_bow,Bow
 carried_resource_tooltip_arrow_bundle,Bundle of arrows
 tool_category_ammo,ammunition
 tool_category_towing,towing
+tool_category_container,container
 tool_gate_hunt_no_ammo,{name}: no ammunition for {weapon}
 carried_resource_tooltip_stone_axe,Crude axe
 carried_resource_tooltip_wood,Log

@@ -43,7 +43,9 @@ extends RefCounted
 # DEL TIPO: saltato se rules.buildable_on_stone (es. una futura cava).
 # Criterio 6: la microcella non dev'essere già occupata da un altro edificio (macro_world.
 # buildings, filtrato per macro_x/macro_y/micro_x/micro_y) — stesso ostacolo permanente del
-# criterio 5, ma per costruzioni invece che per roccia naturale. UNIVERSALE.
+# criterio 5, ma per costruzioni invece che per roccia naturale. UNIVERSALE, con una sola eccezione (2026-10-24): un
+# edificio di suolo (walkable, strada) e uno che lo ammette sotto (allows_ground_beneath, cancello) possono condividere la
+# microcella, uno per strato.
 #
 # I criteri 1-6 sono raggruppati in _is_position_clear sotto ("questo punto è noto e libero da
 # ostacoli permanenti/di tipo", presi in base a `rules`) — riusata TALE E QUALE per il
@@ -181,10 +183,14 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 	):
 		return false
 
-	# Criteri 3-6: regola condivisa con la posa dei mucchi a terra (is_microcell_free).
+	# Criteri 3-6: regola condivisa con la posa dei mucchi a terra (is_microcell_free). Strada sotto il cancello
+	# (2026-10-24): sulla microcella dell'edificio stesso (non davanti alla porta) un ospite può andare sopra una strada e
+	# una strada sotto un ospite (MicrocellObstacles.is_free, stack_as_host/stack_as_ground).
+	var stacking := not ignore_movement_buildings
 	return is_microcell_free(
 		Vector2i(cell.macro_x, cell.macro_y), cell.macro_cell, cell.macro_state, cell.river_positions, microcell, macro_world,
-		rules.buildable_on_water, rules.buildable_on_river, rules.buildable_on_stone, ignore_movement_buildings
+		rules.buildable_on_water, rules.buildable_on_river, rules.buildable_on_stone, ignore_movement_buildings,
+		stacking and rules.allows_ground_beneath, stacking and rules.walkable
 	)
 
 
@@ -197,12 +203,13 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 static func is_microcell_free(
 	macro_coords: Vector2i, macro_cell: MacroCellData, macro_state: MacroCellState, river_positions: Variant,
 	microcell: Vector2i, macro_world: World, allow_water: bool = false, allow_river: bool = false,
-	allow_stone: bool = false, ignore_movement_buildings: bool = false
+	allow_stone: bool = false, ignore_movement_buildings: bool = false, stack_as_host: bool = false,
+	stack_as_ground: bool = false
 ) -> bool:
 	# Regola spostata in MicrocellObstacles (2026-09-27, pathfinding step 1), comportamento invariato: chi interroga
 	# molte microcelle della stessa macrocella costruisce MicrocellObstacles una volta e usa is_free direttamente.
 	return MicrocellObstacles.build(macro_coords, macro_cell, macro_state, river_positions, macro_world).is_free(
-		microcell, allow_water, allow_river, allow_stone, ignore_movement_buildings
+		microcell, allow_water, allow_river, allow_stone, ignore_movement_buildings, stack_as_host, stack_as_ground
 	)
 
 

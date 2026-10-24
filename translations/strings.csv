@@ -110,7 +110,7 @@ idea_plant_lore_summary,Il gruppo impara a riconoscere le erbe medicinali.
 idea_plant_lore_description,"Osservando le piante, il gruppo impara a distinguere le erbe medicinali e a trovarle. Ora si possono raccogliere, ma nessuno sa ancora come usarle."
 idea_herbal_medicine,Uso medicinale delle piante
 idea_herbal_medicine_summary,Il gruppo impara a usare le erbe medicinali per curarsi.
-idea_herbal_medicine_description,"Provando e riprovando, il gruppo scopre come preparare le erbe medicinali per curare ferite e malanni."
+idea_herbal_medicine_description,"Provando e riprovando, il gruppo scopre come preparare le erbe medicinali per curare ferite e malanni. Per lavorarle serve una ciotola di pietra."
 idea_work_areas_summary,Sblocca le aree di raccolta del cibo.
 idea_work_areas_description,Il gruppo impara a delimitare zone in cui raccogliere il cibo.
 idea_work_areas_advanced_summary,Sblocca le aree di lavoro per tutte le risorse.
@@ -371,6 +371,7 @@ carried_resource_tooltip_stone_knife,Coltello di pietra
 carried_resource_tooltip_bone_awl,Punteruolo d'osso
 carried_resource_tooltip_hide_bag,Sacca di pelle
 carried_resource_tooltip_travois,Travois
+carried_resource_tooltip_stone_bowl,Ciotola di pietra
 carried_resource_tooltip_meat,Carne cruda
 carried_resource_tooltip_cooked_meat,Carne cotta
 carried_resource_tooltip_dried_meat,Carne essiccata
@@ -894,6 +895,7 @@ carried_resource_tooltip_bow,Arco
 carried_resource_tooltip_arrow_bundle,Mazzo di frecce
 tool_category_ammo,munizioni
 tool_category_towing,traino
+tool_category_container,recipiente
 tool_gate_hunt_no_ammo,{name}: mancano le munizioni per {weapon}
 carried_resource_tooltip_stone_axe,Accetta rudimentale
 carried_resource_tooltip_wood,Tronco

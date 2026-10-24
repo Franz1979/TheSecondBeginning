@@ -27,6 +27,11 @@ var movement_buildings: Dictionary = {}
 # sopra una barriera non si arriva, quindi non la si attraversa ripartendo da lì. Microcella -> id edificio.
 const BARRIER_TYPES: Array[String] = ["palisade", "gate", "earthwork"]
 var barrier_buildings: Dictionary = {}
+# Strada sotto il cancello (2026-10-24, richiesta utente): due strati sulla stessa microcella solo tra un edificio di suolo
+# (BuildingRules.walkable) e uno che lo ammette sotto di sé (BuildingRules.allows_ground_beneath, il cancello). Solo il
+# piazzamento li consulta (is_free con stack_as_host/stack_as_ground). Microcella -> id edificio.
+var ground_hosts: Dictionary = {}
+var ground_buildings: Dictionary = {}
 
 
 # `river_positions`: microcelle del fiume (Array o Dictionary con le microcelle come chiavi, o null).
@@ -60,6 +65,8 @@ func refresh_buildings(macro_coords: Vector2i, macro_world: World) -> void:
 	blocking_buildings.clear()
 	movement_buildings.clear()
 	barrier_buildings.clear()
+	ground_hosts.clear()
+	ground_buildings.clear()
 	if macro_world == null:
 		return
 	for building in macro_world.buildings:
@@ -69,7 +76,13 @@ func refresh_buildings(macro_coords: Vector2i, macro_world: World) -> void:
 		# Calpestabili (2026-10-17): dal flag BuildingRules.walkable, non più dalla categoria MOVEMENT.
 		# Cancello (2026-10-23): calpestabile solo se aperto (Building.is_walkable).
 		var is_walkable: bool = building.is_walkable()
+		var is_host: bool = building.rules != null and building.rules.allows_ground_beneath
+		var is_ground: bool = building.rules != null and building.rules.walkable
 		for microcell in BuildingFootprint.cells_of(building):
+			if is_host:
+				ground_hosts[microcell] = building.id
+			if is_ground:
+				ground_buildings[microcell] = building.id
 			if is_walkable:
 				movement_buildings[microcell] = building.id
 			else:
@@ -85,9 +98,12 @@ func is_barrier(microcell: Vector2i) -> bool:
 
 # Regola dei Criteri 3-6 (vedi in testa). I flag allow_* corrispondono a BuildingRules.buildable_on_water/_river/
 # _stone; ignore_movement_buildings salta gli edifici calpestabili.
+# Sovrapposizione (2026-10-24, solo piazzamento): `stack_as_host` = si piazza un edificio con allows_ground_beneath, che
+# può andare sopra una strada ma non sopra un altro ospite; `stack_as_ground` = si piazza un edificio di suolo, che può
+# andare sotto un ospite (aperto, chiuso o cantiere) ma non dove c'è già un altro edificio di suolo.
 func is_free(
 	microcell: Vector2i, allow_water: bool = false, allow_river: bool = false, allow_stone: bool = false,
-	ignore_movement_buildings: bool = false
+	ignore_movement_buildings: bool = false, stack_as_host: bool = false, stack_as_ground: bool = false
 ) -> bool:
 	if not cell_known:
 		return false
@@ -97,6 +113,12 @@ func is_free(
 		return false
 	if not allow_stone and stones.has(microcell):
 		return false
+	if stack_as_host:
+		return not ground_hosts.has(microcell) and not blocking_buildings.has(microcell)
+	if stack_as_ground and ground_hosts.has(microcell):
+		if ground_buildings.has(microcell):
+			return false
+		return blocking_buildings.get(microcell, ground_hosts[microcell]) == ground_hosts[microcell]
 	if blocking_buildings.has(microcell):
 		return false
 	if not ignore_movement_buildings and movement_buildings.has(microcell):

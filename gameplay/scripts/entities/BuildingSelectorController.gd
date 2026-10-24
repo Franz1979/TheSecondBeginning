@@ -53,8 +53,11 @@ func try_select(event: InputEvent, live_cells: Dictionary, buildings: Array, req
 			if building.rules != null and BuildingFootprint.is_large(building.rules):
 				var rect := Rect2(Vector2(building.micro_x, building.micro_y) * CELL_SIZE, Vector2(BuildingFootprint.size_of(building)) * CELL_SIZE)
 				distance = LARGE_BUILDING_HIT_DISTANCE_PX if rect.has_point(local_mouse) else INF
-			if distance < best_distance:
+			# Strada sotto il cancello (2026-10-24): a pari distanza (stessa microcella) vince lo strato sopra, non di suolo.
+			var is_ground: bool = building.rules != null and building.rules.walkable
+			var beats_ground: bool = is_equal_approx(distance, best_distance) and not is_ground and best.get("is_ground", false)
+			if distance < best_distance or beats_ground:
 				best_distance = distance
-				best = {"macro_coords": coords, "building_id": building.id, "distance": distance}
+				best = {"macro_coords": coords, "building_id": building.id, "distance": distance, "is_ground": is_ground}
 
 	return best

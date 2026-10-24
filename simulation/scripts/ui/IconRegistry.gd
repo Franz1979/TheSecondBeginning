@@ -45,6 +45,8 @@ const RESOURCE_ICONS := {
 	# "fiber_rope" (2026-09-23, richiesta utente - corda di fibre, primo prodotto del sistema di produzione): emoji
 	# nodo provvisorio.
 	"fiber_rope": "🪢",
+	# Ciotola di pietra (2026-10-24, richiesta utente): emoji provvisoria.
+	"stone_bowl": "🥣",
 	# Legna da ardere (2026-10-16, legnaia): ciocchi spaccati da un tronco.
 	"firewood": "🪵",
 	# Detriti (2026-10-18, macerie da portare alla Fossa dei rifiuti): emoji provvisorio.

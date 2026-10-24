@@ -9422,11 +9422,16 @@ func _find_building_by_id(building_id: int) -> Building:
 func _find_building_at_microcell(macro_coords: Vector2i, lot: Vector2i) -> Building:
 	if macro_world == null:
 		return null
+	# Strada sotto il cancello (2026-10-24): se sulla microcella ci sono due strati vince quello sopra (non di suolo).
+	var ground: Building = null
 	for building in macro_world.buildings:
 		# Ingombro (2026-10-17): qualunque microcella del rettangolo.
 		if BuildingFootprint.covers(building, macro_coords, lot):
+			if building.rules != null and building.rules.walkable:
+				ground = building
+				continue
 			return building
-	return null
+	return ground
 
 
 # Effetto nato-morto, popup nascita (2026-09-06) — serve solo per risolvere il NOME della madre da
