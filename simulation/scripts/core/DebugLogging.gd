@@ -94,6 +94,11 @@ const SHOW_VEGETATION_REFRESH_TIMING_LOGS := true
 # lettura completa della vegetazione e i pesi dei frutti, e avvisa ([CUT PATCH]) se differiscono. Costa quanto prima.
 const CHECK_VEGETATION_CUT_PATCH := false
 
+# Progetto B fase 3 (2026-10-24, richiesta utente: spento di default): a ogni ridisegno per aggiunta rifà l'insieme
+# visibile della nebbia e le disponibilità di bastoni/sassi/uova/lotti d'erba per intero, e avvisa ([FOG VISIBLE SET],
+# [SCATTERED CHECK]) se differiscono da quelli aggiornati per aggiunta. Costa quanto il calcolo completo.
+const CHECK_FOG_VISIBLE_SET := false
+
 # Filtro dedicato per [FOW REDRAW TIMING] (FogOfWarRenderer._draw) — diagnostica per lo Step 4 FoW
 # multi-sorgente (2026-09-02): misura il costo reale del ciclo da 10.000 celle ora che il test di
 # distanza è a N vie (una per sorgente rilevante, vedi GameScene._relevant_source_positions_for_cell)

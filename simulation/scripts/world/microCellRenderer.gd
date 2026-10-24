@@ -2308,30 +2308,54 @@ func _ensure_stick_mesh() -> void:
 # un redraw e l'altro finché la quantità non cambia). Vector2i tipizzato esplicitamente (non :=)
 # perché `lot` proviene da un ciclo su Dictionary.keys() non tipizzato — stesso errore di
 # inferenza già incontrato con pebble_availability.
+# Dal 2026-10-24 (progetto B fase 3, ~8 ms al movimento): i bastoni di un lotto dipendono solo dal lotto e dal loro
+# numero, quindi si tengono impacchettati in memoria (_stick_lot_packed) e il MultiMesh si scrive in un colpo col buffer;
+# si calcolano solo i lotti nuovi o con un numero di bastoni diverso. Senza buffer, il metodo di prima.
+var _stick_lot_packed: Dictionary = {} # Vector2i lotto -> {"count": int, "packed": PackedFloat32Array}
+
+
 func _rebuild_stick_multimesh() -> void:
 	_ensure_stick_mesh()
-	var half: float = CELL_SIZE / 2.0
+	if _multimesh_buffer_layout_ok():
+		var buffer := PackedFloat32Array()
+		for lot in stick_availability.keys():
+			var count := _stick_tier_count(int(stick_availability[lot]))
+			if count <= 0:
+				continue
+			var cached: Dictionary = _stick_lot_packed.get(lot, {})
+			if cached.is_empty() or int(cached["count"]) != count:
+				cached = {"count": count, "packed": _packed_transforms(_stick_lot_transforms(lot, count))}
+				_stick_lot_packed[lot] = cached
+			buffer.append_array(cached["packed"])
+		_apply_buffer(_stick_multimesh, buffer, BUFFER_STRIDE_TRANSFORM)
+		return
 	var transforms: Array = []
 	for lot in stick_availability.keys():
-		var available: int = int(stick_availability[lot])
-		var count := _stick_tier_count(available)
+		var count := _stick_tier_count(int(stick_availability[lot]))
 		if count <= 0:
 			continue
-		var lot_pos: Vector2i = lot
-		var ground: Vector2 = Vector2(lot_pos.x * CELL_SIZE + half, lot_pos.y * CELL_SIZE + half)
-		for i in range(count):
-			var seed_base: Vector2i = lot_pos * 31 + Vector2i(i * 9 + 2, i * 17 + 5)
-			var angle: float = (float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0) * TAU
-			var dist: float = STICK_SCATTER_RADIUS * (float(hash(seed_base + Vector2i(3, 7)) % 1000) / 1000.0)
-			var offset: Vector2 = Vector2(cos(angle), sin(angle)) * dist
-			var stick_rotation: float = (float(hash(seed_base + Vector2i(11, 13)) % 1000) / 1000.0) * TAU
-			var length_scale: float = lerp(STICK_LENGTH_VARIATION_MIN, STICK_LENGTH_VARIATION_MAX, float(hash(seed_base + Vector2i(13, 11)) % 1000) / 1000.0)
-			var stick_transform := Transform2D(stick_rotation, Vector2.ZERO).scaled(Vector2(length_scale, 1.0))
-			stick_transform.origin = ground + offset
-			transforms.append(stick_transform)
+		transforms.append_array(_stick_lot_transforms(lot, count))
 	_stick_multimesh.instance_count = transforms.size()
 	for i in range(transforms.size()):
 		_stick_multimesh.set_instance_transform_2d(i, transforms[i])
+
+
+# Bastoni di un lotto: la formula di sempre (posizione, rotazione e lunghezza da hash del lotto e dell'indice).
+func _stick_lot_transforms(lot_pos: Vector2i, count: int) -> Array:
+	var half: float = CELL_SIZE / 2.0
+	var ground: Vector2 = Vector2(lot_pos.x * CELL_SIZE + half, lot_pos.y * CELL_SIZE + half)
+	var transforms: Array = []
+	for i in range(count):
+		var seed_base: Vector2i = lot_pos * 31 + Vector2i(i * 9 + 2, i * 17 + 5)
+		var angle: float = (float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0) * TAU
+		var dist: float = STICK_SCATTER_RADIUS * (float(hash(seed_base + Vector2i(3, 7)) % 1000) / 1000.0)
+		var offset: Vector2 = Vector2(cos(angle), sin(angle)) * dist
+		var stick_rotation: float = (float(hash(seed_base + Vector2i(11, 13)) % 1000) / 1000.0) * TAU
+		var length_scale: float = lerp(STICK_LENGTH_VARIATION_MIN, STICK_LENGTH_VARIATION_MAX, float(hash(seed_base + Vector2i(13, 11)) % 1000) / 1000.0)
+		var stick_transform := Transform2D(stick_rotation, Vector2.ZERO).scaled(Vector2(length_scale, 1.0))
+		stick_transform.origin = ground + offset
+		transforms.append(stick_transform)
+	return transforms
 
 
 func _draw_stick_positions() -> void:
@@ -3250,6 +3274,7 @@ func _rebuild_tree_multimeshes() -> void:
 		_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
 	last_batch_timings_ms["tree_apply"] = (Time.get_ticks_usec() - measure_start_usec) / 1000.0
 	_tree_fruit_entries_valid = true
+	_tree_fruit_from_groups = false
 
 
 # RIMONTAGGIO A GRUPPI DEGLI ALBERI (2026-10-04, richiesta utente). L'elenco filtrato per la nebbia è la concatenazione
@@ -3384,6 +3409,7 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 	_apply_buffer(_tree_fruit_domesticable_multimesh, domesticable_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
 	last_batch_timings_ms["tree_apply"] = (Time.get_ticks_usec() - apply_start_usec) / 1000.0
 	_tree_fruit_entries_valid = true
+	_tree_fruit_from_groups = true
 
 
 # Un gruppo da zero: lo stesso corpo del giro di sempre (_rebuild_tree_multimeshes, ramo a buffer) sui soli `members`,
@@ -3619,6 +3645,8 @@ func clear_vegetation_geometry_cache() -> void:
 	_shrub_groups.clear()
 	_shrub_groups_globals = []
 	_shrub_groups_berry_stamp = []
+	_tree_fruit_from_groups = false
+	_shrub_fruit_from_groups = false
 
 
 # Svuota la memoria di un tipo se anno corrente o parametri d'età sono cambiati dall'ultima ricostruzione.
@@ -3698,6 +3726,11 @@ var _tree_fruit_entries: Array = []
 var _tree_fruit_entries_valid: bool = false
 var _shrub_fruit_entries: Array = []
 var _shrub_fruit_entries_valid: bool = false
+# L'ultima ricostruzione completa è stata a gruppi per zona (2026-10-24, progetto B fase 3): i soli frutti si rifanno
+# allora gruppo per gruppo, solo dove un lotto ha cambiato rapporto (_rebuild_tree_fruit_from_groups/
+# _rebuild_shrub_fruit_from_groups), invece di ripassare tutte le piante da frutto.
+var _tree_fruit_from_groups: bool = false
+var _shrub_fruit_from_groups: bool = false
 
 
 # Soli MultiMesh dei frutti degli alberi, dall'elenco: stesso test (_fruit_stock_shows) e stesse trasformazioni
@@ -3706,6 +3739,9 @@ func _rebuild_tree_fruit_multimeshes() -> void:
 	if not _tree_fruit_entries_valid or _tree_fruit_wild_multimesh == null or _tree_fruit_domesticable_multimesh == null:
 		last_fruit_rebuild_paths["tree"] = "ripiego completo"
 		_rebuild_tree_multimeshes()
+		return
+	if _tree_fruit_from_groups and _multimesh_buffer_layout_ok():
+		_rebuild_tree_fruit_from_groups()
 		return
 	last_fruit_rebuild_paths["tree"] = "solo frutti"
 	# Dalla memoria (2026-10-04, richiesta utente): col metodo a buffer i puntini già impacchettati della geometria in
@@ -3738,6 +3774,46 @@ func _rebuild_tree_fruit_multimeshes() -> void:
 			wild_fruit_transforms.append_array(transforms)
 	_apply_transforms(_tree_fruit_wild_multimesh, wild_fruit_transforms)
 	_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
+
+
+# Soli frutti degli alberi dai gruppi per zona (2026-10-24, progetto B fase 3): si rifanno i puntini dei soli gruppi con un
+# lotto che ha cambiato rapporto (_group_fruit_ratios_match), gli altri si ricopiano così come sono. Stesso esito del giro
+# su tutte le piante da frutto: ogni gruppo tiene i puntini delle sue voci, nell'ordine delle zone.
+func _rebuild_tree_fruit_from_groups() -> void:
+	var refreshed := 0
+	var wild_fruit_buffer := PackedFloat32Array()
+	var domesticable_fruit_buffer := PackedFloat32Array()
+	for group in _tree_groups:
+		if group == null:
+			continue
+		if not _group_fruit_ratios_match(group):
+			_refresh_tree_group_fruit(group)
+			refreshed += 1
+		wild_fruit_buffer.append_array(group["wild_fruit"])
+		domesticable_fruit_buffer.append_array(group["domesticable_fruit"])
+	_apply_buffer(_tree_fruit_wild_multimesh, wild_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+	_apply_buffer(_tree_fruit_domesticable_multimesh, domesticable_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+	# I gruppi sono allineati ai rapporti di adesso: il prossimo rimontaggio a gruppi non li ricontrolla.
+	_tree_groups_fruit_stamp = [
+		fruit_stock_available_ratio_by_lot.get("acorn", {}), fruit_stock_available_ratio_by_lot.get("fruit", {}),
+	]
+	last_fruit_rebuild_paths["tree"] = "per zona (rifatte %d)" % refreshed
+
+
+# Soli frutti degli arbusti dai gruppi per zona: stesso schema degli alberi.
+func _rebuild_shrub_fruit_from_groups() -> void:
+	var refreshed := 0
+	var berry_buffer := PackedFloat32Array()
+	for group in _shrub_groups:
+		if group == null:
+			continue
+		if not _group_fruit_ratios_match(group):
+			_refresh_shrub_group_berries(group)
+			refreshed += 1
+		berry_buffer.append_array(group["berries"])
+	_apply_buffer(_berry_multimesh, berry_buffer, BUFFER_STRIDE_TRANSFORM)
+	_shrub_groups_berry_stamp = [fruit_stock_available_ratio_by_lot.get("berry", {})]
+	last_fruit_rebuild_paths["shrub"] = "per zona (rifatte %d)" % refreshed
 
 
 # Puntini impacchettati di un albero da frutto: dalla geometria in memoria se esiste e ha la stessa chioma della voce
@@ -3937,6 +4013,7 @@ func _rebuild_shrub_multimeshes() -> void:
 		_apply_buffer(_shrub_multimesh, blob_buffer, BUFFER_STRIDE_TRANSFORM_COLOR)
 		_apply_buffer(_berry_multimesh, berry_buffer, BUFFER_STRIDE_TRANSFORM)
 		_shrub_fruit_entries_valid = true
+		_shrub_fruit_from_groups = false
 		return
 
 	_apply_transforms(_shrub_multimesh, blob_transforms)
@@ -3945,6 +4022,7 @@ func _rebuild_shrub_multimeshes() -> void:
 
 	_apply_transforms(_berry_multimesh, berry_transforms)
 	_shrub_fruit_entries_valid = true
+	_shrub_fruit_from_groups = false
 
 
 # Geometria di un arbusto: le stesse formule della ricostruzione di prima del passo B (lobi con colore, bacche).
@@ -4062,6 +4140,7 @@ func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 	_apply_buffer(_shrub_multimesh, blob_buffer, BUFFER_STRIDE_TRANSFORM_COLOR)
 	_apply_buffer(_berry_multimesh, berry_buffer, BUFFER_STRIDE_TRANSFORM)
 	_shrub_fruit_entries_valid = true
+	_shrub_fruit_from_groups = true
 
 
 # Un gruppo di arbusti da zero: lo stesso corpo del giro di sempre (ramo a buffer) sui soli `members`.
@@ -4130,6 +4209,9 @@ func _rebuild_shrub_fruit_multimesh() -> void:
 	if not _shrub_fruit_entries_valid or _berry_multimesh == null:
 		last_fruit_rebuild_paths["shrub"] = "ripiego completo"
 		_rebuild_shrub_multimeshes()
+		return
+	if _shrub_fruit_from_groups and _multimesh_buffer_layout_ok():
+		_rebuild_shrub_fruit_from_groups()
 		return
 	last_fruit_rebuild_paths["shrub"] = "solo frutti"
 	# Dalla memoria (2026-10-04): stesso schema degli alberi (_cached_shrub_berry_packed).

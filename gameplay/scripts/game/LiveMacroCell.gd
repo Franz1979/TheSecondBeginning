@@ -110,6 +110,10 @@ var scattered_cache_day: int = -1
 var scattered_visible_epoch: int = -1
 var scattered_visible_version: int = -1
 var scattered_layout_version: int = -1
+# Ultimo rinfresco delle capacità dei lotti (2026-10-24, progetto B fase 3): checkpoint e versione delle posizioni, per
+# saltarlo nei ridisegni per movimento quando nessuno dei due è cambiato (GameScene._refresh_resource_visuals).
+var lot_capacity_refresh_checkpoint_day: int = -1
+var lot_capacity_refresh_layout_version: int = -1
 var cached_vegetation_positions: Dictionary = {}
 
 # Cache del ratio disponibilità "fruit stock" per lotto (2026-09-17, richiesta utente —
