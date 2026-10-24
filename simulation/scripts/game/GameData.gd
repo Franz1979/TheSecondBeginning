@@ -200,6 +200,9 @@ var village_cohesion_snapshots: Dictionary = {}
 # Riti sociali in corso (2026-10-14, SocialRiteService — un record per edificio, formato in testa a SocialRiteService).
 # Salvati; la chiave "_frame" è solo di sessione.
 var active_social_rites: Array[Dictionary] = []
+# Numero del prossimo rito sociale (2026-10-24, bugfix "banchetto con due organizzatori"): ogni rito ha il suo "uid" nel
+# record e nello step delle task, così una task di un rito chiuso non vale per il successivo sullo stesso edificio.
+var next_social_rite_uid: int = 1
 
 # Istanze runtime del futuro sistema oggetti-scaduti (Step 2, 2026-09-05, res://gameplay/scripts/
 # core/ExpiredObjectRules.gd — oggi solo DEAD_BODY) — un Dictionary per istanza nel mondo:
@@ -324,6 +327,9 @@ var inventory_interval_hours: int = 24
 var last_inventory_end: float = -1.0
 var last_inventory_by: String = ""
 var stock_snapshot: Dictionary = {}
+# Parte "in uso" della foto (2026-10-24): attrezzi del villaggio fuori dai depositi (in prestito, travois trainati), già
+# compresi in stock_snapshot; il cassetto la mostra nel tooltip della quantità (WarehouseManagerService.in_use_stock).
+var stock_snapshot_in_use: Dictionary = {}
 var stock_snapshot_fill: Array = []
 var stock_snapshot_time: float = -1.0
 # Ordini creati dal cassetto "Assegnazione compiti" (2026-10-09, richiesta utente): lavori in coda senza destinatario,

@@ -18,6 +18,7 @@ enum PanelKind {
 	SELECTED_BUILDING,    # GameScene._refresh_selected_building_panel
 	WAREHOUSE,            # GameScene._refresh_warehouse_panel
 	BUILD_BAR,            # GameScene._refresh_building_slots_buildable (slot costruibili della barra)
+	DEAD_BODY,            # GameScene._refresh_dead_body_panel, se un corpo è selezionato (2026-10-24, 5B.6)
 }
 
 # {"type": NotificationTypes.NotificationPopupType, "text": String, "requires_ack": bool}, nell'ordine di arrivo.
@@ -44,7 +45,8 @@ var removed_building_ids: Dictionary = {}
 var storage_tasks_to_wire: Array[Dictionary] = []
 # Task nuove da collegare ai segnali della scena (2026-10-18, blocco 5d — wire_task), in ordine.
 var tasks_to_wire: Array[Dictionary] = []
-# Icone di comando su una microcella (2026-10-18, blocco 5d): {macro, microcell, key}, solo se la cella è viva.
+# Icone di comando (2026-10-18, blocco 5d; dal 5B.2 a punto): {macro, point, key}, `point` in coordinate di microcella
+# continue; solo se la cella è viva.
 var command_icons: Array[Dictionary] = []
 # Cantieri completati dalla simulazione (2026-10-18, blocco 5e — giorni minimi di costruzione maturati): la scena esegue
 # lo stesso percorso del completamento da parte di un costruttore (GameScene._on_building_construction_completed).
@@ -55,6 +57,8 @@ var individual_moves: Array[Dictionary] = []
 var individuals_added: Array[HumanIndividual] = []
 # Task di scarico da collegare (UnloadAction: re-routing, avvisi) — GameScene._reconnect_unload_action_signals.
 var unload_tasks_to_wire: Array[Dictionary] = []
+# Chiavi dei lavori della bacheca non più in attesa (2026-10-24, 5B.0): la scena toglie le icone lampeggianti.
+var forgotten_job_board_waits: Array[String] = []
 
 
 func notify(popup_type: NotificationTypes.NotificationPopupType, text: String, requires_ack: bool = false) -> void:
@@ -105,9 +109,11 @@ func wire_storage_task(task: Task, owner: HumanIndividual) -> void:
 #   BUILD_STEPS: GameScene._reconnect_build_task_signals su ogni step (allestimento, sgombero, costruzione, taglio, cava...);
 #   PICKUP: _wire_pickup_task (raccolta e scarico aggiunto dopo);
 #   BUTCHER: _wire_butcher_task;
-#   HAUL_ZONE: _connect_haul_zone_step_appended (raccolta di zona: step aggiunti strada facendo).
+#   HAUL_ZONE: _connect_haul_zone_step_appended (raccolta di zona: step aggiunti strada facendo);
+#   MATERIAL_SUPPLY: _connect_material_supply_step_appended (rifornimento automatico di Build e Produce, 2026-10-24 5B.4);
+#   STEP_SIGNALS: _ensure_step_signals (magazzino, caccia, corpo in spalla — sepoltura, 2026-10-24 5B.6).
 # Le task arrivano già accodate (le code non attivano nulla): collegarle subito dopo equivale a prima.
-enum WireKind { BUILD_STEPS, PICKUP, BUTCHER, HAUL_ZONE }
+enum WireKind { BUILD_STEPS, PICKUP, BUTCHER, HAUL_ZONE, MATERIAL_SUPPLY, STEP_SIGNALS }
 
 
 func wire_task(kind: WireKind, task: Task, owner: HumanIndividual) -> void:
@@ -119,9 +125,14 @@ func building_completed(building: Building) -> void:
 	buildings_completed.append(building)
 
 
-# Icona di comando sulla microcella `microcell` della macrocella `macro` (2026-10-18, blocco 5d).
+# Icona di comando sulla microcella `microcell` della macrocella `macro` (2026-10-18, blocco 5d): al suo centro.
 func command_icon_at_microcell(macro: Vector2i, microcell: Vector2i, key: String) -> void:
-	command_icons.append({"macro": macro, "microcell": microcell, "key": key})
+	command_icon_at_point(macro, Vector2(microcell) + Vector2(0.5, 0.5), key)
+
+
+# Icona di comando nel punto `point` (coordinate di microcella continue) della macrocella `macro` (2026-10-24, 5B.2).
+func command_icon_at_point(macro: Vector2i, point: Vector2, key: String) -> void:
+	command_icons.append({"macro": macro, "point": point, "key": key})
 
 
 # Individuo passato in un'altra macrocella (2026-10-18, blocco 5b — IndividualBorderService): la scena sposta la vista
@@ -139,6 +150,12 @@ func individual_added(member: HumanIndividual) -> void:
 # Task con UnloadAction da collegare ai segnali della scena (2026-10-18, blocco 5c: la dote dei visitatori).
 func wire_unload_task(task: Task, owner: HumanIndividual) -> void:
 	unload_tasks_to_wire.append({"task": task, "owner": owner})
+
+
+# Lavori della bacheca non più in attesa (2026-10-24, 5B.0 — CommandFeedback.forget_job_board_waits, che cancella anche
+# l'attesa in GameData).
+func job_board_waits_forgotten(job_keys: Array[String]) -> void:
+	forgotten_job_board_waits.append_array(job_keys)
 
 
 # Unisce gli effetti di `other` in questo (le notifiche in coda, dopo le proprie).
@@ -161,9 +178,11 @@ func merge(other: GameEffects) -> void:
 	individual_moves.append_array(other.individual_moves)
 	individuals_added.append_array(other.individuals_added)
 	unload_tasks_to_wire.append_array(other.unload_tasks_to_wire)
+	forgotten_job_board_waits.append_array(other.forgotten_job_board_waits)
 
 
 func is_empty() -> bool:
 	return notifications.is_empty() and cells_to_refresh.is_empty() and panels_to_refresh.is_empty() and not pending_refresh 		and neighbor_refresh_buildings.is_empty() and marker_buildings.is_empty() and site_placeholder_buildings.is_empty() 		and vegetation_cells.is_empty() and removed_building_ids.is_empty() and storage_tasks_to_wire.is_empty() \
 		and individual_moves.is_empty() and individuals_added.is_empty() and unload_tasks_to_wire.is_empty() \
-		and tasks_to_wire.is_empty() and command_icons.is_empty() and buildings_completed.is_empty()
+		and tasks_to_wire.is_empty() and command_icons.is_empty() and buildings_completed.is_empty() \
+		and forgotten_job_board_waits.is_empty()

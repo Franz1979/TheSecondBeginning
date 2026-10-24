@@ -5,7 +5,7 @@ extends RefCounted
 # docs/design/socialita_teaching.md). Servizio senza stato: il raduno è generico (SocialRiteRules), falò e cibo valgono
 # solo per il banchetto (BanquetRiteRules, dal 2026-10-17 sullo Spiazzo delle feste, docs/design/feast_ground.md). Lo
 # stato di un rito in corso vive in GameData.active_social_rites (salvato), un record per edificio:
-#   {"building_id", "rite_id", "organizer_id", "phase": PHASE_PREPARING/PHASE_WAITING/PHASE_FEASTING, "elapsed" (giorni
+#   {"building_id", "rite_id", "uid" (numero del rito, 2026-10-24), "organizer_id", "phase": PHASE_PREPARING/PHASE_WAITING/PHASE_FEASTING, "elapsed" (giorni
 #    della fase), "participants": {"<id>": {"counts"}}, "convoked": [id],
 #    solo banchetto: "pot_calories", "pot_space", "calorie_threshold", in preparazione "material_quota"}
 # Svolgimento:
@@ -91,8 +91,11 @@ static func start(
 	var rejection := get_start_rejection(building, rules, individuals, game_data)
 	if rejection != "":
 		return rejection
+	# Numero del rito (2026-10-24): lo portano anche gli step delle task, che valgono solo per questo rito.
+	var rite_uid := game_data.next_social_rite_uid
+	game_data.next_social_rite_uid += 1
 	var record := {
-		"building_id": building.id, "rite_id": rules.id, "organizer_id": organizer.id, "phase": PHASE_PREPARING,
+		"building_id": building.id, "rite_id": rules.id, "uid": rite_uid, "organizer_id": organizer.id, "phase": PHASE_PREPARING,
 		"elapsed": 0.0, "participants": {}, "convoked": [],
 		"pot_calories": 0.0, "pot_space": 0.0,
 	}
@@ -110,7 +113,7 @@ static func start(
 			else get_calorie_threshold(building, rules as BanquetRiteRules)
 	game_data.active_social_rites.append(record)
 	# Prima solo l'organizzatore (2026-10-16): se manca materiale lo porta lui (preparazione), poi la convocazione.
-	var task := build_attend_task(organizer, building, true, rules.task_label_key)
+	var task := build_attend_task(organizer, building, true, rules.task_label_key, rite_uid)
 	var age_band := _age_band(organizer, game_data)
 	if organizer.get_assign_rejection_reason(task, age_band as HumanTypes.AgeBand) == HumanIndividual.ASSIGN_OK:
 		organizer.assign_task(task, age_band as HumanTypes.AgeBand)
@@ -366,7 +369,7 @@ static func _convoke(
 		if skip != "":
 			log_event("  #%d %s non convocato: %s." % [member.id, member.name, skip])
 			continue
-		var task := build_attend_task(member, building, false, rules.task_label_key)
+		var task := build_attend_task(member, building, false, rules.task_label_key, int(record.get("uid", -1)))
 		var age_band := _age_band(member, game_data)
 		if member.get_assign_rejection_reason(task, age_band as HumanTypes.AgeBand) != HumanIndividual.ASSIGN_OK:
 			continue
@@ -393,13 +396,13 @@ static func _begin(record: Dictionary, building: Building, rules: SocialRiteRule
 	log_event("all'edificio #%d comincia '%s' (%d partecipanti che contano)." % [building.id, rules.id, _count_counting(record)])
 
 
-# Task del rito per `member`: [cammina all'edificio, al rito].
-static func build_attend_task(member: HumanIndividual, building: Building, is_organizer: bool, label_key: String = "") -> Task:
+# Task del rito per `member`: [cammina all'edificio, al rito]. `rite_uid`: numero del rito (record "uid"), -1 = qualunque.
+static func build_attend_task(member: HumanIndividual, building: Building, is_organizer: bool, label_key: String = "", rite_uid: int = -1) -> Task:
 	var steps: Array[Action] = []
 	var descriptions: Array[String] = []
 	steps.append(WalkAction.new(MaterialSupplyService.building_point(member, building)))
 	descriptions.append("task_social_rite_step_walk")
-	steps.append(SocialRiteAttendAction.new(building))
+	steps.append(SocialRiteAttendAction.new(building, rite_uid))
 	descriptions.append("task_social_rite_step_attend")
 	var task := Task.new(steps)
 	task.task_name = TASK_NAME
@@ -507,7 +510,9 @@ static func is_rite_task_at(task: Task, building_id: int) -> bool:
 static func is_attending(individual: HumanIndividual, building_id: int) -> bool:
 	if individual == null or not is_rite_task_at(individual.current_task, building_id) or individual.current_task.is_finished():
 		return false
-	return individual.current_task.get_current_action() is SocialRiteAttendAction
+	# Lo step deve essere di questo rito (2026-10-24): la task di un rito chiuso non rende presenti al successivo.
+	var step := individual.current_task.get_current_action()
+	return step is SocialRiteAttendAction and step.is_target_valid()
 
 
 # Convocati non ancora arrivati e cosa stanno facendo (log alla scadenza dell'attesa).

@@ -39,6 +39,25 @@ const FUEL_KEY := "__fuel__"
 # (a) FABBISOGNO — nessun effetto collaterale
 # ============================================================================================
 
+# Come il ramo "workstation completa" di get_missing_materials, ma per la sola ricetta `recipe` (2026-10-24, bugfix testo
+# "manca" delle produzioni rimandate in bacheca, che mostrava il fabbisogno di tutto l'edificio): input mancanti, poi il
+# combustibile come voce FUEL_KEY. Due ordini della stessa ricetta sullo stesso edificio restano sommati.
+static func get_missing_materials_for_recipe(target_building: Building, recipe: String) -> Dictionary:
+	var missing: Dictionary = {}
+	if target_building == null or target_building.rules == null or recipe == "":
+		return missing
+	if target_building.is_demolished or target_building.is_out_of_service() or not target_building.is_complete:
+		return missing
+	var recipes: Array[String] = [recipe]
+	var missing_inputs := ProductionService.get_missing_inputs_for_recipes(target_building, recipes)
+	for input_name in missing_inputs.keys():
+		missing[String(input_name)] = int(missing_inputs[input_name])
+	var missing_fuel := ProductionService.get_missing_fuel_for_recipes(target_building, recipes)
+	if missing_fuel > 0.0:
+		missing[FUEL_KEY] = missing_fuel
+	return missing
+
+
 # {resource_name: quantità mancante} del bersaglio, vuoto se nulla manca, per la fase in corso del cantiere:
 #   - setup site (site_setup_complete false): stessa formula di SetupSiteAction.get_missing_material_quantity;
 #   - costruzione (site_setup_complete true): required_materials meno lo stoccato, stessa formula di

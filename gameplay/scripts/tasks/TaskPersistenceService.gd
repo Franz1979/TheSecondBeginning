@@ -554,7 +554,10 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			step = TalkAction.new()
 		TaskTypes.ActionType.SOCIAL_RITE_ATTEND:
 			# Solo l'edificio: lo stato del rito è in GameData.active_social_rites.
-			step = SocialRiteAttendAction.new(_find_building_by_id(world, int(step_data.get("target_building_id", -1))))
+			# Numero del rito (2026-10-24): -1 per i salvataggi precedenti (vale per qualunque rito, come prima).
+			step = SocialRiteAttendAction.new(
+				_find_building_by_id(world, int(step_data.get("target_building_id", -1))), int(step_data.get("rite_uid", -1))
+			)
 		TaskTypes.ActionType.PICKUP_BODY:
 			step = PickUpBodyAction.new(int(step_data.get("body_id", -1)))
 		TaskTypes.ActionType.CARRY_BODY:

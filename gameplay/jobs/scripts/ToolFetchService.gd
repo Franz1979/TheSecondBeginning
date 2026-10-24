@@ -27,7 +27,7 @@ const BAG_FETCH_KEY := "bag_fetch"
 const APPAREL_FETCH_KEY := "apparel_fetch"
 # Mezzo da traino preso prima di un lavoro a più viaggi (start_towed_fetch): "id edificio:nome", la prenotazione.
 const TOWED_FETCH_KEY := "towed_fetch"
-# Riposizione automatica del mezzo da traino (return_towed): riga "Automatico" in "In corso".
+# Riposizione automatica del mezzo da traino (try_return_towed): riga "Automatico" in "In corso".
 const TOWED_RETURN_KEY := "towed_return"
 # Ordine degli slot del vestiario per la regola: prima il corpo, poi calzari, testa, collo, polsi.
 const APPAREL_FETCH_ORDER: Array[int] = [
@@ -445,64 +445,76 @@ static func retry_waiting_fetches(ctx: GameContext) -> Array[Dictionary]:
 	return created
 
 
-# Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11, GameData.job_board_return_borrowed_tools): ogni individuo
-# libero (nessuna task in corso né in coda) con attrezzi in prestito li riporta: per ciascuno ancora in cintura una task
-# store_tool (come "Riponi attrezzo" del pannello) verso l'edificio da cui l'ha preso, se c'è ancora e lo accetta,
-# altrimenti il deposito migliore. Le voci non più in cintura (rotte, spostate a mano) si tolgono; senza destinazione si
-# riprova al giro dopo. Una volta al secondo. Ritorna {"member": HumanIndividual, "task": Task} per ogni task creata (chi
-# chiama ne collega i segnali).
+# Regola "Riponi gli attrezzi presi per un lavoro" (2026-10-11, GameData.job_board_return_borrowed_tools): chi si libera
+# riporta gli attrezzi in prestito ancora in cintura — task store_tool (come "Riponi attrezzo" del pannello) verso l'edificio
+# da cui li ha presi, se c'è ancora e li accetta, altrimenti il deposito migliore. Chiamata da HumanIndividualActionService.
+# resolve_idle_individual appena libero, dopo il travois e prima di vestiario e sacca (2026-10-24, correzione: prima era un
+# giro una volta al secondo che cercava chi era senza task, ma resolve_idle_individual dà subito "Cerca lavoro" o un'attività
+# di ripiego, quindi nessuno risultava mai libero e gli attrezzi non tornavano: chi li teneva bloccava i lavori degli altri,
+# "lo ha già un altro"). Il primo attrezzo sceglie la destinazione; gli altri con la stessa destinazione si accodano allo
+# stesso viaggio, quelli diretti altrove alla prossima pausa. Senza destinazione si tiene e si riprova. true = task assegnata.
 # Spenta (2026-10-23): i prelievi non segnano più prestiti (start_fetch) e quelli già segnati si cancellano allo
 # spegnimento (forget_borrowed_tools): gli attrezzi restano a chi li ha.
-static func return_borrowed_tools(ctx: GameContext) -> Array[Dictionary]:
-	var created: Array[Dictionary] = []
-	if ctx.game_data == null or ctx.world == null:
-		return created
+static func try_return_borrowed_tools(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null or world == null:
+		return false
+	_prune_borrowed_tools(individual)
+	if individual.borrowed_tools.is_empty() or not game_data.job_board_return_borrowed_tools:
+		return false
+	var trip_destination: Building = null
+	var assigned_any := false
+	var remaining: Array = []
+	for entry in individual.borrowed_tools:
+		var tool_name := String(entry.get("tool_name", ""))
+		var slot := find_belt_slot_by_name(individual, tool_name)
+		var destination := _borrowed_tool_destination(world, individual, tool_name, int(entry.get("building_id", -1)))
+		if slot == -1 or destination == null or (trip_destination != null and destination != trip_destination):
+			remaining.append(entry)
+			continue
+		var task := TaskBuilderService.build_tool_task(individual, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot)
+		if task == null:
+			remaining.append(entry)
+			continue
+		task.context[BORROWED_TOOL_RETURN_KEY] = true
+		if not assigned_any:
+			if not individual.assign_task(task, age_band):
+				remaining.append(entry)
+				continue
+			assigned_any = true
+			trip_destination = destination
+		else:
+			TaskQueueService.push_follow_up_task(individual, task)
+		if storage_signal_connector.is_valid():
+			storage_signal_connector.call(task, individual)
+		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+			print("[JOB BOARD] #%d %s: ripone %s in %s #%d (preso per un lavoro)." % [
+				individual.id, individual.name, tool_name, destination.building_type_name, destination.id
+			])
+	individual.borrowed_tools = remaining
+	return assigned_any
+
+
+# Toglie dai prestiti gli attrezzi non più in cintura (rotti, spostati a mano). Una volta al secondo per tutti (GameSimulation,
+# così il pannello resta giusto anche per chi non si libera) e prima di ogni restituzione.
+static func prune_borrowed_tools(ctx: GameContext) -> void:
 	for member in ctx.individuals:
-		if member.borrowed_tools.is_empty():
-			continue
-		var still_equipped: Array = []
-		for entry in member.borrowed_tools:
-			if find_belt_slot_by_name(member, String(entry.get("tool_name", ""))) != -1:
-				still_equipped.append(entry)
-		member.borrowed_tools = still_equipped
-		if member.borrowed_tools.is_empty() or not ctx.game_data.job_board_return_borrowed_tools:
-			continue
-		if member.current_task != null and not member.current_task.is_finished():
-			continue
-		if not member.task_queue.is_empty():
-			continue
-		var remaining: Array = []
-		for entry in member.borrowed_tools:
-			var tool_name := String(entry.get("tool_name", ""))
-			var slot := find_belt_slot_by_name(member, tool_name)
-			var destination := _borrowed_tool_destination(ctx.world, member, tool_name, int(entry.get("building_id", -1)))
-			if slot == -1 or destination == null:
-				remaining.append(entry)
-				continue
-			var task := TaskBuilderService.build_tool_task(member, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot)
-			if task == null:
-				remaining.append(entry)
-				continue
-			task.context[BORROWED_TOOL_RETURN_KEY] = true
-			if member.current_task == null or member.current_task.is_finished():
-				if not member.assign_task(task, ctx.age_band_of(member)):
-					remaining.append(entry)
-					continue
-			else:
-				TaskQueueService.push_follow_up_task(member, task)
-			created.append({"member": member, "task": task})
-			if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-				print("[JOB BOARD] #%d %s: ripone %s in %s #%d (preso per un lavoro)." % [
-					member.id, member.name, tool_name, destination.building_type_name, destination.id
-				])
-		member.borrowed_tools = remaining
-	return created
+		if not member.borrowed_tools.is_empty():
+			_prune_borrowed_tools(member)
+
+
+static func _prune_borrowed_tools(member: HumanIndividual) -> void:
+	var still_equipped: Array = []
+	for entry in member.borrowed_tools:
+		if find_belt_slot_by_name(member, String(entry.get("tool_name", ""))) != -1:
+			still_equipped.append(entry)
+	member.borrowed_tools = still_equipped
 
 
 # --- Mezzo da traino (2026-10-23, richiesta utente — travois) ---
 # Si prende prima di un lavoro che richiede più di un viaggio (ordini di zona con più viaggi, trasporti oltre il carico),
 # se ce n'è uno libero: prima dall'appoggio più vicino (deposito che lo accetta per nome), poi da un magazzino. Nessuno
-# libero = il lavoro parte lo stesso, senza. Si riporta sempre quando il pipottino è libero (return_towed), qualunque sia
+# libero = il lavoro parte lo stesso, senza. Si riporta sempre quando il pipottino è libero (try_return_towed), qualunque sia
 # la regola "Riponi gli attrezzi presi per un lavoro": all'appoggio più vicino con posto, altrimenti in un magazzino (2 usi,
 # UnloadAction._complete_towed_return). I rifornimenti dei materiali restano senza travois per ora.
 
@@ -566,39 +578,37 @@ static func _find_towed_source(
 	return _find_free_source(worker, world, towed_name, reserved, reachability)
 
 
-# Ogni pipottino libero (nessuna task in corso né in coda) che traina un mezzo lo riporta: all'appoggio più vicino con
-# posto (WarehouseSelectionService.find_best mette prima i depositi dedicati), altrimenti al deposito migliore. Senza
-# destinazione si riprova al giro dopo. Una volta al secondo, accanto a return_borrowed_tools. Ritorna {"member", "task"}.
-static func return_towed(ctx: GameContext) -> Array[Dictionary]:
-	var created: Array[Dictionary] = []
-	if ctx.world == null:
-		return created
-	for member in ctx.individuals:
-		if not member.is_towing():
-			continue
-		if member.current_task != null and not member.current_task.is_finished():
-			continue
-		if not member.task_queue.is_empty():
-			continue
-		var destination := WarehouseSelectionService.find_best(
-			ctx.world, member.position, member.home_macro_coords, member.towed_resource, 1, [], PathfindingService.reachability_for(member)
-		)
-		if destination == null:
-			continue
-		var task := TaskBuilderService.build_tool_task(
-			member, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, member.towed_resource, destination, HumanIndividual.TOWED_SLOT
-		)
-		if task == null:
-			continue
-		task.context[TOWED_RETURN_KEY] = true
-		if not member.assign_task(task, ctx.age_band_of(member)):
-			continue
-		created.append({"member": member, "task": task})
-		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-			print("[JOB BOARD] #%d %s: riporta %s in %s #%d." % [
-				member.id, member.name, member.towed_resource, destination.building_type_name, destination.id
-			])
-	return created
+# Chi traina un mezzo lo riporta appena si libera (2026-10-24, correzione: prima un giro una volta al secondo cercava chi
+# era senza task, ma resolve_idle_individual dà subito "Cerca lavoro" o un'attività di ripiego, quindi nessuno risultava
+# mai libero e i travois non tornavano più). Chiamata da HumanIndividualActionService.resolve_idle_individual prima delle
+# regole del vestiario e della sacca, con la coda già ripresa. Destinazione: l'appoggio più vicino con posto
+# (WarehouseSelectionService.find_best mette prima i depositi dedicati), altrimenti il deposito migliore; senza
+# destinazione lo tiene e si riprova alla prossima pausa. Se il lavoro successivo ne vuole uno, lo riprende
+# (start_towed_fetch). true = task assegnata.
+static func try_return_towed(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+	if world == null or not individual.is_towing():
+		return false
+	var destination := WarehouseSelectionService.find_best(
+		world, individual.position, individual.home_macro_coords, individual.towed_resource, 1, [],
+		PathfindingService.reachability_for(individual)
+	)
+	if destination == null:
+		return false
+	var task := TaskBuilderService.build_tool_task(
+		individual, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, individual.towed_resource, destination, HumanIndividual.TOWED_SLOT
+	)
+	if task == null:
+		return false
+	task.context[TOWED_RETURN_KEY] = true
+	if not individual.assign_task(task, age_band):
+		return false
+	if storage_signal_connector.is_valid():
+		storage_signal_connector.call(task, individual)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+		print("[JOB BOARD] #%d %s: riporta %s in %s #%d." % [
+			individual.id, individual.name, individual.towed_resource, destination.building_type_name, destination.id
+		])
+	return true
 
 
 # Regola "Riponi gli attrezzi presi per un lavoro" spenta (2026-10-23): i prestiti segnati si cancellano, gli attrezzi

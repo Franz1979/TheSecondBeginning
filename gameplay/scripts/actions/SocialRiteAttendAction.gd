@@ -14,6 +14,9 @@ signal rite_started(building: Building, rite_id: String)
 signal rite_ended(building: Building)
 
 var target_building: Building = null
+# Numero del rito per cui è nato lo step (record "uid", 2026-10-24, bugfix "banchetto con due organizzatori"): -1 = qualunque
+# (task di salvataggi precedenti). Uno step di un rito chiuso non vale per il successivo sullo stesso edificio.
+var rite_uid: int = -1
 var _done: bool = false
 # Preparazione del banchetto (2026-10-16, come ProduceAction): l'organizzatore fermo per materiale mancante scrive una
 # volta per blocco pending_material_shortage; HumanIndividualActionService lo fa rifornire (MaterialSupplyService).
@@ -21,9 +24,10 @@ var _blocked_by_materials: bool = false
 var _material_shortage_reported: bool = false
 
 
-func _init(p_target_building: Building = null) -> void:
+func _init(p_target_building: Building = null, p_rite_uid: int = -1) -> void:
 	target = null
 	target_building = p_target_building
+	rite_uid = p_rite_uid
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT]
 
 
@@ -32,6 +36,9 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	_material_shortage_reported = false
 	if target_building == null or not (individual is HumanIndividual):
 		return
+	# Rito diverso da quello dello step (2026-10-24): nessun arrivo; lo step finisce al primo tick.
+	if not _is_own_rite(SocialRiteService.find_rite(GameSettings.active_game_data, target_building.id)):
+		return
 	if SocialRiteService.on_arrival(target_building, individual as HumanIndividual, GameSettings.active_game_data):
 		var record := SocialRiteService.find_rite(GameSettings.active_game_data, target_building.id)
 		rite_started.emit(target_building, String(record.get("rite_id", "")))
@@ -39,6 +46,12 @@ func activate(individual: Variant, context: Dictionary) -> void:
 
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if _done or target_building == null:
+		_done = true
+		return 0.0
+	# Rito chiuso e un altro partito sullo stesso edificio (2026-10-24): lo step finisce senza rite_ended, che spegnerebbe
+	# il falò del rito nuovo.
+	var own_record := SocialRiteService.find_rite(GameSettings.active_game_data, target_building.id)
+	if not own_record.is_empty() and not _is_own_rite(own_record):
 		_done = true
 		return 0.0
 	# Preparazione (solo l'organizzatore ha la task in questa fase): rifornimento come la Produce, poi la convocazione.
@@ -78,8 +91,18 @@ func is_blocked_by_materials() -> bool:
 # Valido finché l'edificio c'è e il rito è ancora in corso: una task del rito rimasta in coda dopo la fine (o l'annullo)
 # viene scartata invece di riprendere.
 func is_target_valid() -> bool:
-	return target_building != null and not target_building.is_demolished 		and not SocialRiteService.find_rite(GameSettings.active_game_data, target_building.id).is_empty()
+	if target_building == null or target_building.is_demolished:
+		return false
+	var record := SocialRiteService.find_rite(GameSettings.active_game_data, target_building.id)
+	return not record.is_empty() and _is_own_rite(record)
+
+
+# true se `record` è il rito per cui è nato lo step: stesso uid, o uid mancante da una delle due parti (salvataggi
+# precedenti al 2026-10-24).
+func _is_own_rite(record: Dictionary) -> bool:
+	var record_uid := int(record.get("uid", -1))
+	return rite_uid < 0 or record_uid < 0 or record_uid == rite_uid
 
 
 func get_save_data() -> Dictionary:
-	return {"target_building_id": target_building.id if target_building != null else -1}
+	return {"target_building_id": target_building.id if target_building != null else -1, "rite_uid": rite_uid}

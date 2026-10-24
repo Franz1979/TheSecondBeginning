@@ -530,6 +530,13 @@ static func _is_waiting_for_material(task: Task, world: World) -> bool:
 		return not building.is_complete and not SiteCutService.cells_with_plants(world, building).is_empty()
 	if kind == POSTPONED_KIND_SITE_DEBRIS:
 		return WasteDisposalService.site_debris_waiting(world, building)
+	# Produce (2026-10-24): riparte se l'edificio ha già un ciclo della propria ricetta (ingredienti e combustibile, stesso
+	# controllo di ProduceAction), anche se agli ordini nel complesso manca ancora materiale che nessun magazzino ha.
+	if kind == POSTPONED_KIND_PRODUCE:
+		var produce_step := task.get_current_action() as ProduceAction
+		if produce_step != null and produce_step.get_missing_materials().is_empty() \
+				and ProductionService.get_missing_fuel_for(building, produce_step.resource_name) <= 0.0:
+			return false
 	var is_repair := kind == POSTPONED_KIND_REPAIR
 	var missing := RepairAction.get_supply_missing(building) if is_repair else MaterialSupplyService.get_missing_materials(building)
 	if missing.is_empty():
@@ -2383,6 +2390,12 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# uno slot vuoto e un capo/sacca libero in deposito, altrimenti si prosegue con la lista. Non all'arrivo al punto di
 	# assegnazione (già verificato alla partenza) né dopo un annullo con H del giocatore.
 	if not individual.skip_job_board_once and not arrived_at_assignment_point:
+		# Travois (2026-10-24): riportato appena libero, prima di cercare altro.
+		if ToolFetchService.try_return_towed(individual, age_band, world):
+			return
+		# Attrezzi in prestito (2026-10-24): riposti appena libero, stesso motivo del travois.
+		if ToolFetchService.try_return_borrowed_tools(individual, age_band, world):
+			return
 		if ToolFetchService.try_wear_apparel(individual, age_band, world):
 			return
 		# Guardaroba della Hut (2026-10-22): cambio stagionale di un capo indossato.

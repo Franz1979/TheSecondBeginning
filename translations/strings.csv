@@ -1211,6 +1211,8 @@ warehouse_food_days_infinite,∞
 warehouse_storage_fill_tooltip,"Depositi: {used} occupato su {capacity} di spazio"
 warehouse_min_level_tooltip,"Livello minimo (per ora solo indicativo: nessun ordine automatico)"
 warehouse_food_total_label,"Totale: {calories} calorie, giorni di autonomia"
+warehouse_quantity_in_use_tooltip,"In deposito: {stored} · In uso (in prestito): {in_use}"
+warehouse_quantity_in_use_towing_tooltip,"Sugli appoggi o in deposito: {stored} · In uso (trainati): {in_use}"
 task_assignment_warehouse_tag_tooltip,"Ordine creato dalla gestione scorte: la risorsa è sotto il livello minimo."
 drawer_order_stock_cancel_tooltip,"Annulla l'ordine. Se la risorsa resta sotto il livello minimo il magazzino ne crea un altro: per fermarlo togli il livello o blocca l'ordine."
 warehouse_min_level_auto_tooltip,"Livello minimo: sotto questo valore il magazzino crea ordini di raccolta, taglio o estrazione nelle zone di lavoro."

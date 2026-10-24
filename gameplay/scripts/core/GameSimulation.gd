@@ -272,12 +272,9 @@ static func tick_second(ctx: GameContext, now: float, effects: GameEffects) -> v
 			print("[JOB BOARD] Sgombero richiesto in automatico per le macerie #%d (crollo di %s): in coda come demolish:%d." % [
 				building.id, building.get_rubble_source_display_name(), building.id
 			])
-	# Attrezzi presi in deposito per un lavoro (2026-10-11): riposti da chi è libero, se la regola è accesa.
-	for created in ToolFetchService.return_borrowed_tools(ctx):
-		effects.wire_storage_task(created["task"], created["member"])
-	# Mezzo da traino (2026-10-23, travois): riportato da chi è libero.
-	for created in ToolFetchService.return_towed(ctx):
-		effects.wire_storage_task(created["task"], created["member"])
+	# Attrezzi presi in deposito per un lavoro (2026-10-11): la restituzione avviene appena libero (2026-10-24,
+	# ToolFetchService.try_return_borrowed_tools in resolve_idle_individual); qui solo la pulizia dei prestiti.
+	ToolFetchService.prune_borrowed_tools(ctx)
 	# Fumo degli affumicatoi (2026-10-23): ridisegno solo delle celle il cui affumicatoio ha iniziato o smesso di lavorare.
 	for building in ProductionService.refresh_smoking(ctx.world, ctx.individuals):
 		effects.refresh_building_cell(building)

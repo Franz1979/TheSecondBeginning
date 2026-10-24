@@ -1157,6 +1157,8 @@ warehouse_food_days_infinite,∞
 warehouse_storage_fill_tooltip,"Storage: {used} used of {capacity} space"
 warehouse_min_level_tooltip,"Minimum level (only indicative for now: no automatic orders)"
 warehouse_food_total_label,"Total: {calories} calories, days of autonomy"
+warehouse_quantity_in_use_tooltip,"In storage: {stored} · In use (borrowed): {in_use}"
+warehouse_quantity_in_use_towing_tooltip,"On racks or in storage: {stored} · In use (towed): {in_use}"
 task_assignment_warehouse_tag_tooltip,"Order created by stock management: the resource is below its minimum level."
 drawer_order_stock_cancel_tooltip,"Cancel the order. If the resource stays below its minimum level the warehouse creates a new one: to stop it, remove the level or lock the order."
 warehouse_min_level_auto_tooltip,"Minimum level: below this value the warehouse creates gather, cut or quarry orders in the work areas."

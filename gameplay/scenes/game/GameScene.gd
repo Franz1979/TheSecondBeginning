@@ -162,7 +162,7 @@ var _pending_discovery_grants: Array[DiscoveryHintRules] = []
 # ma PERSISTENTE (mai in coda/auto-dissolvenza come NotificationPopup): resta visibile per l'intera
 # durata in cui _transport_source_building non è null, un singolo nodo mostrato/nascosto
 # (mai ricreato) ai tre punti che cambiano quello stato — vedi _on_transport_source_resource_chosen
-# (mostra)/_try_assign_transport_command_on_right_click (nasconde, destinazione confermata)/
+# (mostra)/_right_click_transport (nasconde, destinazione confermata)/
 # _stop_selected_individual_task (nasconde, annullato con H).
 var transport_selection_banner: PanelContainer
 var transport_selection_banner_label: Label
@@ -282,7 +282,7 @@ const PLAY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/pla
 # get_resumable_task_definition_path (vedi simulation/scripts/game/Building.gd) — dato di TIPO del
 # target riassegnabile, non più un dettaglio di questa scena — e nessuna Task viene più
 # pre-costruita al piazzamento del cantiere: _start_building_task_at crea SOLO il Building
-# (is_complete=false), _try_assign_build_command_on_right_click costruisce la Task da zero via
+# (is_complete=false), _right_click_build costruisce la Task da zero via
 # TaskReassignmentService al momento del click destro, identico sia alla primissima assegnazione
 # sia a una riassegnazione dopo interruzione (vedi quella funzione sotto).
 # Blocco 5a (2026-10-18): popolo e individui sono della simulazione (sim); qui in sola lettura, stessi oggetti.
@@ -541,7 +541,7 @@ var _warehouse_panel: WarehousePanel = null
 @onready var demolish_confirmation_dialog: DemolishConfirmationDialog = $DemolishConfirmationDialog
 @onready var transport_source_dialog: OptionChoiceDialog = $TransportSourceDialog
 # pickup_choice_dialog (2026-09-17, richiesta utente, "no priorità fissa, scegli sempre se 2+
-# risorse disponibili") — usata da _try_assign_pickup_command_on_right_click quando il click destro
+# risorse disponibili") — usata da _right_click_pickup quando il click destro
 # trova 2+ risorse REALMENTE disponibili (available_quantity > 0) sulla stessa posizione. Dal 2026-09-20
 # (zaino multi-risorsa, passo 3) e' un PickupChoiceDialog: menu gerarchico Tutto / categoria / risorsa, non
 # piu' una seconda istanza di OptionChoiceDialog (quello resta solo per la Transport, transport_source_dialog
@@ -1568,7 +1568,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# DESTRO invece è già il tasto di comando dedicato in questo gioco (movimento) e NON compete
 		# mai con la vegetazione (nessun *SelectorController diverso da Stone/StickLot hit-testa
 		# eventi non-sinistri) — stesso identico problema risolto per costruzione, non serve più
-		# nessuna disambiguazione spaziale. _try_assign_pickup_command_on_right_click sotto prova
+		# nessuna disambiguazione spaziale. _right_click_pickup sotto prova
 		# STONE poi STICK_LOT (stesso ordine di priorità già in uso per il sinistro) PRIMA del
 		# movimento normale: se trova un bersaglio raccoglibile assegna la Task Walk->PickUp e
 		# consuma l'evento (il movimento normale sotto va saltato, altrimenti sovrascriverebbe subito
@@ -1588,23 +1588,17 @@ func _unhandled_input(event: InputEvent) -> void:
 			# CONTROLLATO PER PRIMO: se _transport_source_building è già impostata (sorgente
 			# scelta, in attesa del click di destinazione), pickup/unload/build vengono SALTATI DEL
 			# TUTTO per questo evento — mai anche solo provati, non solo ignorato il loro esito. Prima
-			# di questo fix _try_assign_build_command_on_right_click (provato PRIMA nella catena
+			# di questo fix _right_click_build (provato PRIMA nella catena
 			# sotto) intercettava sempre un click destro su un cantiere incompleto, il caso D'USO PIÙ
 			# COMUNE come destinazione Transport (portare materiale a un cantiere), "rubando" il click
-			# prima che _try_assign_transport_command_on_right_click venisse mai raggiunta —
+			# prima che _right_click_transport venisse mai raggiunta —
 			# BUG CONFERMATO con l'utente. Nessun problema simmetrico con pickup/unload (mai
 			# verificato un caso reale), ma bypassati comunque per coerenza: mentre una selezione
 			# Transport è aperta, il destro è un canale "riservato" a quella sola interazione.
-			if _transport_source_building != null:
-				if not _try_assign_transport_command_on_right_click(event):
-					individual_controller.handle_input(event)
-			# _try_assign_transport_command_on_right_click (2026-09-12, richiesta utente) — provato per ULTIMO, dopo
-			# pickup/unload/build; dal 2026-09-20 comando normale del gioco (non piu' gated da DebugLogging.ENABLED).
-			# _try_assign_hunt_command_on_right_click (2026-09-26, caccia step 2) — provato PER PRIMO: un
-			# animale è un bersaglio esplicito e si muove, non deve essere "rubato" da un sasso o da un
-			# lotto che gli sta sotto.
-			# _try_assign_bury_command_on_right_click (2026-10-04) — PRIMA di tutti: sulla sagoma di un cadavere vince sempre.
-			elif not _try_assign_bury_command_on_right_click(event) and not _try_assign_hunt_command_on_right_click(event) and not _try_assign_butcher_command_on_right_click(event) and not _try_assign_cut_command_on_right_click(event) and not _try_assign_quarry_command_on_right_click(event) and not _try_assign_pickup_command_on_right_click(event) and not _try_assign_build_command_on_right_click(event) and not _try_assign_transport_command_on_right_click(event):
+			# Comandi del clic destro (2026-10-24, refactoring GameScene 5B.7): bersagli raccolti una volta,
+			# RightClickCommandService sceglie i comandi e il loro ordine (trasporto a metà: solo la destinazione; corpo,
+			# animale, carcassa, taglio, cava, raccolta, costruzione, trasporto). Nessuno consuma il clic = movimento.
+			if not _handle_right_click_command(event):
 				individual_controller.handle_input(event)
 
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_X:
@@ -1809,7 +1803,7 @@ func _stop_selected_individual_task() -> void:
 	# corso completa, oppure se è in selezione a metà [tipo il transport], cancella quella") — DA
 	# CONTROLLARE PER PRIMO, PRIMA di individual.stop() sotto: _transport_source_building/
 	# _transport_pending_source_building sono stato del comando debug a due click (vedi
-	# _try_assign_transport_command_on_right_click), COMPLETAMENTE INDIPENDENTE da
+	# _right_click_transport), COMPLETAMENTE INDIPENDENTE da
 	# individual.current_task — nessuna Transport Task esiste ancora finché la destinazione non
 	# viene confermata, quindi non c'è nulla da "fermare" su individual, solo questo stato interno
 	# di GameScene da azzerare. PRIMA di questo fix non esisteva NESSUN modo di uscire da questo
@@ -2234,12 +2228,10 @@ func _assign_explore_task() -> void:
 	var target_data: Dictionary = IdleTaskAssignmentService.resolve_explore_targets(individual)
 	var explore_definition := load(IdleTaskAssignmentService.EXPLORE_TASK_DEFINITION_PATH) as TaskDefinition
 	var task := TaskFactory.build_task(explore_definition, IdleTaskAssignmentService.build_explore_context(target_data))
-	var age_band := _resolve_age_band(individual)
-	var rejection := individual.get_assign_rejection_reason(task, age_band)
-	if rejection != HumanIndividual.ASSIGN_OK:
-		_report_assign_rejection(individual, rejection, "task_activity_explore")
+	# Idoneità con il motivo (AssignService, 5B.2), senza icona; l'esito dell'assegnazione non si guarda, come prima.
+	if not _assign_check(AssignRequest.create(individual, task, "task_activity_explore")):
 		return
-	individual.assign_task(task, age_band)
+	individual.assign_task(task, _resolve_age_band(individual))
 	if DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
 		print("[EXPLORE] Task assegnata a #%d %s: %s" % [individual.id, individual.name, str(target_data)])
 
@@ -2299,80 +2291,18 @@ func _assign_play_task() -> void:
 		])
 
 
-# Assegna la Transport Task completa [Walk, Retrieve, Walk, Unload] all'individuo selezionato (2026-09-12,
-# richiesta utente) — chiamata SOLO dal trigger a due click destri sotto. resource_name/quantity arrivano GIA'
-# SCELTI dal player nel TransportSourceDialog (vedi _on_transport_source_resource_chosen), `repeat_enabled`
-# dalla casella "Ripeti" dello stesso dialog (2026-09-20, ripetizione automatica, vedi TaskRepeatRules).
-#
-# OBIETTIVO del viaggio (2026-09-20): il minimo tra la quantita' chiesta dal player e il fabbisogno della
-# destinazione se questa NON e' completa (_transport_trip_target); verso un edificio completo vale il numero del
-# player. Un fabbisogno a zero (la destinazione non ha bisogno di quella risorsa) rifiuta il comando invece di
-# mandare l'individuo a portare qualcosa che non entrerebbe.
-#
-# individual.stop() RIMOSSO (2026-09-14): assign_task() sotto gia' sospende/scarta/attiva da sé la Task
-# precedente — vedi il commento esteso in HumanIndividual.assign_task. Segnali collegati DOPO il guard
-# can_assign_task (nessun segnale orfano su una Task mai attivata). Lampeggio SULLA DESTINAZIONE, subito
-# all'assegnazione (icona "transport" o "task_rejected").
+# Transport Task dal trigger a due clic destri (2026-10-24, refactoring GameScene 5B.6 —
+# TransportCommandService.assign_transport). resource_name/quantity/repeat_enabled arrivano già scelti dal
+# TransportSourceDialog (_on_transport_source_resource_chosen).
 func _assign_transport_task(
-	source_building: Building, destination_building: Building, resource_name: String, quantity: int,
-	repeat_enabled: bool = false
+	worker: HumanIndividual, source_building: Building, destination_building: Building, resource_name: String,
+	quantity: int, repeat_enabled: bool = false
 ) -> void:
-	if individual == null or not individual.is_selected:
-		return
-	var destination_macro_coords := Vector2i(destination_building.macro_x, destination_building.macro_y)
-	var trip_target: int = TaskBuilderService.transport_trip_target(destination_building, resource_name, quantity)
-	if trip_target <= 0:
-		if live_cells.has(destination_macro_coords):
-			_spawn_command_icon_at_microcell(
-				live_cells[destination_macro_coords],
-				Vector2i(destination_building.micro_x, destination_building.micro_y),
-				"task_rejected"
-			)
-		# Motivo (2026-09-26): la destinazione non ha bisogno di quella risorsa.
-		_report_command_rejection(individual, tr("task_reject_transport_not_needed").format({
-			"name": individual.name, "building": _building_display_name(destination_building),
-			"resource": IconRegistry.get_resource_display_name(resource_name),
-		}))
-		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-			print("[TRANSPORT] rifiutata: %s #%d non ha bisogno di '%s' (obiettivo 0)." % [
-				destination_building.building_type_name, destination_building.id, resource_name
-			])
-		return
-	var task := TaskBuilderService.build_transport_task(
-		individual, source_building, destination_building, resource_name, trip_target, quantity, repeat_enabled, 0
+	var effects := GameEffects.new()
+	TransportCommandService.assign_transport(
+		_game_context(), worker, source_building, destination_building, resource_name, quantity, repeat_enabled, effects
 	)
-	var age_band := _resolve_age_band(individual)
-	var rejection := individual.get_assign_rejection_reason(task, age_band)
-	if rejection != HumanIndividual.ASSIGN_OK:
-		# Prima un return silenzioso (2026-09-26): ora X rossa sulla destinazione e motivo.
-		_report_assign_rejection(individual, rejection, "task_activity_transport")
-		if live_cells.has(destination_macro_coords):
-			_spawn_command_icon_at_microcell(
-				live_cells[destination_macro_coords],
-				Vector2i(destination_building.micro_x, destination_building.micro_y),
-				"task_rejected"
-			)
-		return
-	_wire_transport_task(task, individual)
-	var assigned := individual.assign_task(task, age_band)
-	var command_icon_key := "transport" if assigned else "task_rejected"
-	if not assigned:
-		_report_failed_assignment(individual, task, "task_activity_transport")
-
-	if live_cells.has(destination_macro_coords):
-		_spawn_command_icon_at_microcell(
-			live_cells[destination_macro_coords],
-			Vector2i(destination_building.micro_x, destination_building.micro_y),
-			command_icon_key
-		)
-
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[TRANSPORT] Task assegnata a #%d %s: %s #%d -> %s #%d, risorsa='%s' chiesta=%d obiettivo=%d ripeti=%s" % [
-			individual.id, individual.name,
-			source_building.building_type_name, source_building.id,
-			destination_building.building_type_name, destination_building.id,
-			resource_name, quantity, trip_target, str(repeat_enabled),
-		])
+	_apply_effects(effects)
 
 
 # Segnali degli step della Transport (2026-09-12): il deposito/prelievo fisico muta comunque
@@ -2392,6 +2322,63 @@ func _on_transport_delivered(owner: HumanIndividual, context: Dictionary, delive
 	var effects := GameEffects.new()
 	WorkFollowUpService.repeat_transport(_game_context(), owner, context, delivered, effects)
 	_apply_effects(effects)
+
+
+# Comandi del clic destro con un pipottino selezionato (2026-10-24, refactoring GameScene 5B.7): i bersagli sotto il clic
+# raccolti una volta (_collect_right_click_targets), i comandi possibili e il loro ordine da RightClickCommandService,
+# provati in quell'ordine finché uno consuma il clic. false = nessun comando: il chiamante muove il pipottino.
+func _handle_right_click_command(event: InputEvent) -> bool:
+	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
+		return false
+	if individual == null or not individual.is_selected:
+		return false
+	var targets := _collect_right_click_targets(event)
+	for command in RightClickCommandService.candidates(_game_context(), individual, targets, _transport_source_building != null):
+		if _run_right_click_command(command, targets):
+			return true
+	return false
+
+
+# Hit-test del renderer 2D per ogni tipo di bersaglio del clic destro (tutti in sola lettura).
+func _collect_right_click_targets(event: InputEvent) -> RightClickTargets:
+	var targets := RightClickTargets.new()
+	targets.body_id = _dead_body_at_click(event)
+	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
+	if not animal_hit.is_empty():
+		targets.prey = AnimalGroupRenderer.find_live_individual(int(animal_hit["individual_id"]))
+		targets.prey_species = String(animal_hit["species"])
+	targets.carcass_pile = _find_carcass_pile_at_click()
+	targets.plant = vegetation_selector_controller.find_live_at_mouse(live_cells)
+	targets.rock = stone_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
+	targets.pickup_candidates = _resolve_pickup_candidates(event, game_data.get_absolute_day())
+	var building_hit := building_selector_controller.try_select(
+		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
+	)
+	if not building_hit.is_empty():
+		targets.building = _find_building_by_id(int(building_hit["building_id"]))
+	return targets
+
+
+# true se il comando ha consumato il clic (anche rifiutato con X e motivo).
+func _run_right_click_command(command: RightClickCommandService.Command, targets: RightClickTargets) -> bool:
+	match command:
+		RightClickCommandService.Command.BURY:
+			return _right_click_bury(targets)
+		RightClickCommandService.Command.HUNT:
+			return _right_click_hunt(targets)
+		RightClickCommandService.Command.BUTCHER:
+			return _right_click_butcher(targets)
+		RightClickCommandService.Command.CUT:
+			return _right_click_cut(targets)
+		RightClickCommandService.Command.QUARRY:
+			return _right_click_quarry(targets)
+		RightClickCommandService.Command.PICKUP:
+			return _right_click_pickup(targets)
+		RightClickCommandService.Command.BUILD:
+			return _right_click_build(targets)
+		RightClickCommandService.Command.TRANSPORT:
+			return _right_click_transport(targets)
+	return false
 
 
 # Stato del trigger a due click (2026-09-12, richiesta utente) — `_transport_source_building`
@@ -2422,25 +2409,15 @@ var _transport_repeat: bool = false
 # Dialog.gd), il secondo (dopo conferma del dialog, su un edificio diverso) costruisce ed assegna
 # la Transport Task con risorsa/quantità scelte dal player.
 #
-# STESSO schema/STESSA posizione nella catena di _try_assign_pickup_command_on_right_click/
-# _try_assign_unload_command_on_right_click/_try_assign_build_command_on_right_click sopra (provato
+# STESSO schema/STESSA posizione nella catena di _right_click_pickup/
+# _try_assign_unload_command_on_right_click/_right_click_build sopra (provato
 # per ULTIMO, dopo tutti e tre: un edificio già intercettato da uno di quelli — es. uno storage con
 # zaino pieno per Unload, o un cantiere incompleto per Build — non arriva mai qui, nessuna
 # competizione reale). Funzione NORMALE del gioco (2026-09-20, richiesta utente: rimosso il gate
 # DebugLogging.ENABLED e il prefisso _debug_) — per questo NON inghiotte il click destro quando non c'e' nulla da
 # trasportare (edificio senza risorse, individuo CHILD/INFANT): ritorna false e il movimento normale prosegue.
-func _try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
-		return false
-	if individual == null or not individual.is_selected:
-		return false
-
-	var building_hit := building_selector_controller.try_select(
-		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
-	)
-	if building_hit.is_empty():
-		return false
-	var hit_building := _find_building_by_id(building_hit["building_id"])
+func _right_click_transport(targets: RightClickTargets) -> bool:
+	var hit_building := targets.building
 	if hit_building == null:
 		return false
 
@@ -2539,7 +2516,7 @@ func _try_assign_transport_command_on_right_click(event: InputEvent) -> bool:
 	# più "a metà".
 	if transport_selection_banner != null:
 		transport_selection_banner.visible = false
-	_assign_transport_task(source_building, hit_building, _transport_resource_name, _transport_quantity, _transport_repeat)
+	_assign_transport_task(individual, source_building, hit_building, _transport_resource_name, _transport_quantity, _transport_repeat)
 	return true
 
 
@@ -2596,7 +2573,7 @@ func _debug_clear_selected_individual_backpack() -> void:
 # Bersaglio: la posizione pebble O stick lot disponibile più VICINA all'individuo, qualunque delle
 # due risulti più vicina (stesso ordine di ricerca "posizione stone" di _debug_test_two_walk_task
 # sopra, esteso anche a tree_claimed_lots/stick — nessuna priorità fissa fra i due tipi, a differenza
-# di _try_assign_pickup_command_on_right_click che prova sempre PRIMA stone: qui la scelta "chi è più
+# di _right_click_pickup che prova sempre PRIMA stone: qui la scelta "chi è più
 # vicino" esercita entrambe le risorse a seconda di cosa capita nella macrocella di test).
 func _debug_test_haul_resource_task() -> void:
 	if individual == null:
@@ -3581,75 +3558,19 @@ func _validate_selected_animal() -> void:
 		_clear_animal_selection()
 
 
-# Assegna a `individual` (il bersaglio correntemente selezionato) una Task Walk->PickUp verso una
-# posizione raccoglibile (2026-09-09, richiesta utente, Step 5/6 piano raccolta/trasporto — dal
-# 2026-09-09 richiamata dal comando destro-click, vedi _try_assign_pickup_command_on_right_click
-# sotto, non più da un'attivazione sinistro-click). Generalizzata su
-# macro_coords/target_position/resource_name espliciti invece di un `hit: Dictionary` grezzo:
-# StoneSelectorController.try_select e StickLotSelectorController.try_select tornano forme diverse
-# ({"position"} vs {"lot"} per la stessa idea di "dove"), quindi ogni chiamante estrae il proprio
-# campo e passa qui solo i tre valori già risolti — nessuna conoscenza della forma dell'hit
-# necessaria in questa funzione, nessun secondo hit-test.
-#
-# macro_state: risolto da live_cells[macro_coords].macro_state — stesso identico riferimento che
-# _refresh_stone_panel/_refresh_stick_lot_panel sopra usano per leggere pebble_quantities/
-# stick_quantities, sempre disponibile a questo punto perché né stone_hit né stick_lot_hit possono
-# vincere senza una cella viva con macro_state valido (vedi StoneSelectorController/
-# StickLotSelectorController.try_select, che scartano ogni cella con macro_state == null).
-#
-# Nessun controllo sulla quantità disponibile alla posizione/lotto cliccato (richiesta esplicita
-# utente, valida per entrambe le risorse): PickUpAction gestisce già il caso quantità 0
-# (completamento immediato senza effetto, Step 2) — assegnare comunque la Task su una posizione già
-# svuotata (una roccia già raccolta, un lotto senza alberi maturi) è un comportamento valido, il
-# player semplicemente non ottiene nulla, nessuna logica aggiuntiva necessaria qui per intercettarlo
-# prima.
-# quantity_requested (2026-09-18, richiesta utente — scelta quantità anche per il pickup) — -1
-# default = nessun tetto scelto dal player (PickUpAction risolve il massimo come sempre): i due
-# chiamanti "1 candidato senza dialog"/"tutti a scorta 0" non ne passano uno, invariati. Il
-# chiamante col dialog (_on_pickup_choice_made) passa la quantità scelta (solo con criterio per nome).
-# criterion_kind/criterion_category (2026-09-20, zaino multi-risorsa, passo 2): il criterio di raccolta di
-# PickUpAction (NAME = solo `resource_name`, comportamento di sempre; CATEGORY = tutte le risorse della
-# categoria; ALL = tutto quello che c'e' nella microcella). `resource_name` resta obbligatorio (TaskFactory lo
-# richiede) ma con CATEGORY/ALL non viene usato; quantity_requested vale solo con NAME.
+# Raccolta su una microcella (2026-10-24, 5B.6 — TransportCommandService.assign_pickup). quantity_requested -1 = nessun
+# tetto; criterion_kind/criterion_category: criterio di PickUpAction (con CATEGORY/ALL `resource_name` non è usato).
 func _assign_pickup_task(
-	macro_coords: Vector2i, target_position: Vector2i, resource_name: String, quantity_requested: int = -1,
+	worker: HumanIndividual, macro_coords: Vector2i, target_position: Vector2i, resource_name: String, quantity_requested: int = -1,
 	criterion_kind: int = PickUpAction.CriterionKind.NAME, criterion_category: int = -1,
 	repeat_enabled: bool = false, repeat_count: int = 0, source_kind: int = PickUpAction.SourceKind.TERRAIN
 ) -> void:
-	var cell: LiveMacroCell = live_cells.get(macro_coords)
-	if cell == null or cell.macro_state == null:
-		return
-	# Zona 1×1 sulla cella cliccata (2026-09-27, work areas passo 2): la Task cerca nella zona e accoda Walk + PickUp
-	# verso quella cella — stesso risultato di prima. Costruita da TaskBuilderService.build_haul_zone_task, condivisa con la
-	# ripetizione automatica (_queue_pickup_repeat). Non entra in GameData.work_areas. `individual` e' il
-	# proprietario della Task (qui, l'individuo selezionato).
-	var zone := HaulZoneService.make_zone(
-		macro_coords, Rect2i(target_position, Vector2i.ONE), criterion_kind, criterion_category, resource_name,
-		quantity_requested, source_kind, HaulZoneService.CLICK_MAX_REPEATS
+	var effects := GameEffects.new()
+	TransportCommandService.assign_pickup(
+		_game_context(), worker, macro_coords, target_position, resource_name, quantity_requested, criterion_kind,
+		criterion_category, repeat_enabled, repeat_count, source_kind, effects
 	)
-	var task := TaskBuilderService.build_haul_zone_task(zone, repeat_enabled, repeat_count)
-	_connect_haul_zone_step_appended(task, individual)
-
-	# Icona letta da IconRegistry (2026-09-11, richiesta utente — generalizzazione del meccanismo di
-	# lampeggio: prima "✋" era hardcoded dentro _spawn_pickup_command_effect, ora vive nel registro
-	# centrale insieme a tutte le altre icone, vedi IconRegistry.COMMAND_ICONS) — TRIGGER invariato:
-	# ancora SUBITO al click destro (non a PickUpAction.activate()), stesso motivo di sempre — il
-	# player deve vedere da dove è partita la Task anche mentre l'individuo sta ancora camminando.
-	#
-	# "❌" se il guard di assign_task rifiuta (2026-09-13, richiesta utente — bugfix: prima la
-	# "manina" appariva comunque anche quando la Task non partiva mai, es. INFANT) — assign_task ora
-	# ritorna bool, catturato qui per scegliere l'icona giusta invece di assumere sempre successo.
-	# Idoneità prima dell'assegnazione (2026-09-26): X rossa e motivo invece della sola X.
-	var rejection := individual.get_assign_rejection_reason(task, _resolve_age_band(individual))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		_report_assign_rejection(individual, rejection, "task_activity_pickup")
-		_spawn_command_icon_at_microcell(cell, target_position, "task_rejected")
-		return
-	var assigned := individual.assign_task(task, _resolve_age_band(individual))
-	var command_icon_key := "pickup" if assigned else "task_rejected"
-	if not assigned:
-		_report_failed_assignment(individual, task, "task_activity_pickup")
-	_spawn_command_icon_at_microcell(cell, target_position, command_icon_key)
+	_apply_effects(effects)
 
 
 # Segnali della raccolta costruita da TaskBuilderService.build_pickup_task/build_pile_job_task (2026-10-17, refactoring
@@ -3805,35 +3726,11 @@ func _order_hunt(selected: Array[HumanIndividual]) -> void:
 		selected.size(), str(selected.map(func(member: HumanIndividual) -> String: return member.name)),
 		"accesa" if UserOptions.work_area_auto_zone else "spenta"
 	])
-	var hunters: Array[HumanIndividual] = []
-	for member in selected:
-		var probe := TaskBuilderService.build_hunt_zone_task(-1)
-		if probe == null:
-			HuntZoneService.log_event(member, "Task di prova NON creata (%s non caricabile) — controllo di età/stamina saltato." % HuntZoneService.TASK_DEFINITION_PATH)
-		else:
-			var rejection := member.get_assign_rejection_reason(probe, _resolve_age_band(member))
-			if rejection != HumanIndividual.ASSIGN_OK:
-				HuntZoneService.log_event(member, "rifiutato da età/stamina: %s." % rejection)
-				_report_assign_rejection(member, rejection, "task_activity_hunt")
-				continue
-		var knife_rejection := HuntZoneService.get_hunt_rejection(member)
-		if knife_rejection != "":
-			HuntZoneService.log_event(member, "rifiutato: %s" % knife_rejection)
-			_report_command_rejection(member, knife_rejection)
-			continue
-		HuntZoneService.log_event(member, "età, stamina e coltello in cintura: ok.")
-		hunters.append(member)
+	# Cacciatori idonei e zone con la caccia attiva (2026-10-24, 5B.6 — HuntCommandService.eligible_zone_hunters).
+	var effects := GameEffects.new()
+	var hunters := HuntCommandService.eligible_zone_hunters(_game_context(), selected, effects)
+	_apply_effects(effects)
 	if hunters.is_empty():
-		HuntZoneService.log_event(null, "nessun cacciatore idoneo: comando chiuso.")
-		return
-	var areas := HuntZoneService.list_hunt_work_areas(game_data)
-	HuntZoneService.log_event(null, "zone con la caccia attiva: %s (idea Aree di lavoro %s)." % [
-		str(areas.map(func(area: WorkArea) -> String: return "%s #%d" % [area.name, area.id])),
-		"completata" if HuntZoneService.is_hunt_job_unlocked() else "NON completata"
-	])
-	if areas.is_empty():
-		for hunter in hunters:
-			_report_command_rejection(hunter, tr("work_area_hunt_no_zone").format({"name": hunter.name}))
 		return
 	# Dialog della carne (2026-10-01); la scelta della zona segue alla conferma (_on_hunt_order_confirmed).
 	# Il dialog è condiviso con Raccogli: nessuna raccolta in attesa mentre è aperto per la caccia.
@@ -3895,14 +3792,10 @@ func _on_hunt_order_confirmed(meat_target: int, butcher_destination: String = ""
 	if hunters.is_empty() or areas.is_empty():
 		return
 	if UserOptions.work_area_auto_zone:
-		for hunter in hunters:
-			var area := HuntZoneService.choose_work_area(game_data, hunter, live_cells)
-			if area == null:
-				HuntZoneService.log_event(hunter, "nessuna zona scelta in automatico.")
-				_report_command_rejection(hunter, tr("work_area_hunt_no_zone").format({"name": hunter.name}))
-				continue
-			HuntZoneService.log_event(hunter, "zona scelta in automatico: %s #%d." % [area.name, area.id])
-			_assign_work_area_hunt(hunter, area, HuntZoneService.make_meat_series(area.id, meat_target, butcher_destination, true))
+		# Zona automatica (2026-10-24, 5B.6 — HuntCommandService.assign_auto_zone_hunt).
+		var effects := GameEffects.new()
+		HuntCommandService.assign_auto_zone_hunt(_game_context(), hunters, meat_target, butcher_destination, effects)
+		_apply_effects(effects)
 		return
 	var valid_ids: Array[int] = []
 	for area in areas:
@@ -3913,48 +3806,12 @@ func _on_hunt_order_confirmed(meat_target: int, butcher_destination: String = ""
 	}, valid_ids)
 
 
-# `silent` (2026-10-09, ordini di caccia del cassetto): nessun messaggio né icona, come le prese degli altri ordini.
-# `tools_from_storage` (2026-10-11, ordini di zona della coda): chi parte va prima a prendere in deposito il coltello o
-# l'arma che non ha (_start_zone_order_tool_fetch, subito dopo): niente controllo del coltello qui.
+# Caccia nella zona `area` (2026-10-24, 5B.6 — HuntCommandService.assign_work_area_hunt). `silent`: ordini di caccia del
+# cassetto; `tools_from_storage`: ordini di zona della coda, coltello o arma presi in deposito subito dopo.
 func _assign_work_area_hunt(hunter: HumanIndividual, area: WorkArea, series: Dictionary = {}, silent: bool = false, tools_from_storage: bool = false) -> void:
-	if hunter == null or area == null or not human_individuals.has(hunter):
-		return
-	var task := TaskBuilderService.build_hunt_zone_task(area.id, series)
-	if task == null:
-		HuntZoneService.log_event(hunter, "Task NON creata per la zona %s #%d." % [area.name, area.id])
-		return
-	HuntZoneService.log_event(hunter, "Task '%s' creata per la zona %s #%d: %d step." % [task.task_name, area.name, area.id, task.steps.size()])
-	var icon_cell: LiveMacroCell = live_cells.get(area.macro_coords)
-	var icon_position: Vector2i = area.rect.position + area.rect.size / 2
-	var rejection := hunter.get_assign_rejection_reason(task, _resolve_age_band(hunter))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		if not silent:
-			_report_assign_rejection(hunter, rejection, "task_activity_hunt")
-			if icon_cell != null:
-				_spawn_command_icon_at_microcell(icon_cell, icon_position, "task_rejected")
-		return
-	# Coltello (2026-10-09, regola generale degli attrezzi): dallo zaino in cintura prima di partire; cintura piena = no.
-	if not tools_from_storage and not _prepare_hunt_knife(hunter, silent):
-		if not silent and icon_cell != null:
-			_spawn_command_icon_at_microcell(icon_cell, icon_position, "task_rejected")
-		return
-	var assigned := hunter.assign_task(task, _resolve_age_band(hunter))
-	if not assigned and not silent:
-		_report_failed_assignment(hunter, task, "task_activity_hunt")
-	if icon_cell != null and not silent:
-		_spawn_command_icon_at_microcell(icon_cell, icon_position, "hunt" if assigned else "task_rejected")
-	HuntZoneService.log_event(hunter, "assegnazione della caccia nella zona %s #%d: %s (Task corrente: '%s')." % [
-		area.name, area.id, "riuscita" if assigned else "FALLITA",
-		hunter.current_task.task_name if hunter.current_task != null else "nessuna"
-	])
-
-
-# Coltello per la caccia di zona (2026-10-18, blocco 5d — WorkFollowUpService.prepare_hunt_knife).
-func _prepare_hunt_knife(hunter: HumanIndividual, silent: bool) -> bool:
 	var effects := GameEffects.new()
-	var ok := WorkFollowUpService.prepare_hunt_knife(_game_context(), hunter, silent, effects)
+	HuntCommandService.assign_work_area_hunt(_game_context(), hunter, area, series, silent, tools_from_storage, effects)
 	_apply_effects(effects)
-	return ok
 
 
 # Caccia interrotta con un messaggio, per esempio senza più armi (HumanIndividualActionService.hunt_ended_with_message).
@@ -4211,23 +4068,13 @@ func _on_quarry_count_chosen(count: int) -> void:
 	var areas := QuarryZoneService.list_quarry_work_areas(game_data)
 	if workers.is_empty() or areas.is_empty():
 		return
-	var reserved := QuarryZoneService.collect_reserved_rocks(human_individuals)
+	# Zona automatica e zone valide per la scelta a mano: ExtractionCommandService (5B.3).
 	if UserOptions.work_area_auto_zone:
-		for worker in workers:
-			var area := QuarryZoneService.choose_work_area(game_data, macro_world, worker, reserved)
-			if area == null:
-				_report_command_rejection(worker, tr("work_area_quarry_no_rock"))
-				continue
-			_assign_work_area_quarry(worker, area, count)
-			reserved = QuarryZoneService.collect_reserved_rocks(human_individuals)
+		var effects := GameEffects.new()
+		ExtractionCommandService.assign_auto_zone_quarry(_game_context(), workers, count, effects)
+		_apply_effects(effects)
 		return
-	var valid_ids: Array[int] = []
-	for area in areas:
-		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		for worker in workers:
-			if not QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved, true).is_empty():
-				valid_ids.append(area.id)
-				break
+	var valid_ids := ExtractionCommandService.quarry_pick_area_ids(_game_context(), workers)
 	if valid_ids.is_empty():
 		for worker in workers:
 			_report_command_rejection(worker, tr("work_area_quarry_no_rock"))
@@ -4235,19 +4082,12 @@ func _on_quarry_count_chosen(count: int) -> void:
 	_enter_work_area_pick_mode(workers, {"job": QuarryZoneService.QUARRY_JOB, "count": count}, valid_ids)
 
 
-# Una estrazione nella zona `area`: la roccia migliore per `worker` (QuarryZoneService.choose_rock: pietra rimasta,
-# raggiungibile, non prenotata), poi le stesse funzioni dell'estrazione col clic destro (_assign_quarry_task), con la
-# zona nel context per l'etichetta. Nessuna roccia: messaggio, il comando non parte.
-# `count` (2026-10-05, passo 2): estrazioni della serie (QuarryZoneService.make_series), questa è la prima.
+# Una estrazione nella zona `area`, prima di una serie di `count` (2026-10-24, 5B.3 —
+# ExtractionCommandService.assign_work_area_quarry).
 func _assign_work_area_quarry(worker: HumanIndividual, area: WorkArea, count: int = 1) -> void:
-	if worker == null or area == null or not human_individuals.has(worker):
-		return
-	var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-	var rock: Variant = QuarryZoneService.choose_rock(area, macro_state, worker, QuarryZoneService.collect_reserved_rocks(human_individuals))
-	if rock == null:
-		_report_command_rejection(worker, tr("work_area_quarry_no_rock"))
-		return
-	_assign_quarry_task(worker, {"macro_coords": area.macro_coords, "position": rock}, area.id, QuarryZoneService.make_series(area.id, count))
+	var effects := GameEffects.new()
+	ExtractionCommandService.assign_work_area_quarry(_game_context(), worker, area, count, effects)
+	_apply_effects(effects)
 
 
 # Serie di cava interrotta (2026-10-18, blocco 5d — WorkFollowUpService.series_stopped).
@@ -4317,22 +4157,13 @@ func _on_cut_count_chosen(count: int) -> void:
 	var areas := CutZoneService.list_cut_work_areas(game_data)
 	if workers.is_empty() or areas.is_empty():
 		return
-	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
+	# Zona automatica e zone valide per la scelta a mano: ExtractionCommandService (5B.3).
 	if UserOptions.work_area_auto_zone:
-		for worker in workers:
-			var area := CutZoneService.choose_work_area(game_data, live_cells, worker, reserved)
-			if area == null:
-				_report_command_rejection(worker, tr("work_area_cut_no_plant"))
-				continue
-			_assign_work_area_cut(worker, area, count)
-			reserved = CutZoneService.collect_reserved_plants(human_individuals)
+		var effects := GameEffects.new()
+		ExtractionCommandService.assign_auto_zone_cut(_game_context(), workers, count, effects)
+		_apply_effects(effects)
 		return
-	var valid_ids: Array[int] = []
-	for area in areas:
-		for worker in workers:
-			if not CutZoneService.list_available_plants(area, live_cells, worker, reserved, "", true).is_empty():
-				valid_ids.append(area.id)
-				break
+	var valid_ids := ExtractionCommandService.cut_pick_area_ids(_game_context(), workers)
 	if valid_ids.is_empty():
 		for worker in workers:
 			_report_command_rejection(worker, tr("work_area_cut_no_plant"))
@@ -4340,18 +4171,12 @@ func _on_cut_count_chosen(count: int) -> void:
 	_enter_work_area_pick_mode(workers, {"job": CutZoneService.CUT_JOB, "count": count}, valid_ids)
 
 
-# Un taglio nella zona `area`: la pianta migliore per `worker` (CutZoneService.choose_plant: viva, ammessa dal filtro,
-# raggiungibile, non prenotata), poi la stessa funzione del taglio col clic destro (_assign_cut_task), con la zona nel
-# context per l'etichetta. Nessuna pianta: messaggio, il comando non parte.
-# `count` (2026-10-06, passo 3): tagli della serie (CutZoneService.make_series), questo è il primo.
+# Un taglio nella zona `area`, primo di una serie di `count` (2026-10-24, 5B.3 —
+# ExtractionCommandService.assign_work_area_cut).
 func _assign_work_area_cut(worker: HumanIndividual, area: WorkArea, count: int = 1) -> void:
-	if worker == null or area == null or not human_individuals.has(worker):
-		return
-	var plant := CutZoneService.choose_plant(area, live_cells, worker, CutZoneService.collect_reserved_plants(human_individuals))
-	if plant.is_empty():
-		_report_command_rejection(worker, tr("work_area_cut_no_plant"))
-		return
-	_assign_cut_task(worker, plant, area.id, CutZoneService.make_series(area.id, count))
+	var effects := GameEffects.new()
+	ExtractionCommandService.assign_work_area_cut(_game_context(), worker, area, count, effects)
+	_apply_effects(effects)
 
 
 # Serie di taglio interrotta (2026-10-18, blocco 5d — WorkFollowUpService.series_stopped).
@@ -4433,28 +4258,13 @@ func _on_work_area_gather_choice(workers: Array[HumanIndividual], kind: int, cat
 		"repeat": trips > 1,
 		"trips": trips,
 	}
+	# Zona automatica e zone valide (2026-10-24, 5B.6): TransportCommandService.
 	if UserOptions.work_area_auto_zone:
-		for worker in workers:
-			if not human_individuals.has(worker):
-				continue
-			var area := HaulZoneService.choose_work_area(
-				game_data, macro_world, worker, kind, int(order["category"]), String(order["resource_name"])
-			)
-			if area == null:
-				_report_command_rejection(worker, tr("work_area_gather_no_zone").format({"name": worker.name}))
-				continue
-			_assign_work_area_gather(worker, area, order)
+		var effects := GameEffects.new()
+		TransportCommandService.assign_auto_zone_gather(_game_context(), workers, order, effects)
+		_apply_effects(effects)
 		return
-	var valid_ids: Array[int] = []
-	for area in game_data.work_areas:
-		var names := HaulZoneService.allowed_names_for(area, kind, int(order["category"]), String(order["resource_name"]))
-		if names.is_empty():
-			continue
-		var macro_state := macro_world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		for worker in workers:
-			if HaulZoneService.has_available_in_area(area, macro_state, names, worker):
-				valid_ids.append(area.id)
-				break
+	var valid_ids := TransportCommandService.gather_pick_area_ids(_game_context(), workers, order)
 	if valid_ids.is_empty():
 		for worker in workers:
 			_report_command_rejection(worker, tr("work_area_gather_no_zone").format({"name": worker.name}))
@@ -4462,48 +4272,12 @@ func _on_work_area_gather_choice(workers: Array[HumanIndividual], kind: int, cat
 	_enter_work_area_pick_mode(workers, order, valid_ids)
 
 
-# Ordine di raccolta nella zona `area` (`order`: kind/category/resource_name/repeat). La Task è quella della raccolta su
-# zona (TaskBuilderService.build_haul_zone_task) con work_area_id e il filtro dell'ordine nel context; stessi controlli di idoneità e
-# icona del clic su una cella (sul centro della zona, se la sua macrocella è viva).
-# `silent` (2026-10-09, presa dalla lista dei lavori — ordini "Raccogli" del cassetto): nessun avviso, popup né X.
-# `drawer_order_id` (stesso giorno): ordine del cassetto, scritto nella zona (viaggia con le ripetizioni) per sapere chi ci
-# lavora (DrawerOrderService.task_zone_info); -1 = comando.
+# Ordine di raccolta nella zona `area` (2026-10-24, 5B.6 — TransportCommandService.assign_work_area_gather).
+# `silent`: presa dalla lista dei lavori; `drawer_order_id`: ordine del cassetto (-1 = comando).
 func _assign_work_area_gather(worker: HumanIndividual, area: WorkArea, order: Dictionary, silent: bool = false, drawer_order_id: int = -1) -> void:
-	if worker == null or area == null or not human_individuals.has(worker):
-		return
-	var kind := int(order["kind"])
-	var order_category := int(order["category"])
-	var order_resource := String(order["resource_name"])
-	var repeat := bool(order["repeat"])
-	# Viaggi scelti (2026-10-01): N viaggi = il primo + N - 1 ripetizioni.
-	var trips := int(order.get("trips", HaulZoneService.WORK_AREA_MAX_REPEATS + 1))
-	var zone := HaulZoneService.make_work_area_zone(area.id, kind, order_category, order_resource, maxi(trips - 1, 0))
-	if drawer_order_id >= 0:
-		zone[DrawerOrderService.SERIES_KEY] = drawer_order_id
-	# Raccolta del magazzino (2026-10-11): lo zaino si riempie con quello che serve (HaulZoneService.STOCK_FILL_KEY).
-	if bool(order.get("stock_fill", false)):
-		zone[HaulZoneService.STOCK_FILL_KEY] = true
-	var task := TaskBuilderService.build_haul_zone_task(zone, repeat, 0)
-	_connect_haul_zone_step_appended(task, worker)
-	var icon_cell: LiveMacroCell = live_cells.get(area.macro_coords)
-	var icon_position: Vector2i = area.rect.position + area.rect.size / 2
-	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		if silent:
-			return
-		_report_assign_rejection(worker, rejection, "task_activity_pickup")
-		if icon_cell != null:
-			_spawn_command_icon_at_microcell(icon_cell, icon_position, "task_rejected")
-		return
-	var assigned := worker.assign_task(task, _resolve_age_band(worker))
-	if not assigned and not silent:
-		_report_failed_assignment(worker, task, "task_activity_pickup")
-	if icon_cell != null and (assigned or not silent):
-		_spawn_command_icon_at_microcell(icon_cell, icon_position, "pickup" if assigned else "task_rejected")
-	if DebugLogging.ENABLED and DebugLogging.SHOW_PICKUP_LOGS:
-		print("[PICKUP] #%d %s: raccolta nella zona %s (#%d), criterio %d/%d/'%s', ripeti=%s." % [
-			worker.id, worker.name, area.name, area.id, kind, order_category, order_resource, str(repeat)
-		])
+	var effects := GameEffects.new()
+	TransportCommandService.assign_work_area_gather(_game_context(), worker, area, order, silent, drawer_order_id, effects)
+	_apply_effects(effects)
 
 
 # --- Scelta manuale della zona (2026-09-27, work areas passo 3b — zona automatica spenta) ---
@@ -4804,52 +4578,15 @@ var _pickup_dialog_work_area_workers: Array[HumanIndividual] = []
 # (categoria, poi "Tutto") se la voce configurata non e' presente nella cella.
 
 
-func _try_assign_pickup_command_on_right_click(event: InputEvent) -> bool:
-	# Guard di tipo evento (2026-09-10, richiesta utente — BUGFIX log: senza questo, il corpo della
-	# funzione — hit-test E i log di debug sotto — girava su OGNI evento _unhandled_input, incluso
-	# InputEventMouseMotion ad ogni frame di movimento del mouse, non solo sul vero click destro:
-	# stone_selector_controller.try_select/stick_lot_selector_controller.try_select filtrano già
-	# internamente per tipo/pulsante come primissima riga — vedi StoneSelectorController.gd/
-	# StickLotSelectorController.gd — quindi l'HIT-TEST stesso non aveva mai avuto un problema di
-	# correttezza/performance reale (ritorna {} immediato per un motion event); il flooding era
-	# interamente nei print di debug aggiunti in questo giro, che stavano PRIMA/DOPO quel filtro
-	# interno e quindi lo ignoravano. Stesso identico filtro già usato da quei *SelectorController,
-	# duplicato qui come guardia esplicita in testa alla funzione — non un fix di un bug preesistente
-	# nella logica reale, solo la causa del flooding dei log.
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
-		return false
-	# LOG DEBUG TEMPORANEO (2026-09-10, richiesta utente — indagine bug Build Task/pickup) — DA
-	# RIMUOVERE una volta chiuso il bug.
-	if individual == null or not individual.is_selected:
-		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna false (individual null o non selezionato).")
-		return false
-
-	# Fog of War (2026-09-13, richiesta utente — bugfix: un hit valido sui dati grezzi non basta più,
-	# la microcella deve anche essere visibile con DETTAGLIO sufficiente — stesso tier is_detail_
-	# fresh usato da FogOfWarRenderer per decidere se disegnare la risorsa affatto, mai consultato
-	# finora da questo comando) — un hit che fallisce questo controllo viene trattato ESATTAMENTE
-	# come "nessun hit trovato qui" (nessun return anticipato, si prosegue al candidato successivo/
-	# al fallback finale), mai un errore o un comportamento diverso dal caso "niente sotto il click".
-	var current_absolute_day := game_data.get_absolute_day()
-
-	# Lista generica di candidati (2026-09-16, richiesta utente — Step 4 del piano plant_fiber) —
-	# SOSTITUISCE la vecchia catena fissa "stone, poi stick, poi false" con una lista costruita da
-	# _resolve_pickup_candidates, in ORDINE DI PRIORITÀ (stone, stick, plant_fiber — usato oggi SOLO
-	# come ordine di fallback quando nessun candidato ha scorta reale, vedi sotto — MAI più come
-	# criterio di scelta tra candidati realmente disponibili, vedi bugfix 2026-09-17 sotto).
-	var candidates: Array[Dictionary] = _resolve_pickup_candidates(event, current_absolute_day)
-	if candidates.is_empty():
-		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna false (nessuna risorsa al click).")
-		return false
-
-	_dispatch_pickup_candidates(candidates)
+# Click destro su qualcosa da raccogliere (candidati già risolti in RightClickTargets, nebbia compresa, 2026-10-24 5B.7):
+# la decisione e l'eventuale dialog in _dispatch_pickup_candidates.
+func _right_click_pickup(targets: RightClickTargets) -> bool:
+	_dispatch_pickup_candidates(targets.pickup_candidates)
 	return true
 
 
 # Decisione del comando di raccolta su candidati già risolti (2026-10-04, estratta da
-# _try_assign_pickup_command_on_right_click per riusarla dalla scelta "Raccogli" del comando Taglia, che risolve i
+# _right_click_pickup per riusarla dalla scelta "Raccogli" del comando Taglia, che risolve i
 # candidati al click e decide dopo il popup): età, poi 0/1/più candidati con scorta, come prima.
 # `repeat_override` (2026-10-05, spunta "Ripeti" del popup delle rocce): -1 = opzione globale (come sempre), 0/1 = il
 # valore confermato nel popup, per questa sola raccolta.
@@ -4857,7 +4594,7 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary], repeat_override:
 	var repeat_enabled: bool = UserOptions.repeat_default if repeat_override < 0 else repeat_override == 1
 	# Guard età PRIMA di qualunque popup/assegnazione (2026-09-17, richiesta utente — bugfix UX: con
 	# 2+ risorse un CHILD/INFANT vedeva comunque pickup_choice_dialog, negato solo DOPO la scelta —
-	# STESSO fix già adottato da _try_assign_transport_command_on_right_click per lo stesso
+	# STESSO fix già adottato da _right_click_transport per lo stesso
 	# identico problema, "guard età prima di aprire il dialog"). STESSA lista di PickUpAction.
 	# disallowed_age_bands (duplicata qui apposta per poter bloccare PRIMA di costruire/mostrare
 	# qualunque cosa — se quella lista cambia in futuro, va aggiornata anche qui). ❌ mostrato subito
@@ -4866,7 +4603,7 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary], repeat_override:
 	var age_band := _resolve_age_band(individual)
 	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — età non ammessa (%s), rifiutato prima di popup/assegnazione." % HumanTypes.AgeBand.keys()[age_band])
+			print("[PICKUP CMD DEBUG] _right_click_pickup: ritorna TRUE — età non ammessa (%s), rifiutato prima di popup/assegnazione." % HumanTypes.AgeBand.keys()[age_band])
 		_report_assign_rejection(individual, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG, "task_activity_pickup")
 		_spawn_command_icon_at_microcell(live_cells.get(candidates[0]["macro_coords"]), candidates[0]["position"], "task_rejected")
 		return
@@ -4888,9 +4625,9 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary], repeat_override:
 	if available_candidates.is_empty():
 		var chosen: Dictionary = candidates[0]
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — tutti i candidati a scorta 0, fallback su %s_hit=%s" % [chosen["resource_name"], str(chosen)])
+			print("[PICKUP CMD DEBUG] _right_click_pickup: ritorna TRUE — tutti i candidati a scorta 0, fallback su %s_hit=%s" % [chosen["resource_name"], str(chosen)])
 		_assign_pickup_task(
-			chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
+			individual, chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
 			PickUpAction.CriterionKind.NAME, -1, repeat_enabled, 0,
 			int(chosen.get("source_kind", PickUpAction.SourceKind.TERRAIN))
 		)
@@ -4901,9 +4638,9 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary], repeat_override:
 	if available_candidates.size() == 1:
 		var chosen: Dictionary = available_candidates[0]
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-			print("[PICKUP CMD DEBUG] _try_assign_pickup_command_on_right_click: ritorna TRUE — unico candidato con scorta reale, %s_hit=%s" % [chosen["resource_name"], str(chosen)])
+			print("[PICKUP CMD DEBUG] _right_click_pickup: ritorna TRUE — unico candidato con scorta reale, %s_hit=%s" % [chosen["resource_name"], str(chosen)])
 		_assign_pickup_task(
-			chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
+			individual, chosen["macro_coords"], chosen["position"], chosen["resource_name"], -1,
 			PickUpAction.CriterionKind.NAME, -1, repeat_enabled, 0,
 			int(chosen.get("source_kind", PickUpAction.SourceKind.TERRAIN))
 		)
@@ -4975,25 +4712,11 @@ var _extraction_outline_touched: bool = false
 #   - senza un attrezzo CHOPPING (in cintura o nello zaino): false, il click prosegue come prima (raccolta e il resto);
 #   - con l'attrezzo e qualcosa da raccogliere nel punto: popup "Raccogli" / "Taglia";
 #   - con l'attrezzo e niente da raccogliere: taglia subito.
-func _try_assign_cut_command_on_right_click(event: InputEvent) -> bool:
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
-		return false
-	if individual == null or not individual.is_selected:
-		return false
-	if not ToolGateService.has_tool_for(individual, TaskTypes.ToolCategory.CHOPPING):
-		return false
-	# Clic su un cantiere o su un edificio "da demolire" (2026-10-07, bugfix): è per la Costruisci/Demolisci
-	# (_try_assign_build_command_on_right_click), non per una pianta vicina.
-	if _has_resumable_building_under_click(event):
-		return false
-	var plant := vegetation_selector_controller.find_live_at_mouse(live_cells)
-	if plant.is_empty():
-		return false
-	var current_absolute_day := game_data.get_absolute_day()
-	var plant_key: Vector3i = plant["individual_key"]
-	if not FogOfWarVerificationService.is_detail_visible(live_cells, plant["macro_coords"], Vector2i(plant_key.x, plant_key.y), current_absolute_day):
-		return false
-	var candidates: Array[Dictionary] = _resolve_pickup_candidates(event, current_absolute_day)
+# Attrezzo, pianta visibile e nessun cantiere/edificio "da demolire" sotto il clic: controllati prima da
+# RightClickCommandService (2026-10-24, 5B.7).
+func _right_click_cut(targets: RightClickTargets) -> bool:
+	var plant := targets.plant
+	var candidates := targets.pickup_candidates
 	var has_something := false
 	for candidate in candidates:
 		if int(candidate["available_quantity"]) > 0:
@@ -5142,23 +4865,11 @@ func _resource_count_name(resource_name: String, quantity: int) -> String:
 #   - senza un attrezzo DIGGING (in cintura o nello zaino): false, il click prosegue come prima (raccolta dei sassi);
 #   - con l'attrezzo e sassi da raccogliere sulla roccia: popup "Raccogli sassi" / "Estrai pietra";
 #   - con l'attrezzo e nessun sasso: estrae subito (rifiutato con "Roccia esaurita" se la roccia non ha più pietra).
-func _try_assign_quarry_command_on_right_click(event: InputEvent) -> bool:
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
-		return false
-	if individual == null or not individual.is_selected:
-		return false
-	if not ToolGateService.has_tool_for(individual, TaskTypes.ToolCategory.DIGGING):
-		return false
-	# Stesso bugfix della Cut (2026-10-07): il clic su un cantiere o un edificio "da demolire" non diventa un'estrazione.
-	if _has_resumable_building_under_click(event):
-		return false
-	var rock := stone_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
-	if rock.is_empty():
-		return false
-	var current_absolute_day := game_data.get_absolute_day()
-	if not FogOfWarVerificationService.is_detail_visible(live_cells, rock["macro_coords"], rock["position"], current_absolute_day):
-		return false
-	var candidates: Array[Dictionary] = _resolve_pickup_candidates(event, current_absolute_day)
+# Attrezzo, roccia visibile e nessun cantiere/edificio "da demolire" sotto il clic: controllati prima da
+# RightClickCommandService (2026-10-24, 5B.7).
+func _right_click_quarry(targets: RightClickTargets) -> bool:
+	var rock := targets.rock
+	var candidates := targets.pickup_candidates
 	var stone_lot_names := LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.STONE_POSITION)
 	var has_pebbles := false
 	for candidate in candidates:
@@ -5235,21 +4946,11 @@ func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -
 		_dispatch_pickup_candidates(pending["candidates"], -1 if repeat_value == null else (1 if bool(repeat_value) else 0))
 
 
-# "Tutte le piante" confermato (2026-10-07): serie di tagli sulla microcella cliccata (CutZoneService.make_cell_series,
-# totale = piante vive e libere all'ordine), il primo sulla pianta scelta da CutZoneService.choose_plant_in_lot, poi
-# la stessa funzione del taglio col clic destro (_assign_cut_task: prenotazione, coda, avvisi).
+# "Taglia tutto qui" (2026-10-24, 5B.3 — ExtractionCommandService.assign_cut_all_plants).
 func _assign_cut_all_plants(worker: HumanIndividual, all_plants: Dictionary) -> void:
-	if worker == null or all_plants.is_empty():
-		return
-	var macro_coords: Vector2i = all_plants["macro_coords"]
-	var lot: Vector2i = all_plants["lot"]
-	var reserved := CutZoneService.collect_reserved_plants(human_individuals)
-	var target := CutZoneService.list_available_plants_in_lot(live_cells, macro_coords, lot, null, reserved).size()
-	var plant := CutZoneService.choose_plant_in_lot(live_cells, macro_coords, lot, worker, reserved)
-	if plant.is_empty():
-		_report_command_rejection(worker, tr("cut_all_plants_none"))
-		return
-	_assign_cut_task(worker, plant, -1, CutZoneService.make_cell_series(macro_coords, lot, target))
+	var effects := GameEffects.new()
+	ExtractionCommandService.assign_cut_all_plants(_game_context(), worker, all_plants, effects)
+	_apply_effects(effects)
 
 
 # Contorno sulla mappa della pianta sotto il mouse nell'elenco di "Taglia" (2026-10-05); mouse uscito = la riga scelta.
@@ -5301,141 +5002,24 @@ func _on_extraction_choice_visibility_changed() -> void:
 			cell.renderer.clear_selected_individual()
 
 
-# Costruisce e assegna la Task Cut (Walk + Cut) su `plant`. Rifiuto con messaggio se la pianta è già nel lavoro di un
-# pipottino (in corso o in coda); il resto in _assign_extraction_task.
-# `work_area_id` (2026-10-06, taglio in zona): zona della pianta, scritta nel context per l'etichetta della task e della
-# consegna; -1 = comando col clic destro. `series` (passo 3): serie di tagli in zona ({} = taglio singolo).
-# `silent` (2026-10-09, presa dalla lista dei lavori — ordini "Taglia" del cassetto): nessun avviso, popup né X.
+# Taglio di una pianta (2026-10-24, refactoring GameScene 5B.3 — ExtractionCommandService.assign_cut).
 func _assign_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: int = -1, series: Dictionary = {}, silent: bool = false) -> void:
-	if worker == null or plant.is_empty():
-		return
-	var macro_coords: Vector2i = plant["macro_coords"]
-	var object_type: GameTypes.WorldObjectType = plant["object_type"]
-	var individual_key: Vector3i = plant["individual_key"]
-	var cell: LiveMacroCell = live_cells.get(macro_coords)
-	if cell == null or cell.macro_state == null or not PlantCutService.is_individual_alive(cell.macro_state, object_type, individual_key):
-		return
-	var lot := Vector2i(individual_key.x, individual_key.y)
-	var holder := _find_target_holder(func(step: Action) -> bool:
-		return step is CutAction and (step as CutAction).is_same_plant(macro_coords, int(object_type), individual_key)
-	)
-	if holder != null:
-		if silent:
-			return
-		_spawn_command_icon_at_microcell(cell, lot, "task_rejected")
-		_report_command_rejection(worker, tr("cut_reject_reserved").format({"name": holder.name}))
-		return
-	var task := TaskBuilderService.build_cut_task(worker, plant, work_area_id, series)
-	if task == null:
-		return
-	var cut_yield := PlantCutService.compute_yield(cell.macro_state, object_type, individual_key, game_data.year)
-	_assign_extraction_task(worker, task, cell, lot, "task_activity_cut", "cut", String(cut_yield.get("resource_name", "")), silent)
+	var effects := GameEffects.new()
+	ExtractionCommandService.assign_cut(_game_context(), worker, plant, work_area_id, series, silent, effects)
+	_apply_effects(effects)
 
 
-# Costruisce e assegna la Task Quarry (Walk + Quarry) sulla roccia `rock` ({"macro_coords", "position"}). Rifiuto con
-# messaggio se la roccia non ha più pietra o è già nel lavoro di un pipottino (in corso o in coda); il resto in
-# _assign_extraction_task.
-# `work_area_id` (2026-10-05, estrazione in zona): zona della roccia, scritta nel context per l'etichetta della task;
-# -1 = comando col clic destro. `series` (passo 2): serie di estrazioni in zona ({} = estrazione singola).
-# `silent` (2026-10-09, presa dalla lista dei lavori — ordini "Estrai" del cassetto): nessun avviso, popup né X.
+# Estrazione da una roccia (2026-10-24, 5B.3 — ExtractionCommandService.assign_quarry).
 func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id: int = -1, series: Dictionary = {}, silent: bool = false) -> void:
-	if worker == null or rock.is_empty():
-		return
-	var macro_coords: Vector2i = rock["macro_coords"]
-	var rock_position: Vector2i = rock["position"]
-	var cell: LiveMacroCell = live_cells.get(macro_coords)
-	if cell == null or cell.macro_state == null:
-		return
-	if RockStoneService.get_remaining_stone(cell.macro_state, rock_position) <= 0:
-		if silent:
-			return
-		_spawn_command_icon_at_microcell(cell, rock_position, "task_rejected")
-		_report_command_rejection(worker, tr("quarry_reject_exhausted"))
-		return
-	var holder := _find_target_holder(func(step: Action) -> bool:
-		return step is QuarryAction and (step as QuarryAction).is_same_rock(macro_coords, rock_position)
-	)
-	if holder != null:
-		if silent:
-			return
-		_spawn_command_icon_at_microcell(cell, rock_position, "task_rejected")
-		_report_command_rejection(worker, tr("quarry_reject_reserved").format({"name": holder.name}))
-		return
-	var task := TaskBuilderService.build_quarry_task(worker, macro_coords, rock_position, work_area_id, series)
-	if task == null:
-		return
-	var rock_rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
-	var quarry_product: String = rock_rules.extraction_yield_resource_name if rock_rules != null else ""
-	_assign_extraction_task(worker, task, cell, rock_position, "task_activity_quarry", "quarry", quarry_product, silent)
+	var effects := GameEffects.new()
+	ExtractionCommandService.assign_quarry(_game_context(), worker, rock, work_area_id, series, silent, effects)
+	_apply_effects(effects)
 
 
-# Assegnazione comune di una Task di ricavo già costruita (taglio, estrazione): segnali, idoneità, poi coda. Se `worker`
-# sta già facendo un ricavo (o consegnando il mucchio di uno) la nuova Task va in coda dietro quelle ordinate prima (in
-# testa all'elenco, che si svuota dal fondo), lasciando un posto libero alla consegna del mucchio; altrimenti si assegna
-# come gli altri comandi. `activity_key` per i messaggi di rifiuto, `icon_key` per l'icona del comando.
-# `product_name` (2026-10-05): resa principale; se nemmeno un'unità entra a carico vuoto, avviso "non ha spazio per
-# trasportare" — il comando parte lo stesso.
-# `silent` (2026-10-09, presa dalla lista dei lavori): nessun avviso, popup né X; l'icona del comando solo se riuscita.
-func _assign_extraction_task(worker: HumanIndividual, task: Task, cell: LiveMacroCell, lot: Vector2i, activity_key: String, icon_key: String, product_name: String = "", silent: bool = false) -> void:
-	for step in task.steps:
-		_reconnect_build_task_signals(step)
-	var age_band := _resolve_age_band(worker)
-	var rejection := worker.get_assign_rejection_reason(task, age_band)
-	if rejection != HumanIndividual.ASSIGN_OK:
-		if silent:
-			return
-		_report_assign_rejection(worker, rejection, activity_key)
-		_spawn_command_icon_at_microcell(cell, lot, "task_rejected")
-		return
-	var assigned := false
-	if _is_extraction_chain_task(worker.current_task):
-		if worker.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE - 1:
-			if silent:
-				return
-			_spawn_command_icon_at_microcell(cell, lot, "task_rejected")
-			_report_command_rejection(worker, tr("cut_reject_queue_full").format({"name": worker.name}))
-			return
-		worker.task_queue.insert(0, task)
-		assigned = true
-	else:
-		assigned = worker.assign_task(task, age_band)
-	if not assigned and not silent:
-		_report_failed_assignment(worker, task, activity_key)
-	if assigned or not silent:
-		_spawn_command_icon_at_microcell(cell, lot, icon_key if assigned else "task_rejected")
-	if assigned and not silent and product_name != "" and not worker.can_carry_one_unit_when_empty(product_name):
-		_report_command_rejection(worker, HumanIndividualActionService.no_room_message(worker, [product_name]))
-		# Avviso su una task che parte lo stesso: resta finché la task è in corso o in coda.
-		worker.bind_panel_message_to_task(task)
-	if worker == individual:
-		_refresh_selected_individual_panel()
-
-
-# true se `task` è un ricavo non concluso (taglio, estrazione) o la consegna di un mucchio a terra (quella che segue).
-func _is_extraction_chain_task(task: Task) -> bool:
-	if task == null or task.is_finished():
-		return false
-	for step in task.steps:
-		if step is CutAction or step is QuarryAction:
-			return true
-		if step is PickUpAction and (step as PickUpAction).source_kind == PickUpAction.SourceKind.GROUND_PILE:
-			return true
-	var zone := HaulZoneService.get_zone(task.context)
-	return not zone.is_empty() and HaulZoneService.get_source_kind(zone) == PickUpAction.SourceKind.GROUND_PILE
-
-
-# Pipottino che ha già in lavoro, in corso o in coda, uno step per cui `matches` (Callable(Action) -> bool) è vero;
-# null se nessuno. "Un solo pipottino per bersaglio" di taglio (pianta) ed estrazione (roccia).
+# Pipottino che ha già in lavoro uno step per cui `matches` è vero (2026-10-24, 5B.3 —
+# ExtractionCommandService.find_target_holder).
 func _find_target_holder(matches: Callable) -> HumanIndividual:
-	for member in human_individuals:
-		var tasks: Array = member.task_queue.duplicate()
-		if member.current_task != null and not member.current_task.is_finished():
-			tasks.append(member.current_task)
-		for task in tasks:
-			for step in task.steps:
-				if matches.call(step):
-					return member
-	return null
+	return ExtractionCommandService.find_target_holder(human_individuals, matches)
 
 
 # Pianta abbattuta (CutAction.plant_cut): ridisegno della vegetazione della cella (ceppo, stick in più) e chiusura del
@@ -5477,7 +5061,7 @@ func _on_rock_quarried(macro_coords: Vector2i, rock_position: Vector2i) -> void:
 # ora PASSATA a _assign_pickup_task/PickUpAction.quantity_requested, non più ignorata: il player può
 # scegliere di raccogliere meno del massimo; 2026-09-20, zaino multi-risorsa passo 3: il dialog restituisce il
 # CRITERIO scelto; 2026-09-26, ground drop: anche la SORGENTE, mucchio a terra o terreno — PickUpAction.
-# SourceKind). Posizione e macrocella vengono dalla voce scelta, salvata da _try_assign_pickup_command_on_right_click
+# SourceKind). Posizione e macrocella vengono dalla voce scelta, salvata da _right_click_pickup
 # in _pickup_pending_resources. `kind` e' un PickUpAction.CriterionKind, sempre riferito alla sorgente scelta:
 #   - NAME: una risorsa, con la quantita' scelta (comportamento di sempre);
 #   - CATEGORY: tutte le risorse di `category`, quantita' ignorata;
@@ -5502,7 +5086,7 @@ func _on_pickup_choice_made(kind: int, category: int, resource_name: String, qua
 	var entry_resource: String = String(entry["resource_name"])
 	var entry_category: int = category if kind == PickUpAction.CriterionKind.CATEGORY else -1
 	_assign_pickup_task(
-		entry["macro_coords"], entry["position"], entry_resource, quantity if kind == PickUpAction.CriterionKind.NAME else -1,
+		individual, entry["macro_coords"], entry["position"], entry_resource, quantity if kind == PickUpAction.CriterionKind.NAME else -1,
 		kind, entry_category, repeat, 0, source_kind
 	)
 
@@ -5522,7 +5106,7 @@ func _find_pickup_pending_entry(source_kind: int, category: int, resource_name: 
 
 
 # Filtro idea non ancora scoperta (2026-09-17, richiesta utente — SecondaryResourceRules.
-# required_idea_id) — per il tasto destro (_try_assign_pickup_command_on_right_click) una risorsa
+# required_idea_id) — per il tasto destro (_right_click_pickup) una risorsa
 # bloccata non entra MAI in `candidates`: un lotto dove l'UNICA risorsa presente è bloccata risulta
 # "vuoto" (candidates.is_empty() sotto) e il comando ricade sul movimento normale invece di un pickup.
 # L'ispezione microcella invece (2026-10-03, richiesta utente — sostituisce il precedente "se una
@@ -5534,7 +5118,7 @@ func _find_pickup_pending_entry(source_kind: int, category: int, resource_name: 
 # per pebble/stick/plant_fiber/berry/acorn/fruit: per quelle risorse un hit su un lotto REALMENTE
 # rivendicato ma temporaneamente svuotato (es. una pietra già estratta) resta un candidato valido
 # a quantità 0 — comportamento deliberato di sessioni precedenti (vedi il ramo "0 disponibili" in
-# _try_assign_pickup_command_on_right_click: "PickUpAction gestisce già un pickup a vuoto come
+# _right_click_pickup: "PickUpAction gestisce già un pickup a vuoto come
 # no-op valido"), NON toccato qui. true SOLO per le risorse in REQUIRE_AVAILABLE_PICKUP_RESOURCE_
 # NAMES sotto (eggs/mushroom/wild_vegetables): la loro disponibilità può essere STRUTTURALMENTE
 # zero — non "questo lotto specifico è vuoto ora", ma "qui non esiste/non può esistere nulla di
@@ -5592,7 +5176,7 @@ func _append_unlocked_pickup_candidate(candidates: Array[Dictionary], resource_n
 # specifico che non esiste.
 #
 # `required_button` (2026-09-16, richiesta utente — ispezione microcella doppio click) — default
-# MOUSE_BUTTON_RIGHT invariato per il chiamante esistente (_try_assign_pickup_command_on_right_click,
+# MOUSE_BUTTON_RIGHT invariato per il chiamante esistente (_right_click_pickup,
 # Step 4). L'ispezione con doppio click SINISTRO passa MOUSE_BUTTON_LEFT qui: STESSA fonte di verità
 # richiesta esplicitamente dall'utente ("_resolve_pickup_candidates o una sua estrazione comune"),
 # nessuna duplicazione tra "cosa posso raccogliere col destro" e "cosa mostro nell'ispezione".
@@ -5730,7 +5314,7 @@ func _resolve_microcell_at_click() -> Dictionary:
 # duplicazione tra "cosa posso raccogliere" e "cosa mostro nell'ispezione". Vegetazione (TREE/SHRUB/
 # GRASS) letta da cell.renderer.vegetation_positions (Dictionary[WorldObjectType, Array[Vector2i]]
 # di posizioni-GRIGLIA, non pixel — STESSA fonte già usata da GameScene per "is_currently_grass" in
-# _try_assign_build_command_on_right_click/_debug_test_two_walk_task... vedi i due usi esistenti,
+# _right_click_build/_debug_test_two_walk_task... vedi i due usi esistenti,
 # righe ~3248/~6052 — mai disegno/rendering: è l'unico modo di sapere "c'è GRASS qui" perché GRASS
 # non ha un equivalente di tree_claimed_lots/shrub_claimed_lots persistito per-lotto).
 # Contenuto dell'ispezione per una microcella non visibile adesso (2026-10-05): "Cella non esplorata" se non è mai
@@ -5778,7 +5362,7 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 	var current_absolute_day := game_data.get_absolute_day()
 
 	# Fog of War (richiesta esplicita utente — mantenere il controllo): STESSO tier "dettaglio"
-	# già usato da _try_assign_pickup_command_on_right_click/_resolve_pickup_candidates. Anche non
+	# già usato da _right_click_pickup/_resolve_pickup_candidates. Anche non
 	# visibile la cella VIENE COMUNQUE selezionata (richiesta esplicita utente, punto 2: "qualunque
 	# cosa ci sia sotto il cursore... il risultato finale deve essere la selezione della microcella")
 	# — solo il contenuto mostrato cambia. Regola unica delle celle non visibili adesso (2026-10-05, richiesta utente):
@@ -6012,7 +5596,7 @@ func _refresh_microcell_panel() -> void:
 # richiesta" (Building.repair_requested) e il lavoro "repair:<id>" entra nella coda (RepairJobProvider.collect), con l'attesa per
 # l'assegnazione a mano come demolizione e miglioramento (clic destro sull'edificio con un individuo selezionato).
 func _on_repair_requested(building: Building) -> void:
-	if not _can_start_repair(building):
+	if not BuildingCommandService.can_start_repair(human_individuals, building):
 		_refresh_selected_building_panel()
 		return
 	# Riparazione chiesta a mano (2026-10-10): l'edificio torna nella riparazione automatica.
@@ -6032,69 +5616,11 @@ func _on_repair_requested(building: Building) -> void:
 	)
 
 
-# Stesse condizioni del pulsante: edificio riparabile, Integrità sotto la soglia, nessuno che lo ripara già, nessuna
-# riparazione già richiesta.
-func _can_start_repair(building: Building) -> bool:
-	if not RepairAction.is_building_repairable(building) or building.repair_requested:
-		return false
-	if building.current_durability / float(building.rules.max_durability) >= Building.DURABILITY_REPAIRABLE_RATIO:
-		return false
-	return JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES).is_empty()
-
-
-# Si può dare la Repair Task su `building` adesso: riparabile, Integrità non piena, nessun altro riparatore, e sotto la
-# soglia oppure con la riparazione richiesta (una riparazione richiesta e interrotta sopra il 70% torna in coda e si
-# riassegna fino alla fine).
-func _can_assign_repair(building: Building) -> bool:
-	if not RepairAction.is_building_repairable(building):
-		return false
-	if building.current_durability >= float(building.rules.max_durability):
-		return false
-	if not building.repair_requested and building.current_durability / float(building.rules.max_durability) >= Building.DURABILITY_REPAIRABLE_RATIO:
-		return false
-	return JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES).is_empty()
-
-
-# Repair Task (Walk -> Repair) per `worker` su `building`: un solo riparatore per edificio; rifiuti con la X sul
-# bersaglio e il motivo, come gli altri comandi. Assegnata: martello sull'edificio, come la Build.
+# Riparazione (2026-10-24, 5B.4 — BuildingCommandService.assign_repair).
 func _assign_repair_task(worker: HumanIndividual, building: Building) -> void:
-	if worker == null or building == null:
-		return
-	var microcell := Vector2i(building.micro_x, building.micro_y)
-	var macro_coords := Vector2i(building.macro_x, building.macro_y)
-	if not _can_assign_repair(building):
-		if RepairAction.is_building_repairable(building) and not JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.REPAIR_TASK_NAMES).is_empty():
-			_report_command_rejection(worker, tr("repair_reject_already_repairing").format({"building": _building_display_name(building)}))
-			if live_cells.has(macro_coords):
-				_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "task_rejected")
-		_refresh_selected_building_panel()
-		return
-	var task := TaskBuilderService.build_repair_task(worker, building)
-	if task == null:
-		return
-	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		_report_assign_rejection(worker, rejection, "task_activity_repair")
-		if live_cells.has(macro_coords):
-			_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "task_rejected")
-		_refresh_selected_building_panel()
-		return
-	worker.assign_task(task, _resolve_age_band(worker))
-	if worker.current_task != task and not worker.task_queue.has(task):
-		_report_failed_assignment(worker, task, "task_activity_repair")
-		if live_cells.has(macro_coords):
-			_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "task_rejected")
-		_refresh_selected_building_panel()
-		return
-	# Lavoro assegnato: esce dalla coda; se ci tornerà, l'attesa per l'assegnazione a mano ripartirà da capo.
-	_forget_job_board_wait(RepairJobProvider.job_keys(building))
-	if live_cells.has(macro_coords):
-		_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "build")
-	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[REPAIR] Riparazione dell'edificio #%d (%s) assegnata a #%d %s (Integrità %.1f/%d)." % [
-			building.id, _building_display_name(building), worker.id, worker.name, building.current_durability, building.rules.max_durability
-		])
-	_refresh_selected_building_panel()
+	var effects := GameEffects.new()
+	BuildingCommandService.assign_repair(_game_context(), worker, building, effects)
+	_apply_effects(effects)
 
 
 # "Nome (#id)" di ciascun individuo di JobWorkScanService.workers_on_building — sostituisce
@@ -6108,21 +5634,6 @@ func _resolve_names_working_on_building(building: Building, task_names: Array[St
 
 func _format_worker_name(member: HumanIndividual) -> String:
 	return "%s (#%d)" % [member.name, member.id]
-
-
-# Guard max_builders (2026-09-14, richiesta utente — bugfix "più builder sullo stesso cantiere si
-# intrappolano a vicenda": la VERA gestione multi-builder resta da progettare, questo è solo un
-# guard temporaneo per impedire il caso rotto finché non c'è) — conta quanti ALTRI individui
-# (esclude `excluding_individual`, che può sempre riprendere il PROPRIO cantiere) hanno già la
-# Build Task di `target_building`, attiva o sospesa in coda: un builder mandato temporaneamente a
-# fare un'altra commissione deve continuare a "occupare" il proprio posto.
-# task_names (2026-09-27): JobWorkScanService.BUILD_TASK_NAMES per la costruzione, JobWorkScanService.DEMOLISH_TASK_NAMES per la demolizione.
-func _count_other_individuals_claiming_build(target_building: Building, excluding_individual: HumanIndividual, task_names: Array[String] = JobWorkScanService.BUILD_TASK_NAMES) -> int:
-	var count := 0
-	for other in JobWorkScanService.workers_on_building(human_individuals, target_building, task_names):
-		if other != excluding_individual:
-			count += 1
-	return count
 
 
 # Chiude le Task di `task_names` su `building` di tutti tranne `excluded` (BuildingLifecycleService.close_tasks_on_building);
@@ -6211,44 +5722,15 @@ func _resolve_production_orders(target_building: Building) -> Array[Dictionary]:
 # "is_currently_grass" (il renderer live, layer di gameplay/rendering) — STESSA identica query di
 # _start_building_task_at per lo stesso scopo (vedi lì per il motivo: GRASS non ha posizioni proprie
 # in MacroCellState).
-# true se il clic destro `event` cade su un edificio con un lavoro da riprendere (cantiere o "da demolire"): stesso
-# hit-test di _try_assign_build_command_on_right_click, senza assegnare nulla.
-func _has_resumable_building_under_click(event: InputEvent) -> bool:
-	var building_hit := building_selector_controller.try_select(
-		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
-	)
-	if building_hit.is_empty():
-		return false
-	var hit_building := _find_building_by_id(int(building_hit["building_id"]))
-	return hit_building != null and (hit_building.has_resumable_task() or _has_assignable_repair_request(hit_building))
-
-
-# Riparazione richiesta (2026-10-10) che si può assegnare adesso col clic destro sull'edificio.
-func _has_assignable_repair_request(building: Building) -> bool:
-	return building.repair_requested and _can_assign_repair(building)
-
-
-func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
-		return false
-	if individual == null or not individual.is_selected:
-		return false
-
-	var building_hit := building_selector_controller.try_select(
-		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
-	)
-	if building_hit.is_empty():
-		return false
-
-	var building_id: int = building_hit["building_id"]
-	var hit_building := _find_building_by_id(building_id)
+func _right_click_build(targets: RightClickTargets) -> bool:
+	var hit_building := targets.building
 	# Riparazione richiesta (2026-10-10): il clic destro la assegna a mano, anche durante l'attesa della coda.
-	if hit_building != null and not hit_building.has_resumable_task() and _has_assignable_repair_request(hit_building):
+	if hit_building != null and not hit_building.has_resumable_task() \
+			and RightClickCommandService.has_assignable_repair(_game_context(), hit_building):
 		_assign_repair_task(individual, hit_building)
 		return true
 	if hit_building == null or not hit_building.has_resumable_task():
 		return false
-
 	return _assign_resumable_building_task(individual, hit_building)
 
 
@@ -6265,57 +5747,11 @@ func _try_assign_build_command_on_right_click(event: InputEvent) -> bool:
 const RITE_TASK_NAME := "task_rite_name"
 
 
-# Costruisce e assegna la Task Rite. Ricontrolla tutto (il mondo può essere cambiato col popup aperto): edificio
-# ancora utilizzabile, nessun altro rito sull'edificio, rito ammesso e consentito al pipottino.
-# `silent` (2026-10-14, lavoro "rite:" preso dalla coda): niente icona di comando né pannello individuo.
+# Rito ordinato o sociale (2026-10-24, 5B.5 — RiteCommandService.assign_rite).
 func _assign_rite_task(worker: HumanIndividual, target_building: Building, rite_id: String, silent: bool = false) -> void:
-	if worker == null or target_building == null:
-		return
-	var rules := RiteService.get_rules(rite_id)
-	if rules == null or not RiteService.get_rites_for_building(target_building).has(rules):
-		return
-	if _building_has_active_rite(target_building) or (target_building.requested_rite_id != "" and target_building.requested_rite_id != rite_id):
-		_reject_rite_command(worker, target_building, tr("rite_reject_building_busy"))
-		return
-	var age_band := _resolve_age_band(worker)
-	if not RiteService.can_celebrate(rules, worker, age_band):
-		_reject_rite_command(worker, target_building, tr("rite_reject_none_available").format({"name": worker.name}))
-		return
-	# Rito sociale (2026-10-14, es. il banchetto): niente task Rite, lo avvia SocialRiteService (convocazione del villaggio).
-	if rules is SocialRiteRules:
-		var rejection_text := SocialRiteService.start(worker, target_building, rules as SocialRiteRules, human_individuals, game_data, macro_world)
-		if rejection_text != "":
-			if not silent:
-				_reject_rite_command(worker, target_building, rejection_text)
-			return
-		target_building.requested_rite_id = rite_id
-		_forget_job_board_wait(["rite:%d" % target_building.id])
-		if not silent:
-			_spawn_rite_command_icon(target_building, rules.command_icon_key)
-			_refresh_selected_individual_panel()
-		_refresh_selected_building_panel()
-		return
-	# Rito ordinato (2026-10-14): al completamento evade l'ordine dell'edificio (RiteAction.on_complete).
-	var task := TaskBuilderService.build_rite_task(worker, target_building, rite_id)
-	if task == null:
-		return
-	var rejection := worker.get_assign_rejection_reason(task, age_band)
-	if rejection != HumanIndividual.ASSIGN_OK:
-		_report_assign_rejection(worker, rejection, "task_activity_rite")
-		_spawn_rite_command_icon(target_building, "task_rejected")
-		return
-	worker.assign_task(task, age_band)
-	var assigned := worker.current_task == task or worker.task_queue.has(task)
-	if assigned:
-		# Ordine dell'edificio (2026-10-14): resta finché il rito non è celebrato; preso, esce dall'attesa della coda.
-		target_building.requested_rite_id = rite_id
-		_forget_job_board_wait(["rite:%d" % target_building.id])
-	elif not silent:
-		_report_failed_assignment(worker, task, "task_activity_rite")
-	if not silent:
-		_spawn_rite_command_icon(target_building, rules.command_icon_key if assigned else "task_rejected")
-		_refresh_selected_individual_panel()
-	_refresh_selected_building_panel()
+	var effects := GameEffects.new()
+	RiteCommandService.assign_rite(_game_context(), worker, target_building, rite_id, silent, effects)
+	_apply_effects(effects)
 
 
 # Clic su un rito della sezione "Riti" del pannello (2026-10-14, richiesta utente — come la ricetta della produzione).
@@ -6535,11 +5971,6 @@ func _rite_action_of(task: Task) -> RiteAction:
 	return null
 
 
-func _reject_rite_command(worker: HumanIndividual, target_building: Building, text: String) -> void:
-	_spawn_rite_command_icon(target_building, "task_rejected")
-	_report_command_rejection(worker, text)
-
-
 func _spawn_rite_command_icon(target_building: Building, command_icon_key: String) -> void:
 	var macro_coords := Vector2i(target_building.macro_x, target_building.macro_y)
 	if live_cells.has(macro_coords):
@@ -6547,136 +5978,31 @@ func _spawn_rite_command_icon(target_building: Building, command_icon_key: Strin
 		_spawn_command_icon(live_cells[macro_coords], BuildingFootprint.center_micro(target_building), command_icon_key)
 
 
-# true se un pipottino ha una Task con un RiteAction su `building`, in corso o in coda (non ancora conclusa).
-func _building_has_active_rite(building: Building) -> bool:
-	return _active_rite_building_ids().has(building.id)
-
-
 # Id degli edifici con un rito assegnato o in corso -> Building (Task correnti e in coda di tutti i pipottini).
 func _active_rite_building_ids() -> Dictionary:
 	return RiteService.get_active_rite_buildings(human_individuals)
 
 
-# Assegna a `worker` la Task di lavoro su `hit_building` (2026-09-27, estratta da _try_assign_build_command_on_right_click
-# per riusarla dalla modalità di scelta del demolitore): Build per un cantiere, Demolish per un edificio "da demolire",
-# via TaskReassignmentService.reassign_task. Icona sul bersaglio e motivo in caso di rifiuto. Ritorna false solo se la
-# Task non si è potuta costruire (nessun comando da segnalare), true altrimenti.
+# Lavoro di `worker` su `hit_building` (2026-10-24, refactoring GameScene 5B.4 — BuildingCommandService.assign_resumable):
+# costruzione, demolizione, sgombero delle macerie, taglio del cantiere nel bosco. Qui solo l'erba disegnata sul cantiere
+# (dato del renderer della cella viva), che la Build passa a ClearAction. false = niente da fare.
 func _assign_resumable_building_task(worker: HumanIndividual, hit_building: Building) -> bool:
-	# Sgombero delle macerie e svuotamento di una Fossa (2026-10-18): Transport dei detriti alla Fossa, non una Demolish.
-	if WasteDisposalService.has_debris_job(hit_building):
-		return _assign_debris_clearing_task(worker, hit_building)
-	# Cantiere nel bosco in attesa del taglio (2026-10-18): il comando fa tagliare una sua cella (con l'ascia), mai costruire.
-	if hit_building.awaiting_site_cut and not SiteCutService.try_finish(macro_world, hit_building):
-		return _assign_site_cut_command(worker, hit_building)
-	var build_macro_coords := Vector2i(hit_building.macro_x, hit_building.macro_y)
-	# Demolish Task (2026-09-27, richiesta utente): stesso percorso per un edificio "da demolire" — reassign_task
-	# costruisce demolish.tres (Building.get_resumable_task_definition_path), stesso guard max_builders contato sulle
-	# Demolish Task, icona "demolish".
-	var is_demolition: bool = hit_building.is_marked_for_demolition
+	var effects := GameEffects.new()
+	var handled := BuildingCommandService.assign_resumable(_game_context(), worker, hit_building, _grass_on_building_site(hit_building), effects)
+	_apply_effects(effects)
+	return handled
 
-	# Guard max_builders (2026-09-14, richiesta utente) — vedi _count_other_individuals_claiming_
-	# build sopra per cosa conta come "claim". Rifiuto ESPLICITO qui, PRIMA di costruire qualunque
-	# Task: stessa X (_spawn_command_blink_effect) già usata sotto per un rifiuto di assign_task,
-	# più un alert giallo dedicato — STESSO canale/STESSO stile "alert" di MATERIAL_NEEDED (vedi
-	# NotificationPopup, "quello giallo", richiesta utente) — a differenza del rifiuto sotto
-	# (silenzioso lato notifica, solo la X), qui l'utente ha chiesto ESPLICITAMENTE anche un avviso
-	# testuale con {current}/{max}.
-	var max_builders: int = hit_building.rules.max_builders if hit_building.rules != null else 1
-	var other_builders_count := _count_other_individuals_claiming_build(hit_building, worker, JobWorkScanService.DEMOLISH_TASK_NAMES if is_demolition else JobWorkScanService.BUILD_TASK_NAMES)
-	if other_builders_count >= max_builders:
-		if live_cells.has(build_macro_coords):
-			_spawn_command_icon_at_microcell(
-				live_cells[build_macro_coords],
-				Vector2i(hit_building.micro_x, hit_building.micro_y),
-				"task_rejected"
-			)
-		# Stesso testo di prima, ora sul canale comune dei rifiuti (2026-09-26): popup TASK_REJECTED e avviso
-		# nel pannello dell'individuo, come per ogni altro comando rifiutato.
-		_report_command_rejection(worker, tr("notification_build_capacity_full").format({
-			"current": other_builders_count,
-			"max": max_builders,
-		}))
-		return true
 
-	# extra_context solo per la Build (lo consumano SetupSite/Clear): per la Demolish resterebbe nel context della
-	# Task (MacroCellState non è salvabile in JSON).
-	var extra_context: Dictionary = {}
-	if not is_demolition:
-		var macro_state := macro_world.get_cell_state_at(hit_building.macro_x, hit_building.macro_y) if macro_world != null else null
-		var is_currently_grass: Variant = false
-		if live_cells.has(build_macro_coords):
-			var current_grass_positions: Array = live_cells[build_macro_coords].renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
-			is_currently_grass = current_grass_positions.has(Vector2i(hit_building.micro_x, hit_building.micro_y))
-			# Ingombro (2026-10-17): per un edificio grande, il numero di microcelle del rettangolo con l'erba (ClearAction).
-			if hit_building.rules != null and BuildingFootprint.is_large(hit_building.rules):
-				is_currently_grass = BuildingFootprint.count_cells_in(hit_building, current_grass_positions)
-		extra_context = {
-			"macro_state": macro_state,
-			"is_currently_grass": is_currently_grass,
-		}
-	var task := TaskReassignmentService.reassign_task(hit_building, worker, _resolve_age_band(worker), extra_context)
-	if task == null:
-		return false
-	_connect_material_supply_step_appended(task, worker)
-
-	# Guard di assign_task rifiutato (2026-09-13, richiesta utente — bugfix: il "martelletto"
-	# compariva comunque anche quando la Task non veniva mai davvero assegnata) — reassign_task
-	# chiama worker.assign_task internamente e ritorna SEMPRE `task` non-null se è riuscita a
-	# COSTRUIRLA, indipendentemente dall'esito del guard age_band (quel `null` sopra copre solo
-	# "nessun target valido"/"nessuna TaskDefinition risolvibile", casi in cui non c'è nulla da
-	# segnalare — restano silenziosi, invariati). Per distinguere "costruita ma rifiutata" da
-	# "assegnata davvero" senza cambiare la firma di reassign_task (usata da un solo chiamante,
-	# ma il suo contratto pubblico -> Task resta comunque più chiaro così) uso la stessa garanzia
-	# già documentata su HumanIndividual.assign_task: se il guard scatta, worker.current_task
-	# resta ESATTAMENTE quello di prima, quindi diverso per riferimento dal `task` appena costruito.
-	#
-	# task_queue.has(task) (2026-09-13, richiesta utente — bugfix "manina vs X": stesso motivo del
-	# ramo "zaino occupato" appena introdotto in HumanIndividual.assign_task) — un individuo con lo
-	# zaino occupato che riceve una Build Task NON la rifiuta: la accoda (current_task resta quello
-	# di prima, per costruzione, IDENTICO a un vero rifiuto per il solo confronto per riferimento
-	# sopra) e partirà da sola quando si libera. Senza questo controllo aggiuntivo, "accodata"
-	# risulterebbe indistinguibile da "rifiutata dal guard età" — qui invece è un comando riuscito.
-	if worker.current_task != task and not worker.task_queue.has(task):
-		if live_cells.has(build_macro_coords):
-			_spawn_command_icon_at_microcell(
-				live_cells[build_macro_coords],
-				Vector2i(hit_building.micro_x, hit_building.micro_y),
-				"task_rejected"
-			)
-		# Motivo (2026-09-26): prima solo la X. reassign_task ha già tentato l'assegnazione, quindi il motivo
-		# si rilegge dal guard di idoneità (puro, stesso esito).
-		_report_failed_assignment(worker, task, "task_activity_demolish" if is_demolition else "task_activity_build")
-		return true
-
-	# Lavoro assegnato: esce dalla lista; se ci tornerà, l'attesa per l'assegnazione a mano ripartirà da capo.
-	_forget_job_board_wait(BuildingJobProvider.job_keys(hit_building))
-
-	# Collegamento signal SetupSiteAction.site_setup_completed / ClearAction.site_cleared (vedi
-	# _reconnect_build_task_signals) — STESSO principio già in uso da _start_building_task_at prima
-	# di questa riscrittura: resta qui (non in TaskReassignmentService, generico) perché è un
-	# dettaglio specifico della Build Task, non del meccanismo di riassegnazione in sé.
-	for step in task.steps:
-		_reconnect_build_task_signals(step)
-
-	# Lampeggio "martelletto" SUBITO al momento dell'assegnazione (2026-09-11, richiesta utente — "il
-	# martello deve comparire quando parte la task, non quando arriva il pipottino dopo il walk...
-	# anche per haul service la manina appare subito... credo serva coerenza") — STESSO trigger/
-	# STESSO principio di _assign_pickup_task qui sotto: il comando è partito ORA (l'individuo è
-	# stato assegnato alla Build Task), il player deve vederlo subito anche mentre l'individuo sta
-	# ancora camminando verso il cantiere, non solo quando vi arriva. Una sola icona per l'intera
-	# Build Task (chiave "build" in IconRegistry, non più una per step — vedi IconRegistry.gd per lo
-	# storico del tentativo precedente, scartato).
-	if live_cells.has(build_macro_coords):
-		_spawn_command_icon_at_microcell(
-			live_cells[build_macro_coords],
-			Vector2i(hit_building.micro_x, hit_building.micro_y),
-			("clear_rubble" if hit_building.is_rubble() else "demolish") if is_demolition else "build"
-		)
-	if DebugLogging.ENABLED and (DebugLogging.SHOW_TRANSPORT_BUILD_LOGS or DebugLogging.SHOW_BUILDERS_LOGS):
-		print("[BUILD] Task di %s assegnata a #%d %s per l'edificio #%d." % [
-			"demolizione" if is_demolition else "costruzione", worker.id, worker.name, hit_building.id
-		])
-	return true
+# Erba disegnata sul cantiere `building`: null se la cella non è viva; per un 1x1 se la microcella ha l'erba, per un
+# edificio grande (ingombro, 2026-10-17) il numero di microcelle del rettangolo con l'erba (ClearAction).
+func _grass_on_building_site(building: Building) -> Variant:
+	var macro_coords := Vector2i(building.macro_x, building.macro_y)
+	if not live_cells.has(macro_coords):
+		return null
+	var current_grass_positions: Array = live_cells[macro_coords].renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
+	if building.rules != null and BuildingFootprint.is_large(building.rules):
+		return BuildingFootprint.count_cells_in(building, current_grass_positions)
+	return current_grass_positions.has(Vector2i(building.micro_x, building.micro_y))
 
 
 # Modalità "scegli il lavoratore" (2026-09-23 per la Produce, resa generica il 2026-09-27 per riusarla nella
@@ -6701,29 +6027,17 @@ var worker_pick_banner: PanelContainer
 var worker_pick_banner_label: Label
 
 
-# true se l'edificio ha già tante Produce Task assegnate quante ne ammette (BuildingRules.
-# production_concurrent_orders, 2026-09-24): stessa regola usata dal pannello per spegnere le ricette.
-# Ordini separati (2026-10-04): contano gli ordini con un lavoratore; quelli senza vengono liberati per far posto (con
-# l'idea dell'assegnazione, dal 2026-10-09, mai: restano in coda).
-# true se `task` è una Produce Task non conclusa con un passo di produzione su `building`.
-func _works_on_production_at(task: Task, building: Building) -> bool:
-	if task == null or task.is_finished() or not JobWorkScanService.PRODUCE_TASK_NAMES.has(task.task_name):
-		return false
-	for step_index in range(task.current_step_index, task.steps.size()):
-		if task.steps[step_index] is ProduceAction and (task.steps[step_index] as ProduceAction).target_building == building:
-			return true
-	return false
-
-
+# Edificio con tutti gli ordini con un lavoratore che ammette (2026-10-24, 5B.5 —
+# ProductionCommandService.has_max_concurrent_orders).
 func _has_max_concurrent_orders(building: Building) -> bool:
-	return ProductionService.has_max_concurrent_orders(building, JobWorkScanService.production_order_workers(human_individuals, building).size())
+	return ProductionCommandService.has_max_concurrent_orders(human_individuals, building)
 
 
-# Avviso di ordine in più rifiutato (2026-10-04): l'edificio ha già tutti gli ordini che può tenere.
+# Avviso di ordine in più rifiutato (2026-10-24, 5B.5 — ProductionCommandService.report_orders_full).
 func _report_production_orders_full(worker: HumanIndividual, building: Building) -> void:
-	_report_command_rejection(worker, tr("produce_reject_orders_full").format({
-		"building": _building_display_name(building), "max": ProductionService.get_max_concurrent_orders(building),
-	}))
+	var effects := GameEffects.new()
+	ProductionCommandService.report_orders_full(worker, building, effects)
+	_apply_effects(effects)
 
 
 # Testo "Corda di fibre" / "Corda di fibre ×3" per banner e log dell'ordine di produzione (2026-09-24).
@@ -6964,27 +6278,44 @@ func _handle_worker_pick_input(event: InputEvent) -> bool:
 	return true
 
 
-# Attrezzo mancante o non indossabile (2026-10-18, blocco 5d — CommandFeedback.tool_gate_failure).
-func _report_tool_gate_failure(worker: HumanIndividual, tool_gate: Dictionary) -> void:
-	var effects := GameEffects.new()
-	CommandFeedback.tool_gate_failure(worker, tool_gate, effects)
-	_apply_effects(effects)
-
-
 # Avviso di un comando rifiutato perché l'individuo non è idoneo (2026-09-26, richiesta utente): motivo
 # da HumanIndividual.get_assign_rejection_reason, `activity_key` = chiave tr() dell'attività ("andare a
 # caccia", "produrre"). Testo nel pannello individuo (stesso canale degli avvisi del gate attrezzi) e popup
 # giallo, stesso gate UserOptions. La X rossa sul bersaglio la mostra il chiamante (_spawn_command_icon).
 func _report_assign_rejection(worker: HumanIndividual, reason: String, activity_key: String) -> void:
-	var reason_key := "task_reject_generic"
-	match reason:
-		HumanIndividual.ASSIGN_REJECT_TOO_YOUNG:
-			reason_key = "task_reject_too_young"
-		HumanIndividual.ASSIGN_REJECT_AGE_NOT_ALLOWED:
-			reason_key = "task_reject_age_not_allowed"
-		HumanIndividual.ASSIGN_REJECT_LOW_STAMINA:
-			reason_key = "task_reject_low_stamina"
-	_report_command_rejection(worker, tr(reason_key).format({"name": worker.name, "activity": tr(activity_key)}))
+	var effects := GameEffects.new()
+	CommandFeedback.assign_rejection(worker, reason, activity_key, effects)
+	_apply_effects(effects)
+
+
+# Parte comune delle assegnazioni (2026-10-24, refactoring GameScene 5B.2 — AssignService): idoneità, assegnazione,
+# esito; effetti applicati subito.
+func _assign(request: AssignRequest) -> AssignService.Result:
+	var effects := GameEffects.new()
+	var result := AssignService.assign(request, _resolve_age_band(request.worker), effects)
+	_apply_effects(effects)
+	return result
+
+
+func _assign_check(request: AssignRequest) -> bool:
+	var effects := GameEffects.new()
+	var ok := AssignService.check(request, _resolve_age_band(request.worker), effects)
+	_apply_effects(effects)
+	return ok
+
+
+func _assign_commit(request: AssignRequest) -> bool:
+	var effects := GameEffects.new()
+	var assigned := AssignService.commit(request, _resolve_age_band(request.worker), effects)
+	_apply_effects(effects)
+	return assigned
+
+
+func _assign_finish(request: AssignRequest, returned: bool) -> bool:
+	var effects := GameEffects.new()
+	var assigned := AssignService.finish(request, returned, _resolve_age_band(request.worker), effects)
+	_apply_effects(effects)
+	return assigned
 
 
 # Rifiuto di un comando con un testo già tradotto (2026-10-18, blocco 5d — CommandFeedback.reject): avviso sull'individuo,
@@ -7006,8 +6337,9 @@ func _building_display_name(building: Building) -> String:
 # esito; se il guard passa, il rifiuto è venuto da assign_task stessa (Task non sospendibile scartata
 # perché lo zaino occupato appartiene a un'altra Task) -> messaggio generico.
 func _report_failed_assignment(worker: HumanIndividual, task: Task, activity_key: String) -> void:
-	var reason := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-	_report_assign_rejection(worker, reason, activity_key)
+	var effects := GameEffects.new()
+	CommandFeedback.failed_assignment(worker, task, activity_key, _resolve_age_band(worker), effects)
+	_apply_effects(effects)
 
 
 # Testo di attesa attrezzi per la Task (vuoto se non è in attesa): guarda lo step CORRENTE, l'unico
@@ -7029,162 +6361,20 @@ func _describe_tool_wait(task: Task) -> String:
 	return ""
 
 
-# Costruisce e assegna la Produce Task [Walk → Produce] a `worker` (2026-09-23). Stesso esito visivo
-# della Build: icona di comando se assegnata (o accodata), X se rifiutata.
-# `existing_order_key` (2026-10-04, riassegnazione): ordine già sull'edificio rimasto senza lavoratore — niente
-# controllo dei posti né nuovo ordine; la produzione si lega a quell'ordine, con i pezzi che gli mancano.
-# Dal 2026-10-09 (ordini in coda) la riassegnazione usa la consegna salvata nell'ordine e, con l'edificio al completo
-# (ordini con un lavoratore = production_concurrent_orders), viene rifiutata come un ordine nuovo. `silent` (2026-10-09,
-# presa dalla lista dei lavori): nessun avviso, popup né X; i controlli li ha già fatti ProduceJobProvider.rejection.
+# Ordine di produzione e Produce Task (2026-10-24, refactoring GameScene 5B.5 — ProductionCommandService.assign_produce).
+# I segnali del rifornimento automatico si collegano prima di assign_task (_connect_material_supply_step_appended).
 func _assign_produce_task(worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int = 1, deliver_to_warehouse: bool = true, existing_order_key: String = "", keep_for_building: bool = false, silent: bool = false) -> void:
-	if existing_order_key != "":
-		deliver_to_warehouse = ProductionService.get_order_deliver_to_warehouse(target_building, existing_order_key)
-	# "Tieni per l'edificio" vale solo se il prodotto è un attrezzo e l'Attrezzeria ha posto per lui (2026-10-08,
-	# BuildingToolkitService.can_add); altrimenti si ignora e "Consegna al magazzino" resta com'è. Le due si escludono
-	# (2026-10-04, Attrezzeria). Riassegnazione di un ordine esistente: vale la scelta già salvata nell'ordine.
-	if keep_for_building and existing_order_key == "" and not BuildingToolkitService.can_add(target_building, resource_name):
-		keep_for_building = false
-	if keep_for_building:
-		deliver_to_warehouse = false
-	if worker == null or target_building == null or not ProductionService.can_produce_at(target_building, resource_name):
-		return
-	var is_reassignment := existing_order_key != ""
-	if is_reassignment and not ProductionService.has_order(target_building, existing_order_key):
-		return
-	if _has_max_concurrent_orders(target_building):
-		if not silent:
-			_report_production_orders_full(worker, target_building)
-			_refresh_selected_building_panel()
-		return
-	if not is_reassignment and not ProductionService.has_output_room(target_building, resource_name):
-		return
-	quantity = clampi(quantity, 1, ProductionService.get_max_order_quantity(target_building))
-	var task := TaskBuilderService.build_produce_task(worker, target_building, resource_name, quantity, deliver_to_warehouse)
-	if task == null:
-		return
-
-	var building_macro_coords := Vector2i(target_building.macro_x, target_building.macro_y)
-	# Idoneità PRIMA del gate degli attrezzi (2026-09-26, richiesta utente): il gate sposta davvero gli
-	# attrezzi dallo zaino alla cintura, quindi un individuo non idoneo (troppo giovane, stamina
-	# insufficiente, ...) va rifiutato prima, senza toccare zaino né cintura. X rossa + popup col motivo.
-	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		if silent:
-			return
-		_report_assign_rejection(worker, rejection, "task_activity_produce")
-		if live_cells.has(building_macro_coords):
-			_spawn_command_icon_at_microcell(
-				live_cells[building_macro_coords],
-				Vector2i(target_building.micro_x, target_building.micro_y),
-				"task_rejected"
-			)
-		_refresh_selected_building_panel()
-		return
-	# Controllo attrezzi (2026-09-25, richiesta utente — la ricetta può richiedere categorie di
-	# attrezzo, es. la corda richiede CUTTING). ToolGateService sposta in cintura gli attrezzi
-	# necessari presi dallo zaino. Esiti:
-	#   - MISSING_TOOLS: la Task viene ASSEGNATA comunque e resta in attesa all'edificio, come la Build
-	#     senza materiale — ProduceAction ricontrolla a ogni tick e parte da sola quando gli attrezzi
-	#     arrivano nello zaino. Popup informativo con QUALI attrezzi servono.
-	#   - BELT_FULL/CANNOT_EQUIP: l'attrezzo c'è ma non entra in cintura — la Task NON viene assegnata
-	#     finché il giocatore non libera uno slot (o lo zaino): avviso nel pannello + popup + X.
-	# Attrezzeria (2026-10-04): l'attrezzo richiesto è soddisfatto se c'è nell'Attrezzeria dell'edificio oppure sul pipottino;
-	# al pipottino si chiedono solo le categorie che l'Attrezzeria non copre.
-	var tool_gate := ToolGateService.try_satisfy(
-		worker, BuildingToolkitService.filter_uncovered(target_building, ToolGateService.get_required_categories(task)), game_data
+	var effects := GameEffects.new()
+	ProductionCommandService.assign_produce(
+		_game_context(), worker, target_building, resource_name, quantity, deliver_to_warehouse, existing_order_key,
+		keep_for_building, silent, _connect_material_supply_step_appended, effects
 	)
-	if tool_gate["result"] == ToolGateService.Result.MISSING_TOOLS:
-		if UserOptions.show_notification_popups and not silent:
-			notification_popup.enqueue(
-				NotificationTypes.NotificationPopupType.TOOL_REQUIRED,
-				tr("tool_gate_assigned_waiting").format({
-					"name": worker.name,
-					"tools": ToolFetchService.describe_missing_categories(tool_gate["missing_categories"]),
-				})
-			)
-	elif tool_gate["result"] != ToolGateService.Result.OK:
-		if silent:
-			return
-		_report_tool_gate_failure(worker, tool_gate)
-		if live_cells.has(building_macro_coords):
-			_spawn_command_icon_at_microcell(
-				live_cells[building_macro_coords],
-				Vector2i(target_building.micro_x, target_building.micro_y),
-				"task_rejected"
-			)
-		_refresh_selected_building_panel()
-		return
-	worker.tool_gate_warning = ""
-	if not tool_gate["equipped"].is_empty():
-		# Attrezzi appena spostati dallo zaino alla cintura: il pannello individuo deve mostrarli.
-		_refresh_selected_individual_panel()
-
-	# Segnali degli step inseriti dal rifornimento automatico (2026-09-29, MaterialSupplyService) — prima di assign_task,
-	# che può già attivare il primo step.
-	_connect_material_supply_step_appended(task, worker)
-	# ORDINI SEPARATI (2026-10-04): l'ordine nasce qui e occupa subito il posto (liberati prima quelli senza lavoratore);
-	# la ProduceAction lavora solo su di lui.
-	var order_key := existing_order_key
-	if is_reassignment:
-		ProductionService.set_order_worker_id(target_building, order_key, worker.id)
-	elif JobBoardService.is_enabled(human_folk):
-		# Ordini in coda (2026-10-09): con l'idea gli ordini senza lavoratore non vengono mai cancellati per fare posto;
-		# il limite vale per gli ordini con un lavoratore, già controllato sopra.
-		order_key = ProductionService.create_order(target_building, resource_name, quantity, worker.id, keep_for_building, deliver_to_warehouse, true)
-	else:
-		ProductionService.free_slot_from_unclaimed(target_building, JobWorkScanService.production_order_workers(human_individuals, target_building))
-		order_key = ProductionService.create_order(target_building, resource_name, quantity, worker.id, keep_for_building, deliver_to_warehouse)
-	if order_key == "":
-		# Con l'idea il limite toccato è quello degli ordini in tutto (coda dell'edificio piena, 2026-10-09).
-		if JobBoardService.is_enabled(human_folk):
-			_report_command_rejection(worker, tr("produce_reject_queue_full").format({
-				"building": _building_display_name(target_building), "max": ProductionService.get_max_orders(target_building),
-			}))
-		else:
-			_report_production_orders_full(worker, target_building)
-		if live_cells.has(building_macro_coords):
-			_spawn_command_icon_at_microcell(live_cells[building_macro_coords], Vector2i(target_building.micro_x, target_building.micro_y), "task_rejected")
-		_refresh_selected_building_panel()
-		return
-	for step in task.steps:
-		if step is ProduceAction:
-			(step as ProduceAction).order_key = order_key
-	# Stesso pipottino già al lavoro su un ordine di questo edificio: il nuovo ordine aspetta nella sua coda.
-	if _works_on_production_at(worker.current_task, target_building):
-		TaskQueueService.push_suspended_task(worker, task)
-	else:
-		worker.assign_task(task, _resolve_age_band(worker))
-
-	var assigned := worker.current_task == task or worker.task_queue.has(task)
-	if not assigned:
-		# Una riassegnazione fallita lascia l'ordine com'era, senza lavoratore.
-		if not is_reassignment:
-			ProductionService.cancel_order(target_building, order_key)
-		if not silent:
-			_report_failed_assignment(worker, task, "task_activity_produce")
-	else:
-		# Lavoro assegnato (2026-10-09): esce dalla lista; se ci tornerà, l'attesa per l'assegnazione a mano riparte.
-		var job_keys: Array[String] = ["produce:%d:%s" % [target_building.id, order_key]]
-		_forget_job_board_wait(job_keys)
-	_reconcile_production_units(target_building)
-	if live_cells.has(building_macro_coords) and (assigned or not silent):
-		_spawn_command_icon_at_microcell(
-			live_cells[building_macro_coords],
-			Vector2i(target_building.micro_x, target_building.micro_y),
-			"produce" if assigned else "task_rejected"
-		)
-	# Pulsanti ricetta spenti subito (edificio ora impegnato), senza aspettare il refresh giornaliero.
-	_refresh_selected_building_panel()
-	if assigned and DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-		print("[PRODUCE] Task di produzione '%s' x%d assegnata a #%d %s presso l'edificio #%d." % [resource_name, quantity, worker.id, worker.name, target_building.id])
+	_apply_effects(effects)
 
 
 # ============================================================================================
 # Caccia (2026-09-26, richiesta utente — caccia, step 2: avvicinamento alla preda)
 # ============================================================================================
-
-const HUNT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/hunt.tres"
-
 
 # Comando "macella" (2026-09-26, richiesta utente): click destro su una carcassa a terra con un individuo
 # selezionato. Viene PRIMA della raccolta nella catena del click destro: su un mucchio con una carcassa il click
@@ -7194,42 +6384,12 @@ const HUNT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/hun
 # magazzino, e quello che non entra nello zaino resta a terra. Controlli come la caccia: età/task
 # (get_assign_rejection_reason), attrezzi (ToolGateService.check_and_prepare, categoria BUTCHERING); icona
 # "butcher" (CommandKnifeIcon) sul mucchio, "task_rejected" se rifiutato.
-func _try_assign_butcher_command_on_right_click(event: InputEvent) -> bool:
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
-		return false
-	if individual == null or not individual.is_selected:
-		return false
-	var pile := _find_carcass_pile_at_click()
-	if pile == null:
-		return false
-	var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
-	if cell == null or cell.macro_state == null:
-		return false
-	var task := TaskBuilderService.build_butcher_task(individual, pile, int(pile.carcasses[0]["id"]), cell.macro_state)
-	_wire_butcher_task(task, individual)
-	if task == null:
-		return false
-
-	var rejection := individual.get_assign_rejection_reason(task, _resolve_age_band(individual))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		_report_assign_rejection(individual, rejection, "task_activity_butcher")
-		_spawn_command_icon_at_microcell(cell, pile.microcell, "task_rejected")
-		return true
-	var tool_gate := ToolGateService.check_and_prepare(individual, task, game_data)
-	if tool_gate["result"] != ToolGateService.Result.OK:
-		_report_tool_gate_failure(individual, tool_gate)
-		_spawn_command_icon_at_microcell(cell, pile.microcell, "task_rejected")
-		return true
-	individual.tool_gate_warning = ""
-	if not tool_gate["equipped"].is_empty():
-		_refresh_selected_individual_panel()
-
-	individual.assign_task(task, _resolve_age_band(individual))
-	var assigned := individual.current_task == task or individual.task_queue.has(task)
-	if not assigned:
-		_report_failed_assignment(individual, task, "task_activity_butcher")
-	_spawn_command_icon_at_microcell(cell, pile.microcell, "butcher" if assigned else "task_rejected")
-	return true
+func _right_click_butcher(targets: RightClickTargets) -> bool:
+	# Task, controlli e assegnazione (2026-10-24, 5B.6 — HuntCommandService.assign_butcher).
+	var effects := GameEffects.new()
+	var consumed := HuntCommandService.assign_butcher(_game_context(), individual, targets.carcass_pile, effects)
+	_apply_effects(effects)
+	return consumed
 
 
 # Segnali della macellazione costruita da TaskBuilderService.build_butcher_task (2026-10-17, refactoring GameScene
@@ -7403,107 +6563,11 @@ func _find_carcass_pile_at_click() -> GroundPile:
 # (2026-09-26, la preda si muove); arma nello zaino ma cintura/zaino pieni = rifiutata. Ritorna true se il
 # click ha colpito un animale (comando consumato, anche se rifiutato), false per lasciarlo proseguire
 # agli altri comandi.
-func _try_assign_hunt_command_on_right_click(event: InputEvent) -> bool:
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
-		return false
-	if individual == null or not individual.is_selected:
-		return false
-	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
-	if animal_hit.is_empty():
-		return false
-	var prey := AnimalGroupRenderer.find_live_individual(int(animal_hit["individual_id"]))
-	if prey == null:
-		return false
-	var definition := load(HUNT_TASK_DEFINITION_PATH) as TaskDefinition
-	if definition == null:
-		return false
-
-	var species: String = String(animal_hit["species"])
-	var task := TaskFactory.build_task(definition, {
-		"hunt_prey_id": prey.id,
-		"hunt_prey_species": species,
-		"hunt_prey_macro_coords": prey.macro_coords,
-	})
-	# Specie per il pannello individuo (Task.get_activity_description): chiave NON consumata da
-	# TaskFactory (a differenza di "hunt_prey_species"), resta in task.context e nel salvataggio.
-	task.context["hunt_activity_species"] = species
-	# Destinazione della macellazione (2026-10-03): la caccia diretta non ha un dialog, usa l'ultima scelta (o il
-	# focolare/magazzino se non è più disponibile), come la proposta del dialog della caccia nelle zone.
-	task.context[ButcherDestinationService.CONTEXT_KEY] = ButcherDestinationService.resolve_default(
-		game_data.last_butcher_destination, macro_world, human_folk
-	)
-
-	var prey_cell: LiveMacroCell = live_cells.get(prey.macro_coords)
-	# Idoneità PRIMA del gate degli attrezzi (2026-09-26, richiesta utente): il gate sposta davvero l'arma
-	# dallo zaino alla cintura, e un individuo non idoneo (troppo giovane — la caccia è vietata fino agli
-	# adolescenti compresi —, stamina insufficiente, ...) riceveva prima il messaggio sull'arma mancante.
-	# Ora: rifiuto immediato, X rossa sulla preda e popup col motivo giusto, zaino e cintura intatti.
-	var rejection := individual.get_assign_rejection_reason(task, _resolve_age_band(individual))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		_report_assign_rejection(individual, rejection, "task_activity_hunt")
-		if prey_cell != null:
-			_spawn_command_icon(prey_cell, prey.position, "task_rejected")
-		HuntService.log_event(individual, "caccia RIFIUTATA (preda %s #%d): individuo non idoneo (%s)." % [species, prey.id, rejection])
-		return true
-	var tool_gate := ToolGateService.check_and_prepare(individual, task, game_data)
-	if tool_gate["result"] == ToolGateService.Result.MISSING_TOOLS:
-		# Senza arma la caccia viene RIFIUTATA, non messa in attesa come la produzione (2026-09-26,
-		# richiesta utente): la preda si muove, e quando l'arma arrivasse l'animale sarebbe ormai lontano
-		# — un inseguimento senza senso. Avviso nel pannello individuo + popup, come gli altri rifiuti del gate.
-		# Esempi di armi che coprono HUNTING ("es. Lancia di legno"), omessi se nessuna è nota.
-		var weapon_names: PackedStringArray = []
-		for weapon_name in ToolGateService.get_tools_covering(TaskTypes.ToolCategory.HUNTING):
-			weapon_names.append(IconRegistry.get_resource_display_name(weapon_name))
-		var examples_text := "" if weapon_names.is_empty() else " " + tr("tool_gate_hunt_weapon_examples").format({"tools": ", ".join(weapon_names)})
-		var text := tr("tool_gate_hunt_no_weapon").format({"name": individual.name, "examples": examples_text})
-		# Armi a munizioni (2026-10-04): l'arma c'è ma manca la sua munizione in cintura — testo proprio.
-		var weapon_without_ammo := HuntService.find_weapon_missing_ammo(individual)
-		if weapon_without_ammo != "":
-			text = tr("tool_gate_hunt_no_ammo").format({"name": individual.name, "weapon": IconRegistry.get_resource_display_name(weapon_without_ammo)})
-		individual.tool_gate_warning = text
-		if UserOptions.show_notification_popups:
-			notification_popup.enqueue(NotificationTypes.NotificationPopupType.TOOL_REQUIRED, text)
-		if prey_cell != null:
-			_spawn_command_icon(prey_cell, prey.position, "task_rejected")
-		HuntService.log_event(individual, "caccia RIFIUTATA (preda %s #%d): nessuna arma da caccia né in cintura né nello zaino." % [species, prey.id])
-		_refresh_selected_individual_panel()
-		return true
-	elif tool_gate["result"] != ToolGateService.Result.OK:
-		_report_tool_gate_failure(individual, tool_gate)
-		if prey_cell != null:
-			_spawn_command_icon(prey_cell, prey.position, "task_rejected")
-		HuntService.log_event(individual, "caccia RIFIUTATA (preda %s #%d): %s non entra in cintura (%s)." % [
-			species, prey.id, String(tool_gate["tool_name"]), String(ToolGateService.Result.keys()[tool_gate["result"]])
-		])
-		return true
-	individual.tool_gate_warning = ""
-	if not tool_gate["equipped"].is_empty():
-		_refresh_selected_individual_panel()
-
-	# Arma della caccia (2026-09-27): scelta ora, dopo il gate degli attrezzi, contro questa preda, e salvata nel context
-	# della Task — la stessa per tutta la caccia (HuntService.resolve_weapon; se in seguito non è più in cintura, si
-	# sceglie di nuovo con la stessa regola).
-	var chosen_weapon := HuntService.choose_weapon(individual, TaskTypes.ToolCategory.HUNTING, species, int(prey.age_band))
-	if chosen_weapon != "":
-		task.context[HuntService.CONTEXT_HUNT_WEAPON] = chosen_weapon
-	individual.assign_task(task, _resolve_age_band(individual))
-	var assigned := individual.current_task == task or individual.task_queue.has(task)
-	if not assigned:
-		# Motivo del rifiuto anche qui (2026-09-26): idoneità già verificata sopra, resta il caso generico
-		# (caccia non sospendibile scartata perché lo zaino occupato appartiene a un'altra task).
-		_report_failed_assignment(individual, task, "task_activity_hunt")
-	if prey_cell != null:
-		_spawn_command_icon(prey_cell, prey.position, "hunt" if assigned else "task_rejected")
-	if HuntService.is_logging():
-		if not assigned:
-			HuntService.log_event(individual, "caccia RIFIUTATA (preda %s #%d): assegnazione non accettata (la task in corso ha lo zaino occupato)." % [species, prey.id])
-		else:
-			var weapon_text := HuntService.describe_weapon(individual, String(task.context.get(HuntService.CONTEXT_HUNT_WEAPON, "")))
-			if not tool_gate["equipped"].is_empty():
-				weapon_text += " — spostata dallo zaino alla cintura"
-			HuntService.log_event(individual, "caccia assegnata%s: preda %s #%d in %s, arma %s." % [
-				"" if individual.current_task == task else " (in coda)", species, prey.id, str(prey.macro_coords), weapon_text
-			])
+func _right_click_hunt(targets: RightClickTargets) -> bool:
+	# Task, idoneità, gate delle armi e assegnazione (2026-10-24, 5B.6 — HuntCommandService.assign_prey_hunt).
+	var effects := GameEffects.new()
+	HuntCommandService.assign_prey_hunt(_game_context(), individual, targets.prey, targets.prey_species, effects)
+	_apply_effects(effects)
 	return true
 
 
@@ -8232,81 +7296,31 @@ func _get_dead_body_records() -> Array[Dictionary]:
 # con un individuo selezionato. PRIMO nella catena del click destro: sulla sagoma vince sempre il cadavere, anche su
 # risorse da raccogliere, vegetazione, mucchi o il cumulo sotto la lastra. Fuori dalla sagoma: false, la catena
 # prosegue come prima.
-func _try_assign_bury_command_on_right_click(event: InputEvent) -> bool:
-	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
-		return false
-	if individual == null or not individual.is_selected or not live_cells.has(center_macro_coords):
-		return false
+func _right_click_bury(targets: RightClickTargets) -> bool:
+	_assign_bury_task(individual, targets.body_id)
+	return true
+
+
+# Corpo sotto la sagoma del clic (DeadBodySelectorController.find_body_at_silhouette, con un piccolo margine), -1 = nessuno
+# o macrocella centrale non viva.
+func _dead_body_at_click(event: InputEvent) -> int:
+	if not live_cells.has(center_macro_coords):
+		return -1
 	var rotation_by_id: Dictionary = {}
 	for body_id in dead_body_views.keys():
 		var view = dead_body_views[body_id]
 		if view != null and is_instance_valid(view):
 			rotation_by_id[body_id] = view.rotation
-	var hit_body_id := dead_body_selector_controller.find_body_at_silhouette(
+	return dead_body_selector_controller.find_body_at_silhouette(
 		event, live_cells[center_macro_coords].renderer, _get_dead_body_records(), center_macro_coords, rotation_by_id
 	)
-	if hit_body_id == -1:
-		return false
-	_assign_bury_task(individual, hit_body_id)
-	return true
 
 
-# Assegna a `worker` la task Seppellisci del corpo `body_id`, con destinazione il cumulo utilizzabile più vicino al corpo
-# (che da qui ne occupa un posto). Rifiuti con l'icona di comando rifiutato sul corpo e una frase, come per gli altri
-# comandi diretti: corpo già assegnato a un altro, nessun cumulo con posti liberi, età del pipottino. Lo stesso
-# pipottino che ha già la sepoltura di questo corpo: nessuna nuova task.
-# `silent` (2026-10-07, lista dei lavori): nessuna icona di rifiuto né messaggio — la lista ha già controllato prima.
+# Task Seppellisci del corpo `body_id` (2026-10-24, 5B.6 — BurialCommandService.assign_bury). `silent`: lista dei lavori.
 func _assign_bury_task(worker: HumanIndividual, body_id: int, silent: bool = false) -> void:
-	var record := BodyBurialService.find_body_record(body_id)
-	if record.is_empty() or ExpiredObjectCalculator.is_carried(record) or BodyBurialService.is_expired(record):
-		return
-	var body_name := BodyBurialService.get_body_name(record)
-	var assignee := BodyBurialService.get_bury_assignee(body_id, human_individuals)
-	if assignee == worker:
-		_spawn_bury_command_icon(record, "bury")
-		return
-	if assignee != null:
-		if not silent:
-			_spawn_bury_command_icon(record, "task_rejected")
-			_report_command_rejection(worker, tr("bury_reject_already_assigned").format({"body": body_name, "assignee": assignee.name}))
-		return
-	var mound := BodyBurialService.resolve_mound(record, body_id, human_individuals)
-	if mound == null:
-		if not silent:
-			_spawn_bury_command_icon(record, "task_rejected")
-			_report_command_rejection(worker, tr("bury_reject_no_mound").format({"name": worker.name, "body": body_name}))
-		return
-	var task := BodyBurialService.build_bury_task(worker, record, body_id, mound)
-	if task == null:
-		return
-	var rejection := worker.get_assign_rejection_reason(task, _resolve_age_band(worker))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		if not silent:
-			_spawn_bury_command_icon(record, "task_rejected")
-			_report_assign_rejection(worker, rejection, "task_activity_bury")
-		return
-	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
-		if not silent:
-			_spawn_bury_command_icon(record, "task_rejected")
-			_report_failed_assignment(worker, task, "task_activity_bury")
-		return
-	# Lavoro assegnato: esce dalla lista; se ci tornerà, l'attesa per l'assegnazione a mano ripartirà da capo.
-	var job_keys: Array[String] = ["body:%d" % body_id]
-	_forget_job_board_wait(job_keys)
-	worker.tool_gate_warning = ""
-	_ensure_step_signals(task)
-	_spawn_bury_command_icon(record, "bury")
-	_refresh_selected_individual_panel()
-	if selected_dead_body_individual_id == body_id:
-		_refresh_dead_body_panel()
-
-
-# Icona di comando sul corpo (esito del comando Seppellisci), nel punto esatto in cui è disegnato. Comando accettato:
-# l'icona della sepoltura ("bury", il teschio — dal 2026-10-07; prima la luna del rito), non la manina del raccogli.
-func _spawn_bury_command_icon(record: Dictionary, command_icon_key: String) -> void:
-	var cell: LiveMacroCell = live_cells.get(Vector2i(record["home_macro_coords"]))
-	if cell != null:
-		_spawn_command_icon(cell, Vector2(record["position"]), command_icon_key)
+	var effects := GameEffects.new()
+	BurialCommandService.assign_bury(_game_context(), worker, body_id, silent, effects)
+	_apply_effects(effects)
 
 
 # Nessun cumulo con posti liberi durante il trasporto (CarryBodyAction.burial_aborted): il corpo è già stato posato e la
@@ -9035,7 +8049,11 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool, current_workers
 		if job.has("postponed_by"):
 			blocked_reason = tr("job_postponed_material").format({
 				"name": (job["postponed_by"] as HumanIndividual).name,
-				"materials": _missing_materials_text(job["target"] as Building, String(job["kind"]) == "repair"),
+				# Produzione (2026-10-24): solo i materiali della sua ricetta, non di tutto l'edificio.
+				"materials": _missing_materials_text(
+					job["target"] as Building, String(job["kind"]) == "repair",
+					String(job.get("recipe", "")) if String(job["kind"]) == "produce" else ""
+				),
 			})
 			# Cantiere nel bosco (2026-10-18): rimandato in attesa del taglio, non per materiale.
 			var postponed_site := job["target"] as Building
@@ -9066,10 +8084,17 @@ func _job_board_drawer_entry(job: Dictionary, in_progress: bool, current_workers
 	return entry
 
 
-# "20 Ciottoli, 2 Rametti": materiale che manca a un cantiere (MaterialSupplyService.get_missing_materials).
-func _missing_materials_text(building: Building, for_repair: bool = false) -> String:
+# "20 Ciottoli, 2 Rametti": materiale che manca a un cantiere (MaterialSupplyService.get_missing_materials). `recipe`
+# (2026-10-24): solo il fabbisogno di quella ricetta (MaterialSupplyService.get_missing_materials_for_recipe).
+func _missing_materials_text(building: Building, for_repair: bool = false, recipe: String = "") -> String:
 	var parts: Array[String] = []
-	var missing := RepairAction.get_supply_missing(building) if for_repair else MaterialSupplyService.get_missing_materials(building)
+	var missing: Dictionary
+	if for_repair:
+		missing = RepairAction.get_supply_missing(building)
+	elif recipe != "":
+		missing = MaterialSupplyService.get_missing_materials_for_recipe(building, recipe)
+	else:
+		missing = MaterialSupplyService.get_missing_materials(building)
 	for resource_name in missing.keys():
 		# Combustibile (MaterialSupplyService.FUEL_KEY): una quantità di fuoco, non una risorsa.
 		var material_name := tr("material_fuel_label") if String(resource_name) == MaterialSupplyService.FUEL_KEY 			else IconRegistry.get_resource_display_name(String(resource_name))
@@ -9271,10 +8296,9 @@ func _sync_job_board_wait_icons(candidates: Dictionary) -> void:
 
 # Lavoro appena assegnato (`job_keys`: tutte le sue chiavi possibili): fuori dal conto dell'attesa e niente icona.
 func _forget_job_board_wait(job_keys: Array[String]) -> void:
-	if game_data != null:
-		JobBoardService.forget_waits(game_data, job_keys)
-	for key in job_keys:
-		_free_job_board_wait_icon(key)
+	var effects := GameEffects.new()
+	CommandFeedback.forget_job_board_waits(game_data, job_keys, effects)
+	_apply_effects(effects)
 
 
 func _free_job_board_wait_icon(job_key: String) -> void:
@@ -9455,18 +8479,12 @@ func _on_site_cut_requested(worker: HumanIndividual, task: Task, site: Building)
 	_refresh_pending_entries()
 
 
-# Comando "costruisci" su un cantiere in attesa del taglio: chi ha l'ascia taglia una cella libera del cantiere; senza
-# ascia, o senza celle da prendere, X e motivo. true = comando gestito.
+# Comando "costruisci" su un cantiere in attesa del taglio (2026-10-24, 5B.3 —
+# ExtractionCommandService.assign_site_cut_command). true = comando gestito.
 func _assign_site_cut_command(worker: HumanIndividual, site: Building) -> bool:
-	var ctx := _game_context()
-	var cell: Variant = SiteCutService.pick_cell(ctx, worker, site) if ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING) else null
-	if cell == null:
-		var macro := Vector2i(site.macro_x, site.macro_y)
-		if live_cells.has(macro):
-			_spawn_command_icon_at_microcell(live_cells[macro], Vector2i(site.micro_x, site.micro_y), "task_rejected")
-		_report_command_rejection(worker, tr("site_cut_command_needs_axe"))
-		return true
-	_assign_cut_task(worker, SiteCutService.pick_plant(ctx, worker, site, cell), -1, SiteCutService.make_series(ctx, site, cell))
+	var effects := GameEffects.new()
+	ExtractionCommandService.assign_site_cut_command(_game_context(), worker, site, effects)
+	_apply_effects(effects)
 	return true
 
 
@@ -9814,36 +8832,11 @@ func _drawer_order_job_release(job: Dictionary) -> void:
 	_release_drawer_zone_order(order)
 
 
-# Toglie un ordine di zona preso a chi lo porta (Rimetti in coda, Blocca, X, H): la Task in corso con
-# l'effetto di H (regola del carico, "salta la lista una volta", ripresa con resolve_idle_individual), quelle in coda
-# tolte (o sostituite dal ritorno del carico, se lo possiedono); l'ordine torna in coda con quello che resta, la stessa
-# scelta e la stessa zona. I ritorni del carico nati qui sono marcati (DrawerOrderService.CARGO_KEY): niente riga "Diretto".
+# Toglie un ordine di zona preso a chi lo porta (2026-10-24, 5B.6 — ZoneOrderCommandService.release_drawer_zone_order).
 func _release_drawer_zone_order(order: Dictionary) -> void:
-	var order_id := int(order["id"])
-	var claim: Dictionary = DrawerOrderService.collect_zone_claims(human_individuals).get(order_id, {})
-	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(claim.get("done", 0)))
-	DrawerOrderService.return_order(_game_context(), order)
-	for member in human_individuals:
-		var current_closed := false
-		var current := member.current_task
-		if current != null and not current.is_finished() and DrawerOrderService.order_of_task(current) == order_id:
-			member.skip_job_board_once = true
-			if CargoReturnService.release_cargo(member, current, macro_world) != CargoReturnService.Outcome.RETURNING:
-				member.stop(false)
-				current_closed = true
-			elif member.current_task != null:
-				member.current_task.context[DrawerOrderService.CARGO_KEY] = true
-		for queued in member.task_queue.duplicate():
-			var queued_task := queued as Task
-			if queued_task != null and DrawerOrderService.order_of_task(queued_task) == order_id:
-				var queue_index := member.task_queue.find(queued)
-				if CargoReturnService.release_cargo(member, queued_task, macro_world) != CargoReturnService.Outcome.RETURNING:
-					member.task_queue.erase(queued)
-				elif queue_index >= 0 and queue_index < member.task_queue.size() and member.task_queue[queue_index] != null:
-					(member.task_queue[queue_index] as Task).context[DrawerOrderService.CARGO_KEY] = true
-		if current_closed:
-			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
-	_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	ZoneOrderCommandService.release_drawer_zone_order(_game_context(), order, effects)
+	_apply_effects(effects)
 
 
 # Presa: ordine creato sull'edificio scelto (tutta la quantità, "Porta al deposito" dell'ordine del
@@ -9946,24 +8939,11 @@ func _zone_order_tool_rejection(worker: HumanIndividual, order_type: String) -> 
 	return ToolFetchService.rejection(_game_context(), worker, DrawerOrderService.tool_categories(order_type), order_type)
 
 
-func _plan_zone_order_tool_fetch(worker: HumanIndividual, order_type: String) -> Array[Dictionary]:
-	return ToolFetchService.plan_fetch(macro_world, worker, DrawerOrderService.tool_categories(order_type))
-
-
-# Prelievi in deposito prima del lavoro appena assegnato (ToolFetchService.start_fetch, 2026-10-17): qui i segnali delle
-# task di prelievo (griglia del magazzino) e il pannello.
+# Prelievi in deposito prima del lavoro appena assegnato (2026-10-24, 5B.6 — ZoneOrderCommandService.start_tool_fetch).
 func _start_zone_order_tool_fetch(worker: HumanIndividual, plan: Array[Dictionary], work_label: Variant) -> void:
-	for task in ToolFetchService.start_fetch(_game_context(), worker, plan, work_label):
-		_wire_transport_task(task, worker)
-	if worker == individual:
-		_refresh_selected_individual_panel()
-
-
-# Presa del travois prima di un lavoro a più viaggi (ToolFetchService.start_towed_fetch, 2026-10-23): qui i segnali.
-func _start_towed_fetch(worker: HumanIndividual, work_label: Variant) -> void:
-	var task := ToolFetchService.start_towed_fetch(_game_context(), worker, work_label)
-	if task != null:
-		_wire_transport_task(task, worker)
+	var effects := GameEffects.new()
+	ZoneOrderCommandService.start_tool_fetch(_game_context(), worker, plan, work_label, effects)
+	_apply_effects(effects)
 
 
 # Bottone "Taglia" / "Estrai": lo strato dell'ordine con i limiti del popup del comando e il valore ricordato.
@@ -10074,74 +9054,11 @@ func _on_hunt_zone_series_ended(hunter: HumanIndividual, series: Dictionary, rea
 	_apply_effects(effects)
 
 
-# Presa: la serie del comando di oggi, in silenzio, con l'id dell'ordine nella serie; solo se il pipottino ha davvero la
-# task l'ordine diventa "preso".
+# Presa di un ordine di zona della coda (2026-10-24, 5B.6 — ZoneOrderCommandService.assign_drawer_zone_job).
 func _assign_drawer_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
-	var order: Dictionary = job["order"]
-	var order_type := String(order.get("type", DrawerOrderService.TYPE_CUT))
-	var order_id := int(order["id"])
-	if DrawerOrderService.find(game_data, order_id).is_empty() or bool(order.get("taken", false)):
-		return
-	# Taglio/estrazione (2026-10-23): il bersaglio scelto dall'ordine (DrawerOrderTargetService); raccolta/caccia come prima.
-	var pick: Dictionary = {}
-	if DrawerOrderTargetService.uses_order_target(order_type):
-		if DrawerOrderTargetService.ensure_target(_game_context(), order):
-			pick = DrawerOrderTargetService.get_pick(_game_context(), order)
-	else:
-		pick = DrawerOrderJobProvider.pick_zone_target(_game_context(), worker, job)
-	if pick.is_empty():
-		return
-	var area: WorkArea = pick["area"]
-	# Attrezzi da prendere in deposito prima del lavoro (2026-10-11): deciso ora, partono dopo l'assegnazione.
-	var fetch_plan := _plan_zone_order_tool_fetch(worker, order_type)
-	var series: Dictionary = {}
-	if order_type == DrawerOrderService.TYPE_GATHER:
-		var trips := maxi(int(order.get("count", 1)), 1)
-		_assign_work_area_gather(worker, area, {
-			"kind": int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)),
-			"category": int(order.get("criterion_category", -1)), "resource_name": String(order.get("resource_name", "")),
-			"repeat": trips > 1, "trips": trips, "stock_fill": order.has(StockRequestService.ORDER_KEY),
-		}, true, order_id)
-	elif order_type == DrawerOrderService.TYPE_HUNT:
-		# Cacce del gestore scorte (2026-10-19): la coppia della regola, letta adesso (anche per gli ordini nati prima).
-		var hunt_destination := String(order.get("butcher_destination", ""))
-		if order.has(StockRequestService.ORDER_KEY):
-			hunt_destination = WarehouseManagerService.stock_hunt_destination(_game_context())
-		series = HuntZoneService.make_meat_series(
-			area.id, maxi(int(order.get("count", 1)), 1), hunt_destination,
-			int(order.get("zone_id", -1)) < 0
-		)
-		series[DrawerOrderService.SERIES_KEY] = order_id
-		_assign_work_area_hunt(worker, area, series, true, not fetch_plan.is_empty())
-	elif order_type == DrawerOrderService.TYPE_QUARRY:
-		series = QuarryZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
-		series[DrawerOrderService.SERIES_KEY] = order_id
-		_assign_quarry_task(worker, pick["rock"], area.id, series, true)
-	else:
-		series = CutZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
-		series[DrawerOrderService.SERIES_KEY] = order_id
-		if DrawerOrderService.order_cut_yield(order) != "":
-			series[CutZoneService.SERIES_YIELD_KEY] = DrawerOrderService.order_cut_yield(order)
-		_assign_cut_task(worker, pick["plant"], area.id, series, true)
-	for task in JobWorkScanService.open_tasks(worker):
-		if DrawerOrderService.order_of_task(task) == order_id:
-			order["taken"] = true
-			order["started"] = true
-			order["done_seen"] = 0
-			# Da qui il bersaglio lo prenota la CutAction/QuarryAction del pipottino (2026-10-23).
-			DrawerOrderTargetService.clear_target(order)
-			# L'avviso "nessuna preda" sparisce quando l'ordine riprende.
-			order.erase(HuntOrderService.NO_PREY_KEY)
-			var job_keys: Array[String] = [String(job["key"])]
-			_forget_job_board_wait(job_keys)
-			_start_zone_order_tool_fetch(worker, fetch_plan, order_id)
-			# Travois (2026-10-23): serie di più viaggi -> lo prende prima, se ce n'è uno libero. Caccia esclusa (si
-			# insegue la preda). Serie di raccolta: "stessi viaggi, più roba" (ogni viaggio porta di più, il numero non
-			# cambia). Ipotesi b, per il futuro: un viaggio col travois conta come più viaggi in proporzione al carico,
-			# così la serie finisce prima.
-			if order_type != DrawerOrderService.TYPE_HUNT and int(order.get("count", 1)) > 1:
-				_start_towed_fetch(worker, order_id)
-			return
+	var effects := GameEffects.new()
+	ZoneOrderCommandService.assign_drawer_zone_job(_game_context(), worker, job, effects)
+	_apply_effects(effects)
 
 
 # ============================================================================================
@@ -11850,23 +10767,14 @@ func _assign_tool_task(
 		return
 	var task_name: String = task.task_name
 	var building_macro_coords := Vector2i(building.macro_x, building.macro_y)
-	# Idoneità prima dell'assegnazione (2026-09-26): X rossa sull'edificio e motivo.
-	var rejection := target.get_assign_rejection_reason(task, _resolve_age_band(target))
-	if rejection != HumanIndividual.ASSIGN_OK:
-		_report_assign_rejection(target, rejection, activity_key)
-		if live_cells.has(building_macro_coords):
-			_spawn_command_icon_at_microcell(live_cells[building_macro_coords], Vector2i(building.micro_x, building.micro_y), "task_rejected")
+	# Idoneità prima dell'assegnazione (2026-09-26): X rossa sull'edificio e motivo. Dal 5B.2: AssignService.
+	var request := AssignRequest.create(target, task, activity_key).at_microcell(
+		building_macro_coords, Vector2i(building.micro_x, building.micro_y), icon_key
+	)
+	if not _assign_check(request):
 		return
 	_wire_transport_task(task, target)
-	var assigned := target.assign_task(task, _resolve_age_band(target))
-	if not assigned:
-		_report_failed_assignment(target, task, activity_key)
-	if live_cells.has(building_macro_coords):
-		_spawn_command_icon_at_microcell(
-			live_cells[building_macro_coords],
-			Vector2i(building.micro_x, building.micro_y),
-			icon_key if assigned else "task_rejected"
-		)
+	var assigned := _assign_commit(request)
 	_refresh_selected_individual_panel()
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[TOOL TASK] '%s' (%s) %s a #%d %s, edificio #%d." % [
@@ -14409,30 +13317,12 @@ func _on_waste_closed_toggle_requested(building: Building) -> void:
 	_refresh_selected_building_panel()
 
 
-# Sgombero delle macerie / svuotamento di una Fossa (2026-10-18, Fossa dei rifiuti): Transport ripetuta dei detriti dalla
-# sorgente alla Fossa più vicina con posto (WasteDisposalService.build_debris_clearing_task). Stesso esito di
-# _assign_resumable_building_task: true = comando gestito (assegnato o rifiutato con la X e il motivo).
+# Sgombero delle macerie / svuotamento della Fossa (2026-10-24, 5B.4 — BuildingCommandService.assign_debris_clearing).
 func _assign_debris_clearing_task(worker: HumanIndividual, rubble: Building) -> bool:
-	var macro_coords := Vector2i(rubble.macro_x, rubble.macro_y)
-	var microcell := Vector2i(rubble.micro_x, rubble.micro_y)
-	var task := WasteDisposalService.build_debris_clearing_task(macro_world, worker, rubble)
-	if task == null:
-		if live_cells.has(macro_coords):
-			_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "task_rejected")
-		_report_command_rejection(worker, tr("notification_clear_rubble_no_pit"))
-		return true
-	_wire_transport_task(task, worker)
-	if not worker.assign_task(task, _resolve_age_band(worker)) and not worker.task_queue.has(task):
-		if live_cells.has(macro_coords):
-			_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "task_rejected")
-		_report_failed_assignment(worker, task, "task_activity_transport")
-		return true
-	_forget_job_board_wait(BuildingJobProvider.job_keys(rubble))
-	if live_cells.has(macro_coords):
-		_spawn_command_icon_at_microcell(live_cells[macro_coords], microcell, "clear_rubble")
-	if worker == individual:
-		_refresh_selected_individual_panel()
-	return true
+	var effects := GameEffects.new()
+	var handled := BuildingCommandService.assign_debris_clearing(_game_context(), worker, rubble, effects)
+	_apply_effects(effects)
+	return handled
 
 
 # Trasporto del mucchio a terra (2026-10-18, blocco 5d — WorkFollowUpService.ground_pile_haul).
@@ -14621,7 +13511,7 @@ func _refresh_warehouse_panel() -> void:
 	if _warehouse_panel == null or not is_instance_valid(_warehouse_panel) or macro_world == null:
 		return
 	# Numeri dell'ultimo inventario (2026-10-11, GameData.stock_snapshot), non in tempo reale.
-	_warehouse_panel.refresh_stock(game_data.stock_snapshot, WarehouseManagerService.village_daily_calorie_need(_game_context()), game_data.stock_snapshot_fill)
+	_warehouse_panel.refresh_stock(game_data.stock_snapshot, WarehouseManagerService.village_daily_calorie_need(_game_context()), game_data.stock_snapshot_fill, game_data.stock_snapshot_in_use)
 	_warehouse_panel.set_inventory_info(_inventory_info_text(), _inventory_info_tooltip())
 
 
@@ -14708,29 +13598,11 @@ func _format_duration_days(duration_days: float) -> String:
 	return tr("duration_days_hours").format({"days": hours / 24, "hours": hours % 24})
 
 
-# Presa: il trasporto del magazzino parte (con la ripetizione dei viaggi fino alla quantità) e l'ordine esce dal cassetto.
+# Presa di un ordine di trasporto del magazzino (2026-10-24, 5B.6 — TransportCommandService.assign_drawer_transport_job).
 func _assign_drawer_transport_job(worker: HumanIndividual, job: Dictionary) -> void:
-	var order: Dictionary = job["order"]
-	var order_id := int(order["id"])
-	if DrawerOrderService.find(game_data, order_id).is_empty():
-		return
-	var pick := WarehouseManagerService.transport_order_pick(macro_world, worker, order)
-	if pick.is_empty():
-		return
-	var task := WarehouseManagerService.transport_order_task(worker, order, pick)
-	if task == null:
-		return
-	_wire_transport_task(task, worker)
-	if not worker.assign_task(task, _resolve_age_band(worker)):
-		return
-	DrawerOrderService.remove(game_data, order_id)
-	var job_keys: Array[String] = [String(job["key"])]
-	_forget_job_board_wait(job_keys)
-	# Travois (2026-10-23): più di un viaggio di carico -> lo prende prima, se ce n'è uno libero.
-	if ToolFetchService.needs_towing_for(worker, String(pick["resource"]), int(pick["quantity"])):
-		_start_towed_fetch(worker, "trasporto #%d" % order_id)
-	if worker == individual:
-		_refresh_selected_individual_panel()
+	var effects := GameEffects.new()
+	TransportCommandService.assign_drawer_transport_job(_game_context(), worker, job, effects)
+	_apply_effects(effects)
 
 
 # Bottone "Scorte" evidenziato finché il cassetto mostra le scorte.
@@ -15495,7 +14367,7 @@ func _place_building_at(world_position: Vector2) -> void:
 # generico di riassegnazione Task): questa funzione PRIMA costruiva anche la Build Task completa
 # [Walk, SetupSite, Clear, Build] via TaskFactory e la teneva in _pending_build_tasks in attesa di
 # un click destro — quella parte è stata rimossa per intero. Oggi la Task viene costruita da zero
-# SOLO al momento del click destro, da _try_assign_build_command_on_right_click via
+# SOLO al momento del click destro, da _right_click_build via
 # TaskReassignmentService.reassign_task (che legge Building.get_resumable_task_definition_path/
 # get_resumable_task_context) — identico sia al primissimo click su questo cantiere sia a un click
 # successivo dopo che un individuo precedente è stato interrotto a metà (construction_progress con
@@ -15565,16 +14437,12 @@ func _start_building_task_at(world_position: Vector2) -> void:
 	if state == null:
 		return
 
-	var building := Building.new(rules, target_cell.macro_x, target_cell.macro_y, _selected_building_type_name)
-	building.id = macro_world.allocate_building_id()
-	building.micro_x = micro_pos.x
-	building.micro_y = micro_pos.y
-	_assign_building_village(building)
-	building.is_complete = false
-	building.rotation = _building_ghost.rotation_dir
-	# Cantiere nel bosco (2026-10-18): sulle piante vive aspetta il taglio prima di diventare un lavoro di costruzione.
-	building.awaiting_site_cut = not SiteCutService.cells_with_plants(macro_world, building).is_empty()
-	macro_world.buildings.append(building)
+	# Nuovo cantiere nel mondo (2026-10-24, 5B.4 — BuildingCommandService.create_site): id, villaggio, attesa del taglio
+	# se sulle piante vive.
+	var building := BuildingCommandService.create_site(
+		_game_context(), rules, _selected_building_type_name, Vector2i(target_cell.macro_x, target_cell.macro_y), micro_pos,
+		_building_ghost.rotation_dir
+	)
 	# Rinfresca la scheda 🏠 (2026-09-12, richiesta utente) — nuovo cantiere in lista, "in
 	# costruzione" (is_complete è già false qui sopra).
 	_refresh_buildings_panel()
@@ -16671,12 +15539,18 @@ func _apply_effects(effects: GameEffects) -> void:
 				_wire_butcher_task(wire_task, entry["owner"])
 			GameEffects.WireKind.HAUL_ZONE:
 				_connect_haul_zone_step_appended(wire_task, entry["owner"])
+			GameEffects.WireKind.MATERIAL_SUPPLY:
+				_connect_material_supply_step_appended(wire_task, entry["owner"])
+			GameEffects.WireKind.STEP_SIGNALS:
+				_ensure_step_signals(wire_task)
 	for completed_building in effects.buildings_completed:
 		_on_building_construction_completed(completed_building)
+	for job_key in effects.forgotten_job_board_waits:
+		_free_job_board_wait_icon(job_key)
 	for entry in effects.command_icons:
 		var icon_cell: LiveMacroCell = live_cells.get(entry["macro"])
 		if icon_cell != null:
-			_spawn_command_icon_at_microcell(icon_cell, entry["microcell"], String(entry["key"]))
+			_spawn_command_icon(icon_cell, entry["point"], String(entry["key"]))
 	for macro_coords in effects.cells_to_refresh.keys():
 		if live_cells.has(macro_coords):
 			_refresh_building_visuals(live_cells[macro_coords])
@@ -16707,6 +15581,9 @@ func _apply_effects(effects: GameEffects) -> void:
 				_refresh_warehouse_panel()
 			GameEffects.PanelKind.BUILD_BAR:
 				_refresh_building_slots_buildable()
+			GameEffects.PanelKind.DEAD_BODY:
+				if selected_dead_body_individual_id != -1:
+					_refresh_dead_body_panel()
 	if UserOptions.show_notification_popups:
 		for entry in effects.notifications:
 			notification_popup.enqueue(entry["type"], entry["text"], entry["requires_ack"])

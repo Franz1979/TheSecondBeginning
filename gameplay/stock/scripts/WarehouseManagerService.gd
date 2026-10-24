@@ -101,7 +101,12 @@ static func on_inventory_started(ctx: GameContext, now: float, worker: HumanIndi
 	if ctx.game_data == null or ctx.world == null:
 		return 0
 	var game_data := ctx.game_data
+	# Colonna "Qtà": stesso totale su cui decide il gestore (depositi + attrezzi del villaggio in uso, in_use_stock).
 	game_data.stock_snapshot = VillageStockService.get_village_stock(ctx.world)
+	var in_use := in_use_stock(ctx.individuals)
+	for resource_name in in_use.keys():
+		game_data.stock_snapshot[resource_name] = int(game_data.stock_snapshot.get(resource_name, 0)) + int(in_use[resource_name])
+	game_data.stock_snapshot_in_use = in_use
 	game_data.stock_snapshot_fill = VillageStockService.get_storage_fill(ctx.world)
 	game_data.stock_snapshot_time = now
 	game_data.stock_runtime.inventory_pending = true
@@ -455,6 +460,35 @@ static func _derived_meat_breakdown(ctx: GameContext, stock: Dictionary) -> Dict
 #   - mai più di un ordine fermo per prodotto (anche per postazione o attrezzo mancanti). Gli ordini a mano non si toccano.
 # Il motivo "Mancano: …" dell'ordine fermo (calcolato con le prenotazioni) resta nell'ordine (StockRequestService.MISSING_KEY),
 # letto dalla riga della coda e dalla campanella. true se ha creato, ridotto o tolto ordini.
+# Attrezzi del villaggio in uso (2026-10-24, regola concordata con l'utente): nome -> pezzi fuori dai depositi che ci
+# torneranno da soli, quindi contano nella scorta per il minimo (non tra gli ingredienti disponibili):
+#   - in cintura in prestito (HumanIndividual.borrowed_tools, regola "Riponi gli attrezzi presi per un lavoro" accesa);
+#   - in cintura mentre li sta riportando (task con ToolFetchService.BORROWED_TOOL_RETURN_KEY, voce già tolta dai prestiti;
+#     solo finché è ancora in cintura, per non contarlo due volte appena depositato);
+#   - mezzo da traino agganciato (towed_resource: torna sempre, appoggio o magazzino).
+# Non contano gli attrezzi di proprietà (presi con la regola spenta o dati dal giocatore), la sacca presa con la sua regola,
+# i capi indossati, i pezzi rotti.
+static func in_use_stock(individuals: Array) -> Dictionary:
+	var in_use: Dictionary = {}
+	for member in individuals:
+		var human := member as HumanIndividual
+		if human == null:
+			continue
+		for entry in human.borrowed_tools:
+			var borrowed_name := String(entry.get("tool_name", ""))
+			if borrowed_name != "":
+				in_use[borrowed_name] = int(in_use.get(borrowed_name, 0)) + 1
+		for task in JobWorkScanService.open_tasks(human):
+			if not task.context.has(ToolFetchService.BORROWED_TOOL_RETURN_KEY):
+				continue
+			var returning_name := String(task.context.get("tool_resource_name", ""))
+			if returning_name != "" and ToolFetchService.find_belt_slot_by_name(human, returning_name) != -1:
+				in_use[returning_name] = int(in_use.get(returning_name, 0)) + 1
+		if human.towed_resource != "":
+			in_use[human.towed_resource] = int(in_use.get(human.towed_resource, 0)) + 1
+	return in_use
+
+
 static func _request_produce(ctx: GameContext, now: float, stock: Dictionary) -> bool:
 	var game_data := ctx.game_data
 	var changed := false
@@ -480,12 +514,14 @@ static func _request_produce(ctx: GameContext, now: float, stock: Dictionary) ->
 		else:
 			order[StockRequestService.MISSING_KEY] = _produce_missing_text(order_recipe, order_quantity, available, order_fuel)
 	var in_production := _units_in_production(ctx)
+	var in_use := in_use_stock(ctx.individuals)
 	for resource_name in game_data.stock_min_levels.keys():
 		var recipe := String(resource_name)
 		if StockRequestService.source_kind_for(recipe) != StockRequestService.SOURCE_PRODUCE:
 			continue
 		var level := int(game_data.stock_min_levels[resource_name])
-		var quantity := int(stock.get(recipe, 0))
+		# Attrezzi del villaggio in uso (2026-10-24): fanno scorta, torneranno al deposito da soli.
+		var quantity := int(stock.get(recipe, 0)) + int(in_use.get(recipe, 0))
 		var wm_orders: Array = []
 		for order in game_data.drawer_orders:
 			if String(order.get("type", "")) == DrawerOrderService.TYPE_PRODUCE and String(order.get("recipe", "")) == recipe \

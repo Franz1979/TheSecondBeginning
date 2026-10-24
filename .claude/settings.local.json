@@ -5,7 +5,10 @@
       "Bash(python -)",
       "PowerShell(& \"C:\\\\Users\\\\crfra\\\\GodotProjects\\\\godot\\\\Godot_v4.6.3-stable_win64_console.exe\" --headless --path . --quit-after 60 gameplay/scenes/game/GameScene.tscn 2>&1)",
       "PowerShell(& \"C:\\\\Users\\\\crfra\\\\GodotProjects\\\\godot\\\\Godot_v4.6.3-stable_win64_console.exe\" --headless --path . --quit-after 60 gameplay/scenes/game/GameScene.tscn 2>&1 | Select-String -Pattern \"SCRIPT ERROR\" -Context 0,1 | Where-Object { $_.Line -notmatch \"because of|depended|Cannot infer\" } | ForEach-Object { $_.Line + \" | \" + $_.Context.PostContext[0] } | Sort-Object -Unique | Select-Object -First 15)",
-      "PowerShell($out = & \"C:\\\\Users\\\\crfra\\\\GodotProjects\\\\godot\\\\Godot_v4.6.3-stable_win64_console.exe\" --headless --path . res://gameplay/scenes/game/GameScene.tscn --quit-after 30 2>&1 | Out-String; \"LEN=\" + $out.Length; \\($out -split \"`n\" | Where-Object { $_ -match \"ERROR|Error\" } | Select-Object -First 15\\) -join \"`n\")"
+      "PowerShell($out = & \"C:\\\\Users\\\\crfra\\\\GodotProjects\\\\godot\\\\Godot_v4.6.3-stable_win64_console.exe\" --headless --path . res://gameplay/scenes/game/GameScene.tscn --quit-after 30 2>&1 | Out-String; \"LEN=\" + $out.Length; \\($out -split \"`n\" | Where-Object { $_ -match \"ERROR|Error\" } | Select-Object -First 15\\) -join \"`n\")",
+      "PowerShell(& \"C:\\\\Users\\\\crfra\\\\GodotProjects\\\\godot\\\\Godot_v4.6.3-stable_win64_console.exe\" --headless --path . --quit-after 60 gameplay/scenes/game/GameScene.tscn 2>&1 | Select-String -Pattern \"ERROR\" | Where-Object { $_ -notmatch \"Rect2 size\" } | Select-Object -First 10; \"exit $LASTEXITCODE\")",
+      "PowerShell($o = & \"C:\\\\Users\\\\crfra\\\\GodotProjects\\\\godot\\\\Godot_v4.6.3-stable_win64_console.exe\" --headless --path . --quit-after 60 gameplay/scenes/game/GameScene.tscn 2>&1 | Where-Object { $_ -notmatch \"Rect2 size|backtrace|CameraController\" }; $o | Select-Object -Last 15; \"exit $LASTEXITCODE\")",
+      "PowerShell(& \"C:\\\\Users\\\\crfra\\\\GodotProjects\\\\godot\\\\Godot_v4.6.3-stable_win64_console.exe\" --headless --path . --quit-after 60 gameplay/scenes/game/GameScene.tscn 2>&1 | Select-String -Pattern \"Parse Error|SCRIPT ERROR|WarehousePanel\" | Select-Object -First 10; \"exit $LASTEXITCODE\")"
     ]
   },
   "worktree": {

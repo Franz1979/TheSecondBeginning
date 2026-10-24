@@ -168,13 +168,15 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for raw_rite in data["game"].get("active_social_rites", []):
 		var social_rite: Dictionary = (raw_rite as Dictionary).duplicate(true)
 		social_rite.erase("_frame")
-		for int_key in ["building_id", "organizer_id"]:
+		for int_key in ["building_id", "organizer_id", "uid"]:
 			social_rite[int_key] = int(social_rite.get(int_key, -1))
 		var convoked: Array = []
 		for raw_id in social_rite.get("convoked", []):
 			convoked.append(int(raw_id))
 		social_rite["convoked"] = convoked
 		game_data.active_social_rites.append(social_rite)
+	# Numero del prossimo rito sociale (2026-10-24): 1 per i salvataggi precedenti (i loro riti non hanno uid).
+	game_data.next_social_rite_uid = int(data["game"].get("next_social_rite_uid", 1))
 	# .get(key, []) per compatibilità con save precedenti l'introduzione degli oggetti-scaduti
 	# (Step 2, vedi GameData.expired_objects) — [] è lo stesso default della classe.
 	game_data.expired_objects = _expired_objects_from_json(data["game"].get("expired_objects", []))
@@ -286,6 +288,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	if raw_snapshot is Dictionary:
 		for snapshot_name in (raw_snapshot as Dictionary).keys():
 			game_data.stock_snapshot[String(snapshot_name)] = int(raw_snapshot[snapshot_name])
+	# Parte in uso (2026-10-24): salvataggi precedenti = nessuna.
+	game_data.stock_snapshot_in_use.clear()
+	var raw_in_use = data["game"].get("stock_snapshot_in_use", {})
+	if raw_in_use is Dictionary:
+		for in_use_name in (raw_in_use as Dictionary).keys():
+			game_data.stock_snapshot_in_use[String(in_use_name)] = int(raw_in_use[in_use_name])
 	game_data.stock_snapshot_fill = []
 	for fill_value in data["game"].get("stock_snapshot_fill", []):
 		game_data.stock_snapshot_fill.append(float(fill_value))

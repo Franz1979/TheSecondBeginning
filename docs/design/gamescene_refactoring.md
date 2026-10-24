@@ -298,14 +298,66 @@ GameTimeService, CoordinatorService e i contesti.
   GameScene: 16.833 righe. **Gruppo 5A chiuso**: da 18.035 a 16.833 righe (−1.202).
 
 **5B — Comandi e schema delle assegnazioni**
-- **5B.0** `CommandFeedback` e nuovi effetti (icone di comando, attese della bacheca).
-- **5B.1** `worker` esplicito nelle assegnazioni di trasporto e raccolta.
-- **5B.2** `AssignService` + `AssignResult`, la coda comune delle assegnazioni, con i casi uniformi.
-- **5B.3** Taglio e cava.
-- **5B.4** Costruzione, demolizione e riparazione.
-- **5B.5** Produzione e riti.
-- **5B.6** Caccia, macellazione, sepoltura, trasporto, ordini di zona.
-- **5B.7** `RightClickCommandService`: bersagli del clic raccolti una volta, il servizio sceglie il comando.
+- **5B.0 — FATTO (2026-10-24).** `CommandFeedback` ha anche `assign_rejection` (motivo di idoneità),
+  `failed_assignment` e `forget_job_board_waits` (attesa cancellata in GameData + effetto `job_board_waits_forgotten`, con
+  cui la scena toglie le icone lampeggianti). In scena `_report_assign_rejection`, `_report_failed_assignment` e
+  `_forget_job_board_wait` restano con lo stesso nome e delegano.
+- **5B.1 — FATTO (2026-10-24).** `_assign_transport_task` e `_assign_pickup_task` ricevono `worker` come primo
+  parametro; i chiamanti passano l'individuo selezionato (come prima, anche alla conferma del dialog della raccolta).
+- **5B.2 — FATTO (2026-10-24).** `gameplay/commands/scripts/AssignService.gd` + `AssignRequest.gd` (chi, Task, attività,
+  `silent`, punto e chiave dell'icona; `strict` = riuscita solo se in corso o in coda; `icon_when_silent`):
+  - `check` (idoneità, motivo e X), `commit` (assign_task + esito), `finish` (esito di una Task messa in coda dal
+    chiamante), `assign` (check + commit, `AssignService.Result`), `reject_icon` (X per i rifiuti del chiamante);
+  - le icone di comando degli effetti sono ora a punto (`command_icon_at_point`; `command_icon_at_microcell` = centro);
+  - in scena `_assign`, `_assign_check`, `_assign_commit`, `_assign_finish`, `_assign_reject_icon`;
+  - convertiti: trasporto, raccolta, raccolta e caccia di zona, ricavi, riparazione, rito ordinato, sepoltura,
+    attrezzo, macellazione, caccia col clic destro, produzione, esplorazione, prova dell'ordine di caccia. Restano fuori
+    la costruzione (5B.4, assegnata dentro `TaskReassignmentService`) e le prove dei pulsanti.
+
+  GameScene: 17.235 righe.
+- **5B.3 — FATTO (2026-10-24).** `gameplay/commands/scripts/ExtractionCommandService.gd`: taglio e cava di un
+  bersaglio (`assign_cut`, `assign_quarry`, un solo pipottino per bersaglio, coda dietro i ricavi già ordinati), "taglia
+  tutto qui", una serie in zona, zona automatica e zone valide della scelta a mano, comando sul cantiere in attesa del
+  taglio, `is_extraction_chain_task`, `find_target_holder`. In scena restano i dialog e le funzioni con gli stessi nomi,
+  che delegano. GameScene: 17.078 righe.
+- **5B.4 — FATTO (2026-10-24).** `gameplay/commands/scripts/BuildingCommandService.gd`: `assign_resumable`
+  (costruzione/demolizione con il limite di costruttori, macerie e Fossa, cantiere nel bosco), `assign_debris_clearing`,
+  `assign_repair` con `can_start_repair`/`can_assign_repair`, `count_other_builders`, `create_site` (dati del cantiere al
+  piazzamento). Nuovo collegamento `WireKind.MATERIAL_SUPPLY`. In scena restano piazzamento e verifiche con avviso, e
+  `_grass_on_building_site` (erba disegnata, dato del renderer, passata alla Build). GameScene: 16.895 righe.
+- **5B.5 — FATTO (2026-10-24).** `gameplay/commands/scripts/ProductionCommandService.gd` (`assign_produce`: posti,
+  idoneità, attrezzi con l'Attrezzeria, ordine nuovo o riassegnato, coda del pipottino; `has_max_concurrent_orders`,
+  `report_orders_full`, `works_on_production_at`) e `RiteCommandService.gd` (`assign_rite`, rito sociale compreso;
+  `reject`, `has_active_rite`). Il collegamento del rifornimento automatico va fatto prima di assign_task: la produzione
+  riceve dalla scena `wire_before_assign` (Callable chiamata subito, non conservata). GameScene: 16.705 righe.
+- **5B.6 — FATTO (2026-10-24).** In `gameplay/commands/scripts/`:
+  - `HuntCommandService.gd`: cacciatori idonei e zona automatica della caccia, `assign_work_area_hunt`, caccia diretta
+    all'animale (`assign_prey_hunt`, Task costruita qui con `TaskFactory`), `assign_butcher`;
+  - `BurialCommandService.gd`: `assign_bury`;
+  - `TransportCommandService.gd`: `assign_transport`, `assign_pickup`, `assign_work_area_gather` con zona automatica e
+    zone valide, `assign_drawer_transport_job`;
+  - `ZoneOrderCommandService.gd`: `assign_drawer_zone_job` (presa degli ordini di zona), `release_drawer_zone_order`,
+    `start_tool_fetch`, `start_towed_fetch`.
+  - Nuovi effetti: `WireKind.STEP_SIGNALS` (`_ensure_step_signals`) e `PanelKind.DEAD_BODY`.
+  - In scena restano i clic destri (quale animale, mucchio, corpo, edificio), i dialog, la scelta a mano della zona e
+    lo strato dell'ordine nel cassetto, con le funzioni di prima che delegano.
+  - Collegamenti dei segnali ora dopo l'assegnazione (dagli effetti) anche per trasporto e raccolta: stesso fotogramma.
+
+  GameScene: 16.252 righe.
+- **5B.7 — FATTO (2026-10-24).** `gameplay/commands/scripts/RightClickCommandService.gd` + `RightClickTargets.gd`:
+  - la scena raccoglie una volta i bersagli del clic destro (`_collect_right_click_targets`: corpo, animale, carcassa,
+    pianta, roccia, candidati della raccolta, edificio; hit-test in sola lettura);
+  - `RightClickCommandService.candidates` decide quali comandi valgono e in che ordine: trasporto a metà (solo
+    destinazione), poi sepoltura, caccia, macellazione, taglio e cava (attrezzo, nebbia, niente cantiere sotto),
+    raccolta, costruzione/riparazione, trasporto;
+  - `_handle_right_click_command` prova i comandi in quell'ordine finché uno consuma il clic; altrimenti movimento;
+  - i vecchi `_try_assign_*_command_on_right_click` sono diventati `_right_click_*(targets)`, senza hit-test né guardie;
+    via `_has_resumable_building_under_click` (ora `has_resumable_work` nel servizio).
+  - Differenza voluta: gli hit-test girano tutti a ogni clic destro di comando (prima a catena). Sono letture, e il clic
+    destro è raro.
+
+  GameScene: 16.185 righe. **Gruppo 5B chiuso**: da 16.833 a 16.185 righe (−648); dall'inizio del refactoring da
+  18.035 (−1.850).
 
 Incoerenze esistenti da conservare nello spostamento, annotate per dopo:
 - riparazione da bacheca senza `silent`;
@@ -313,7 +365,7 @@ Incoerenze esistenti da conservare nello spostamento, annotate per dopo:
 - icona della sepoltura anche silenziosa;
 - inventario che non guarda l'esito;
 - controllo dell'età duplicato in 4 punti;
-- caccia costruita con `TaskFactory` nella scena.
+- caccia costruita con `TaskFactory` (dal 5B.6 in `HuntCommandService`, non più nella scena).
 
 ---
 

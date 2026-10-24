@@ -94,6 +94,7 @@ func save_game_to_json(
 			"village_cohesion_snapshots": game_data.village_cohesion_snapshots,
 			# Riti sociali in corso (2026-10-14, SocialRiteService).
 			"active_social_rites": game_data.active_social_rites,
+			"next_social_rite_uid": game_data.next_social_rite_uid,
 			# Istanze oggetti-scaduti (Step 2, vedi GameData.expired_objects) — A DIFFERENZA di
 			# death_events sopra, "position" è un Vector2 (non JSON-nativo): _expired_objects_to_json
 			# appiattisce ogni record in position_x/position_y, stessa convenzione già usata per
@@ -139,6 +140,7 @@ func save_game_to_json(
 			"last_inventory_end": game_data.last_inventory_end,
 			"last_inventory_by": game_data.last_inventory_by,
 			"stock_snapshot": game_data.stock_snapshot,
+			"stock_snapshot_in_use": game_data.stock_snapshot_in_use,
 			"stock_snapshot_fill": game_data.stock_snapshot_fill,
 			"stock_snapshot_time": game_data.stock_snapshot_time,
 			# Ordini creati dal cassetto (2026-10-09): già JSON-nativi.

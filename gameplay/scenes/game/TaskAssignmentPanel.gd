@@ -419,8 +419,14 @@ func _build_section(parent: Control, title: String, stretch: float, title_toolti
 # Fondo pieno dello strato, dello stesso colore scuro che si vede nel cassetto: il colore dell'area interna (primo
 # PanelContainer sopra questo pannello) composto sopra quello della cornice (il secondo, il cassetto), se è trasparente.
 func _make_settings_overlay_style() -> StyleBoxFlat:
+	return make_overlay_style(self)
+
+
+# Stesso fondo per lo strato di un altro cassetto (2026-10-24: Regole di stoccaggio di WarehousePanel), `panel` = il
+# contenuto del cassetto.
+static func make_overlay_style(panel: Control) -> StyleBoxFlat:
 	var panels: Array[PanelContainer] = []
-	var node := get_parent()
+	var node := panel.get_parent()
 	while node != null and panels.size() < 2:
 		if node is PanelContainer:
 			panels.append(node as PanelContainer)

@@ -130,6 +130,12 @@ static var _last_category: int = SecondaryResourceTypes.Category.FOOD
 static var _rules_open: bool = false
 
 var _rules_box: VBoxContainer = null
+# Strato delle regole (2026-10-24, richiesta utente — come "Regole di assegnazione"): riquadro ancorato in fondo alla zona
+# dell'elenco, sopra l'elenco velato, con la riga ⚙ fuori, sotto (_fit_rules_overlay).
+var _list_area: Control = null
+var _rules_overlay: PanelContainer = null
+var _rules_shade: ColorRect = null
+var _rules_toggle: Button = null
 var _excess_meat_button: ButcherDestinationPair = null
 # Ultimo stato ricevuto prima che il pulsante esistesse (set_excess_meat_destination prima di _ready).
 var _excess_meat_state: Array = []
@@ -151,6 +157,8 @@ var _min_levels: Dictionary = {}
 var _min_food_days: int = 0
 var _max_levels: Dictionary = {}
 var _last_stock: Dictionary = {}
+# Parte in uso delle quantità (2026-10-24, GameData.stock_snapshot_in_use): solo per il tooltip.
+var _last_in_use: Dictionary = {}
 var _last_days: float = -1.0
 var _food_days_label: Label = null
 # Elenco delle risorse mostrate all'ultima ricostruzione (per accorgersi di una risorsa appena scoperta).
@@ -175,12 +183,17 @@ func _ready() -> void:
 	if _inventory_info.size() == 2:
 		set_inventory_info(String(_inventory_info[0]), String(_inventory_info[1]))
 	_build_tabs()
+	# Zona dell'elenco: un Control semplice con dentro l'elenco a tutta zona e, sopra, velo e strato delle regole.
+	_list_area = Control.new()
+	_list_area.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list_area.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_list_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_list_area)
 	# Elenco che scorre in altezza dentro il cassetto, mai in larghezza (il cassetto resta largo SideDrawer.WIDTH).
 	var scroll := ScrollContainer.new()
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	add_child(scroll)
+	_list_area.add_child(scroll)
 	_list_box = VBoxContainer.new()
 	_list_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_list_box.add_theme_constant_override("separation", 3)
@@ -193,13 +206,15 @@ func _ready() -> void:
 # Dati del villaggio (GameScene, una volta al secondo a cassetto aperto): `stock` nome -> quantità
 # (VillageStockService.get_village_stock), `daily_calorie_need` = consumo giornaliero di tutti gli individui,
 # `storage_fill` = [spazio occupato, spazio totale] dei depositi (VillageStockService.get_storage_fill).
-func refresh_stock(stock: Dictionary, daily_calorie_need: float, storage_fill: Array = []) -> void:
+# `in_use` (2026-10-24): la parte di `stock` fuori dai depositi (attrezzi in prestito, travois trainati).
+func refresh_stock(stock: Dictionary, daily_calorie_need: float, storage_fill: Array = [], in_use: Dictionary = {}) -> void:
 	if _list_box == null:
 		return
 	var names := _visible_resource_names()
 	if names != _shown_names:
 		_rebuild_rows(names)
 	_last_stock = stock
+	_last_in_use = in_use
 	var calories := VillageStockService.get_food_calories(stock)
 	_last_days = -1.0 if daily_calorie_need <= 0.0 else calories / daily_calorie_need
 	if _food_summary_label != null:
@@ -500,14 +515,40 @@ func _build_rules_section() -> void:
 	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	toggle.add_theme_font_size_override("font_size", SECTION_FONT_SIZE)
 	add_child(toggle)
+	_rules_toggle = toggle
+	_rules_shade = ColorRect.new()
+	_rules_shade.color = TaskAssignmentPanel.MODAL_SHADE_COLOR
+	_rules_shade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_rules_shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	_rules_shade.visible = false
+	_list_area.add_child(_rules_shade)
+	# Strato ancorato in basso, alto quanto il suo contenuto, al massimo quanto la zona dell'elenco (oltre scorre).
+	_rules_overlay = PanelContainer.new()
+	_rules_overlay.anchor_left = 0.0
+	_rules_overlay.anchor_right = 1.0
+	_rules_overlay.anchor_top = 1.0
+	_rules_overlay.anchor_bottom = 1.0
+	_rules_overlay.offset_left = 0.0
+	_rules_overlay.offset_right = 0.0
+	_rules_overlay.offset_bottom = 0.0
+	_rules_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	_rules_overlay.visible = false
+	_rules_overlay.add_theme_stylebox_override("panel", TaskAssignmentPanel.make_overlay_style(self))
+	_list_area.add_child(_rules_overlay)
+	var rules_scroll := ScrollContainer.new()
+	rules_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	rules_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	rules_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_rules_overlay.add_child(rules_scroll)
 	_rules_box = VBoxContainer.new()
+	_rules_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_rules_box.add_theme_constant_override("separation", 4)
-	_rules_box.visible = _rules_open
-	add_child(_rules_box)
-	toggle.toggled.connect(func(pressed: bool) -> void:
-		_rules_open = pressed
-		_rules_box.visible = pressed
-	)
+	rules_scroll.add_child(_rules_box)
+	toggle.toggled.connect(_on_rules_toggled)
+	_list_area.resized.connect(_fit_rules_overlay)
+	_rules_box.minimum_size_changed.connect(_fit_rules_overlay)
+	if _rules_open:
+		_on_rules_toggled.call_deferred(true)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_excess_meat_tooltip"))
@@ -538,14 +579,76 @@ func _build_rules_section() -> void:
 		_excess_meat_button.set_destination(bool(_excess_meat_state[0]), _excess_meat_state[1], options)
 
 
+# Apre e chiude lo strato delle regole: aperto, elenco velato e linguette attenuate e senza mouse (come gli strati
+# modali di TaskAssignmentPanel).
+func _on_rules_toggled(pressed: bool) -> void:
+	_rules_open = pressed
+	if _rules_toggle != null and _rules_toggle.button_pressed != pressed:
+		_rules_toggle.set_pressed_no_signal(pressed)
+	_rules_overlay.visible = pressed
+	_rules_shade.visible = pressed
+	if _tab_bar != null:
+		_tab_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE if pressed else Control.MOUSE_FILTER_STOP
+		_tab_bar.modulate = TaskAssignmentPanel.MODAL_DIM_MODULATE if pressed else Color(1, 1, 1, 1)
+	if pressed:
+		_fit_rules_overlay()
+		# Di nuovo a disposizione assestata: le voci che vanno a capo hanno l'altezza vera solo con la larghezza vera.
+		_fit_rules_overlay.call_deferred()
+
+
+# Altezza dello strato: voci + margini del fondo, al massimo l'altezza della zona dell'elenco.
+func _fit_rules_overlay() -> void:
+	if _rules_overlay == null or _list_area == null or not _rules_overlay.visible:
+		return
+	var style := _rules_overlay.get_theme_stylebox("panel")
+	var margins := style.get_minimum_size().y if style != null else 0.0
+	var wanted := margins + _rules_box.get_combined_minimum_size().y
+	var height := minf(wanted, _list_area.size.y)
+	if not is_equal_approx(_rules_overlay.offset_top, -height):
+		_rules_overlay.offset_top = -height
+
+
+# Clic fuori da una casella del minimo o del massimo (2026-10-24, richiesta utente): le toglie il focus, e focus_exited
+# conferma il numero come Invio. Senza, il focus restava lì cliccando su scritte, spazi vuoti o mappa, che non lo
+# prendono. Il clic non viene consumato: arriva comunque a quello che c'è sotto.
+func _input(event: InputEvent) -> void:
+	var click := event as InputEventMouseButton
+	if click == null or not click.pressed:
+		return
+	# Solo i clic veri: la rotella, per scorrere l'elenco mentre si scrive, lascia il focus dov'è.
+	if click.button_index not in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]:
+		return
+	var focused := get_viewport().gui_get_focus_owner() as LineEdit
+	if focused == null or not focused.has_meta("level") or not is_ancestor_of(focused):
+		return
+	if not focused.get_global_rect().has_point(click.global_position):
+		focused.release_focus()
+
+
+# Esc con le regole aperte le chiude, prima che il tasto arrivi al resto del gioco.
+func _unhandled_input(event: InputEvent) -> void:
+	if _rules_overlay != null and _rules_overlay.visible and event.is_action_pressed("ui_cancel"):
+		_on_rules_toggled(false)
+		get_viewport().set_input_as_handled()
+
+
 # Numeri e colori delle quantità e dei giorni di autonomia dagli ultimi dati ricevuti e dai livelli.
 func _apply_quantities() -> void:
 	for resource_name in _quantity_labels.keys():
 		var quantity: int = int(_last_stock.get(resource_name, 0))
 		var level: int = int(_min_levels.get(resource_name, 0))
 		var max_level: int = int(_max_levels.get(resource_name, 0))
+		var in_use: int = int(_last_in_use.get(resource_name, 0))
+		var quantity_tooltip := ""
+		if in_use > 0:
+			var tooltip_key := "warehouse_quantity_in_use_towing_tooltip" if HumanIndividual.is_towing_resource(resource_name) \
+				else "warehouse_quantity_in_use_tooltip"
+			quantity_tooltip = TooltipText.wrap(tr(tooltip_key).format({"stored": quantity - in_use, "in_use": in_use}))
 		for label in _quantity_labels[resource_name]:
 			label.text = str(quantity)
+			# Divisione deposito / in uso solo quando qualcosa è in uso (2026-10-24).
+			label.tooltip_text = quantity_tooltip
+			label.mouse_filter = Control.MOUSE_FILTER_PASS if quantity_tooltip != "" else Control.MOUSE_FILTER_IGNORE
 			label.modulate = Color(1, 1, 1, 1)
 			if level > 0 and quantity < level:
 				label.modulate = BELOW_LEVEL_COLOR
