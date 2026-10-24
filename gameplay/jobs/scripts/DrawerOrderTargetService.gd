@@ -6,11 +6,15 @@ extends RefCounted
 # (scelta dell'utente), e se le tiene finché valgono. Prima si sceglievano per ogni pipottino a ogni domanda
 # (DrawerOrderJobProvider.pick_zone_target), con un giro su tutte le piante della macrocella ogni volta. Il pipottino ora
 # controlla solo di arrivarci (reach_target della voce) e alla presa riceve quel bersaglio; dalla presa in poi lo prenota
-# la sua CutAction/QuarryAction e l'ordine lo lascia (clear_target). Raccolta e caccia: invariate.
+# la sua CutAction/QuarryAction e l'ordine lo lascia (clear_target). Caccia: invariata.
+# Raccolta (2026-10-24, assegnatore fase 3 — scatti all'arrivo al punto: HaulZoneService.choose_work_area per ogni
+# pipottino, cella per cella con la raggiungibilità sua): la zona la sceglie l'ordine dal punto di assegnazione
+# (HaulZoneService.choose_work_area_from), con una cella che ha roba solo per reach_target; niente prenotazione (la
+# raccolta non prenota), chi prende lo stesso ordine va nella stessa zona e la raccolta ricontrolla sul posto.
 #
 # Campi sull'ordine (solo interi, salvati così come sono — GameSaveService/GameLoadService non cambiano):
 #   "target_area_id": zona scelta (= zone_id se fissata); "target_macro_x"/"target_macro_y": macrocella; "target_x"/
-#   "target_y": microcella; solo taglio: "target_z" (indice dell'individuo) e "target_object_type". Assenti = nessun
+#   "target_y": microcella (raccolta: una cella con roba); solo taglio: "target_z" (indice dell'individuo) e "target_object_type". Assenti = nessun
 #   bersaglio (ordini nuovi, salvataggi precedenti): lo sceglie ensure_target.
 # Stateless; solo una memoria non salvata dei tentativi falliti, per non rifare la ricerca a ogni giro della coda.
 
@@ -23,7 +27,7 @@ static var _retry_after: Dictionary = {}  # id ordine -> Time.get_ticks_msec() o
 
 
 static func uses_order_target(order_type: String) -> bool:
-	return order_type == DrawerOrderService.TYPE_CUT or order_type == DrawerOrderService.TYPE_QUARRY
+	return order_type == DrawerOrderService.TYPE_CUT or order_type == DrawerOrderService.TYPE_QUARRY 		or order_type == DrawerOrderService.TYPE_GATHER
 
 
 static func has_target(order: Dictionary) -> bool:
@@ -65,6 +69,8 @@ static func get_pick(ctx: GameContext, order: Dictionary) -> Dictionary:
 	var area: WorkArea = WorkAreaService.find_by_id(ctx.game_data, int(order["target_area_id"]))
 	if area == null:
 		return {}
+	if String(order.get("type", "")) == DrawerOrderService.TYPE_GATHER:
+		return {"area": area}
 	var macro := _target_macro(order)
 	var cell := Vector2i(int(order.get("target_x", 0)), int(order.get("target_y", 0)))
 	if String(order.get("type", "")) == DrawerOrderService.TYPE_QUARRY:
@@ -115,6 +121,8 @@ static func _target_key(order: Dictionary, order_type: String) -> String:
 
 # Prenotati per questo ordine: le piante/rocce nelle task di tutti più i bersagli degli altri ordini dello stesso tipo.
 static func _reserved_for(ctx: GameContext, order: Dictionary, order_type: String) -> Dictionary:
+	if order_type == DrawerOrderService.TYPE_GATHER:
+		return {}
 	var reserved: Dictionary = DrawerOrderService.zone_reserved(ctx.individuals, order_type).duplicate()
 	for other in ctx.game_data.drawer_orders:
 		if other == order or String(other.get("type", "")) != order_type or not has_target(other):
@@ -134,6 +142,8 @@ static func _is_target_valid(ctx: GameContext, order: Dictionary, order_type: St
 	if macro != area.macro_coords or not ctx.live_cells.has(macro):
 		return false
 	var cell := Vector2i(int(order.get("target_x", 0)), int(order.get("target_y", 0)))
+	if order_type == DrawerOrderService.TYPE_GATHER:
+		return _refresh_gather_cell(ctx, order, area, cell)
 	if not area.rect.has_point(cell) or reserved.has(_target_key(order, order_type)):
 		return false
 	var macro_state: MacroCellState = ctx.world.get_cell_state_at(macro.x, macro.y)
@@ -183,7 +193,13 @@ static func _choose_target(ctx: GameContext, order: Dictionary, order_type: Stri
 		origin = _first_point_origin(ctx)
 		if origin.is_empty():
 			return false
-		if order_type == DrawerOrderService.TYPE_QUARRY:
+		if order_type == DrawerOrderService.TYPE_GATHER:
+			area = HaulZoneService.choose_work_area_from(
+				ctx.game_data, ctx.world, ctx.live_cells, origin["macro"], origin["position"],
+				int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)), int(order.get("criterion_category", -1)),
+				String(order.get("resource_name", ""))
+			)
+		elif order_type == DrawerOrderService.TYPE_QUARRY:
 			area = QuarryZoneService.choose_work_area_from(ctx.game_data, ctx.world, origin["macro"], origin["position"], null, reserved)
 		else:
 			area = CutZoneService.choose_work_area_from(
@@ -191,6 +207,14 @@ static func _choose_target(ctx: GameContext, order: Dictionary, order_type: Stri
 			)
 	if area == null or not ctx.live_cells.has(area.macro_coords):
 		return false
+	if order_type == DrawerOrderService.TYPE_GATHER:
+		var gather_cell: Variant = HaulZoneService.first_available_cell(
+			area, ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y), _gather_names(order, area)
+		)
+		if gather_cell == null:
+			return false
+		_store(order, area, area.macro_coords, gather_cell, 0, 0)
+		return true
 	if order_type == DrawerOrderService.TYPE_QUARRY:
 		var macro_state: MacroCellState = ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
 		var rock: Variant = QuarryZoneService.choose_rock_from(area, macro_state, origin["macro"], origin["position"], null, reserved)
@@ -206,6 +230,26 @@ static func _choose_target(ctx: GameContext, order: Dictionary, order_type: Stri
 	var individual_key: Vector3i = plant["individual_key"]
 	_store(order, area, area.macro_coords, Vector2i(individual_key.x, individual_key.y), individual_key.z, int(plant["object_type"]))
 	return true
+
+
+# Raccolta: la zona ha ancora roba per la scelta dell'ordine; se la cella tenuta è vuota ne prende un'altra della zona.
+static func _refresh_gather_cell(ctx: GameContext, order: Dictionary, area: WorkArea, cell: Vector2i) -> bool:
+	var macro_state: MacroCellState = ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+	var names := _gather_names(order, area)
+	if HaulZoneService.is_cell_available(area, macro_state, names, cell):
+		return true
+	var other: Variant = HaulZoneService.first_available_cell(area, macro_state, names)
+	if other == null:
+		return false
+	_store(order, area, area.macro_coords, other, 0, 0)
+	return true
+
+
+static func _gather_names(order: Dictionary, area: WorkArea) -> Array[String]:
+	return HaulZoneService.allowed_names_for(
+		area, int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)), int(order.get("criterion_category", -1)),
+		String(order.get("resource_name", ""))
+	)
 
 
 static func _first_point_origin(ctx: GameContext) -> Dictionary:

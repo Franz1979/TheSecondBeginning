@@ -459,6 +459,54 @@ static func _choose_work_area(
 	return best
 
 
+# Zona di raccolta scelta dall'ordine del cassetto (2026-10-24, assegnatore fase 3 — DrawerOrderTargetService): come
+# _choose_work_area ma da un punto (`origin_macro`/`origin_pos`, il punto di assegnazione) e senza pipottino, quindi
+# senza raggiungibilità per cella; solo macrocelle vive.
+static func choose_work_area_from(
+	game_data: GameData, world: World, live_cells: Dictionary, origin_macro: Vector2i, origin_pos: Vector2,
+	criterion_kind: int, criterion_category: int, resource_name: String
+) -> WorkArea:
+	var best: WorkArea = null
+	var best_score := -1.0
+	for area in game_data.work_areas:
+		if not live_cells.has(area.macro_coords):
+			continue
+		var names := allowed_names_for(area, criterion_kind, criterion_category, resource_name)
+		if names.is_empty():
+			continue
+		var macro_state := world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+		var available := count_available(area, macro_state, names)
+		if available <= 0:
+			continue
+		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - origin_macro) * World.WIDTH
+		var score := float(available) / (origin_pos.distance_to(center) + ZONE_DISTANCE_OFFSET)
+		for other in GameSettings.active_human_individuals:
+			if is_gathering_in(other, area.id):
+				score *= ZONE_CROWDING_FACTOR
+		if score > best_score:
+			best_score = score
+			best = area
+	return best
+
+
+# Prima cella della zona con qualcosa tra `names` (null se nessuna), per la raggiungibilità dell'ordine del cassetto.
+static func first_available_cell(area: WorkArea, macro_state: MacroCellState, names: Array[String]) -> Variant:
+	if area == null or macro_state == null or names.is_empty():
+		return null
+	var totals := _area_cell_totals(area, macro_state, names)
+	return null if totals.is_empty() else totals[0][0]
+
+
+# true se la cella `cell` della zona ha ancora qualcosa tra `names` (dalla stessa memoria di _area_cell_totals).
+static func is_cell_available(area: WorkArea, macro_state: MacroCellState, names: Array[String], cell: Vector2i) -> bool:
+	if area == null or macro_state == null or names.is_empty():
+		return false
+	for entry in _area_cell_totals(area, macro_state, names):
+		if entry[0] == cell:
+			return true
+	return false
+
+
 # true se esiste almeno una WorkArea con la raccolta abilitata che accetta almeno una risorsa raccoglibile da terra
 # (bottone "Raccogli" della barra comandi): col limite "solo cibo" una zona che filtra solo non-cibo non conta.
 static func has_haul_work_area(game_data: GameData) -> bool:

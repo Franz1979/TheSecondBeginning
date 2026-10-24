@@ -370,7 +370,8 @@ static func zone_rejection(ctx: GameContext, worker: HumanIndividual, job: Dicti
 			and HuntZoneService.get_hunt_rejection(worker) != "":
 		return "coltello o arma mancanti, o cintura piena"
 	# Taglio/estrazione (2026-10-23): il bersaglio scelto dall'ordine (DrawerOrderTargetService), uguale per tutti; la
-	# raggiungibilità la controlla find_takeable_jobs con reach_target. Raccolta/caccia: zona scelta per lui, come prima.
+	# raggiungibilità la controlla find_takeable_jobs con reach_target; raccolta uguale dal 2026-10-24 (assegnatore fase 3).
+	# Caccia: zona scelta per lui, come prima.
 	var pick := DrawerOrderTargetService.get_pick(ctx, order) if DrawerOrderTargetService.uses_order_target(order_type) \
 		else pick_zone_target(ctx, worker, job)
 	if pick.is_empty():

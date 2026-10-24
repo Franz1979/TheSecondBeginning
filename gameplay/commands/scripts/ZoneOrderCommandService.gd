@@ -15,7 +15,8 @@ static func assign_drawer_zone_job(ctx: GameContext, worker: HumanIndividual, jo
 	var order_id := int(order["id"])
 	if DrawerOrderService.find(ctx.game_data, order_id).is_empty() or bool(order.get("taken", false)):
 		return
-	# Taglio/estrazione (2026-10-23): il bersaglio scelto dall'ordine (DrawerOrderTargetService); raccolta/caccia come prima.
+	# Taglio/estrazione (2026-10-23) e raccolta (2026-10-24): il bersaglio scelto dall'ordine (DrawerOrderTargetService);
+	# caccia come prima.
 	var pick: Dictionary = {}
 	if DrawerOrderTargetService.uses_order_target(order_type):
 		if DrawerOrderTargetService.ensure_target(ctx, order):
