@@ -2062,7 +2062,7 @@ func _debug_test_daydream_task() -> void:
 	# "think_duration" (float, letto da THINK — nuovo step_think.tres, context_keys=
 	# ["think_duration"]), entrambi consumati e ripuliti da build_task stesso (consumed_context_keys,
 	# vedi task_factory.gd), nessun erase() manuale necessario qui.
-	var daydream_definition := load(DAYDREAM_TASK_DEFINITION_PATH) as TaskDefinition
+	var daydream_definition := TaskDefinitionCache.get_definition(DAYDREAM_TASK_DEFINITION_PATH)
 	var context: Dictionary = {
 		"target_position": around_position,
 		"think_duration": think_duration,
@@ -2201,7 +2201,7 @@ func _assign_wander_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
 	var target_data: Dictionary = IdleTaskAssignmentService.resolve_wander_targets(individual, macro_world)
-	var wander_definition := load(WANDER_TASK_DEFINITION_PATH) as TaskDefinition
+	var wander_definition := TaskDefinitionCache.get_definition(WANDER_TASK_DEFINITION_PATH)
 	var context: Dictionary = {
 		"wander_target_1": target_data["target_1"],
 		"wander_target_2": target_data["target_2"],
@@ -2226,7 +2226,7 @@ func _assign_explore_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
 	var target_data: Dictionary = IdleTaskAssignmentService.resolve_explore_targets(individual)
-	var explore_definition := load(IdleTaskAssignmentService.EXPLORE_TASK_DEFINITION_PATH) as TaskDefinition
+	var explore_definition := TaskDefinitionCache.get_definition(IdleTaskAssignmentService.EXPLORE_TASK_DEFINITION_PATH)
 	var task := TaskFactory.build_task(explore_definition, IdleTaskAssignmentService.build_explore_context(target_data))
 	# Idoneità con il motivo (AssignService, 5B.2), senza icona; l'esito dell'assegnazione non si guarda, come prima.
 	if not _assign_check(AssignRequest.create(individual, task, "task_activity_explore")):
@@ -2265,7 +2265,7 @@ func _assign_play_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
 	var target_data: Dictionary = IdleTaskAssignmentService.resolve_play_targets(individual, macro_world)
-	var play_definition := load(PLAY_TASK_DEFINITION_PATH) as TaskDefinition
+	var play_definition := TaskDefinitionCache.get_definition(PLAY_TASK_DEFINITION_PATH)
 	var context: Dictionary = {
 		"play_target_1": target_data["target_1"],
 		"play_target_2": target_data["target_2"],
@@ -7493,11 +7493,24 @@ func _refresh_pending_entries() -> void:
 		_last_job_board_enabled = board_enabled
 		_refresh_task_assignment_button()
 	# Lavori della lista (generici, _collect_job_board_jobs): attese e icone, poi le righe del cassetto (sotto).
+	# Tempi (2026-10-24, fase 0 dell'assegnatore): la lista del cassetto conta come una domanda del chiamante "cassetto".
+	var board_timing := JobBoardTimingService.is_enabled()
+	var previous_caller := JobBoardTimingService.caller
+	if board_timing:
+		JobBoardTimingService.caller = "cassetto"
+		JobBoardTimingService.begin_call(null)
 	var board_jobs := _collect_job_board_jobs(assigned)
+	# Lista unica (2026-10-24, assegnatore fase 2): la stessa lista vale per le domande fino al prossimo cambiamento.
+	_store_job_board_candidates(board_jobs, assigned)
 	_update_job_board_waits(board_jobs)
 	# Richiamo del coordinatore (2026-10-09): un lavoro diventato prendibile (nuovo in coda o finita la sua attesa) è
 	# un evento per i coordinatori che aspettano senza fila.
 	JobBoardService.notify_new_open_jobs(game_data, human_folk, board_jobs)
+	# Assegnatore fase 1 (2026-10-24): chi cerca lavoro, per la partenza verso il punto (JobBoardService.can_depart_to_seek).
+	JobBoardService.recount_seekers(game_data, human_individuals)
+	if board_timing:
+		JobBoardTimingService.end_call()
+		JobBoardTimingService.caller = previous_caller
 	if macro_world != null:
 		for building in macro_world.buildings:
 			if building.is_demolished or building.rules == null:
@@ -7889,6 +7902,7 @@ func _assign_building_job(worker: HumanIndividual, job: Dictionary) -> void:
 func _job_board_providers() -> Array[Dictionary]:
 	if _job_board_provider_list.is_empty():
 		_job_board_provider_list.append({
+			"name": "building",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return BuildingJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return (job["target"] as Building).get_resumable_task_definition_path(),
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return BuildingJobProvider.rejection(_game_context(), worker, job),
@@ -7899,6 +7913,7 @@ func _job_board_providers() -> Array[Dictionary]:
 			"release": _building_job_release,
 		})
 		_job_board_provider_list.append({
+			"name": "body",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return BodyJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(_job: Dictionary) -> String: return BodyBurialService.BURY_TASK_DEFINITION_PATH,
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return BodyJobProvider.rejection(_game_context(), worker, job),
@@ -7910,6 +7925,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		})
 		# Taglio per il cantiere nel bosco (2026-10-18): una microcella per lavoro, vedi SiteCutJobProvider.
 		_job_board_provider_list.append({
+			"name": "site_cut",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return SiteCutJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return SiteCutJobProvider.rejection(_game_context(), worker, job),
@@ -7920,6 +7936,7 @@ func _job_board_providers() -> Array[Dictionary]:
 			"release": _site_cut_job_release,
 		})
 		_job_board_provider_list.append({
+			"name": "pile",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return PileJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return "pile:%d" % int(job["id"]),
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return PileJobProvider.rejection(_game_context(), worker, job),
@@ -7931,6 +7948,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		})
 		# Riparazioni richieste (2026-10-10): edifici con Building.repair_requested, vedi RepairJobProvider.
 		_job_board_provider_list.append({
+			"name": "repair",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return RepairJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(_job: Dictionary) -> String: return TaskBuilderService.REPAIR_TASK_DEFINITION_PATH,
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return RepairJobProvider.rejection(_game_context(), worker, job),
@@ -7942,6 +7960,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		})
 		# Riti ordinati dal pannello (2026-10-14): edifici con Building.requested_rite_id, vedi RiteJobProvider.
 		_job_board_provider_list.append({
+			"name": "rite",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return RiteJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return RiteJobProvider.rejection(_game_context(), worker, job),
@@ -7953,6 +7972,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		})
 		# Uscite piene (2026-10-08): consegna dei Prodotti finiti a magazzino, vedi OutputJobProvider.
 		_job_board_provider_list.append({
+			"name": "output",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return OutputJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return OutputJobProvider.rejection(_game_context(), worker, job),
@@ -7964,6 +7984,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		})
 		# Ordini di produzione (2026-10-09): ordini senza lavoratore delle workstation, vedi ProduceJobProvider.
 		_job_board_provider_list.append({
+			"name": "produce",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return ProduceJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return ProduceJobProvider.rejection(_game_context(), worker, job),
@@ -7975,6 +7996,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		})
 		# Ordini creati dal cassetto (2026-10-09): GameData.drawer_orders, vedi DrawerOrderJobProvider.
 		_job_board_provider_list.append({
+			"name": "drawer_order",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return DrawerOrderJobProvider.collect(_game_context(), provider, assigned),
 			"probe_key": func(job: Dictionary) -> String: return DrawerOrderJobProvider.probe_key(job),
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return DrawerOrderJobProvider.rejection(_game_context(), worker, job),
@@ -7989,6 +8011,7 @@ func _job_board_providers() -> Array[Dictionary]:
 		})
 		# Inventario del magazzino (2026-10-11): un lavoro alla volta quando è scaduto, vedi InventoryJobProvider.
 		_job_board_provider_list.append({
+			"name": "inventory",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return InventoryJobProvider.collect(_game_context(), provider, assigned, _job_board_now()),
 			"probe_key": func(_job: Dictionary) -> String: return TaskBuilderService.INVENTORY_TASK_DEFINITION_PATH,
 			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return InventoryJobProvider.rejection(_game_context(), worker, job),
@@ -8002,12 +8025,17 @@ func _job_board_providers() -> Array[Dictionary]:
 
 
 # Tutti i lavori della lista, assegnati e no, di tutti i fornitori.
+# Tempi (2026-10-24, fase 0 dell'assegnatore): una voce per fornitore ("name" della voce del fornitore).
 func _collect_job_board_jobs(assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	if game_data == null or macro_world == null:
 		return jobs
+	var timing := JobBoardTimingService.is_enabled()
 	for provider in _job_board_providers():
+		var started := JobBoardTimingService.now() if timing else 0
 		jobs.append_array(provider["collect"].call(provider, assigned))
+		if timing:
+			JobBoardTimingService.add("fornitore:%s" % String(provider.get("name", "?")), started)
 	return jobs
 
 
@@ -8159,7 +8187,12 @@ func _take_listed_job_for(worker: HumanIndividual) -> bool:
 	var found := _takeable_jobs_for(worker, true)
 	if (found.get("jobs", []) as Array).is_empty():
 		return false
+	var started := JobBoardTimingService.now() if JobBoardTimingService.is_enabled() else 0
 	var result := JobBoardService.take_job(worker, game_data, found)
+	if bool(result["taken"]):
+		_patch_job_board_candidates_after_take(String(result["key"]))
+	if JobBoardTimingService.is_enabled():
+		JobBoardTimingService.add("presa (assign)", started)
 	_log_job_board(worker, String(result["log"]))
 	return bool(result["taken"])
 
@@ -8198,34 +8231,69 @@ func _job_board_has_open_jobs() -> bool:
 
 
 # Candidati della lista adesso (JobBoardService.collect_candidates su tutti i lavori dei fornitori).
-# Tenuti per il fotogramma in corso finché le assegnazioni restano le stesse (2026-10-19, scatti: il coordinatore li
-# ricostruiva da capo per ogni pipottino, fino a 9 volte per fotogramma); un lavoro preso cambia le assegnazioni, gli
-# ordini del cassetto o il contatore delle prese (JobBoardService.take_revision) e la lista si rifà.
-# Sola lettura per chi la riceve.
+# Lista unica (2026-10-24, assegnatore fase 2 — prima valeva solo per il fotogramma in corso): la fa il giro al secondo
+# del cassetto (_store_job_board_candidates) e resta valida finché non cambiano le assegnazioni, gli ordini del cassetto
+# o il contatore delle prese (JobBoardService.take_revision); dopo una presa si toglie solo il lavoro preso
+# (_patch_job_board_candidates_after_take). Un lavoro finito senza cambiare le assegnazioni (es. un mucchio raccolto a
+# mano) può restarci fino al giro dopo: la presa lo rifiuta. Sola lettura per chi la riceve.
 var _job_board_candidates_cache: Dictionary = {}
-var _job_board_candidates_frame: int = -1
-var _job_board_candidates_assigned_hash: int = 0
+var _job_board_candidates_signature: int = 0
+var _job_board_candidates_valid: bool = false
+
+
+# Firma delle condizioni che invalidano la lista (vedi sopra).
+func _job_board_candidates_signature_of(assigned: Dictionary) -> int:
+	return [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0, JobBoardService.take_revision].hash()
 
 
 func _current_job_board_candidates() -> Dictionary:
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var assigned := JobWorkScanService.collect_assignments(human_individuals)
-	var frame := Engine.get_process_frames()
-	# Prese dalla lista (JobBoardService.take_revision) al posto delle task di tutti (2026-10-24, scatti: a fine rito 18
-	# pipottini liberi insieme, ognuno con una task di ripiego, la facevano rifare 13 volte, ~85 ms). Chi va a riposare o
-	# a un ripiego non cambia la lista; un lavoro appena finito può restarci fino al fotogramma dopo (la presa lo rifiuta).
-	var task_signature: Array = [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0, JobBoardService.take_revision]
-	var assigned_hash := task_signature.hash()
-	if frame == _job_board_candidates_frame and assigned_hash == _job_board_candidates_assigned_hash:
+	if timing:
+		JobBoardTimingService.add("assegnazioni", started)
+	var signature := _job_board_candidates_signature_of(assigned)
+	if _job_board_candidates_valid and signature == _job_board_candidates_signature:
+		if timing:
+			JobBoardTimingService.count("lista in memoria")
 		return _job_board_candidates_cache
-	_job_board_candidates_cache = JobBoardService.collect_candidates(_collect_job_board_jobs(assigned))
-	_job_board_candidates_frame = frame
-	_job_board_candidates_assigned_hash = assigned_hash
+	if timing:
+		JobBoardTimingService.count("lista rifatta")
+	_store_job_board_candidates(_collect_job_board_jobs(assigned), assigned)
 	return _job_board_candidates_cache
+
+
+# Lista appena fatta (`jobs`: tutti i lavori dei fornitori con le assegnazioni `assigned`): in memoria per chi la chiede.
+func _store_job_board_candidates(jobs: Array[Dictionary], assigned: Dictionary) -> void:
+	_job_board_candidates_cache = JobBoardService.collect_candidates(jobs)
+	_job_board_candidates_signature = _job_board_candidates_signature_of(assigned)
+	_job_board_candidates_valid = true
+
+
+# Presa riuscita del lavoro `job_key` (2026-10-24, assegnatore fase 2): fuori dalla lista in memoria (o un posto in meno,
+# "open_slots" dei cantieri con più costruttori) invece di rifarla; la firma si aggiorna con le assegnazioni nuove. Se la
+# lista in memoria non era valida, resta da rifare alla prossima domanda.
+func _patch_job_board_candidates_after_take(job_key: String) -> void:
+	if not _job_board_candidates_valid:
+		return
+	var job: Variant = _job_board_candidates_cache.get(job_key)
+	if job != null:
+		var slots := int((job as Dictionary).get("open_slots", 0)) - 1
+		if slots > 0:
+			var patched := (job as Dictionary).duplicate()
+			patched["open_slots"] = slots
+			patched["assigned"] = true
+			_job_board_candidates_cache[job_key] = patched
+		else:
+			_job_board_candidates_cache.erase(job_key)
+	_job_board_candidates_signature = _job_board_candidates_signature_of(JobWorkScanService.collect_assignments(human_individuals))
 
 
 # Con la risposta in memoria se ancora valida (2026-10-23, JobBoardService.cached_availability), altrimenti calcolata.
 func _has_listed_job_for(worker: HumanIndividual) -> bool:
 	var cached: Variant = JobBoardService.cached_availability(worker)
+	if JobBoardTimingService.is_enabled():
+		JobBoardTimingService.count_question(cached != null)
 	if cached != null:
 		return bool(cached)
 	var result := _compute_listed_job_for(worker)
@@ -8240,12 +8308,31 @@ func _compute_listed_job_for(worker: HumanIndividual) -> bool:
 # Lavori della lista che `worker` può prendere adesso (2026-10-09; filtri in JobBoardService.find_takeable_jobs dal
 # 2026-10-17): {"jobs", "found_text", "log"}, {} senza l'idea o senza partita. Qui solo le icone dell'attesa e, con
 # `log_reasons`, le righe [JOB BOARD] del "nessuno preso".
+# Tempi (2026-10-24, fase 0 dell'assegnatore): l'intera domanda (JobBoardTimingService.begin_call/end_call) e le voci
+# coda attiva, icone; lista e idoneità le misurano _current_job_board_candidates e find_takeable_jobs.
 func _takeable_jobs_for(worker: HumanIndividual, log_reasons: bool) -> Dictionary:
-	if worker == null or game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
+	var timing := JobBoardTimingService.is_enabled()
+	if timing:
+		JobBoardTimingService.begin_call(worker)
+	var found := _timed_takeable_jobs_for(worker, log_reasons, timing)
+	if timing:
+		JobBoardTimingService.end_call()
+	return found
+
+
+func _timed_takeable_jobs_for(worker: HumanIndividual, log_reasons: bool, timing: bool) -> Dictionary:
+	var started := JobBoardTimingService.now() if timing else 0
+	var enabled := JobBoardService.is_enabled(human_folk)
+	if timing:
+		JobBoardTimingService.add("coda attiva", started)
+	if worker == null or game_data == null or macro_world == null or not enabled:
 		return {}
 	var candidates := _current_job_board_candidates()
 	var found := JobBoardService.find_takeable_jobs(worker, game_data, candidates, _job_board_now())
+	started = JobBoardTimingService.now() if timing else 0
 	_sync_job_board_wait_icons(candidates)
+	if timing:
+		JobBoardTimingService.add("icone", started)
 	if log_reasons and String(found["log"]) != "":
 		_log_job_board(worker, String(found["log"]))
 	return found

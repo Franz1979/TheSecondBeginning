@@ -234,7 +234,7 @@ static func _random_free_point_around(individual: HumanIndividual, min_distance:
 static func assign_rest_task(individual: HumanIndividual, world: World, age_band: HumanTypes.AgeBand, is_interrupt_transition: bool = false) -> bool:
 	# Scelta casa/sul posto in base al costo (2026-09-27, richiesta utente) — solo per la Rest da bisogno.
 	var target_data := resolve_rest_target(individual, world, true)
-	var rest_definition := load(REST_TASK_DEFINITION_PATH) as TaskDefinition
+	var rest_definition := TaskDefinitionCache.get_definition(REST_TASK_DEFINITION_PATH)
 	var context: Dictionary = {
 		"target_position": target_data["target_position"],
 		"rest_multiplier": target_data["rest_multiplier"],
@@ -282,7 +282,7 @@ static func assign_rest_task(individual: HumanIndividual, world: World, age_band
 # assegna questa Task-bisogno a seguito di un interrupt automatico rilevato.
 static func assign_emergency_rest_task(individual: HumanIndividual, age_band: HumanTypes.AgeBand, is_interrupt_transition: bool = false) -> bool:
 	var target_data := resolve_emergency_rest_target(individual)
-	var emergency_rest_definition := load(EMERGENCY_REST_TASK_DEFINITION_PATH) as TaskDefinition
+	var emergency_rest_definition := TaskDefinitionCache.get_definition(EMERGENCY_REST_TASK_DEFINITION_PATH)
 	var context: Dictionary = {
 		"target_position": target_data["target_position"],
 		"rest_multiplier": 1.0,
@@ -339,7 +339,7 @@ static func build_restock_task(individual: HumanIndividual, world: World, defini
 	if BACKPACK_RESTOCK_DEFINITION_PATHS.has(definition_path) and FoodSelectionService.has_edible_food(individual.carried_resources):
 		if DebugLogging.should_log_restock(individual.id):
 			print("[RESTOCK] #%d %s: cibo nello zaino, rifornimento sul posto (%s)." % [individual.id, individual.name, definition_path.get_file()])
-		return TaskFactory.build_task(load(BACKPACK_RESTOCK_DEFINITION_PATHS[definition_path]) as TaskDefinition, {
+		return TaskFactory.build_task(TaskDefinitionCache.get_definition(BACKPACK_RESTOCK_DEFINITION_PATHS[definition_path]), {
 			"restock_target_building": null,
 			"restock_source_kind": RestockPouchAction.SourceKind.BACKPACK,
 		})
@@ -355,7 +355,7 @@ static func build_restock_task(individual: HumanIndividual, world: World, defini
 	) * World.WIDTH
 	var target_position: Vector2 = Vector2(source.micro_x, source.micro_y) + macro_offset \
 		+ Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
-	var definition := load(definition_path) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(definition_path)
 	var context: Dictionary = {
 		"restock_target_position": target_position,
 		"restock_target_building": source,

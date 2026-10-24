@@ -110,7 +110,7 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary
 		if clearing == null:
 			return "nessuna Fossa dei rifiuti con posto"
 		return worker.get_assign_rejection_reason(clearing, ctx.age_band_of(worker))
-	var definition := load(building.get_resumable_task_definition_path()) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(building.get_resumable_task_definition_path())
 	if definition == null:
 		return "definizione mancante"
 	var probe_context := building.get_resumable_task_context()

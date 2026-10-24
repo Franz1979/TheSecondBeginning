@@ -84,7 +84,7 @@ static func convoke(
 	var game_data: GameData = GameSettings.active_game_data
 	if guide == null or guide_task == null or building == null or game_data == null:
 		return results
-	var definition := load(PROCESSION_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(PROCESSION_TASK_DEFINITION_PATH)
 	if definition == null:
 		push_error("ProcessionService.convoke: %s non caricabile." % PROCESSION_TASK_DEFINITION_PATH)
 		return results

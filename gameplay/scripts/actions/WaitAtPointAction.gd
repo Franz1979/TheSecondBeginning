@@ -17,8 +17,12 @@ extends Action
 # Stamina (2026-10-09, richiesta utente): un costo giornaliero scalato per il tempo trascorso, come le altre azioni
 # (un'ora = STAMINA_COST_PER_DAY / 24), anche durante l'ora delle istruzioni. Tempo e stamina realmente applicati sono
 # accumulati qui (elapsed_days, instruction_days, stamina_spent) per il log [COORDINATORE].
+# Attesa a metà (2026-10-24, richiesta utente — un coordinatore che aspettava chi era in cammino da lontano finiva a
+# −100 di stamina in un turno): aspettare (coordinatore o fila) costa WAIT_STAMINA_FACTOR del lavoro; l'ora
+# dell'istruzione resta a costo pieno.
 
 const STAMINA_COST_PER_DAY: float = 120.0
+const WAIT_STAMINA_FACTOR: float = 0.5
 
 var max_wait_days: float = -1.0
 var released: bool = false
@@ -79,7 +83,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	if instructing:
 		used = clampf(CoordinatorService.ASSIGNMENT_DURATION_DAYS - _instruction_elapsed, 0.0, delta)
 	_elapsed += used
-	var cost := STAMINA_COST_PER_DAY * used
+	var cost := STAMINA_COST_PER_DAY * used * (1.0 if instructing else WAIT_STAMINA_FACTOR)
 	stamina_spent += cost
 	if idle_timeout_days >= 0.0 and not timed_out:
 		_idle_elapsed += used

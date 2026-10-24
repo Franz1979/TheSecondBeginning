@@ -41,7 +41,7 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary
 	if rules is SocialRiteRules:
 		var social_rejection := SocialRiteService.get_start_rejection(building, rules as SocialRiteRules, ctx.individuals, ctx.game_data)
 		return social_rejection if social_rejection != "" else HumanIndividual.ASSIGN_OK
-	var definition := load(TaskBuilderService.RITE_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(TaskBuilderService.RITE_TASK_DEFINITION_PATH)
 	if definition == null:
 		return "definizione mancante"
 	var probe := TaskFactory.build_task(definition, {

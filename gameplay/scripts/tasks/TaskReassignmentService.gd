@@ -34,7 +34,7 @@ static func reassign_task(target: Variant, individual: HumanIndividual, age_band
 	if target == null or individual == null or not target.has_resumable_task():
 		return null
 
-	var definition := load(target.get_resumable_task_definition_path()) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(target.get_resumable_task_definition_path())
 	if definition == null:
 		return null
 

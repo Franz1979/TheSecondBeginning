@@ -354,7 +354,7 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 			var rite_building: Building = rite_target["building"]
 			var rite_rules: RiteRules = rite_target["rite"]
 			var rite_macro_offset: Vector2 = Vector2(Vector2i(rite_building.macro_x, rite_building.macro_y) - individual.home_macro_coords) * World.WIDTH
-			var rite_definition := load(path) as TaskDefinition
+			var rite_definition := TaskDefinitionCache.get_definition(path)
 			return TaskFactory.build_task(rite_definition, {
 				"target_position": PathfindingService.random_point_in_microcell(Vector2(rite_building.micro_x, rite_building.micro_y) + rite_macro_offset),
 				"rite_target_building": rite_building,
@@ -364,7 +364,7 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 			if not WANDER_ENABLED:
 				return null
 			var target_data := resolve_wander_targets(individual, world)
-			var definition := load(path) as TaskDefinition
+			var definition := TaskDefinitionCache.get_definition(path)
 			var context: Dictionary = {
 				"wander_target_1": target_data["target_1"],
 				"wander_target_2": target_data["target_2"],
@@ -373,11 +373,11 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 			return TaskFactory.build_task(definition, context)
 		EXPLORE_TASK_DEFINITION_PATH:
 			var explore_targets := resolve_explore_targets(individual)
-			var explore_definition := load(path) as TaskDefinition
+			var explore_definition := TaskDefinitionCache.get_definition(path)
 			return TaskFactory.build_task(explore_definition, build_explore_context(explore_targets))
 		"res://gameplay/scripts/tasks/definitions/play.tres":
 			var target_data := resolve_play_targets(individual, world)
-			var definition := load(path) as TaskDefinition
+			var definition := TaskDefinitionCache.get_definition(path)
 			var context: Dictionary = {
 				"play_target_1": target_data["target_1"],
 				"play_target_2": target_data["target_2"],
@@ -394,7 +394,7 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 			# DURATION_DAYS sopra) e ignore_stamina_cap=true — questa Rest non si ferma mai a
 			# stamina piena, solo alla durata (vedi RestAction.is_complete per il perché).
 			var target_data := NeedTaskAssignmentService.resolve_rest_target(individual, world)
-			var definition := load(path) as TaskDefinition
+			var definition := TaskDefinitionCache.get_definition(path)
 			var context: Dictionary = {
 				"target_position": target_data["target_position"],
 				"rest_multiplier": target_data["rest_multiplier"],
@@ -415,7 +415,7 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 			# WANDER_ENABLED/LEISURE_REST_ENABLED equivalente per Daydream: nessuna richiesta di
 			# poterla disattivare separatamente oggi.
 			var around_position: Vector2 = resolve_daydream_around_position(individual)
-			var definition := load(path) as TaskDefinition
+			var definition := TaskDefinitionCache.get_definition(path)
 			var context: Dictionary = {
 				"target_position": around_position,
 				"think_duration": DAYDREAM_THINK_BASE_DURATION,
@@ -472,41 +472,35 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 	if not fallback_enabled:
 		return false
 
+	# Solo il filtro età prima del tiro (2026-10-24, richiesta utente — scatti dello svago, 10–70 ms a chiamata): i controlli
+	# "si può fare?" (edifici dei riti, pensieri, provviste) li fa _is_idle_entry_possible solo sull'attività estratta;
+	# se non si può, la si toglie e si ritira. Stesse probabilità di prima (tirare tra tutte e scartare le impossibili =
+	# tirare tra le sole possibili), ma di norma una ricerca sola invece di tutte.
+	# Tempi (2026-10-24, assegnatore — JobBoardTimingService): "svago: lista", poi per l'attività estratta
+	# "svago: controllo <nome>" (si può fare?) e "svago: avvio <nome>" (assegnazione).
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var remaining: Array[Dictionary] = []
 	for path in IDLE_FALLBACK_TASK_PATHS:
-		var definition := load(path) as TaskDefinition
+		var definition := TaskDefinitionCache.get_definition(path)
 		if not definition.allowed_age_bands.is_empty() and not definition.allowed_age_bands.has(age_band):
 			continue
-		# Daydream esclusa a monte se non esiste nessun edificio COMPLETO che accetta pensieri
-		# (2026-09-16, richiesta utente) — STESSO criterio/STESSA funzione già usata dal gate upfront
-		# del tasto debug Y (vedi GameScene._debug_test_daydream_task): senza edificio, la Task
-		# finirebbe comunque "a vuoto" (Think + nessun deposito, vedi _handle_pending_thought_
-		# target_search), non un fallimento distruttivo ma inutile da estrarre nel tiro pesato.
-		if path == "res://gameplay/scripts/tasks/definitions/daydreaming.tres" and not ThoughtTargetSelectionService.has_thought_accepting_building(world):
-			continue
-		# leisure_restock esclusa a monte se le provviste sono quasi piene (spazio libero sotto
-		# LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO della capacita'): il sorteggio ne pesca un'altra.
-		if path == "res://gameplay/scripts/tasks/definitions/leisure_restock.tres" and not _is_leisure_restock_eligible(individual):
-			continue
-		# Rito spontaneo escluso a monte senza un edificio dove celebrarlo (2026-10-02, vedi LEISURE_RITE_TASK_DEFINITION_PATH).
-		if path == LEISURE_RITE_TASK_DEFINITION_PATH and RiteService.find_spontaneous_rite_target(
-			individual, world, age_band, GameSettings.active_human_individuals
-		).is_empty():
-			continue
-		# Rito sociale spontaneo escluso a monte senza un edificio adatto (vedi LEISURE_LESSON_TASK_DEFINITION_PATH).
-		var rite_building: Building = null
-		if definition.idle_social_rite_id != "":
-			rite_building = SocialRiteService.find_idle_target(
-				RiteService.get_rules(definition.idle_social_rite_id) as SocialRiteRules, individual, age_band, world,
-				GameSettings.active_human_individuals, GameSettings.active_game_data
-			)
-			if rite_building == null:
-				continue
-		remaining.append({"path": path, "definition": definition, "weight": definition.idle_weight_for(age_band), "building": rite_building})
+		remaining.append({"path": path, "definition": definition, "weight": definition.idle_weight_for(age_band), "building": null})
+	if timing:
+		JobBoardTimingService.add("svago: lista", started)
 
 	while not remaining.is_empty():
 		var drawn_index := _pick_weighted_index(remaining)
 		var path: String = remaining[drawn_index]["path"]
+		var label := path.get_file().get_basename()
+		started = JobBoardTimingService.now() if timing else 0
+		var possible := _is_idle_entry_possible(remaining[drawn_index], individual, age_band, world)
+		if timing:
+			JobBoardTimingService.add("svago: controllo %s" % label, started)
+		if not possible:
+			remaining.remove_at(drawn_index)
+			continue
+		started = JobBoardTimingService.now() if timing else 0
 		var assigned := false
 		if path == TalkService.TALK_TASK_DEFINITION_PATH:
 			assigned = bool(TalkService.start_talk(individual, age_band)["ok"])
@@ -523,6 +517,8 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 		else:
 			var candidate_task := _build_idle_task(path, individual, world, age_band)
 			assigned = candidate_task != null and individual.assign_task(candidate_task, age_band)
+		if timing:
+			JobBoardTimingService.add("svago: avvio %s" % label, started)
 		if assigned:
 			if DebugLogging.ENABLED and DebugLogging.SHOW_IDLE_LOGS:
 				print("[IDLE FALLBACK] #%d %s: nessuna Task/bisogno/coda attivi — assegnata '%s'." % [
@@ -531,6 +527,39 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 			return true
 		remaining.remove_at(drawn_index)
 	return false
+
+
+# L'attività estratta si può fare (prima, fino al 2026-10-24, controllato per tutte prima del tiro). Per i riti sociali
+# mette in entry["building"] l'edificio trovato.
+static func _is_idle_entry_possible(entry: Dictionary, individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+	var path: String = entry["path"]
+	var definition: TaskDefinition = entry["definition"]
+	# Daydream esclusa se non esiste nessun edificio COMPLETO che accetta pensieri
+	# (2026-09-16, richiesta utente) — STESSO criterio/STESSA funzione già usata dal gate upfront
+	# del tasto debug Y (vedi GameScene._debug_test_daydream_task): senza edificio, la Task
+	# finirebbe comunque "a vuoto" (Think + nessun deposito, vedi _handle_pending_thought_
+	# target_search), non un fallimento distruttivo ma inutile da estrarre nel tiro pesato.
+	if path == "res://gameplay/scripts/tasks/definitions/daydreaming.tres" and not ThoughtTargetSelectionService.has_thought_accepting_building(world):
+		return false
+	# leisure_restock esclusa se le provviste sono quasi piene (spazio libero sotto
+	# LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO della capacita'): il sorteggio ne pesca un'altra.
+	if path == "res://gameplay/scripts/tasks/definitions/leisure_restock.tres" and not _is_leisure_restock_eligible(individual):
+		return false
+	# Rito spontaneo escluso senza un edificio dove celebrarlo (2026-10-02, vedi LEISURE_RITE_TASK_DEFINITION_PATH).
+	if path == LEISURE_RITE_TASK_DEFINITION_PATH and RiteService.find_spontaneous_rite_target(
+		individual, world, age_band, GameSettings.active_human_individuals
+	).is_empty():
+		return false
+	# Rito sociale spontaneo escluso senza un edificio adatto (vedi LEISURE_LESSON_TASK_DEFINITION_PATH).
+	if definition.idle_social_rite_id != "":
+		var rite_building: Building = SocialRiteService.find_idle_target(
+			RiteService.get_rules(definition.idle_social_rite_id) as SocialRiteRules, individual, age_band, world,
+			GameSettings.active_human_individuals, GameSettings.active_game_data
+		)
+		if rite_building == null:
+			return false
+		entry["building"] = rite_building
+	return true
 
 
 # Tiro PESATO su indice tra le entry di `remaining` (2026-09-16, richiesta utente — sostituisce

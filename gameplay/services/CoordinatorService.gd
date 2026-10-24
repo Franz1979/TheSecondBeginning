@@ -324,6 +324,7 @@ static func _process_point(game_data: GameData, point: Building, individuals: Ar
 		# Limite di attesa scaduto (anche con qualcuno in cammino): si autoassegna se c'è un lavoro per lui, altrimenti
 		# chiude il turno.
 		if coordinator_wait.timed_out:
+			JobBoardTimingService.caller = "coordinatore: attesa scaduta"
 			if bool(JobBoardService.job_available_checker.call(coordinator)):
 				coordinator_wait.start_instruction()
 				post["serving_id"] = coordinator.id
@@ -334,18 +335,16 @@ static func _process_point(game_data: GameData, point: Building, individuals: Ar
 				_release(coordinator)
 				game_data.coordinator_posts.erase(key)
 			return
-		# Unico del gruppo che può prendere almeno un lavoro della coda: si autoassegna subito.
-		if _is_only_worker(coordinator, individuals):
-			coordinator_wait.start_instruction()
-			post["serving_id"] = coordinator.id
-			log_event(coordinator, "unico lavoratore: si autoassegna subito.")
-			return
+		# "Unico lavoratore: si autoassegna subito" tolto il 2026-10-24 (assegnatore fase 1, richiesta utente): chiedeva a
+		# ogni individuo del gruppo se poteva prendere un lavoro. Il coordinatore richiama o aspetta, poi si autoassegna qui
+		# sotto (nessuno in fila né in cammino) o allo scadere dell'attesa.
 	# Richiamo (solo dagli eventi), prima della decisione di autoassegnarsi: chi viene chiamato è subito in cammino.
 	if allow_start:
 		walking_count += _call_idle_individuals(point, coordinator, individuals, walking_count)
 	if walking_count > 0:
 		return
 	# Nessuno in fila né in cammino.
+	JobBoardTimingService.caller = "coordinatore: nessuno in arrivo"
 	if not JobBoardService.queue_has_jobs():
 		log_event(coordinator, "fine del turno: coda vuota (%s)." % _shift_summary(coordinator))
 		post["coordinator_id"] = -1
@@ -357,30 +356,23 @@ static func _process_point(game_data: GameData, point: Building, individuals: Ar
 		log_event(coordinator, "nessuno in fila né in arrivo: si autoassegna un lavoro.")
 
 
-# Il coordinatore è l'unico del gruppo che può prendere almeno un lavoro della coda (stessi controlli della presa): lui
-# sì, nessun altro individuo sì.
-static func _is_only_worker(coordinator: HumanIndividual, individuals: Array[HumanIndividual]) -> bool:
-	if not bool(JobBoardService.job_available_checker.call(coordinator)):
-		return false
-	for member in individuals:
-		if member != coordinator and bool(JobBoardService.job_available_checker.call(member)):
-			return false
-	return true
-
-
 static func _days_text(days: float) -> String:
 	return "1 giorno" if is_equal_approx(days, 1.0) else "%s giorni" % str(snappedf(days, 0.01))
 
 
 # Richiamo (2026-10-09): quanti = lavori prendibili in coda − chi è già in cammino verso il punto − 1 (il coordinatore);
 # ≤ 0 = nessuno. Candidati: solo individui in svago (task con is_idle_activity; mai bisogni né altre task) entro il
-# raggio dal punto, che possono prendere almeno un lavoro (stessi filtri della presa), dal più vicino al punto. Il
-# chiamato lascia lo svago e riceve "Cerca lavoro" verso il punto. Un suono "hey" alla posizione del coordinatore se
-# chiama almeno una persona. Ritorna quanti ne ha chiamati.
+# raggio dal punto, dal più vicino al punto. Il chiamato lascia lo svago e riceve "Cerca lavoro" verso il punto. Un suono
+# "hey" alla posizione del coordinatore se chiama almeno una persona. Ritorna quanti ne ha chiamati.
+# Assegnatore fase 1 (2026-10-24, richiesta utente): nessuna verifica per persona (prima: solo chi poteva prendere almeno
+# un lavoro, job_available_checker); chi non è adatto lo scopre al punto, viaggio a vuoto accettato. I lavori aperti sono
+# quelli dell'ultimo giro della lista (JobBoardService.last_open_jobs_count), non ricalcolati.
+# Età (2026-10-24, richiesta utente — dalla fase 1 venivano chiamati anche i bambini, che arrivavano a vuoto e tenevano
+# fermo il coordinatore): neonati e bambini non si chiamano. Solo distanza ed età, niente attrezzi.
 static func _call_idle_individuals(
 	point: Building, coordinator: HumanIndividual, individuals: Array[HumanIndividual], walking_count: int
 ) -> int:
-	var needed := JobBoardService.open_jobs_count() - walking_count - 1
+	var needed := JobBoardService.last_open_jobs_count(GameSettings.active_game_data) - walking_count - 1
 	if needed <= 0:
 		return 0
 	var radius := CALL_RADIUS_BASE * (1.0 + CALL_RADIUS_LEADERSHIP_BONUS * coordinator.skill_leadership / 1000.0)
@@ -394,6 +386,13 @@ static func _call_idle_individuals(
 		var task := member.current_task
 		if task == null or task.is_finished() or not task.is_idle_activity:
 			continue
+		if age_band_resolver.is_valid():
+			var age_band: HumanTypes.AgeBand = age_band_resolver.call(member)
+			if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+				continue
+		# Viaggio a vuoto con gli stessi lavori aperti (2026-10-24, richiesta utente): non si richiama.
+		if JobBoardService.is_waiting_after_empty_trip(GameSettings.active_game_data, member):
+			continue
 		var distance := member.position.distance_to(SpatialSelectionService._position_relative_to(point, member.home_macro_coords))
 		if distance <= radius:
 			candidates.append({"member": member, "distance": distance})
@@ -403,8 +402,6 @@ static func _call_idle_individuals(
 		if called.size() >= needed:
 			break
 		var member: HumanIndividual = candidate["member"]
-		if not bool(JobBoardService.job_available_checker.call(member)):
-			continue
 		if JobBoardService.start_seek_job(member, age_band_resolver.call(member), point):
 			called.append(member.name)
 	if called.is_empty():
@@ -447,7 +444,7 @@ static func _is_coordinating_at(member: HumanIndividual, point_id: int) -> bool:
 # "Coordina" (solo l'attesa): assegnata qui, la sua attivazione è l'evento che fa partire subito, nello stesso
 # fotogramma, la prima decisione del coordinatore.
 static func _start_coordinating(member: HumanIndividual, point: Building) -> bool:
-	var definition := load(COORDINATE_TASK_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(COORDINATE_TASK_PATH)
 	if definition == null or not age_band_resolver.is_valid():
 		return false
 	var task := TaskFactory.build_task(definition, {CONTEXT_POINT_ID: point.id})

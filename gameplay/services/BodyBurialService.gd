@@ -448,7 +448,7 @@ static func resolve_mound(record: Dictionary, body_id: int, individuals: Array) 
 # GameScene._assign_bury_task e usata anche come task di prova dalla lista dei lavori; spostata qui da
 # GameScene._make_bury_task il 2026-10-17, refactoring GameScene blocco 1). null se bury.tres non si carica.
 static func build_bury_task(worker: HumanIndividual, record: Dictionary, body_id: int, mound: Building) -> Task:
-	var definition := load(BURY_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(BURY_TASK_DEFINITION_PATH)
 	if definition == null:
 		push_error("BodyBurialService.build_bury_task: %s non caricabile." % BURY_TASK_DEFINITION_PATH)
 		return null

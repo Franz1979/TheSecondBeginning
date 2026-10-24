@@ -51,7 +51,7 @@ const ZONE_ORDER_TOOL_BLOCK_KEYS := {
 static func age_ok(ctx: GameContext, member: HumanIndividual, age_kind: String) -> bool:
 	var age_band := ctx.age_band_of(member)
 	if age_kind == DrawerOrderService.TYPE_HUNT:
-		var definition := load(HuntZoneService.TASK_DEFINITION_PATH) as TaskDefinition
+		var definition := TaskDefinitionCache.get_definition(HuntZoneService.TASK_DEFINITION_PATH)
 		return definition == null or definition.allowed_age_bands.is_empty() or definition.allowed_age_bands.has(int(age_band))
 	return age_band != HumanTypes.AgeBand.INFANT and age_band != HumanTypes.AgeBand.CHILD
 
@@ -85,30 +85,6 @@ static func member_missing_categories(member: HumanIndividual, categories: Array
 static func has_equipped_member(ctx: GameContext, categories: Array, age_kind: String) -> bool:
 	for member in ctx.individuals:
 		if age_ok(ctx, member, age_kind) and member_missing_categories(member, categories).is_empty():
-			return true
-	return false
-
-
-# Come has_equipped_member, ma senza chi porta già un ordine di zona dello stesso tipo (2026-10-19, richiesta utente: due
-# cacciatori attrezzati già a caccia per altri ordini tenevano fermi gli ordini nuovi con "lo ha già un altro", coi
-# coltelli in magazzino). Per gli ordini di zona `age_kind` è il loro tipo (DrawerOrderService.TYPE_*). Solo per
-# rejection: chi è impegnato tornerà libero, quindi per la riga in coda (blocked_reason) conta ancora.
-static func has_available_equipped_member(ctx: GameContext, categories: Array, age_kind: String) -> bool:
-	for member in ctx.individuals:
-		if age_ok(ctx, member, age_kind) and member_missing_categories(member, categories).is_empty() 				and not _holds_zone_order_of_type(ctx, member, age_kind):
-			return true
-	return false
-
-
-# `member` porta (in corso o in coda) la serie di un ordine di zona del cassetto di tipo `order_type`.
-static func _holds_zone_order_of_type(ctx: GameContext, member: HumanIndividual, order_type: String) -> bool:
-	if not DrawerOrderService.is_zone_order_type(order_type):
-		return false
-	for task in JobWorkScanService.open_tasks(member):
-		var order_id := DrawerOrderService.order_of_task(task)
-		if order_id < 0:
-			continue
-		if String(DrawerOrderService.find(ctx.game_data, order_id).get("type", "")) == order_type:
 			return true
 	return false
 
@@ -162,7 +138,11 @@ static func _find_storage_tool(world: World, worker: HumanIndividual, category: 
 	for tool_name in fetchable_tool_names(category):
 		var origin := worker.position if worker != null else Vector2.ZERO
 		var origin_macro := worker.home_macro_coords if worker != null else Vector2i.ZERO
+		var timing := JobBoardTimingService.is_enabled()
+		var started := JobBoardTimingService.now() if timing else 0
 		var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
+		if timing:
+			JobBoardTimingService.add("deposito: raggiungibilità", started)
 		var source := _find_unreserved_source(world, origin, origin_macro, tool_name, reserved, reachability)
 		if source == null:
 			continue
@@ -180,15 +160,22 @@ static func _find_storage_tool(world: World, worker: HumanIndividual, category: 
 static func _find_unreserved_source(
 	world: World, origin: Vector2, origin_macro: Vector2i, tool_name: String, reserved: Dictionary, reachability: Callable
 ) -> Building:
+	# Tempo (2026-10-24, assegnatore): "deposito: ricerca depositi" (con la raggiungibilità di ogni deposito provato).
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var excluded: Array[int] = []
+	var found: Building = null
 	while true:
 		var source := WarehouseSelectionService.find_source_for_retrieval(world, origin, origin_macro, tool_name, excluded, 1, -1, reachability)
 		if source == null:
-			return null
+			break
 		if BuildingStorageService.get_available_quantity(source, tool_name) > int(reserved.get(_fetch_key(source, tool_name), 0)):
-			return source
+			found = source
+			break
 		excluded.append(source.id)
-	return null
+	if timing:
+		JobBoardTimingService.add("deposito: ricerca depositi", started)
+	return found
 
 
 # Motivo per cui nessuno può fare un lavoro che richiede `categories` ("" = qualcuno può): una categoria che nessuno ha
@@ -278,7 +265,11 @@ static func _compute_fetch_option(world: World, worker: HumanIndividual, categor
 		return best
 	var origin := worker.position if worker != null else Vector2.ZERO
 	var origin_macro := worker.home_macro_coords if worker != null else Vector2i.ZERO
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
+	if timing:
+		JobBoardTimingService.add("deposito: raggiungibilità", started)
 	var plain := find_storage_tool(world, worker, category)
 	if not plain.is_empty():
 		if worker == null:
@@ -357,17 +348,29 @@ static func _distance_between(from: Building, to: Building) -> float:
 	return Vector2(from.micro_x, from.micro_y).distance_to(Vector2(to.micro_x, to.micro_y) + offset)
 
 
-# Idoneità di `worker` per gli attrezzi ("" = può): tutto addosso; oppure, se nessuno in età ha l'equipaggiamento, posti
-# liberi in cintura e un deposito raggiungibile per ogni categoria che gli manca.
-static func rejection(ctx: GameContext, worker: HumanIndividual, categories: Array, age_kind: String) -> String:
+# Idoneità di `worker` per gli attrezzi ("" = può): tutto addosso; oppure posti liberi in cintura e un deposito
+# raggiungibile per ogni categoria che gli manca.
+# Senza "lo ha già un altro" (2026-10-24, richiesta utente — nel paleolitico nessuno si ricorda chi ha un attrezzo; prima
+# un attrezzato altrove teneva fermi i lavori di chi arrivava al punto, e il giro su tutto il villaggio costava ~6 ms a ogni
+# arrivo): chi arriva prende il lavoro e va a prendere gli attrezzi in deposito, se ci sono. Con la regola "Riponi gli
+# attrezzi presi per un lavoro" accesa tornano al deposito appena è libero (try_return_borrowed_tools). `_age_kind` resta
+# nella firma per i chiamanti. Tempi (JobBoardTimingService): "attrezzi: cintura", "attrezzi: deposito".
+static func rejection(_ctx: GameContext, worker: HumanIndividual, categories: Array, _age_kind: String) -> String:
 	var missing := member_missing_categories(worker, categories)
 	if missing.is_empty():
 		return ""
-	if has_available_equipped_member(ctx, categories, age_kind):
-		return "attrezzo mancante: lo ha già un altro"
-	if free_belt_slots(worker).size() < missing.size():
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
+	var belt_full := free_belt_slots(worker).size() < missing.size()
+	if timing:
+		JobBoardTimingService.add("attrezzi: cintura", started)
+	if belt_full:
 		return "cintura piena per gli attrezzi da prendere"
-	if not missing_tools_in_storage(ctx.world, worker, missing):
+	started = JobBoardTimingService.now() if timing else 0
+	var in_storage := missing_tools_in_storage(_ctx.world, worker, missing)
+	if timing:
+		JobBoardTimingService.add("attrezzi: deposito", started)
+	if not in_storage:
 		return "attrezzo mancante e non raggiungibile in deposito (o cintura piena per arma e munizione)"
 	return ""
 
@@ -899,6 +902,9 @@ static func _distance_to(individual: HumanIndividual, building: Building) -> flo
 
 # Prelievi già prenotati da altri (task aperte con `context_key` nel context): "id edificio:nome" -> quanti.
 static func _reserved_fetches(except: HumanIndividual, context_key: String) -> Dictionary:
+	# Tempo (2026-10-24, assegnatore): "deposito: prenotazioni" (giro su tutti i pipottini e le loro task).
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var reserved: Dictionary = {}
 	for member in GameSettings.active_human_individuals:
 		if member == except:
@@ -907,6 +913,8 @@ static func _reserved_fetches(except: HumanIndividual, context_key: String) -> D
 			var key: Variant = task.context.get(context_key, null)
 			if key != null:
 				reserved[key] = int(reserved.get(key, 0)) + 1
+	if timing:
+		JobBoardTimingService.add("deposito: prenotazioni", started)
 	return reserved
 
 

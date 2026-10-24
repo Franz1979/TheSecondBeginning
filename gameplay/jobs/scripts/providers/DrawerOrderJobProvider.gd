@@ -18,21 +18,29 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 	for claimed_key in assigned["produce"].keys():
 		var building_id := int(String(claimed_key).get_slice(":", 0))
 		busy_counts[building_id] = int(busy_counts.get(building_id, 0)) + 1
+	# Tempi per tipo d'ordine (2026-10-24, assegnatore — JobBoardTimingService): "ordine:<tipo>", più "ordini (prima)" per
+	# le prenotazioni lette una volta sola.
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var zone_claims := DrawerOrderService.collect_zone_claims(ctx.individuals)
+	if timing:
+		JobBoardTimingService.add("ordini (prima)", started)
 	for order in ctx.game_data.drawer_orders:
 		# Ordini decisi da un inventario ancora in corso (2026-10-11): escono alla fine del conteggio.
 		if bool(order.get(StockRequestService.INVENTORY_PENDING_KEY, false)):
 			continue
 		var order_type := String(order.get("type", ""))
+		started = JobBoardTimingService.now() if timing else 0
 		if DrawerOrderService.is_zone_order_type(order_type):
 			jobs.append(_zone_job(ctx, provider, order, zone_claims))
-			continue
-		if order_type == DrawerOrderService.TYPE_TRANSPORT:
+		elif order_type == DrawerOrderService.TYPE_TRANSPORT:
 			jobs.append(_transport_job(ctx, provider, order))
+		elif order_type == DrawerOrderService.TYPE_PRODUCE:
+			jobs.append(_produce_job(ctx, provider, order, busy_counts))
+		else:
 			continue
-		if order_type != DrawerOrderService.TYPE_PRODUCE:
-			continue
-		jobs.append(_produce_job(ctx, provider, order, busy_counts))
+		if timing:
+			JobBoardTimingService.add("ordine:%s" % order_type, started)
 	return jobs
 
 
@@ -243,7 +251,11 @@ static func gather_target_text(order: Dictionary) -> String:
 # nessuna zona valida (zona fissata sparita, senza il lavoro o senza piante / rocce / risorse da raccogliere; con la zona
 # automatica nessuna zona adatta).
 static func zone_blocked_reason(ctx: GameContext, order_type: String, zone_id: int, area: WorkArea, order: Dictionary = {}) -> String:
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var tool_reason := ToolFetchService.blocked_reason(ctx, DrawerOrderService.tool_categories(order_type), order_type)
+	if timing:
+		JobBoardTimingService.add("attrezzi (lista)", started)
 	if tool_reason != "":
 		return tool_reason
 	# Taglio/estrazione di un ordine non preso (2026-10-23): valido se l'ordine ha (o trova) il suo bersaglio
@@ -362,7 +374,12 @@ static func zone_rejection(ctx: GameContext, worker: HumanIndividual, job: Dicti
 	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
 		return HumanIndividual.ASSIGN_REJECT_TOO_YOUNG
 	var categories := DrawerOrderService.tool_categories(order_type)
+	# Tempo degli attrezzi (2026-10-24, assegnatore): "attrezzi (idoneità)", dentro idoneità:<tipo>.
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var tool_rejection := ToolFetchService.rejection(ctx, worker, categories, order_type)
+	if timing:
+		JobBoardTimingService.add("attrezzi (idoneità)", started)
 	if tool_rejection != "":
 		return tool_rejection
 	# Caccia con l'equipaggiamento già addosso: coltello in cintura, o nello zaino con posto in cintura.
@@ -370,7 +387,8 @@ static func zone_rejection(ctx: GameContext, worker: HumanIndividual, job: Dicti
 			and HuntZoneService.get_hunt_rejection(worker) != "":
 		return "coltello o arma mancanti, o cintura piena"
 	# Taglio/estrazione (2026-10-23): il bersaglio scelto dall'ordine (DrawerOrderTargetService), uguale per tutti; la
-	# raggiungibilità la controlla find_takeable_jobs con reach_target. Raccolta/caccia: zona scelta per lui, come prima.
+	# raggiungibilità la controlla find_takeable_jobs con reach_target; raccolta e caccia uguali dal 2026-10-24
+	# (assegnatore fase 3).
 	var pick := DrawerOrderTargetService.get_pick(ctx, order) if DrawerOrderTargetService.uses_order_target(order_type) \
 		else pick_zone_target(ctx, worker, job)
 	if pick.is_empty():
