@@ -77,7 +77,9 @@ static func _get_effects() -> TaskCompletionEffects:
 		push_warning("TaskCompletionEffectService: file dati non trovato: %s" % EFFECTS_PATH)
 		return null
 	_effects = load(EFFECTS_PATH) as TaskCompletionEffects
-	if _effects != null:
+	# Solo nelle build di debug (2026-10-24, scatti): il controllo carica tutte le TaskDefinition dal disco (~38 ms
+	# al primo lavoro finito), serve solo a chi sviluppa.
+	if _effects != null and OS.is_debug_build():
 		_warn_unknown_task_names(_effects)
 	return _effects
 

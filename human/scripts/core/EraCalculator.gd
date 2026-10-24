@@ -8,12 +8,18 @@ extends RefCounted
 
 const ERA_RULES_DIR := "res://human/data/era_rules/"
 
+# Regole già risolte, nome -> EraRules (null = file assente) (2026-10-24, scatti: ResourceLoader.exists va sul disco,
+# ~0,4 ms a chiamata, e get_era_rules si chiama per pipottino). load() restituiva comunque lo stesso oggetto.
+static var _rules_by_name: Dictionary = {}
+
 
 static func get_era_rules(era_name: String) -> EraRules:
+	if _rules_by_name.has(era_name):
+		return _rules_by_name[era_name]
 	var path := ERA_RULES_DIR + era_name + ".tres"
-	if not ResourceLoader.exists(path):
-		return null
-	return load(path) as EraRules
+	var rules: EraRules = load(path) as EraRules if ResourceLoader.exists(path) else null
+	_rules_by_name[era_name] = rules
+	return rules
 
 
 # Durate effettive delle age band = durata base di HumanRules (per sesso) × EraRules.

@@ -102,6 +102,11 @@ var _pending_list_entries: Array[Dictionary] = []
 var _in_progress_box: VBoxContainer = null
 var _in_progress_signature: String = "-"
 var _pending_in_progress_entries: Array[Dictionary] = []
+# Righe riusate (2026-10-24, scatti: _fill_box rifaceva tutte le righe anche se ne cambiava una sola, ~38 ms al secondo
+# con un conto alla rovescia attivo): per sezione (in_progress), chiave -> {"row": Control, "signature": String}.
+var _rows_by_section: Dictionary = {false: {}, true: {}}
+# Voce più recente per chiave, per sezione: i bottoni di una riga riusata agiscono sui dati dell'ultimo aggiornamento.
+var _latest_entries: Dictionary = {false: {}, true: {}}
 var _settings_box: VBoxContainer = null
 # Strato delle regole di assegnazione (2026-10-07): copre la zona delle due sezioni, che sotto restano ferme.
 var _settings_overlay: PanelContainer = null
@@ -493,18 +498,52 @@ func _apply_in_progress_entries(entries: Array[Dictionary]) -> void:
 func _entries_signature(entries: Array[Dictionary]) -> String:
 	var parts: PackedStringArray = []
 	for entry in entries:
-		parts.append("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
-			entry["key"], entry.get("building_name", ""), entry.get("name_detail", ""), str(entry.get("icon", {})), str(entry.get("enabled", true)), str(entry.get("locked", false)),
-			str(entry.get("waiting", false)), str(entry.get("wait_seconds", 0)), entry.get("workers", ""),
-			str(entry.get("cancel_disabled", false)), entry.get("cancel_tooltip", "") + "|" + String(entry.get("status_text", "")) + "|" + str(entry.get("direct", false)) + str(entry.get("automatic", false)) + str(entry.get("cargo_return", false)) + str(entry.get("warehouse", false)),
-		])
+		parts.append(_entry_signature(entry))
 	return "\n".join(parts)
 
 
+# Ciò che una riga mostra: se non cambia, la riga si riusa così com'è.
+func _entry_signature(entry: Dictionary) -> String:
+	return "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
+		entry["key"], entry.get("building_name", ""), entry.get("name_detail", ""), str(entry.get("icon", {})), str(entry.get("enabled", true)), str(entry.get("locked", false)),
+		str(entry.get("waiting", false)), str(entry.get("wait_seconds", 0)), entry.get("workers", ""),
+		str(entry.get("cancel_disabled", false)), entry.get("cancel_tooltip", "") + "|" + String(entry.get("status_text", "")) + "|" + str(entry.get("direct", false)) + str(entry.get("automatic", false)) + str(entry.get("cargo_return", false)) + str(entry.get("warehouse", false)) + "|" + String(entry.get("progress", "")) + "|" + String(entry.get("text", "")) + "|" + String(entry.get("disabled_reason", "")),
+	]
+
+
+# Righe per chiave (2026-10-24): si rifanno solo quelle la cui firma è cambiata, le nuove si aggiungono, quelle sparite
+# si tolgono, le altre restano e vengono solo rimesse nell'ordine delle voci.
 func _fill_box(box: VBoxContainer, entries: Array[Dictionary], in_progress: bool, empty_text: String) -> void:
+	var old_rows: Dictionary = _rows_by_section[in_progress]
+	var new_rows: Dictionary = {}
+	var latest: Dictionary = {}
+	var ordered: Array[Control] = []
+	for entry in entries:
+		var key := String(entry["key"])
+		var signature := _entry_signature(entry)
+		var row: Control = null
+		if new_rows.has(key):
+			# Chiave doppia (non attesa): riga a sé, non riusabile.
+			row = _build_list_row(entry, in_progress)
+		else:
+			latest[key] = entry
+			var old: Variant = old_rows.get(key)
+			if old != null and old["signature"] == signature:
+				row = old["row"]
+				old_rows.erase(key)
+			else:
+				row = _build_list_row(entry, in_progress)
+			new_rows[key] = {"row": row, "signature": signature}
+		ordered.append(row)
+	_latest_entries[in_progress] = latest
+	_rows_by_section[in_progress] = new_rows
+	var kept: Dictionary = {}
+	for row in ordered:
+		kept[row] = true
 	for child in box.get_children():
-		box.remove_child(child)
-		child.queue_free()
+		if not kept.has(child):
+			box.remove_child(child)
+			child.queue_free()
 	if entries.is_empty():
 		var empty_label := Label.new()
 		empty_label.text = empty_text
@@ -513,8 +552,16 @@ func _fill_box(box: VBoxContainer, entries: Array[Dictionary], in_progress: bool
 		empty_label.modulate = Color(1, 1, 1, 0.7)
 		box.add_child(empty_label)
 		return
-	for entry in entries:
-		box.add_child(_build_list_row(entry, in_progress))
+	for i in range(ordered.size()):
+		var row := ordered[i]
+		if row.get_parent() != box:
+			box.add_child(row)
+		box.move_child(row, i)
+
+
+# La voce più recente con la stessa chiave (riga riusata), altrimenti quella con cui la riga è nata.
+func _latest_entry(in_progress: bool, entry: Dictionary) -> Dictionary:
+	return _latest_entries[in_progress].get(String(entry["key"]), entry)
 
 
 # Riga: icona (dell'edificio; per una demolizione la dinamite del bottone "Demolisci"), nome (troncato con i puntini,
@@ -644,14 +691,14 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	elif in_progress:
 		state_button.text = tr("task_assignment_requeue")
 		state_button.tooltip_text = TooltipText.wrap(tr("task_assignment_requeue_tooltip"))
-		state_button.pressed.connect(func() -> void: requeue_requested.emit(entry))
+		state_button.pressed.connect(func() -> void: requeue_requested.emit(_latest_entry(in_progress, entry)))
 	else:
 		state_button.text = tr("task_assignment_unlock") if locked else tr("task_assignment_lock")
 		state_button.pressed.connect(func() -> void:
 			if locked:
-				unlock_requested.emit(entry)
+				unlock_requested.emit(_latest_entry(in_progress, entry))
 			else:
-				lock_requested.emit(entry)
+				lock_requested.emit(_latest_entry(in_progress, entry))
 		)
 	if state_button.get_parent() == null:
 		row.add_child(state_button)
@@ -667,7 +714,7 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	cancel_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	cancel_button.disabled = bool(entry.get("cancel_disabled", false))
 	cancel_button.tooltip_text = TooltipText.wrap(String(entry.get("cancel_tooltip", "")))
-	cancel_button.pressed.connect(func() -> void: cancel_requested.emit(entry))
+	cancel_button.pressed.connect(func() -> void: cancel_requested.emit(_latest_entry(in_progress, entry)))
 	# Riga "Automatico" (2026-10-09): niente X — resta solo il suo posto, invisibile, per l'allineamento delle colonne.
 	if bool(entry.get("automatic", false)) or bool(entry.get("cargo_return", false)):
 		cancel_button.modulate = Color(1, 1, 1, 0)
@@ -680,7 +727,7 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	var clickable_row := ClickableRow.new()
 	clickable_row.clickable = enabled
 	clickable_row.add_child(row)
-	clickable_row.clicked.connect(func() -> void: entry_activated.emit(entry))
+	clickable_row.clicked.connect(func() -> void: entry_activated.emit(_latest_entry(in_progress, entry)))
 	return clickable_row
 
 

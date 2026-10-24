@@ -113,6 +113,8 @@ Al checkpoint il lavoro cresce con il numero di individui che cambiano, non con 
 
 La fase 2 da sola risolve gran parte di ciò che si vede oggi. La 4 è la più delicata, perché lì gli individui diventano davvero la fonte di verità della simulazione.
 
+**Nota per la fase 4 (2026-10-24, profilo di un checkpoint):** su ~1,2 s, circa 500 ms sono `LotCapacityService.refresh_all_vegetation_lot_capacities`, che chiama `VegetationPoolService._compute_capacity_for` ×15.116, cioè tutti i lotti. La capacità dei lotti (bastoni, fibre, funghi…) va ricalcolata solo per i lotti toccati dai `changes` dello store. Altri ~245 ms sono `_rebuild_tree_multimeshes`, già coperto dalla fase 3.
+
 ## 11. Rischi principali
 
 - **Divergenza tra individui e numeri** durante le fasi intermedie: si può aggiungere un controllo di debug che confronta i contatori con gli aggregati.
