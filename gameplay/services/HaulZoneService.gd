@@ -462,31 +462,62 @@ static func _choose_work_area(
 # Zona di raccolta scelta dall'ordine del cassetto (2026-10-24, assegnatore fase 3 — DrawerOrderTargetService): come
 # _choose_work_area ma da un punto (`origin_macro`/`origin_pos`, il punto di assegnazione) e senza pipottino, quindi
 # senza raggiungibilità per cella; solo macrocelle vive.
+# Conteggio con tetto (2026-10-24, richiesta utente — scatti alla prima scelta di un ordine di raccolta nuovo, ~30 ms
+# contando tutte le celle di tutte le zone): le zone si guardano dalla più vicina, il disponibile si conta fino a
+# ZONE_CHOICE_AVAILABLE_CAP (oltre, due zone valgono uguale e vince la più vicina o meno affollata) e una zona che neanche
+# col tetto batterebbe la migliore trovata non si conta.
+const ZONE_CHOICE_AVAILABLE_CAP := 100
+
+
 static func choose_work_area_from(
 	game_data: GameData, world: World, live_cells: Dictionary, origin_macro: Vector2i, origin_pos: Vector2,
 	criterion_kind: int, criterion_category: int, resource_name: String
 ) -> WorkArea:
-	var best: WorkArea = null
-	var best_score := -1.0
+	var candidates: Array = []
 	for area in game_data.work_areas:
 		if not live_cells.has(area.macro_coords):
 			continue
 		var names := allowed_names_for(area, criterion_kind, criterion_category, resource_name)
 		if names.is_empty():
 			continue
-		var macro_state := world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		var available := count_available(area, macro_state, names)
-		if available <= 0:
-			continue
 		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - origin_macro) * World.WIDTH
-		var score := float(available) / (origin_pos.distance_to(center) + ZONE_DISTANCE_OFFSET)
+		var factor := 1.0 / (origin_pos.distance_to(center) + ZONE_DISTANCE_OFFSET)
 		for other in GameSettings.active_human_individuals:
 			if is_gathering_in(other, area.id):
-				score *= ZONE_CROWDING_FACTOR
+				factor *= ZONE_CROWDING_FACTOR
+		candidates.append({"area": area, "names": names, "factor": factor})
+	candidates.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["factor"]) > float(b["factor"]))
+	var best: WorkArea = null
+	var best_score := -1.0
+	for candidate in candidates:
+		var factor := float(candidate["factor"])
+		if ZONE_CHOICE_AVAILABLE_CAP * factor <= best_score:
+			break
+		var area: WorkArea = candidate["area"]
+		var macro_state := world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+		var available := _count_available_capped(area, macro_state, candidate["names"], ZONE_CHOICE_AVAILABLE_CAP)
+		if available <= 0:
+			continue
+		var score := available * factor
 		if score > best_score:
 			best_score = score
 			best = area
 	return best
+
+
+# Unità di `names` nella zona, lette direttamente e fermandosi a `cap`.
+static func _count_available_capped(area: WorkArea, macro_state: MacroCellState, names: Array[String], cap: int) -> int:
+	if macro_state == null:
+		return 0
+	var total := 0
+	for y in range(area.rect.position.y, area.rect.end.y):
+		for x in range(area.rect.position.x, area.rect.end.x):
+			var cell := Vector2i(x, y)
+			for candidate_name in names:
+				total += maxi(PickUpAction.get_source_available_at(macro_state, cell, PickUpAction.SourceKind.TERRAIN, candidate_name), 0)
+			if total >= cap:
+				return cap
+	return total
 
 
 # Prima cella della zona con qualcosa tra `names` (null se nessuna), per la raggiungibilità dell'ordine del cassetto.
