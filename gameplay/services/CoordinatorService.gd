@@ -367,6 +367,8 @@ static func _days_text(days: float) -> String:
 # Assegnatore fase 1 (2026-10-24, richiesta utente): nessuna verifica per persona (prima: solo chi poteva prendere almeno
 # un lavoro, job_available_checker); chi non è adatto lo scopre al punto, viaggio a vuoto accettato. I lavori aperti sono
 # quelli dell'ultimo giro della lista (JobBoardService.last_open_jobs_count), non ricalcolati.
+# Età (2026-10-24, richiesta utente — dalla fase 1 venivano chiamati anche i bambini, che arrivavano a vuoto e tenevano
+# fermo il coordinatore): neonati e bambini non si chiamano. Solo distanza ed età, niente attrezzi.
 static func _call_idle_individuals(
 	point: Building, coordinator: HumanIndividual, individuals: Array[HumanIndividual], walking_count: int
 ) -> int:
@@ -384,6 +386,10 @@ static func _call_idle_individuals(
 		var task := member.current_task
 		if task == null or task.is_finished() or not task.is_idle_activity:
 			continue
+		if age_band_resolver.is_valid():
+			var age_band: HumanTypes.AgeBand = age_band_resolver.call(member)
+			if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+				continue
 		# Viaggio a vuoto con gli stessi lavori aperti (2026-10-24, richiesta utente): non si richiama.
 		if JobBoardService.is_waiting_after_empty_trip(GameSettings.active_game_data, member):
 			continue

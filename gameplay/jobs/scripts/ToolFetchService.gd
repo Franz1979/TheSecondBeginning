@@ -89,30 +89,6 @@ static func has_equipped_member(ctx: GameContext, categories: Array, age_kind: S
 	return false
 
 
-# Come has_equipped_member, ma senza chi porta già un ordine di zona dello stesso tipo (2026-10-19, richiesta utente: due
-# cacciatori attrezzati già a caccia per altri ordini tenevano fermi gli ordini nuovi con "lo ha già un altro", coi
-# coltelli in magazzino). Per gli ordini di zona `age_kind` è il loro tipo (DrawerOrderService.TYPE_*). Solo per
-# rejection: chi è impegnato tornerà libero, quindi per la riga in coda (blocked_reason) conta ancora.
-static func has_available_equipped_member(ctx: GameContext, categories: Array, age_kind: String) -> bool:
-	for member in ctx.individuals:
-		if age_ok(ctx, member, age_kind) and member_missing_categories(member, categories).is_empty() 				and not _holds_zone_order_of_type(ctx, member, age_kind):
-			return true
-	return false
-
-
-# `member` porta (in corso o in coda) la serie di un ordine di zona del cassetto di tipo `order_type`.
-static func _holds_zone_order_of_type(ctx: GameContext, member: HumanIndividual, order_type: String) -> bool:
-	if not DrawerOrderService.is_zone_order_type(order_type):
-		return false
-	for task in JobWorkScanService.open_tasks(member):
-		var order_id := DrawerOrderService.order_of_task(task)
-		if order_id < 0:
-			continue
-		if String(DrawerOrderService.find(ctx.game_data, order_id).get("type", "")) == order_type:
-			return true
-	return false
-
-
 # Posti liberi della cintura di `member`, in ordine.
 static func free_belt_slots(member: HumanIndividual) -> Array[int]:
 	var slots: Array[int] = []
@@ -357,17 +333,29 @@ static func _distance_between(from: Building, to: Building) -> float:
 	return Vector2(from.micro_x, from.micro_y).distance_to(Vector2(to.micro_x, to.micro_y) + offset)
 
 
-# Idoneità di `worker` per gli attrezzi ("" = può): tutto addosso; oppure, se nessuno in età ha l'equipaggiamento, posti
-# liberi in cintura e un deposito raggiungibile per ogni categoria che gli manca.
-static func rejection(ctx: GameContext, worker: HumanIndividual, categories: Array, age_kind: String) -> String:
+# Idoneità di `worker` per gli attrezzi ("" = può): tutto addosso; oppure posti liberi in cintura e un deposito
+# raggiungibile per ogni categoria che gli manca.
+# Senza "lo ha già un altro" (2026-10-24, richiesta utente — nel paleolitico nessuno si ricorda chi ha un attrezzo; prima
+# un attrezzato altrove teneva fermi i lavori di chi arrivava al punto, e il giro su tutto il villaggio costava ~6 ms a ogni
+# arrivo): chi arriva prende il lavoro e va a prendere gli attrezzi in deposito, se ci sono. Con la regola "Riponi gli
+# attrezzi presi per un lavoro" accesa tornano al deposito appena è libero (try_return_borrowed_tools). `_age_kind` resta
+# nella firma per i chiamanti. Tempi (JobBoardTimingService): "attrezzi: cintura", "attrezzi: deposito".
+static func rejection(_ctx: GameContext, worker: HumanIndividual, categories: Array, _age_kind: String) -> String:
 	var missing := member_missing_categories(worker, categories)
 	if missing.is_empty():
 		return ""
-	if has_available_equipped_member(ctx, categories, age_kind):
-		return "attrezzo mancante: lo ha già un altro"
-	if free_belt_slots(worker).size() < missing.size():
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
+	var belt_full := free_belt_slots(worker).size() < missing.size()
+	if timing:
+		JobBoardTimingService.add("attrezzi: cintura", started)
+	if belt_full:
 		return "cintura piena per gli attrezzi da prendere"
-	if not missing_tools_in_storage(ctx.world, worker, missing):
+	started = JobBoardTimingService.now() if timing else 0
+	var in_storage := missing_tools_in_storage(_ctx.world, worker, missing)
+	if timing:
+		JobBoardTimingService.add("attrezzi: deposito", started)
+	if not in_storage:
 		return "attrezzo mancante e non raggiungibile in deposito (o cintura piena per arma e munizione)"
 	return ""
 

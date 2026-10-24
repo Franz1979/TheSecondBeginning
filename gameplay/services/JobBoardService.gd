@@ -479,7 +479,11 @@ static func find_assignment_point(individual: HumanIndividual, world: World) -> 
 
 # Assegnatore fase 1 (2026-10-24): niente più domanda "c'è un lavoro per lui?" (job_available_checker) prima di partire;
 # basta can_depart_to_seek, letto dall'ultimo giro della lista. L'idoneità la verifica il coordinatore al punto.
+# Età (2026-10-24, richiesta utente): solo da teenager in su; neonati e bambini non partono (arrivavano a vuoto e tenevano
+# fermo il coordinatore). Stessa regola del richiamo (CoordinatorService._call_idle_individuals).
 static func try_seek_job(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> SeekOutcome:
+	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+		return SeekOutcome.NOTHING
 	if not can_depart_to_seek(GameSettings.active_game_data, individual):
 		return SeekOutcome.NOTHING
 	var timing := JobBoardTimingService.is_enabled()
