@@ -630,7 +630,7 @@ func set_buildings(buildings_data: Array) -> void:
 
 func set_vegetation_positions(positions: Dictionary) -> void:
 	vegetation_positions = positions
-	_rebuild_selection_lot_index(SELECTION_SOURCE_LIVE)
+	_selection_lot_index_dirty[SELECTION_SOURCE_LIVE] = true
 	_defer_or_rebuild_tree()
 	_defer_or_rebuild_shrub()
 	_defer_or_rebuild_grass()
@@ -666,8 +666,9 @@ func get_individual_screen_position(object_type: GameTypes.WorldObjectType, indi
 # Indice per lotto della selezione col clic (2026-10-04, richiesta utente — la ricerca della vegetazione al clic costava
 # 38-220 ms: VegetationSelectorController copiava l'intero elenco di ogni tipo e, per ogni candidato vicino, rifaceva
 # _lot_extent_counts e has_individual sull'intera cella). Per TREE/SHRUB e per ogni fonte (vivi, ceppi, morti):
-# lotto -> indici nell'elenco della fonte, ricostruito nei setter delle posizioni (set_vegetation_positions,
-# set_cut_positions, set_dead_positions, set_cut_dead_positions), mai al clic. Ricorda gli elenchi da cui è stato
+# lotto -> indici nell'elenco della fonte. Dal 2026-10-24 i setter delle posizioni (set_vegetation_positions,
+# set_cut_positions, set_dead_positions, set_cut_dead_positions) lo segnano soltanto da rifare, e lo costruisce il primo
+# clic dopo (_selection_lot_index_dirty), invece di ogni ridisegno. Ricorda gli elenchi da cui è stato
 # costruito: se l'elenco corrente non è più lo stesso oggetto o ha cambiato lunghezza, l'indice non vale e il chiamante
 # ripiega sul metodo completo (find_selection_candidates ritorna null).
 # ============================================================================================
@@ -679,6 +680,9 @@ const SELECTION_INDEX_TYPES: Array[GameTypes.WorldObjectType] = [
 ]
 # [fonte][WorldObjectType] -> {"list": Array o null, "size": int, "lots": Dictionary Vector2i -> Array[int]}
 var _selection_lot_index: Array = [{}, {}, {}]
+# Da rifare alla prossima ricerca (2026-10-24, progetto B fase 2b): i setter segnano solo questo, l'indice si costruisce
+# al primo clic dopo (find_selection_candidates) invece che a ogni ridisegno (~6 ms).
+var _selection_lot_index_dirty: Array = [true, true, true]
 
 
 func _selection_source_list(source: int, object_type: GameTypes.WorldObjectType) -> Variant:
@@ -725,6 +729,9 @@ func _selection_index_entry_valid(source: int, object_type: GameTypes.WorldObjec
 # l'unico dove la chiave può stare. null se l'indice non vale per questi elenchi: il chiamante usa il metodo completo.
 func find_selection_candidates(object_type: GameTypes.WorldObjectType, click_lot: Vector2i) -> Variant:
 	for source in [SELECTION_SOURCE_LIVE, SELECTION_SOURCE_CUT, SELECTION_SOURCE_DEAD]:
+		if _selection_lot_index_dirty[source]:
+			_rebuild_selection_lot_index(source)
+			_selection_lot_index_dirty[source] = false
 		if not _selection_index_entry_valid(source, object_type):
 			return null
 	var found: Array = [] # [fonte, indice, chiave]
@@ -1176,64 +1183,34 @@ func set_tree_age_params(current_year: int, age_params: Dictionary, birth_year_s
 # mozzato / pianta secca), mai i blob vivi (quelli dipendono da vegetation_positions, invariato).
 func set_cut_positions(positions: Dictionary) -> void:
 	cut_positions = positions
-	_rebuild_selection_lot_index(SELECTION_SOURCE_CUT)
-	_cut_dead_signature = []
+	_selection_lot_index_dirty[SELECTION_SOURCE_CUT] = true
 	_rebuild_cut_dead_multimeshes()
 	queue_redraw()
 
 
 func set_dead_positions(positions: Dictionary) -> void:
 	dead_positions = positions
-	_rebuild_selection_lot_index(SELECTION_SOURCE_DEAD)
-	_cut_dead_signature = []
+	_selection_lot_index_dirty[SELECTION_SOURCE_DEAD] = true
 	_rebuild_cut_dead_multimeshes()
 	queue_redraw()
 
 
-# Ceppi e piante morte insieme, con il salto (2026-10-04, richiesta utente). Ogni segno dipende SOLO da: la sua voce
-# (chiave, size_multiplier, tipo), il numero di individui del suo lotto (_lot_extent_counts: vivi nell'elenco filtrato
-# per la nebbia + ceppi + morti — è da qui che arriva la dipendenza dalla visibilità) e costanti del file (vedi
+# Ceppi e piante morte insieme (2026-10-04, richiesta utente). Ogni segno dipende SOLO da: la sua voce (chiave,
+# size_multiplier, tipo), il numero di individui del suo lotto (_lot_extent_counts: vivi nell'elenco filtrato per la
+# nebbia + ceppi + morti — è da qui che arriva la dipendenza dalla visibilità) e costanti del file (vedi
 # _build_tree_stump_transform/_build_shrub_stump_transform/_build_dead_tree_transform/_build_dead_marker_transform, che
-# di _compute_*_visual usano solo "ground"/"center"). Firma = voci di ceppi e morti + quel conteggio per i soli lotti che
-# hanno un segno: con `allow_skip` e firma uguale all'ultima ricostruzione, nessuna ricostruzione. Va chiamata DOPO
-# set_vegetation_positions (vegetation_positions già aggiornato). Ritorna true se ha ricostruito.
-func set_cut_dead_positions(cut: Dictionary, dead: Dictionary, allow_skip: bool) -> bool:
+# di _compute_*_visual usano solo "ground"/"center"). Dal 2026-10-24 (progetto B fase 2b) a gruppi per zona
+# (_rebuild_cut_dead_multimeshes): si rifanno solo le zone con voci o conteggi cambiati, al posto della firma di tutto
+# (un ceppo nuovo rifaceva tutti i segni). Va chiamata DOPO set_vegetation_positions (vegetation_positions già
+# aggiornato). Ritorna true se almeno una zona è stata rifatta.
+func set_cut_dead_positions(cut: Dictionary, dead: Dictionary) -> bool:
 	cut_positions = cut
 	dead_positions = dead
-	_rebuild_selection_lot_index(SELECTION_SOURCE_CUT)
-	_rebuild_selection_lot_index(SELECTION_SOURCE_DEAD)
-	var signature: Array = [cut, dead, _cut_dead_lot_counts()]
-	if allow_skip and not _cut_dead_signature.is_empty() and signature == _cut_dead_signature:
-		return false
-	_cut_dead_signature = signature
-	_rebuild_cut_dead_multimeshes()
+	_selection_lot_index_dirty[SELECTION_SOURCE_CUT] = true
+	_selection_lot_index_dirty[SELECTION_SOURCE_DEAD] = true
+	var rebuilt := _rebuild_cut_dead_multimeshes()
 	queue_redraw()
-	return true
-
-
-# Firma dell'ultima ricostruzione di ceppi e morti ([] = nessuna o non confrontabile).
-var _cut_dead_signature: Array = []
-
-
-# Stesso conteggio di _lot_extent_counts, solo per i lotti con un ceppo o una pianta morta: tipo -> {lotto: conteggio}.
-func _cut_dead_lot_counts() -> Dictionary:
-	var result: Dictionary = {}
-	for object_type in [GameTypes.WorldObjectType.TREE, GameTypes.WorldObjectType.SHRUB]:
-		var counts: Dictionary = {}
-		for entry in cut_positions.get(object_type, []):
-			var key: Vector3i = entry["key"]
-			counts[Vector2i(key.x, key.y)] = int(counts.get(Vector2i(key.x, key.y), 0)) + 1
-		for entry in dead_positions.get(object_type, []):
-			var key: Vector3i = entry["key"]
-			counts[Vector2i(key.x, key.y)] = int(counts.get(Vector2i(key.x, key.y), 0)) + 1
-		if counts.is_empty():
-			continue
-		for individual_key in vegetation_positions.get(object_type, []):
-			var lot := Vector2i(individual_key.x, individual_key.y)
-			if counts.has(lot):
-				counts[lot] = int(counts[lot]) + 1
-		result[object_type] = counts
-	return result
+	return rebuilt
 
 
 # Il colore dell'erba e quello della chioma degli alberi NON conifer dipendono dalla stagione,
@@ -2331,30 +2308,54 @@ func _ensure_stick_mesh() -> void:
 # un redraw e l'altro finché la quantità non cambia). Vector2i tipizzato esplicitamente (non :=)
 # perché `lot` proviene da un ciclo su Dictionary.keys() non tipizzato — stesso errore di
 # inferenza già incontrato con pebble_availability.
+# Dal 2026-10-24 (progetto B fase 3, ~8 ms al movimento): i bastoni di un lotto dipendono solo dal lotto e dal loro
+# numero, quindi si tengono impacchettati in memoria (_stick_lot_packed) e il MultiMesh si scrive in un colpo col buffer;
+# si calcolano solo i lotti nuovi o con un numero di bastoni diverso. Senza buffer, il metodo di prima.
+var _stick_lot_packed: Dictionary = {} # Vector2i lotto -> {"count": int, "packed": PackedFloat32Array}
+
+
 func _rebuild_stick_multimesh() -> void:
 	_ensure_stick_mesh()
-	var half: float = CELL_SIZE / 2.0
+	if _multimesh_buffer_layout_ok():
+		var buffer := PackedFloat32Array()
+		for lot in stick_availability.keys():
+			var count := _stick_tier_count(int(stick_availability[lot]))
+			if count <= 0:
+				continue
+			var cached: Dictionary = _stick_lot_packed.get(lot, {})
+			if cached.is_empty() or int(cached["count"]) != count:
+				cached = {"count": count, "packed": _packed_transforms(_stick_lot_transforms(lot, count))}
+				_stick_lot_packed[lot] = cached
+			buffer.append_array(cached["packed"])
+		_apply_buffer(_stick_multimesh, buffer, BUFFER_STRIDE_TRANSFORM)
+		return
 	var transforms: Array = []
 	for lot in stick_availability.keys():
-		var available: int = int(stick_availability[lot])
-		var count := _stick_tier_count(available)
+		var count := _stick_tier_count(int(stick_availability[lot]))
 		if count <= 0:
 			continue
-		var lot_pos: Vector2i = lot
-		var ground: Vector2 = Vector2(lot_pos.x * CELL_SIZE + half, lot_pos.y * CELL_SIZE + half)
-		for i in range(count):
-			var seed_base: Vector2i = lot_pos * 31 + Vector2i(i * 9 + 2, i * 17 + 5)
-			var angle: float = (float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0) * TAU
-			var dist: float = STICK_SCATTER_RADIUS * (float(hash(seed_base + Vector2i(3, 7)) % 1000) / 1000.0)
-			var offset: Vector2 = Vector2(cos(angle), sin(angle)) * dist
-			var stick_rotation: float = (float(hash(seed_base + Vector2i(11, 13)) % 1000) / 1000.0) * TAU
-			var length_scale: float = lerp(STICK_LENGTH_VARIATION_MIN, STICK_LENGTH_VARIATION_MAX, float(hash(seed_base + Vector2i(13, 11)) % 1000) / 1000.0)
-			var stick_transform := Transform2D(stick_rotation, Vector2.ZERO).scaled(Vector2(length_scale, 1.0))
-			stick_transform.origin = ground + offset
-			transforms.append(stick_transform)
+		transforms.append_array(_stick_lot_transforms(lot, count))
 	_stick_multimesh.instance_count = transforms.size()
 	for i in range(transforms.size()):
 		_stick_multimesh.set_instance_transform_2d(i, transforms[i])
+
+
+# Bastoni di un lotto: la formula di sempre (posizione, rotazione e lunghezza da hash del lotto e dell'indice).
+func _stick_lot_transforms(lot_pos: Vector2i, count: int) -> Array:
+	var half: float = CELL_SIZE / 2.0
+	var ground: Vector2 = Vector2(lot_pos.x * CELL_SIZE + half, lot_pos.y * CELL_SIZE + half)
+	var transforms: Array = []
+	for i in range(count):
+		var seed_base: Vector2i = lot_pos * 31 + Vector2i(i * 9 + 2, i * 17 + 5)
+		var angle: float = (float(hash(seed_base + Vector2i(7, 3)) % 1000) / 1000.0) * TAU
+		var dist: float = STICK_SCATTER_RADIUS * (float(hash(seed_base + Vector2i(3, 7)) % 1000) / 1000.0)
+		var offset: Vector2 = Vector2(cos(angle), sin(angle)) * dist
+		var stick_rotation: float = (float(hash(seed_base + Vector2i(11, 13)) % 1000) / 1000.0) * TAU
+		var length_scale: float = lerp(STICK_LENGTH_VARIATION_MIN, STICK_LENGTH_VARIATION_MAX, float(hash(seed_base + Vector2i(13, 11)) % 1000) / 1000.0)
+		var stick_transform := Transform2D(stick_rotation, Vector2.ZERO).scaled(Vector2(length_scale, 1.0))
+		stick_transform.origin = ground + offset
+		transforms.append(stick_transform)
+	return transforms
 
 
 func _draw_stick_positions() -> void:
@@ -2833,35 +2834,88 @@ func _build_dead_tree_transform(key: Vector3i, size_multiplier: float, lot_count
 # (vedi le tre funzioni sopra). Ogni entry porta già "size_multiplier" (vedi
 # IndividualVegetationService.get_cut_positions/get_dead_positions) — nessun bisogno di risolverlo
 # qui, viene passato così com'è.
-func _rebuild_cut_dead_multimeshes() -> void:
+# A gruppi per zona (2026-10-24, progetto B fase 2b): per ogni elenco (ceppi o morti di un tipo) le voci si dividono per
+# zona (vegetation_zone_of), e una zona si rifà solo se le sue voci o il numero di individui dei suoi lotti sono cambiati;
+# poi le zone si concatenano nell'ordine delle zone. Ritorna true se almeno una zona è stata rifatta.
+var _cut_dead_groups: Dictionary = {}  # "cut:<tipo>" / "dead:<tipo>" -> Array di gruppi per zona
+
+
+func _rebuild_cut_dead_multimeshes() -> bool:
 	_ensure_vegetation_meshes()
 	_ensure_vegetation_multimeshes()
 
 	var tree_stump_transforms: Array = []
 	var shrub_stump_transforms: Array = []
-	for object_type in cut_positions:
-		var lot_counts := _lot_extent_counts(object_type)
-		for entry in cut_positions[object_type]:
-			var key: Vector3i = entry["key"]
-			var size_multiplier: float = entry["size_multiplier"]
-			if object_type == GameTypes.WorldObjectType.TREE:
-				tree_stump_transforms.append(_build_tree_stump_transform(key, size_multiplier, lot_counts))
-			else:
-				shrub_stump_transforms.append(_build_shrub_stump_transform(key, size_multiplier, lot_counts))
-	_apply_transforms(_tree_stump_multimesh, tree_stump_transforms)
-	_apply_transforms(_shrub_stump_multimesh, shrub_stump_transforms)
-
 	var dead_transforms: Array = []
 	var dead_tree_transforms: Array = []
-	for object_type in dead_positions:
-		var lot_counts := _lot_extent_counts(object_type)
-		for entry in dead_positions[object_type]:
-			if object_type == GameTypes.WorldObjectType.TREE:
-				dead_tree_transforms.append(_build_dead_tree_transform(entry["key"], entry["size_multiplier"], lot_counts))
+	var rebuilt := false
+	var used_kinds: Dictionary = {}
+	for source_name in ["cut", "dead"]:
+		var by_type: Dictionary = cut_positions if source_name == "cut" else dead_positions
+		for object_type in by_type:
+			var kind := "%s:%d" % [source_name, object_type]
+			used_kinds[kind] = true
+			var lot_counts := _lot_extent_counts(object_type)
+			var buckets := _cut_dead_entries_by_zone(by_type[object_type])
+			var groups: Array = _cut_dead_groups.get(kind, [])
+			if groups.size() != VEGETATION_ZONE_COUNT:
+				groups = []
+				groups.resize(VEGETATION_ZONE_COUNT)
+			var target: Array
+			if source_name == "cut":
+				target = tree_stump_transforms if object_type == GameTypes.WorldObjectType.TREE else shrub_stump_transforms
 			else:
-				dead_transforms.append(_build_dead_marker_transform(object_type, entry["key"], entry["size_multiplier"], lot_counts))
+				target = dead_tree_transforms if object_type == GameTypes.WorldObjectType.TREE else dead_transforms
+			for zone in range(VEGETATION_ZONE_COUNT):
+				var entries: Array = buckets[zone]
+				var group: Variant = groups[zone]
+				if group == null or group["entries"] != entries or not _group_lot_counts_match(group, lot_counts):
+					group = _build_cut_dead_group(source_name, object_type, entries, lot_counts)
+					groups[zone] = group
+					rebuilt = true
+				target.append_array(group["transforms"])
+			_cut_dead_groups[kind] = groups
+	for kind in _cut_dead_groups.keys():
+		if not used_kinds.has(kind):
+			_cut_dead_groups.erase(kind)
+			rebuilt = true
+	_apply_transforms(_tree_stump_multimesh, tree_stump_transforms)
+	_apply_transforms(_shrub_stump_multimesh, shrub_stump_transforms)
 	_apply_transforms(_dead_multimesh, dead_transforms)
 	_apply_transforms(_dead_tree_multimesh, dead_tree_transforms)
+	return rebuilt
+
+
+# Voci di ceppi o morti divise per zona (VEGETATION_ZONE_COUNT array), nell'ordine dell'elenco dentro ogni zona.
+func _cut_dead_entries_by_zone(entries: Array) -> Array:
+	var buckets: Array = []
+	buckets.resize(VEGETATION_ZONE_COUNT)
+	for i in range(VEGETATION_ZONE_COUNT):
+		buckets[i] = []
+	for entry in entries:
+		var key: Vector3i = entry["key"]
+		(buckets[vegetation_zone_of(key.x, key.y)] as Array).append(entry)
+	return buckets
+
+
+# Segni di una zona: stesse funzioni di sempre per ogni voce.
+func _build_cut_dead_group(source_name: String, object_type: GameTypes.WorldObjectType, entries: Array, lot_counts: Dictionary) -> Dictionary:
+	var transforms: Array = []
+	var keys: Array = []
+	for entry in entries:
+		var key: Vector3i = entry["key"]
+		var size_multiplier: float = entry["size_multiplier"]
+		keys.append(key)
+		if source_name == "cut":
+			if object_type == GameTypes.WorldObjectType.TREE:
+				transforms.append(_build_tree_stump_transform(key, size_multiplier, lot_counts))
+			else:
+				transforms.append(_build_shrub_stump_transform(key, size_multiplier, lot_counts))
+		elif object_type == GameTypes.WorldObjectType.TREE:
+			transforms.append(_build_dead_tree_transform(key, size_multiplier, lot_counts))
+		else:
+			transforms.append(_build_dead_marker_transform(object_type, key, size_multiplier, lot_counts))
+	return {"entries": entries, "transforms": transforms, "lot_counts": _group_lot_counts(keys, lot_counts)}
 
 
 # Quanti individui (vivi O bloccati da un'eccezione di taglio/morte) condividono ciascun lotto —
@@ -2875,7 +2929,33 @@ func _rebuild_cut_dead_multimeshes() -> void:
 # davvero deciso. SENZA questo, tagliare un individuo cambierebbe local_count per i suoi vicini di
 # lotto ancora vivi, e sia il disk-offset di TREE sia l'offset_range di SHRUB dipendono da
 # local_count — i vicini si sposterebbero pur non avendo perso la propria identità.
+# In memoria finché i tre elenchi sono gli stessi oggetti con la stessa lunghezza (2026-10-24, progetto B fase 2b: nello
+# stesso ridisegno lo chiedono ceppi, alberi e arbusti, ~2 ms l'uno sugli alberi). Sola lettura per chi lo riceve.
+var _lot_extent_counts_memo: Dictionary = {}  # tipo -> {"lists": Array, "sizes": Array, "counts": Dictionary}
+
+
 func _lot_extent_counts(object_type: GameTypes.WorldObjectType) -> Dictionary:
+	var lists: Array = [
+		vegetation_positions.get(object_type, null), cut_positions.get(object_type, null), dead_positions.get(object_type, null),
+	]
+	var sizes: Array = []
+	for list in lists:
+		sizes.append((list as Array).size() if list != null else -1)
+	var memo: Variant = _lot_extent_counts_memo.get(object_type)
+	if memo != null and memo["sizes"] == sizes:
+		var same := true
+		for i in range(lists.size()):
+			if not is_same(lists[i], memo["lists"][i]):
+				same = false
+				break
+		if same:
+			return memo["counts"]
+	var counts := _compute_lot_extent_counts(object_type)
+	_lot_extent_counts_memo[object_type] = {"lists": lists, "sizes": sizes, "counts": counts}
+	return counts
+
+
+func _compute_lot_extent_counts(object_type: GameTypes.WorldObjectType) -> Dictionary:
 	var combined: Array = vegetation_positions.get(object_type, []).duplicate()
 	for entry in cut_positions.get(object_type, []):
 		combined.append(entry["key"])
@@ -3194,22 +3274,55 @@ func _rebuild_tree_multimeshes() -> void:
 		_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
 	last_batch_timings_ms["tree_apply"] = (Time.get_ticks_usec() - measure_start_usec) / 1000.0
 	_tree_fruit_entries_valid = true
+	_tree_fruit_from_groups = false
 
 
-# RIMONTAGGIO A GRUPPI DEGLI ALBERI (2026-10-04, richiesta utente). L'elenco NON filtrato degli alberi (posizioni della
-# cella, nell'ordine di sempre) è diviso in gruppi consecutivi di TREE_GROUP_SIZE; l'elenco filtrato per la nebbia, che
-# ne conserva l'ordine, è quindi la concatenazione delle "fette visibili" dei gruppi. GameScene calcola dove comincia la
-# fetta di ogni gruppo nello stesso giro del filtro e la passa qui (set_tree_group_layout). Per ogni gruppo si
-# conservano tronchi, chiome (col colore), chiome conifer, voci dei frutti e puntini dei frutti già concatenati; a ogni
-# rimontaggio si rifanno solo i gruppi da rifare e si concatenano i blocchi nell'ordine dei gruppi: stesso ordine
-# delle istanze del giro di sempre.
+# RIMONTAGGIO A GRUPPI DEGLI ALBERI (2026-10-04, richiesta utente). L'elenco filtrato per la nebbia è la concatenazione
+# delle "fette visibili" dei gruppi. GameScene calcola dove comincia la fetta di ogni gruppo nello stesso giro del filtro
+# e la passa qui (set_tree_group_layout). Per ogni gruppo si conservano tronchi, chiome (col colore), chiome conifer,
+# voci dei frutti e puntini dei frutti già concatenati; a ogni rimontaggio si rifanno solo i gruppi da rifare e si
+# concatenano i blocchi nell'ordine dei gruppi.
+# Gruppi per ZONA (2026-10-24, progetto B fase 2b): prima erano fette consecutive di 256 alberi dell'elenco, e togliere
+# un albero faceva scorrere tutti i gruppi dopo di lui; ora il gruppo N sono gli alberi della zona N (riquadri di
+# VEGETATION_ZONE_SIZE microcelle, vegetation_zone_of), con l'elenco ordinato per zona da VegetationLayoutService. Un
+# taglio cambia solo il gruppo della sua zona.
 #
-# Un gruppo si rifà se la sua fetta visibile è diversa da quella conservata (confronto nativo di array). Si rifanno
-# TUTTI se cambia anche uno solo di: versione delle posizioni (rigenerazione), anno, parametri d'età, colore stagionale
-# delle chiome, ceppi o piante morte degli alberi (contano nel numero di individui del lotto), numero di gruppi; se il
-# motivo del ridisegno non è movimento/nebbia (allow_reuse false); se la memoria della geometria viene svuotata.
-# I puntini dei frutti di un gruppo si rifanno anche quando cambiano i rapporti dei frutti per lotto (ghiande, frutta).
-const TREE_GROUP_SIZE := 256
+# Un gruppo si rifà se la sua fetta visibile è diversa da quella conservata (confronto nativo di array) o se è cambiato
+# il numero di individui (vivi + ceppi + morti, _lot_extent_counts) di uno dei suoi lotti, da cui dipende la taglia: dal
+# 2026-10-24 è questo a coprire ceppi e piante morte, prima nei dati globali (un ceppo nuovo li rifaceva tutti). Si
+# rifanno TUTTI se cambia anche uno solo di: versione delle posizioni (rigenerazione), anno, parametri d'età, colore
+# stagionale delle chiome, numero di gruppi; se il motivo del ridisegno non lo permette (allow_reuse false); se la
+# memoria della geometria viene svuotata. I puntini dei frutti di un gruppo si rifanno anche quando cambiano i rapporti
+# dei frutti per lotto (ghiande, frutta).
+const VEGETATION_ZONE_SIZE := 10
+const VEGETATION_ZONES_PER_SIDE := 10
+const VEGETATION_ZONE_COUNT := VEGETATION_ZONES_PER_SIDE * VEGETATION_ZONES_PER_SIDE
+
+
+# Zona di una microcella (0..VEGETATION_ZONE_COUNT-1), per riga: condivisa da VegetationLayoutService (ordine
+# dell'elenco) e da GameScene (inizi dei gruppi).
+static func vegetation_zone_of(x: int, y: int) -> int:
+	return clampi(y / VEGETATION_ZONE_SIZE, 0, VEGETATION_ZONES_PER_SIDE - 1) * VEGETATION_ZONES_PER_SIDE \
+		+ clampi(x / VEGETATION_ZONE_SIZE, 0, VEGETATION_ZONES_PER_SIDE - 1)
+
+
+# Numero di individui dei lotti di `members` (vedi _lot_extent_counts), conservato nel gruppo.
+static func _group_lot_counts(members: Array, lot_counts: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for individual_key in members:
+		var lot := Vector2i(individual_key.x, individual_key.y)
+		if not result.has(lot):
+			result[lot] = int(lot_counts.get(lot, 0))
+	return result
+
+
+# true se nessun lotto del gruppo ha cambiato numero di individui.
+static func _group_lot_counts_match(group: Dictionary, lot_counts: Dictionary) -> bool:
+	var stored: Dictionary = group["lot_counts"]
+	for lot in stored.keys():
+		if int(lot_counts.get(lot, 0)) != int(stored[lot]):
+			return false
+	return true
 
 var _tree_group_layout_version: int = -1
 var _tree_group_starts: Array = []
@@ -3235,9 +3348,7 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 	_check_geometry_cache_globals()
 	var group_count: int = _tree_group_starts.size() - 1
 	var globals: Array = [
-		_tree_group_layout_version, tree_current_year, tree_age_params.hash(), deciduous_canopy_color,
-		cut_positions.get(GameTypes.WorldObjectType.TREE, []), dead_positions.get(GameTypes.WorldObjectType.TREE, []),
-		group_count,
+		_tree_group_layout_version, tree_current_year, tree_age_params.hash(), deciduous_canopy_color, group_count,
 	]
 	if not _tree_group_allow_reuse or globals != _tree_groups_globals or _tree_groups.size() != group_count:
 		_tree_groups.clear()
@@ -3251,7 +3362,10 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 	_tree_groups_fruit_stamp = fruit_stamp
 
 	var loop_start_usec := Time.get_ticks_usec()
-	var lot_counts: Variant = null
+	# Sempre (2026-10-24): serve anche al controllo dei gruppi da riusare (_group_lot_counts_match).
+	var lot_counts_start_usec := Time.get_ticks_usec()
+	var lot_counts: Dictionary = _lot_extent_counts(GameTypes.WorldObjectType.TREE)
+	last_batch_timings_ms["tree_lot_counts"] = (Time.get_ticks_usec() - lot_counts_start_usec) / 1000.0
 	var trunk_buffer := PackedFloat32Array()
 	var canopy_buffer := PackedFloat32Array()
 	var conifer_buffer := PackedFloat32Array()
@@ -3265,11 +3379,7 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 	for group_index in range(group_count):
 		var members: Array = positions.slice(int(_tree_group_starts[group_index]), int(_tree_group_starts[group_index + 1]))
 		var group: Variant = _tree_groups[group_index]
-		if group == null or group["members"] != members:
-			if lot_counts == null:
-				var lot_counts_start_usec := Time.get_ticks_usec()
-				lot_counts = _lot_extent_counts(GameTypes.WorldObjectType.TREE)
-				last_batch_timings_ms["tree_lot_counts"] = (Time.get_ticks_usec() - lot_counts_start_usec) / 1000.0
+		if group == null or group["members"] != members or not _group_lot_counts_match(group, lot_counts):
 			group = _build_tree_group(members, lot_counts, deciduous_canopy_color)
 			_tree_groups[group_index] = group
 			rebuilt_count += 1
@@ -3277,7 +3387,9 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 			reused_individuals += int(group["reused"])
 		else:
 			reused_count += 1
-			if fruit_changed:
+			# Solo i gruppi con un lotto il cui rapporto è cambiato davvero (2026-10-24, progetto B fase 2b: un taglio cambia di
+			# poco il peso totale e quindi la mappa dei rapporti, ma pochi lotti cambiano valore).
+			if fruit_changed and not _group_fruit_ratios_match(group):
 				_refresh_tree_group_fruit(group)
 		trunk_buffer.append_array(group["trunk"])
 		canopy_buffer.append_array(group["canopy"])
@@ -3297,6 +3409,7 @@ func _rebuild_tree_multimeshes_grouped(positions: Array, deciduous_canopy_color:
 	_apply_buffer(_tree_fruit_domesticable_multimesh, domesticable_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
 	last_batch_timings_ms["tree_apply"] = (Time.get_ticks_usec() - apply_start_usec) / 1000.0
 	_tree_fruit_entries_valid = true
+	_tree_fruit_from_groups = true
 
 
 # Un gruppo da zero: lo stesso corpo del giro di sempre (_rebuild_tree_multimeshes, ramo a buffer) sui soli `members`,
@@ -3333,7 +3446,7 @@ func _build_tree_group(members: Array, lot_counts: Dictionary, deciduous_canopy_
 		})
 	var group := {
 		"members": members, "trunk": trunk, "canopy": canopy, "conifer": conifer, "fruit_entries": fruit_entries,
-		"computed": computed, "reused": reused,
+		"computed": computed, "reused": reused, "lot_counts": _group_lot_counts(members, lot_counts),
 	}
 	_refresh_tree_group_fruit(group)
 	return group
@@ -3354,6 +3467,33 @@ func _refresh_tree_group_fruit(group: Dictionary) -> void:
 			wild.append_array(_cached_tree_fruit_packed(entry))
 	group["wild_fruit"] = wild
 	group["domesticable_fruit"] = domesticable
+	group["fruit_ratios"] = _group_fruit_ratios(group["fruit_entries"], "")
+
+
+# Rapporti dei frutti per lotto letti dalle voci del gruppo (2026-10-24, progetto B fase 2b), come li legge
+# _fruit_stock_shows (lotto assente = 1.0): risorsa -> {lotto: rapporto}. `default_resource` per le voci senza
+# "resource_name" (bacche degli arbusti).
+func _group_fruit_ratios(fruit_entries: Array, default_resource: String) -> Dictionary:
+	var result: Dictionary = {}
+	for entry in fruit_entries:
+		var resource_name: String = entry.get("resource_name", default_resource)
+		var lot := Vector2i(entry["key"].x, entry["key"].y)
+		if not result.has(resource_name):
+			result[resource_name] = {}
+		result[resource_name][lot] = float(fruit_stock_available_ratio_by_lot.get(resource_name, {}).get(lot, 1.0))
+	return result
+
+
+# true se nessun lotto con frutti del gruppo ha cambiato rapporto dall'ultima volta che i suoi puntini sono stati fatti.
+func _group_fruit_ratios_match(group: Dictionary) -> bool:
+	var stored: Dictionary = group.get("fruit_ratios", {})
+	for resource_name in stored.keys():
+		var current: Dictionary = fruit_stock_available_ratio_by_lot.get(resource_name, {})
+		var stored_lots: Dictionary = stored[resource_name]
+		for lot in stored_lots.keys():
+			if float(current.get(lot, 1.0)) != float(stored_lots[lot]):
+				return false
+	return true
 
 
 # Chioma decidua impacchettata con il colore della stagione (12 valori: trasformazione + colore). Rifatta solo quando il
@@ -3505,6 +3645,8 @@ func clear_vegetation_geometry_cache() -> void:
 	_shrub_groups.clear()
 	_shrub_groups_globals = []
 	_shrub_groups_berry_stamp = []
+	_tree_fruit_from_groups = false
+	_shrub_fruit_from_groups = false
 
 
 # Svuota la memoria di un tipo se anno corrente o parametri d'età sono cambiati dall'ultima ricostruzione.
@@ -3584,6 +3726,11 @@ var _tree_fruit_entries: Array = []
 var _tree_fruit_entries_valid: bool = false
 var _shrub_fruit_entries: Array = []
 var _shrub_fruit_entries_valid: bool = false
+# L'ultima ricostruzione completa è stata a gruppi per zona (2026-10-24, progetto B fase 3): i soli frutti si rifanno
+# allora gruppo per gruppo, solo dove un lotto ha cambiato rapporto (_rebuild_tree_fruit_from_groups/
+# _rebuild_shrub_fruit_from_groups), invece di ripassare tutte le piante da frutto.
+var _tree_fruit_from_groups: bool = false
+var _shrub_fruit_from_groups: bool = false
 
 
 # Soli MultiMesh dei frutti degli alberi, dall'elenco: stesso test (_fruit_stock_shows) e stesse trasformazioni
@@ -3592,6 +3739,9 @@ func _rebuild_tree_fruit_multimeshes() -> void:
 	if not _tree_fruit_entries_valid or _tree_fruit_wild_multimesh == null or _tree_fruit_domesticable_multimesh == null:
 		last_fruit_rebuild_paths["tree"] = "ripiego completo"
 		_rebuild_tree_multimeshes()
+		return
+	if _tree_fruit_from_groups and _multimesh_buffer_layout_ok():
+		_rebuild_tree_fruit_from_groups()
 		return
 	last_fruit_rebuild_paths["tree"] = "solo frutti"
 	# Dalla memoria (2026-10-04, richiesta utente): col metodo a buffer i puntini già impacchettati della geometria in
@@ -3624,6 +3774,46 @@ func _rebuild_tree_fruit_multimeshes() -> void:
 			wild_fruit_transforms.append_array(transforms)
 	_apply_transforms(_tree_fruit_wild_multimesh, wild_fruit_transforms)
 	_apply_transforms(_tree_fruit_domesticable_multimesh, domesticable_fruit_transforms)
+
+
+# Soli frutti degli alberi dai gruppi per zona (2026-10-24, progetto B fase 3): si rifanno i puntini dei soli gruppi con un
+# lotto che ha cambiato rapporto (_group_fruit_ratios_match), gli altri si ricopiano così come sono. Stesso esito del giro
+# su tutte le piante da frutto: ogni gruppo tiene i puntini delle sue voci, nell'ordine delle zone.
+func _rebuild_tree_fruit_from_groups() -> void:
+	var refreshed := 0
+	var wild_fruit_buffer := PackedFloat32Array()
+	var domesticable_fruit_buffer := PackedFloat32Array()
+	for group in _tree_groups:
+		if group == null:
+			continue
+		if not _group_fruit_ratios_match(group):
+			_refresh_tree_group_fruit(group)
+			refreshed += 1
+		wild_fruit_buffer.append_array(group["wild_fruit"])
+		domesticable_fruit_buffer.append_array(group["domesticable_fruit"])
+	_apply_buffer(_tree_fruit_wild_multimesh, wild_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+	_apply_buffer(_tree_fruit_domesticable_multimesh, domesticable_fruit_buffer, BUFFER_STRIDE_TRANSFORM)
+	# I gruppi sono allineati ai rapporti di adesso: il prossimo rimontaggio a gruppi non li ricontrolla.
+	_tree_groups_fruit_stamp = [
+		fruit_stock_available_ratio_by_lot.get("acorn", {}), fruit_stock_available_ratio_by_lot.get("fruit", {}),
+	]
+	last_fruit_rebuild_paths["tree"] = "per zona (rifatte %d)" % refreshed
+
+
+# Soli frutti degli arbusti dai gruppi per zona: stesso schema degli alberi.
+func _rebuild_shrub_fruit_from_groups() -> void:
+	var refreshed := 0
+	var berry_buffer := PackedFloat32Array()
+	for group in _shrub_groups:
+		if group == null:
+			continue
+		if not _group_fruit_ratios_match(group):
+			_refresh_shrub_group_berries(group)
+			refreshed += 1
+		berry_buffer.append_array(group["berries"])
+	_apply_buffer(_berry_multimesh, berry_buffer, BUFFER_STRIDE_TRANSFORM)
+	_shrub_groups_berry_stamp = [fruit_stock_available_ratio_by_lot.get("berry", {})]
+	last_fruit_rebuild_paths["shrub"] = "per zona (rifatte %d)" % refreshed
 
 
 # Puntini impacchettati di un albero da frutto: dalla geometria in memoria se esiste e ha la stessa chioma della voce
@@ -3823,6 +4013,7 @@ func _rebuild_shrub_multimeshes() -> void:
 		_apply_buffer(_shrub_multimesh, blob_buffer, BUFFER_STRIDE_TRANSFORM_COLOR)
 		_apply_buffer(_berry_multimesh, berry_buffer, BUFFER_STRIDE_TRANSFORM)
 		_shrub_fruit_entries_valid = true
+		_shrub_fruit_from_groups = false
 		return
 
 	_apply_transforms(_shrub_multimesh, blob_transforms)
@@ -3831,6 +4022,7 @@ func _rebuild_shrub_multimeshes() -> void:
 
 	_apply_transforms(_berry_multimesh, berry_transforms)
 	_shrub_fruit_entries_valid = true
+	_shrub_fruit_from_groups = false
 
 
 # Geometria di un arbusto: le stesse formule della ricostruzione di prima del passo B (lobi con colore, bacche).
@@ -3880,13 +4072,12 @@ func _compute_shrub_geometry(individual_key: Vector3i, lot_counts: Dictionary, p
 
 
 # RIMONTAGGIO A GRUPPI DEGLI ARBUSTI (2026-10-04, richiesta utente) — stesso schema degli alberi (vedi
-# _rebuild_tree_multimeshes_grouped e il commento su TREE_GROUP_SIZE): gruppi di SHRUB_GROUP_SIZE arbusti consecutivi
-# dell'elenco NON filtrato, fette visibili da GameScene (set_shrub_group_layout), per gruppo lobi (con colore), voci
-# delle bacche e bacche già concatenati. Un gruppo si rifà se la sua fetta visibile cambia; tutti se cambiano versione
-# delle posizioni, anno, parametri d'età, ceppi o piante morte degli arbusti, numero di gruppi, se il motivo non è
-# movimento/nebbia o se la memoria della geometria viene svuotata (gli arbusti non hanno colore stagionale). Le bacche
-# dei gruppi riusati si rifanno quando cambiano i rapporti delle bacche per lotto (stessa scelta dei frutti degli alberi).
-const SHRUB_GROUP_SIZE := 256
+# _rebuild_tree_multimeshes_grouped e il commento su VEGETATION_ZONE_SIZE): un gruppo per zona (dal 2026-10-24), fette
+# visibili da GameScene (set_shrub_group_layout), per gruppo lobi (con colore), voci delle bacche e bacche già
+# concatenati. Un gruppo si rifà se la sua fetta visibile cambia o un suo lotto cambia numero di individui; tutti se
+# cambiano versione delle posizioni, anno, parametri d'età, numero di gruppi, se il motivo non lo permette o se la
+# memoria della geometria viene svuotata (gli arbusti non hanno colore stagionale). Le bacche dei gruppi riusati si
+# rifanno quando cambiano i rapporti delle bacche per lotto (stessa scelta dei frutti degli alberi).
 
 var _shrub_group_layout_version: int = -1
 var _shrub_group_starts: Array = []
@@ -3909,11 +4100,7 @@ func set_shrub_group_layout(layout_version: int, starts: Array, allow_reuse: boo
 func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 	_check_geometry_cache_globals()
 	var group_count: int = _shrub_group_starts.size() - 1
-	var globals: Array = [
-		_shrub_group_layout_version, shrub_current_year, shrub_age_params.hash(),
-		cut_positions.get(GameTypes.WorldObjectType.SHRUB, []), dead_positions.get(GameTypes.WorldObjectType.SHRUB, []),
-		group_count,
-	]
+	var globals: Array = [_shrub_group_layout_version, shrub_current_year, shrub_age_params.hash(), group_count]
 	if not _shrub_group_allow_reuse or globals != _shrub_groups_globals or _shrub_groups.size() != group_count:
 		_shrub_groups.clear()
 		_shrub_groups.resize(group_count)
@@ -3923,7 +4110,8 @@ func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 	var berry_changed: bool = berry_stamp != _shrub_groups_berry_stamp
 	_shrub_groups_berry_stamp = berry_stamp
 
-	var lot_counts: Variant = null
+	# Sempre (2026-10-24): serve anche al controllo dei gruppi da riusare (_group_lot_counts_match).
+	var lot_counts: Dictionary = _lot_extent_counts(GameTypes.WorldObjectType.SHRUB)
 	var blob_buffer := PackedFloat32Array()
 	var berry_buffer := PackedFloat32Array()
 	_shrub_fruit_entries.clear()
@@ -3934,9 +4122,7 @@ func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 	for group_index in range(group_count):
 		var members: Array = positions.slice(int(_shrub_group_starts[group_index]), int(_shrub_group_starts[group_index + 1]))
 		var group: Variant = _shrub_groups[group_index]
-		if group == null or group["members"] != members:
-			if lot_counts == null:
-				lot_counts = _lot_extent_counts(GameTypes.WorldObjectType.SHRUB)
+		if group == null or group["members"] != members or not _group_lot_counts_match(group, lot_counts):
 			group = _build_shrub_group(members, lot_counts)
 			_shrub_groups[group_index] = group
 			rebuilt_count += 1
@@ -3944,7 +4130,7 @@ func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 			reused_individuals += int(group["reused"])
 		else:
 			reused_count += 1
-			if berry_changed:
+			if berry_changed and not _group_fruit_ratios_match(group):
 				_refresh_shrub_group_berries(group)
 		blob_buffer.append_array(group["blobs"])
 		berry_buffer.append_array(group["berries"])
@@ -3954,6 +4140,7 @@ func _rebuild_shrub_multimeshes_grouped(positions: Array) -> void:
 	_apply_buffer(_shrub_multimesh, blob_buffer, BUFFER_STRIDE_TRANSFORM_COLOR)
 	_apply_buffer(_berry_multimesh, berry_buffer, BUFFER_STRIDE_TRANSFORM)
 	_shrub_fruit_entries_valid = true
+	_shrub_fruit_from_groups = true
 
 
 # Un gruppo di arbusti da zero: lo stesso corpo del giro di sempre (ramo a buffer) sui soli `members`.
@@ -3978,7 +4165,10 @@ func _build_shrub_group(members: Array, lot_counts: Dictionary) -> Dictionary:
 				"key": individual_key, "jitter_pos": geometry["jitter_pos"], "center": geometry["center"],
 				"density_scale": geometry["density_scale"], "size_multiplier": geometry["size_multiplier"],
 			})
-	var group := {"members": members, "blobs": blobs, "fruit_entries": fruit_entries, "computed": computed, "reused": reused}
+	var group := {
+		"members": members, "blobs": blobs, "fruit_entries": fruit_entries, "computed": computed, "reused": reused,
+		"lot_counts": _group_lot_counts(members, lot_counts),
+	}
 	_refresh_shrub_group_berries(group)
 	return group
 
@@ -3990,6 +4180,7 @@ func _refresh_shrub_group_berries(group: Dictionary) -> void:
 		if _fruit_stock_shows("berry", entry["key"], entry["jitter_pos"]):
 			berries.append_array(_cached_shrub_berry_packed(entry))
 	group["berries"] = berries
+	group["fruit_ratios"] = _group_fruit_ratios(group["fruit_entries"], "berry")
 
 
 # Bacche di un arbusto (estratta il 2026-10-03 da _rebuild_shrub_multimeshes, formula invariata, per riusarla nella
@@ -4018,6 +4209,9 @@ func _rebuild_shrub_fruit_multimesh() -> void:
 	if not _shrub_fruit_entries_valid or _berry_multimesh == null:
 		last_fruit_rebuild_paths["shrub"] = "ripiego completo"
 		_rebuild_shrub_multimeshes()
+		return
+	if _shrub_fruit_from_groups and _multimesh_buffer_layout_ok():
+		_rebuild_shrub_fruit_from_groups()
 		return
 	last_fruit_rebuild_paths["shrub"] = "solo frutti"
 	# Dalla memoria (2026-10-04): stesso schema degli alberi (_cached_shrub_berry_packed).

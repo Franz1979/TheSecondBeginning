@@ -5028,8 +5028,12 @@ func _on_plant_cut(macro_coords: Vector2i, object_type: GameTypes.WorldObjectTyp
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
 	if cell == null:
 		return
-	cell.needs_full_vegetation_recompute = true
-	_refresh_resource_visuals(cell, "taglio")
+	# Progetto B fase 2a (2026-10-24): si toglie la sola pianta dall'elenco; il ricalcolo completo solo se non si può.
+	if VegetationCutPatchService.remove_individual(cell, object_type, individual_key, game_data.year):
+		_refresh_resource_visuals(cell, "taglio", {"object_type": object_type, "key": individual_key})
+	else:
+		cell.needs_full_vegetation_recompute = true
+		_refresh_resource_visuals(cell, "taglio")
 	if not selected_vegetation.is_empty() and selected_vegetation["macro_coords"] == macro_coords \
 			and selected_vegetation["object_type"] == object_type and selected_vegetation["individual_key"] == individual_key:
 		_clear_vegetation_selection()
@@ -8195,8 +8199,8 @@ func _job_board_has_open_jobs() -> bool:
 
 # Candidati della lista adesso (JobBoardService.collect_candidates su tutti i lavori dei fornitori).
 # Tenuti per il fotogramma in corso finché le assegnazioni restano le stesse (2026-10-19, scatti: il coordinatore li
-# ricostruiva da capo per ogni pipottino, fino a 9 volte per fotogramma); un lavoro preso cambia le assegnazioni o le
-# task di qualcuno (non tutti i lavori compaiono nelle assegnazioni, es. gli ordini del cassetto) e la lista si rifà.
+# ricostruiva da capo per ogni pipottino, fino a 9 volte per fotogramma); un lavoro preso cambia le assegnazioni, gli
+# ordini del cassetto o il contatore delle prese (JobBoardService.take_revision) e la lista si rifà.
 # Sola lettura per chi la riceve.
 var _job_board_candidates_cache: Dictionary = {}
 var _job_board_candidates_frame: int = -1
@@ -8206,9 +8210,10 @@ var _job_board_candidates_assigned_hash: int = 0
 func _current_job_board_candidates() -> Dictionary:
 	var assigned := JobWorkScanService.collect_assignments(human_individuals)
 	var frame := Engine.get_process_frames()
-	var task_signature: Array = [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0]
-	for member in human_individuals:
-		task_signature.append([member.id, member.current_task.get_instance_id() if member.current_task != null else 0, member.task_queue.size()])
+	# Prese dalla lista (JobBoardService.take_revision) al posto delle task di tutti (2026-10-24, scatti: a fine rito 18
+	# pipottini liberi insieme, ognuno con una task di ripiego, la facevano rifare 13 volte, ~85 ms). Chi va a riposare o
+	# a un ripiego non cambia la lista; un lavoro appena finito può restarci fino al fotogramma dopo (la presa lo rifiuta).
+	var task_signature: Array = [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0, JobBoardService.take_revision]
 	var assigned_hash := task_signature.hash()
 	if frame == _job_board_candidates_frame and assigned_hash == _job_board_candidates_assigned_hash:
 		return _job_board_candidates_cache
@@ -9417,11 +9422,16 @@ func _find_building_by_id(building_id: int) -> Building:
 func _find_building_at_microcell(macro_coords: Vector2i, lot: Vector2i) -> Building:
 	if macro_world == null:
 		return null
+	# Strada sotto il cancello (2026-10-24): se sulla microcella ci sono due strati vince quello sopra (non di suolo).
+	var ground: Building = null
 	for building in macro_world.buildings:
 		# Ingombro (2026-10-17): qualunque microcella del rettangolo.
 		if BuildingFootprint.covers(building, macro_coords, lot):
+			if building.rules != null and building.rules.walkable:
+				ground = building
+				continue
 			return building
-	return null
+	return ground
 
 
 # Effetto nato-morto, popup nascita (2026-09-06) — serve solo per risolvere il NOME della madre da
@@ -11541,9 +11551,17 @@ func _build_lot_availability_map(macro_state: MacroCellState, resource_name: Str
 
 
 # `reason` (2026-10-03, richiesta utente — diagnostica): chi ha chiesto il ridisegno, solo per la riga [VEG REFRESH TIMING].
-func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void:
+# `cut` (2026-10-24, progetto B fase 2a/2b): {"object_type", "key"} di una pianta già tolta dall'elenco
+# (VegetationCutPatchService), {} = nessuna. Si salta ciò che un taglio non cambia: capacità dei lotti, insieme visibile
+# da rifare, sassi/uova/lotti d'erba, filtro della nebbia (elenco filtrato precedente meno la pianta); degli stick si
+# aggiorna solo quel lotto, e del renderer solo il gruppo della zona tagliata.
+func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Dictionary = {}) -> void:
 	if cell.macro_state == null:
 		return
+	var cut_patched: bool = not cut.is_empty()
+	var cut_lot: Variant = Vector2i(cut["key"].x, cut["key"].y) if cut_patched else null
+	# Esito degli stick al taglio, per la riga di log.
+	var cut_stick_outcome := ""
 	# Inizio del ridisegno, per il totale della riga [VEG REFRESH TIMING] (tutto, capacità dei lotti comprese).
 	var _refresh_total_start_usec := Time.get_ticks_usec()
 	# SALTO DEL RIMONTAGGIO (2026-10-03, richiesta utente — passo 1): solo per il motivo "movimento/nebbia".
@@ -11564,7 +11582,19 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# agganciato, richiesta esplicita utente — questo refresh serve comunque a mantenere la loro
 	# capacità fresca per pickup/ispezione microcella).
 	var _lot_capacity_start_usec := Time.get_ticks_usec()
-	LotCapacityService.refresh_all_vegetation_lot_capacities(cell.macro_state, game_data)
+	# Taglio per lotto: i lotti rivendicati e il checkpoint non cambiano, il rinfresco sarebbe un giro a vuoto.
+	# Movimento (2026-10-24, progetto B fase 3): stesso checkpoint e stessa versione delle posizioni dell'ultimo rinfresco
+	# = stessi lotti rivendicati, giro a vuoto anche qui (~3,5 ms).
+	var growth_checkpoint_day := VegetationPoolService.most_recent_growth_checkpoint_absolute_day(game_data)
+	var lot_capacity_current: bool = reason == "movimento/nebbia" and not cell.needs_full_vegetation_recompute \
+			and cell.lot_capacity_refresh_checkpoint_day == growth_checkpoint_day \
+			and cell.lot_capacity_refresh_layout_version == cell.vegetation_layout_version
+	if lot_capacity_current:
+		skipped.append("capacita_lotti")
+	elif not cut_patched:
+		LotCapacityService.refresh_all_vegetation_lot_capacities(cell.macro_state, game_data)
+		cell.lot_capacity_refresh_checkpoint_day = growth_checkpoint_day
+		cell.lot_capacity_refresh_layout_version = cell.vegetation_layout_version
 	var _lot_capacity_ms: float = (Time.get_ticks_usec() - _lot_capacity_start_usec) / 1000.0
 	# Insieme "visibile in dettaglio" calcolato UNA SOLA VOLTA per refresh (2026-09-20, richiesta utente —
 	# prima veniva ricalcolato per ognuno dei 6 filtri sotto: stick, pebble, uova, ogni risorsa GRASS_PATCH e
@@ -11577,7 +11607,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	if cell.fog_of_war_renderer != null:
 		# Per aggiunta nei ridisegni per movimento/nebbia, ricalcolato negli altri (2026-10-04, FogOfWarRenderer.
 		# compute_visible_positions_cached).
-		visible_positions = cell.fog_of_war_renderer.compute_visible_positions_cached(game_data.get_absolute_day(), reason == "movimento/nebbia")
+		# Anche per aggiunta al taglio per lotto: un taglio non cambia la visibilità.
+		visible_positions = cell.fog_of_war_renderer.compute_visible_positions_cached(game_data.get_absolute_day(), reason == "movimento/nebbia" or cut_patched)
 		cell.last_refresh_visible_version = cell.fog_of_war_renderer.visible_set_version
 	# Tenuto per il ridisegno leggero dopo una raccolta (2026-10-03, _refresh_collected_resource_visuals).
 	cell.last_visible_positions = visible_positions
@@ -11602,15 +11633,28 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# vista disponibile, la disponibilità di ogni risorsa è quella in memoria (last_scattered_availability, allineata
 	# anche dalle raccolte) più i soli lotti appena entrati in vista (_scattered_availability_for). Altrimenti
 	# scattered_newly_visible resta null e tutto si ricalcola come prima.
+	# Dal 2026-10-24 (progetto B fase 3) anche tra un giorno e l'altro: l'elenco della nebbia porta pure le microcelle
+	# uscite per scadenza ({"entered", "exited"}), i cui lotti si tolgono. Le uova no: il loro stock cambia coi giorni
+	# (consumo degli animali), quindi al primo ridisegno di un giorno nuovo si ricalcolano (scattered_eggs_changes null).
 	var scattered_newly_visible: Variant = null
 	if allow_scattered_skip and cell.fog_of_war_renderer != null and not cell.needs_full_vegetation_recompute \
-			and cell.scattered_cache_day == game_data.get_absolute_day() \
+			and cell.fog_of_war_renderer.is_visibility_day_current(game_data.get_absolute_day()) \
 			and cell.scattered_layout_version == cell.vegetation_layout_version:
-		scattered_newly_visible = cell.fog_of_war_renderer.get_newly_visible_since(cell.scattered_visible_epoch, cell.scattered_visible_version)
+		scattered_newly_visible = cell.fog_of_war_renderer.get_visible_changes_since(cell.scattered_visible_epoch, cell.scattered_visible_version)
+	var scattered_eggs_changes: Variant = scattered_newly_visible if cell.scattered_cache_day == game_data.get_absolute_day() else null
 	_scattered_new_lots_added = 0
+	_scattered_lots_removed = 0
 	# Tempo dei MultiMesh di bastoni/sassi (qui) e uova/lotti d'erba (sotto), sommati in "1c_scattered_multimeshes".
 	var _scattered_start_usec := Time.get_ticks_usec()
-	if cell.renderer != null:
+	if cell.renderer != null and cut_patched:
+		# Taglio per lotto: solo gli stick del lotto tagliato (PlantCutService ne aggiunge per un albero), come una raccolta.
+		var stick_apply := func(availability: Dictionary) -> void: cell.renderer.set_stick_availability(availability)
+		cut_stick_outcome = _patch_scattered_lot(cell, "stick", "stick", "stick", cell.macro_state.tree_claimed_lots, cut_lot, visible_positions, stick_apply)
+		if cut_stick_outcome == "":
+			_apply_scattered_availability(cell, "stick", _visible_lot_availability(cell, "stick", cell.macro_state.tree_claimed_lots.keys(), visible_positions), false, stick_apply)
+			cut_stick_outcome = "rimontato (calcolo completo)"
+		skipped.append("pebble")
+	elif cell.renderer != null:
 		if not _apply_scattered_availability(cell, "stick", _scattered_availability_for(cell, "stick", "stick", cell.macro_state.tree_claimed_lots, visible_positions, scattered_newly_visible), allow_scattered_skip, func(availability: Dictionary) -> void: cell.renderer.set_stick_availability(availability)):
 			skipped.append("stick")
 		if not _apply_scattered_availability(cell, "pebble", _scattered_availability_for(cell, "pebble", "pebble", cell.macro_state.stone_positions, visible_positions, scattered_newly_visible), allow_scattered_skip, func(availability: Dictionary) -> void: cell.renderer.set_pebble_availability(availability)):
@@ -11673,8 +11717,13 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 		# lotto) e da anno/parametri d'età; le piante tolte spariscono, le altre restano uguali.
 		if cell.renderer != null and reason != "taglio" and reason != "cantiere ripulito":
 			cell.renderer.clear_vegetation_geometry_cache()
-		var vegetation_service := VegetationPositionService.new()
-		cell.cached_vegetation_positions = vegetation_service.generate_positions(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
+		# Progetto B fase 1 (2026-10-24): il generatore solo quando i numeri della vegetazione possono essere cambiati
+		# (prima attivazione, checkpoint) o la disposizione non c'è ancora; altrimenti la disposizione tenuta.
+		if cell.needs_vegetation_layout_rebuild or not cell.macro_state.vegetation_layout_ready:
+			cell.cached_vegetation_positions = VegetationLayoutService.rebuild(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
+			cell.needs_vegetation_layout_rebuild = false
+		else:
+			cell.cached_vegetation_positions = VegetationLayoutService.read(cell.macro_state, occupied, game_data.year, building_positions)
 		# Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — ricalcolati
 		# alla STESSA cadenza delle posizioni GRASS appena sopra (mai una cadenza a parte: i nidi sono
 		# per costruzione un sottoinsieme di QUESTE posizioni, vedi TerrainScatteredResourceService.
@@ -11695,6 +11744,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 				cell.macro_state, resource_name, cell.cached_vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
 			)
 		cell.needs_full_vegetation_recompute = false
+	if cut_patched and DebugLogging.CHECK_VEGETATION_CUT_PATCH:
+		VegetationCutPatchService.verify(cell, occupied, building_positions, game_data.year)
 	var vegetation_positions: Dictionary = cell.cached_vegetation_positions
 	_veg_timings_ms["1_position_generation"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
@@ -11708,8 +11759,12 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# così un nido fuori stagione/senza birds/già raccolto semplicemente non compare (mai un'istanza
 	# multimesh sprecata per un nido vuoto).
 	_scattered_start_usec = Time.get_ticks_usec()
-	if cell.renderer != null:
-		if not _apply_scattered_availability(cell, "eggs", _scattered_availability_for(cell, "eggs", "eggs", cell.macro_state.egg_nest_positions, visible_positions, scattered_newly_visible), allow_scattered_skip, func(availability: Dictionary) -> void: cell.renderer.set_egg_nest_availability(availability)):
+	# Taglio per lotto: nidi e lotti d'erba stanno solo su lotti d'erba, che un taglio di albero o arbusto non tocca.
+	if cut_patched:
+		skipped.append("eggs")
+		skipped.append("grass_patch")
+	elif cell.renderer != null:
+		if not _apply_scattered_availability(cell, "eggs", _scattered_availability_for(cell, "eggs", "eggs", cell.macro_state.egg_nest_positions, visible_positions, scattered_eggs_changes), allow_scattered_skip, func(availability: Dictionary) -> void: cell.renderer.set_egg_nest_availability(availability)):
 			skipped.append("eggs")
 
 		# Rendering lotti GRASS_PATCH (2026-09-19) — MIRROR del blocco eggs appena sopra, stesso
@@ -11723,12 +11778,16 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	_scattered_ms += (Time.get_ticks_usec() - _scattered_start_usec) / 1000.0
 	_veg_timings_ms["1c_scattered_multimeshes"] = _scattered_ms
 	# Stato dell'ultimo calcolo delle disponibilità, per il prossimo ridisegno (completo o per aggiunta, qualunque motivo).
-	if cell.fog_of_war_renderer != null:
+	# Non al taglio per lotto (2026-10-24, progetto B fase 3): lì sassi, uova e lotti d'erba non si aggiornano, quindi i
+	# cambiamenti della nebbia da allora restano da applicare al prossimo ridisegno.
+	if cell.fog_of_war_renderer != null and not cut_patched:
 		cell.scattered_cache_day = game_data.get_absolute_day()
 		cell.scattered_visible_epoch = cell.fog_of_war_renderer.get_newly_visible_epoch()
 		cell.scattered_visible_version = cell.fog_of_war_renderer.visible_set_version
 		cell.scattered_layout_version = cell.vegetation_layout_version
-	var scattered_mode_text: String = "ricalcolate" if scattered_newly_visible == null else "memoria (+%d lotti)" % _scattered_new_lots_added
+	var scattered_mode_text: String = "ricalcolate" if scattered_newly_visible == null else "memoria (+%d lotti, -%d lotti%s)" % [
+		_scattered_new_lots_added, _scattered_lots_removed, "" if scattered_eggs_changes != null else ", uova ricalcolate"
+	]
 
 	# Proposta 2 (filtro FoW): il renderer riceve solo le posizioni che il FoW mostrerebbe comunque
 	# in dettaglio (vedi FogOfWarRenderer.compute_visible_positions) — una posizione coperta da
@@ -11744,7 +11803,10 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	var tree_group_starts: Array = []
 	# Inizi dei gruppi di arbusti (2026-10-04, rimontaggio a gruppi degli arbusti), dallo stesso giro del filtro.
 	var shrub_group_starts: Array = []
-	var render_vegetation_positions := _filter_vegetation_positions_by_visibility(cell, vegetation_positions, visible_positions, tree_group_starts, shrub_group_starts)
+	# Taglio per lotto (2026-10-24, progetto B fase 2b): la visibilità non cambia, vale l'elenco filtrato precedente meno la
+	# pianta tagliata (VegetationCutPatchService.patch_render_positions); null = filtro come sempre.
+	var reused_render: Variant = VegetationCutPatchService.patch_render_positions(cell, cut["object_type"], cut["key"], tree_group_starts, shrub_group_starts) if cut_patched else null
+	var render_vegetation_positions: Dictionary = reused_render if reused_render != null else _filter_vegetation_positions_by_visibility(cell, vegetation_positions, visible_positions, tree_group_starts, shrub_group_starts)
 	_veg_timings_ms["1b_fog_visibility_filter"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	# Salto del rimontaggio della vegetazione (passo 1, vedi in testa): nello stesso giorno sottotipi, età, stagione e
@@ -11759,6 +11821,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	else:
 		cell.last_render_vegetation_positions = render_vegetation_positions
 		cell.last_vegetation_rebuild_day = current_absolute_day
+		cell.last_tree_group_starts = tree_group_starts
+		cell.last_shrub_group_starts = shrub_group_starts
 
 	# begin_vegetation_batch()/end_vegetation_batch() (vedi MicroCellRenderer.gd): senza batching, i
 	# 6 setter chiamati in questa funzione (qui + set_shrub_subtypes/set_shrub_age_params/
@@ -11770,10 +11834,12 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	if not skip_vegetation:
 		cell.renderer.begin_vegetation_batch()
 		_step_start_usec = Time.get_ticks_usec()
-		# Rimontaggio a gruppi degli alberi (2026-10-04): solo con motivo movimento/nebbia si riusano i gruppi già fatti.
-		cell.renderer.set_tree_group_layout(cell.vegetation_layout_version, tree_group_starts, reason == "movimento/nebbia")
+		# Rimontaggio a gruppi degli alberi (2026-10-04): solo con motivo movimento/nebbia si riusano i gruppi già fatti; dal
+		# 2026-10-24 anche al taglio per lotto (gruppi per zona: si rifà solo quello della pianta tagliata).
+		var allow_group_reuse: bool = reason == "movimento/nebbia" or cut_patched
+		cell.renderer.set_tree_group_layout(cell.vegetation_layout_version, tree_group_starts, allow_group_reuse)
 		# Arbusti a gruppi (2026-10-04): stessa regola.
-		cell.renderer.set_shrub_group_layout(cell.vegetation_layout_version, shrub_group_starts, reason == "movimento/nebbia")
+		cell.renderer.set_shrub_group_layout(cell.vegetation_layout_version, shrub_group_starts, allow_group_reuse)
 		cell.renderer.set_vegetation_positions(render_vegetation_positions)
 		_veg_timings_ms["2_multimesh_positions_set"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
@@ -11803,7 +11869,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# fasce). Con motivo movimento/nebbia e già inviata dopo l'ultima rigenerazione, si salta.
 	_step_start_usec = Time.get_ticks_usec()
 	if not skip_vegetation:
-		if reason == "movimento/nebbia" and not regenerated_now and cell.vegetation_presence_sent:
+		# Taglio per lotto: la presenza l'ha già aggiornata VegetationCutPatchService.
+		if (reason == "movimento/nebbia" or cut_patched) and not regenerated_now and cell.vegetation_presence_sent:
 			skipped.append("fog_vegetation_presence")
 		else:
 			cell.fog_of_war_renderer.set_vegetation_presence(vegetation_positions)
@@ -11814,10 +11881,10 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 	# (vivi+bloccati, vedi MicroCellRenderer._lot_extent_counts) — se arrivassero DOPO, userebbero
 	# ancora i valori dell'anno scorso per quei rebuild intermedi.
 	_step_start_usec = Time.get_ticks_usec()
-	# Ceppi e piante morte (2026-10-04): saltati con motivo movimento/nebbia se voci e conteggi dei loro lotti sono
-	# uguali all'ultima ricostruzione (MicroCellRenderer.set_cut_dead_positions).
+	# Ceppi e piante morte (2026-10-04; per zona dal 2026-10-24): si rifanno solo le zone con voci o conteggi dei lotti
+	# cambiati (MicroCellRenderer.set_cut_dead_positions), qualunque sia il motivo.
 	if not skip_vegetation:
-		if not cell.renderer.set_cut_dead_positions(_get_cut_positions(cell.macro_state), _get_dead_positions(cell.macro_state), reason == "movimento/nebbia"):
+		if not cell.renderer.set_cut_dead_positions(_get_cut_positions(cell.macro_state), _get_dead_positions(cell.macro_state)):
 			skipped.append("cut_dead_markers")
 		_veg_timings_ms["2d_cut_dead_markers"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
@@ -11919,6 +11986,10 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 			parts.append("insieme_visibile=%s" % cell.fog_of_war_renderer.last_visible_set_mode)
 		# Disponibilità di bastoni/sassi/uova/lotti d'erba: ricalcolate o dalla memoria più i lotti entrati in vista.
 		parts.append("disponibilita=%s" % scattered_mode_text)
+		if cut_patched:
+			parts.append("taglio=solo il lotto %s (stick %s, filtro %s)" % [
+				str(cut_lot), cut_stick_outcome, "riusato" if reused_render != null else "rifatto"
+			])
 		# Cosa è stato saltato (passo 1): il totale sopra è il tempo del ridisegno, salti compresi.
 		if not skipped.is_empty():
 			parts.append("saltato=%s" % ", ".join(skipped))
@@ -11957,49 +12028,96 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "") -> void
 # filtri dello stesso refresh; null = calcolalo qui (comportamento di prima, per un eventuale chiamante che non
 # lo ha).
 # `tree_group_starts` (2026-10-04, rimontaggio a gruppi degli alberi — MicroCellRenderer.set_tree_group_layout): se è un
-# Array, viene riempito con l'inizio della fetta filtrata di ogni gruppo di MicroCellRenderer.TREE_GROUP_SIZE alberi
-# consecutivi dell'elenco NON filtrato, più la fine. Calcolato nello stesso giro del filtro; filtro invariato.
+# Array, viene riempito con l'inizio della fetta filtrata di ogni gruppo, più la fine. Dal 2026-10-24 (progetto B fase
+# 2b) un gruppo per zona (MicroCellRenderer.vegetation_zone_of, VEGETATION_ZONE_COUNT gruppi, anche vuoti), con l'elenco
+# già ordinato per zona (VegetationLayoutService). Calcolato nello stesso giro del filtro; filtro invariato.
 # `shrub_group_starts` (2026-10-04, rimontaggio a gruppi degli arbusti — MicroCellRenderer.set_shrub_group_layout): come
-# tree_group_starts, per gli arbusti e gruppi di MicroCellRenderer.SHRUB_GROUP_SIZE.
+# tree_group_starts, per gli arbusti.
 func _filter_vegetation_positions_by_visibility(cell: LiveMacroCell, positions: Dictionary, visible_positions: Variant = null, tree_group_starts: Variant = null, shrub_group_starts: Variant = null) -> Dictionary:
-	if cell.fog_of_war_renderer == null and shrub_group_starts is Array:
-		var shrub_count: int = (positions.get(GameTypes.WorldObjectType.SHRUB, []) as Array).size()
-		for start in range(0, shrub_count, MicroCellRenderer.SHRUB_GROUP_SIZE):
-			shrub_group_starts.append(start)
-		shrub_group_starts.append(shrub_count)
 	if cell.fog_of_war_renderer == null:
 		if tree_group_starts is Array:
-			var tree_count: int = (positions.get(GameTypes.WorldObjectType.TREE, []) as Array).size()
-			for start in range(0, tree_count, MicroCellRenderer.TREE_GROUP_SIZE):
-				tree_group_starts.append(start)
-			tree_group_starts.append(tree_count)
+			_append_zone_group_slices(positions.get(GameTypes.WorldObjectType.TREE, []), null, PackedInt32Array(), [], tree_group_starts)
+		if shrub_group_starts is Array:
+			_append_zone_group_slices(positions.get(GameTypes.WorldObjectType.SHRUB, []), null, PackedInt32Array(), [], shrub_group_starts)
 		return positions
 	var visible: Dictionary = visible_positions if visible_positions != null else cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
 	var filtered: Dictionary = {}
+	var visible_by_zone: PackedInt32Array = _visible_count_by_zone(visible) if tree_group_starts is Array or shrub_group_starts is Array else PackedInt32Array()
 	for object_type in positions:
 		var kept: Array = []
 		if object_type == GameTypes.WorldObjectType.TREE and tree_group_starts is Array:
-			var source: Array = positions[object_type]
-			for start in range(0, source.size(), MicroCellRenderer.TREE_GROUP_SIZE):
-				tree_group_starts.append(kept.size())
-				for entry in source.slice(start, start + MicroCellRenderer.TREE_GROUP_SIZE):
-					if visible.has(Vector2i(entry.x, entry.y)):
-						kept.append(entry)
-			tree_group_starts.append(kept.size())
+			_append_zone_group_slices(positions[object_type], visible, visible_by_zone, kept, tree_group_starts)
 		elif object_type == GameTypes.WorldObjectType.SHRUB and shrub_group_starts is Array:
-			var shrub_source: Array = positions[object_type]
-			for start in range(0, shrub_source.size(), MicroCellRenderer.SHRUB_GROUP_SIZE):
-				shrub_group_starts.append(kept.size())
-				for entry in shrub_source.slice(start, start + MicroCellRenderer.SHRUB_GROUP_SIZE):
-					if visible.has(Vector2i(entry.x, entry.y)):
-						kept.append(entry)
-			shrub_group_starts.append(kept.size())
+			_append_zone_group_slices(positions[object_type], visible, visible_by_zone, kept, shrub_group_starts)
 		else:
 			for entry in positions[object_type]:
 				if visible.has(Vector2i(entry.x, entry.y)):
 					kept.append(entry)
 		filtered[object_type] = kept
 	return filtered
+
+
+# Filtro di un elenco ordinato per zona con gli inizi dei gruppi per zona (2026-10-24, progetto B fase 2b): `kept` riceve
+# le voci visibili (tutte con `visible` null), `starts` l'inizio in `kept` della fetta di ogni zona, più la fine.
+# Senza calcolare la zona voce per voce (~40 ms su decine di migliaia di voci): i confini delle zone con una ricerca
+# binaria sull'elenco ordinato (_zone_bounds), poi per zona: tutta visibile -> fetta copiata in blocco, nessuna
+# microcella visibile -> saltata, solo le zone di bordo voce per voce come il filtro di prima. Stesso risultato.
+# `visible_by_zone`: _visible_count_by_zone(visible), calcolato una volta per filtro.
+func _append_zone_group_slices(source: Array, visible: Variant, visible_by_zone: PackedInt32Array, kept: Array, starts: Array) -> void:
+	var bounds := _zone_bounds(source)
+	var full_zone: int = MicroCellRenderer.VEGETATION_ZONE_SIZE * MicroCellRenderer.VEGETATION_ZONE_SIZE
+	for zone in range(MicroCellRenderer.VEGETATION_ZONE_COUNT):
+		starts.append(kept.size())
+		var from: int = bounds[zone]
+		var to: int = bounds[zone + 1]
+		if to <= from:
+			continue
+		var zone_visible: int = full_zone if visible == null else visible_by_zone[zone]
+		if zone_visible == 0:
+			continue
+		if zone_visible >= full_zone:
+			kept.append_array(source.slice(from, to))
+			continue
+		for entry in source.slice(from, to):
+			if (visible as Dictionary).has(Vector2i(entry.x, entry.y)):
+				kept.append(entry)
+	starts.append(kept.size())
+
+
+# Inizio in `source` (ordinato per zona) di ogni zona, più la fine: ricerca binaria per zona. Sempre crescenti, così le
+# fette coprono tutto l'elenco anche se l'ordine non fosse quello atteso (disegno uguale, solo meno gruppi riusati).
+func _zone_bounds(source: Array) -> PackedInt32Array:
+	var bounds := PackedInt32Array()
+	bounds.resize(MicroCellRenderer.VEGETATION_ZONE_COUNT + 1)
+	var low_limit := 0
+	for zone in range(MicroCellRenderer.VEGETATION_ZONE_COUNT):
+		var low := low_limit
+		var high := source.size()
+		while low < high:
+			var middle := (low + high) / 2
+			var entry = source[middle]
+			if MicroCellRenderer.vegetation_zone_of(entry.x, entry.y) < zone:
+				low = middle + 1
+			else:
+				high = middle
+		bounds[zone] = low
+		low_limit = low
+	bounds[MicroCellRenderer.VEGETATION_ZONE_COUNT] = source.size()
+	return bounds
+
+
+# Microcelle visibili per zona, in un giro sull'insieme visibile.
+func _visible_count_by_zone(visible: Dictionary) -> PackedInt32Array:
+	var counts := PackedInt32Array()
+	counts.resize(MicroCellRenderer.VEGETATION_ZONE_COUNT)
+	var zone_size: int = MicroCellRenderer.VEGETATION_ZONE_SIZE
+	var per_side: int = MicroCellRenderer.VEGETATION_ZONES_PER_SIDE
+	for pos in visible:
+		var micro: Vector2i = pos
+		if micro.x < 0 or micro.y < 0 or micro.x >= zone_size * per_side or micro.y >= zone_size * per_side:
+			continue
+		counts[(micro.y / zone_size) * per_side + micro.x / zone_size] += 1
+	return counts
 
 
 # Gemella di _filter_vegetation_positions_by_visibility sopra, ma per un Dictionary FLAT
@@ -12145,6 +12263,7 @@ func _patch_scattered_lot(cell: LiveMacroCell, cache_key: String, resource_name:
 
 # Lotti nuovi aggiunti dall'ultimo calcolo per aggiunta (_scattered_availability_for), solo per il log.
 var _scattered_new_lots_added: int = 0
+var _scattered_lots_removed: int = 0
 
 
 # Disponibilità visibile di una risorsa sparsa per il ridisegno completo (2026-10-04). `candidates` = contenitore dei
@@ -12153,18 +12272,26 @@ var _scattered_new_lots_added: int = 0
 # (last_scattered_availability, che è anche ciò che il renderer disegna) più quella dei soli lotti candidati appena
 # entrati in vista. Nello stesso giorno, con le stesse posizioni, la disponibilità dei lotti già visibili cambia solo con
 # le raccolte, che aggiornano la stessa memoria; senza memoria per questa risorsa si ricalcola tutto.
-func _scattered_availability_for(cell: LiveMacroCell, cache_key: String, resource_name: String, candidates: Variant, visible_positions: Variant, newly_visible: Variant) -> Dictionary:
+# `changes`: {"entered", "exited"} della nebbia (FogOfWarRenderer.get_visible_changes_since), null = calcolo completo.
+func _scattered_availability_for(cell: LiveMacroCell, cache_key: String, resource_name: String, candidates: Variant, visible_positions: Variant, changes: Variant) -> Dictionary:
 	var candidate_lots: Array = (candidates as Dictionary).keys() if candidates is Dictionary else candidates
-	if newly_visible == null or not cell.last_scattered_availability.has(cache_key):
+	if changes == null or not cell.last_scattered_availability.has(cache_key):
 		return _visible_lot_availability(cell, resource_name, candidate_lots, visible_positions)
 	var result: Dictionary = (cell.last_scattered_availability[cache_key] as Dictionary).duplicate()
+	for pos in changes["exited"]:
+		if result.erase(pos):
+			_scattered_lots_removed += 1
 	var new_lots: Array = []
-	for pos in newly_visible:
+	for pos in changes["entered"]:
 		if candidates.has(pos):
 			new_lots.append(pos)
 	if not new_lots.is_empty():
 		result.merge(_build_lot_availability_map(cell.macro_state, resource_name, new_lots), true)
 		_scattered_new_lots_added += new_lots.size()
+	if DebugLogging.CHECK_FOG_VISIBLE_SET:
+		var full := _visible_lot_availability(cell, resource_name, candidate_lots, visible_positions)
+		if full != result:
+			push_warning("[SCATTERED CHECK] %s: disponibilità per aggiunta %d lotti, calcolo completo %d" % [cache_key, result.size(), full.size()])
 	return result
 
 
@@ -15140,6 +15267,7 @@ func _on_houses_heating_changed(buildings: Array) -> void:
 
 func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 	var result: Array = []
+	var ground_entries: Array = []
 	if macro_world == null:
 		return result
 	# Microcelle occupate da un edificio COMPLETO in tutto il mondo (chiave = macro + micro), costruita
@@ -15248,8 +15376,12 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 			# Porta degli edifici grandi (2026-10-17): punto a metà del lato della porta rispetto al centro, in microcelle.
 			if building.rules != null and building.rules.has_door and BuildingFootprint.is_large(building.rules):
 				entry["door_edge"] = BuildingFootprint.door_edge_offset(building.rules, building.rotation)
-			result.append(entry)
-	return result
+			# Strada sotto il cancello (2026-10-24): gli edifici di suolo (walkable) prima, così il renderer li disegna sotto.
+			if building.rules != null and building.rules.walkable:
+				ground_entries.append(entry)
+			else:
+				result.append(entry)
+	return ground_entries + result
 
 
 # Microcelle degli edifici finiti (o cantieri di miglioramento) con un fondo di terra disegnato sotto (2026-10-04): terra
@@ -16029,6 +16161,7 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 			# diventate vive, anche dopo anni di crescita/mortalità mai riflessi.
 			for cell in live_cells.values():
 				cell.needs_full_vegetation_recompute = true
+				cell.needs_vegetation_layout_rebuild = true
 
 		# Proposta "prossimità" (2026-08-30, idea utente): il ridisegno vero (posizioni+MultiMesh,
 		# costoso) si limita alle celle che il player sta EFFETTIVAMENTE esplorando — il centro più
@@ -16084,10 +16217,9 @@ func _maybe_prune_fog_of_war_memories() -> void:
 	var max_known_memory_days := FogOfWarCalculator.get_max_known_memory_days()
 	for coords in fog_of_war_memories:
 		var memory: FogOfWarMemory = fog_of_war_memories[coords]
-		# "aveva ancora qualcosa PRIMA di potare, non ha più nulla DOPO" — il segnale preciso che
-		# questa macrocella, nel suo insieme, è appena diventata del tutto dimenticata (non solo
-		# "questa specifica entry era già vuota da prima", che non è un evento, solo uno stato).
-		var had_positions_before: bool = not memory.last_seen_by_position.is_empty()
+		# Una macrocella del tutto dimenticata non perde più le sue piante (2026-10-24, progetto B fase 1, scelta
+		# dell'utente): si dimentica solo ciò che il giocatore vede, gli individui e la disposizione restano (prima
+		# _forget_vegetation_identity li svuotava e la cella si rigenerava da zero alla visita successiva).
 		# Step 3.3 (2026-09-03, quarto trigger del dirty-tracking, discrepanza 1 discussa con
 		# l'utente): prune_stale ora RESTITUISCE le posizioni potate invece di scartarle — sono
 		# l'UNICO altro punto (oltre ai tre già noti in FogOfWarRenderer: mark_seen, cambio
@@ -16100,40 +16232,10 @@ func _maybe_prune_fog_of_war_memories() -> void:
 		var pruned_positions := memory.prune_stale(current_absolute_day, max_known_memory_days)
 		if not pruned_positions.is_empty() and live_cells.has(coords):
 			live_cells[coords].fog_of_war_renderer.mark_positions_dirty(pruned_positions)
-		if had_positions_before and memory.last_seen_by_position.is_empty():
-			_forget_vegetation_identity(coords)
 
 	game_data.fog_of_war_last_prune_absolute_day = current_absolute_day
 
 
-# Svuota SOLO l'identità "ordinaria" di TREE/SHRUB per (mx,my) — mai le eccezioni di taglio/morte,
-# vedi IndividualVegetationService.forget_known_individuals per il dettaglio completo. Chiamata
-# SOLO quando il FogOfWarMemory di questa macrocella è appena diventato completamente vuoto (vedi
-# sopra): per costruzione questo non può mai capitare per una macrocella attualmente viva — una
-# cella viva ha sempre almeno le posizioni nel raggio di visibilità marcate "viste" in questo
-# stesso giorno (mark_seen scatta ogni frame lì), quindi la sua età è sempre 0, mai oltre
-# max_known_memory_days — nessun controllo esplicito "è viva?" necessario qui.
-func _forget_vegetation_identity(coords: Vector2i) -> void:
-	if macro_world == null:
-		return
-	var state := macro_world.get_cell_state_at(coords.x, coords.y)
-	if state == null:
-		return
-	IndividualVegetationService.forget_known_individuals(state, GameTypes.WorldObjectType.TREE)
-	IndividualVegetationService.forget_known_individuals(state, GameTypes.WorldObjectType.SHRUB)
-
-	# DEBUG TEMPORANEO — vedi _debug_individual_counts_by_macro: senza questo il contatore di
-	# debug non saprebbe mai che questa macrocella è stata svuotata (si aggiorna solo quando la
-	# cella torna viva e viene rinfrescata, mai su un evento di pulizia) — resterebbe fermo al
-	# vecchio conteggio per sempre, facendo sembrare che la pulizia non stia facendo nulla.
-	if _debug_individual_counts_by_macro.has(coords):
-		_debug_individual_counts_by_macro.erase(coords)
-		var total: int = 0
-		for c in _debug_individual_counts_by_macro.values():
-			total += c
-		print("[DEBUG INDIVIDUI] macrocella (%d,%d) dimenticata dal fog -> rimossa dal conteggio | totale sessione: %d" % [
-			coords.x, coords.y, total
-		])
 
 
 func _on_advance_year_pressed() -> void:

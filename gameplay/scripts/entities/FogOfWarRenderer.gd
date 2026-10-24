@@ -102,31 +102,47 @@ var terrain_memory_days: int = 90
 # _refresh_resource_visuals). L'insieme calcolato da compute_visible_positions e' (in raggio) U
 # (risorse ancora fresche in memoria): cresce SOLO quando una cella entra in raggio senza essere gia' fresca
 # (vedi _mark_seen_and_invalidate) e cala SOLO quando cambia il giorno (le entry scadono, vedi
-# update_visibility) — questo contatore sale in ENTRAMBI i casi, mai altrove. Un chiamante che memorizza il
+# update_visibility) — questo contatore sale in ENTRAMBI i casi, mai altrove. Dal 2026-10-24 (progetto B fase 3) al
+# cambio di giorno sale una volta per ogni cella davvero uscita (_log_memory_exits), non più sempre. Un chiamante che memorizza il
 # valore letto al momento del suo ultimo calcolo sa che, se e' ancora lo stesso, il risultato di
 # compute_visible_positions e' identico. Assume resource_memory_days/visibility_radius costanti tra due
 # letture (oggi lo sono: nessuno li modifica a runtime).
 var visible_set_version: int = 0
 
-# ELENCO DELLE MICROCELLE ENTRATE IN VISTA (2026-10-04, richiesta utente — disponibilità di bastoni/sassi/uova/lotti
-# d'erba aggiornate per aggiunta nei ridisegni per movimento, vedi GameScene._refresh_resource_visuals). Ogni volta che
-# visible_set_version sale perché una microcella entra nell'insieme visibile (_mark_seen_and_invalidate), la microcella
-# si aggiunge qui: tra due letture, le microcelle entrate sono la coda dell'elenco. Qualunque altro cambiamento
-# dell'insieme (cambio di giorno: scadenze; pavimento delle zone di lavoro; visibilità degli edifici; cella senza
-# memoria) azzera l'elenco e alza `_newly_visible_epoch`: chi aveva letto prima riceve null e ricalcola tutto.
+# ELENCO DELLE MICROCELLE ENTRATE IN VISTA E USCITE (2026-10-04, richiesta utente — disponibilità di bastoni/sassi/
+# uova/lotti d'erba aggiornate per aggiunta nei ridisegni per movimento, vedi GameScene._refresh_resource_visuals). Ogni
+# volta che visible_set_version sale perché una microcella entra nell'insieme visibile (_mark_seen_and_invalidate) o, dal
+# 2026-10-24 (progetto B fase 3), ne esce perché la sua memoria è scaduta al cambio di giorno (_log_memory_exits), si
+# aggiunge qui Vector3i(x, y, 1 entrata / 0 uscita): tra due letture, i cambiamenti sono la coda dell'elenco. Gli altri
+# cambiamenti dell'insieme (pavimento delle zone di lavoro; visibilità degli edifici; cella senza memoria; giorno andato
+# indietro o salto di molti giorni; elenco troppo lungo) azzerano l'elenco e alzano `_newly_visible_epoch`: chi aveva
+# letto prima riceve null e ricalcola tutto.
 # Invariante: visible_set_version == _newly_visible_base_version + _newly_visible_log.size() nella stessa epoca.
 var _newly_visible_log: Array = []
 var _newly_visible_base_version: int = 0
 var _newly_visible_epoch: int = 0
+const VISIBLE_CHANGE_ENTERED := 1
+const VISIBLE_CHANGE_EXITED := 0
+# Oltre questa lunghezza l'elenco si azzera (un ricalcolo completo per chi legge), così non cresce senza fine.
+const VISIBLE_CHANGE_LOG_MAX := 20000
+# Salto di giorni oltre il quale non si cercano le uscite giorno per giorno (caricamento, debug): azzeramento.
+const MEMORY_EXIT_MAX_DAY_GAP := 60
 
 
 func get_newly_visible_epoch() -> int:
 	return _newly_visible_epoch
 
 
-# Microcelle entrate nell'insieme visibile dopo `version` letta nell'epoca `epoch`; null se l'elenco non può dirlo
-# (epoca diversa, versione fuori dall'elenco): il chiamante ricalcola tutto.
-func get_newly_visible_since(epoch: int, version: int) -> Variant:
+# true se il renderer ha già ricevuto il giorno `absolute_day` (update_visibility): solo allora l'elenco dei cambiamenti
+# contiene anche le uscite di quel giorno.
+func is_visibility_day_current(absolute_day: int) -> bool:
+	return absolute_day == _current_absolute_day
+
+
+# Cambiamenti dell'insieme visibile dopo `version` letta nell'epoca `epoch`, al netto (una cella entrata e poi uscita conta
+# solo come uscita, e viceversa): {"entered": Array[Vector2i], "exited": Array[Vector2i]}. null se l'elenco non può
+# dirlo (epoca diversa, versione fuori dall'elenco): il chiamante ricalcola tutto.
+func get_visible_changes_since(epoch: int, version: int) -> Variant:
 	if epoch != _newly_visible_epoch:
 		return null
 	if version < _newly_visible_base_version or version > visible_set_version:
@@ -134,13 +150,47 @@ func get_newly_visible_since(epoch: int, version: int) -> Variant:
 	var start: int = version - _newly_visible_base_version
 	if start > _newly_visible_log.size():
 		return null
-	return _newly_visible_log.slice(start)
+	var last_kind: Dictionary = {}
+	for i in range(start, _newly_visible_log.size()):
+		var change: Vector3i = _newly_visible_log[i]
+		last_kind[Vector2i(change.x, change.y)] = change.z
+	var entered: Array = []
+	var exited: Array = []
+	for pos in last_kind:
+		if last_kind[pos] == VISIBLE_CHANGE_ENTERED:
+			entered.append(pos)
+		else:
+			exited.append(pos)
+	return {"entered": entered, "exited": exited}
 
 
 func _reset_newly_visible_log() -> void:
 	_newly_visible_epoch += 1
 	_newly_visible_log.clear()
 	_newly_visible_base_version = visible_set_version
+
+
+func _log_visible_change(pos: Vector2i, kind: int) -> void:
+	visible_set_version += 1
+	if _newly_visible_log.size() >= VISIBLE_CHANGE_LOG_MAX:
+		_reset_newly_visible_log()
+		return
+	_newly_visible_log.append(Vector3i(pos.x, pos.y, kind))
+
+
+# Uscite per scadenza della memoria al passaggio dal giorno `previous_day` a `current_day` (2026-10-24, progetto B fase
+# 3): escono le celle viste per l'ultima volta tra previous_day - resource_memory_days e current_day - resource_memory_days
+# - 1 (fresche ieri, scadute oggi), tranne il pavimento delle zone di lavoro e quelle in raggio. Da chiamare DOPO il
+# mark_seen delle celle in raggio, che le porta al giorno corrente.
+func _log_memory_exits(previous_day: int, current_day: int) -> void:
+	var floor_positions: Dictionary = fog_of_war_memory.floor_positions
+	for last_day in range(previous_day - resource_memory_days, current_day - resource_memory_days):
+		for pos in fog_of_war_memory.positions_last_seen_on(last_day):
+			if floor_positions.has(pos) or _source_visible_positions.has(pos) or _building_visible_positions.has(pos):
+				continue
+			if pos.x < 0 or pos.y < 0 or pos.x >= World.WIDTH or pos.y >= World.HEIGHT:
+				continue
+			_log_visible_change(pos, VISIBLE_CHANGE_EXITED)
 
 # Posizioni (Vector2, LOCALI a questo renderer — cioè già nello spazio di QUESTA macrocella, non
 # quello di partenza dell'individuo) di TUTTE le sorgenti di visibilità rilevanti per questa cella
@@ -531,6 +581,16 @@ func set_vegetation_presence(positions: Dictionary) -> void:
 	_hint_layer.queue_redraw()
 
 
+# Un lotto rimasto senza piante dopo un taglio (2026-10-24, progetto B fase 2a — VegetationCutPatchService): toglie solo
+# quello, senza riscrivere tutta la presenza; stesso aggiornamento degli hint di set_vegetation_presence.
+func remove_vegetation_presence(lot: Vector2i) -> void:
+	if not _vegetation_presence.erase(lot):
+		return
+	_hint_layer_dirty = true
+	_rebuild_hint_multimesh()
+	_hint_layer.queue_redraw()
+
+
 func set_building_visible_positions(positions: Dictionary) -> void:
 	# Visibilità degli edifici cambiata: l'elenco delle microcelle entrate non vale più (2026-10-04).
 	if positions != _building_visible_positions:
@@ -611,6 +671,7 @@ func update_visibility(current_absolute_day: int, positions: Array[Vector2]) -> 
 	var day_changed := current_absolute_day != _last_drawn_absolute_day
 	if not position_changed and not day_changed:
 		return
+	var previous_absolute_day := _last_drawn_absolute_day
 	_last_drawn_positions = positions.duplicate()
 	_last_drawn_absolute_day = current_absolute_day
 	_current_absolute_day = current_absolute_day
@@ -634,10 +695,15 @@ func update_visibility(current_absolute_day: int, positions: Array[Vector2]) -> 
 	if day_changed:
 		_cell_color_cache = {}
 		_full_flush_pending = true
-		# Cambio giorno: le entry di memoria possono essere scadute (l'insieme visibile puo' ridursi) e la
-		# disponibilita' stagionale delle risorse puo' essere cambiata — vedi visible_set_version.
-		visible_set_version += 1
-		_reset_newly_visible_log()
+		# Cambio giorno: le entry di memoria possono essere scadute (l'insieme visibile puo' ridursi) — vedi
+		# visible_set_version. Dal 2026-10-24 (progetto B fase 3) le celle uscite si annotano una per una
+		# (_log_memory_exits, sotto, dopo il mark_seen); si azzera tutto solo senza memoria, col giorno andato indietro o
+		# con un salto di molti giorni. La disponibilita' stagionale cambia solo ai checkpoint, che ridisegnano per intero.
+		if fog_of_war_memory == null or previous_absolute_day < 0 or current_absolute_day < previous_absolute_day \
+				or current_absolute_day - previous_absolute_day > MEMORY_EXIT_MAX_DAY_GAP:
+			visible_set_version += 1
+			_reset_newly_visible_log()
+			previous_absolute_day = -1
 		# Stesso motivo per l'insieme animali (dettaglio fresco): ricostruito alla prossima richiesta.
 		_animal_visible_cache_valid = false
 	# Senza memoria l'insieme visibile e' il solo insieme in raggio, che cambia con le posizioni: nessuna
@@ -654,6 +720,8 @@ func update_visibility(current_absolute_day: int, positions: Array[Vector2]) -> 
 	# cronologia). Step 3.3: non scrive più pixel qui dentro (quello è compito del delta sotto/del
 	# flush in _draw()) — solo last_seen_by_position + invalidazione cache/hint mirata.
 	_mark_seen_for_current_in_radius_positions()
+	if day_changed and previous_absolute_day >= 0:
+		_log_memory_exits(previous_absolute_day, current_absolute_day)
 	# Il delta in-raggio (vedi _update_in_radius_dirty_delta) dipende SOLO da quali posizioni sono
 	# in raggio, non dal giorno — se è cambiato solo il giorno, l'insieme in-raggio è identico a
 	# prima, nessun delta da calcolare (e comunque _full_flush_pending sopra copre già tutto se
@@ -703,8 +771,7 @@ func _mark_seen_and_invalidate(pos: Vector2i) -> void:
 	# in raggio al giro prima e' per costruzione fresca (mark_seen di oggi), quindi qui non si ricontrolla.
 	if not _previous_in_radius_positions.has(pos) \
 			and not fog_of_war_memory.is_resource_fresh(pos, _current_absolute_day, resource_memory_days):
-		visible_set_version += 1
-		_newly_visible_log.append(pos)
+		_log_visible_change(pos, VISIBLE_CHANGE_ENTERED)
 	var _mem_start := Time.get_ticks_usec()
 	fog_of_war_memory.mark_seen(pos, _current_absolute_day)
 	_memory_lookup_usec += Time.get_ticks_usec() - _mem_start
@@ -836,15 +903,22 @@ var _cached_visible_version: int = -1
 var last_visible_set_mode: String = ""
 
 
+# Dal 2026-10-24 (progetto B fase 3) anche tra un giorno e l'altro: l'elenco porta pure le celle uscite per scadenza, che
+# si tolgono. Serve solo che il renderer abbia già ricevuto il giorno corrente (is_visibility_day_current).
 func compute_visible_positions_cached(current_absolute_day: int, allow_incremental: bool) -> Dictionary:
-	if allow_incremental and _cached_visible_positions != null and _cached_visible_day == current_absolute_day:
-		var added: Variant = get_newly_visible_since(_cached_visible_epoch, _cached_visible_version)
-		if added != null:
+	if allow_incremental and _cached_visible_positions != null and is_visibility_day_current(current_absolute_day):
+		var changes: Variant = get_visible_changes_since(_cached_visible_epoch, _cached_visible_version)
+		if changes != null:
 			var cached: Dictionary = _cached_visible_positions
-			for pos in added:
+			for pos in changes["entered"]:
 				cached[pos] = true
+			for pos in changes["exited"]:
+				cached.erase(pos)
 			_cached_visible_version = visible_set_version
-			last_visible_set_mode = "aggiunta (+%d)" % (added as Array).size()
+			_cached_visible_day = current_absolute_day
+			last_visible_set_mode = "aggiunta (+%d, -%d)" % [(changes["entered"] as Array).size(), (changes["exited"] as Array).size()]
+			if DebugLogging.CHECK_FOG_VISIBLE_SET:
+				_check_cached_visible_set(current_absolute_day)
 			return cached
 	var visible := compute_visible_positions(current_absolute_day)
 	_cached_visible_positions = visible
@@ -853,6 +927,23 @@ func compute_visible_positions_cached(current_absolute_day: int, allow_increment
 	_cached_visible_version = visible_set_version
 	last_visible_set_mode = "ricalcolato"
 	return visible
+
+
+# Controllo di debug (DebugLogging.CHECK_FOG_VISIBLE_SET): l'insieme aggiornato per aggiunta deve essere uguale al calcolo
+# completo; altrimenti avviso [FOG VISIBLE SET] con quante celle mancano e quante sono in più.
+func _check_cached_visible_set(current_absolute_day: int) -> void:
+	var full := compute_visible_positions(current_absolute_day)
+	var cached: Dictionary = _cached_visible_positions
+	var missing := 0
+	for pos in full:
+		if not cached.has(pos):
+			missing += 1
+	var extra := 0
+	for pos in cached:
+		if not full.has(pos):
+			extra += 1
+	if missing > 0 or extra > 0:
+		push_warning("[FOG VISIBLE SET] insieme per aggiunta diverso dal calcolo completo: mancanti %d, in più %d (completo %d)" % [missing, extra, full.size()])
 
 
 # Solo le microcelle che possono entrarci (2026-10-19, scatti al movimento: ~18 ms a scorrere tutte le 10.000): quelle in

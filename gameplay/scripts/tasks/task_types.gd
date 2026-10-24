@@ -156,4 +156,7 @@ enum ToolCategory {
 	# TOWING (2026-10-23, richiesta utente — travois, travois.tres) aggiunto IN FONDO, stesso motivo: un mezzo da trainare,
 	# non da cintura (per questo non CARRYING, che le regole della sacca mettono in cintura). Nessuna Action la richiede.
 	TOWING,
+	# CONTAINER (2026-10-24, richiesta utente — ciotola di pietra, stone_bowl.tres) aggiunto IN FONDO, stesso motivo: un
+	# recipiente. Nessuna ricetta la richiede ancora: servirà al rimedio con le erbe medicinali e alle ricette future.
+	CONTAINER,
 }

@@ -38,9 +38,46 @@ var last_seen_by_position: Dictionary = {} # Vector2i -> int (absolute_day)
 # zone).
 var floor_positions: Dictionary = {}
 
+# Indice inverso di last_seen_by_position (2026-10-24, progetto B fase 3): giorno -> {Vector2i: true} delle celle viste
+# per l'ultima volta quel giorno. Serve a FogOfWarRenderer per sapere, al cambio di giorno, quali celle escono dalla
+# memoria senza scorrerle tutte. Costruito alla prima richiesta (positions_last_seen_on) da last_seen_by_position — che
+# GameLoadService scrive direttamente — poi tenuto allineato da mark_seen e prune_stale. Non salvato.
+var _positions_by_day: Dictionary = {}
+var _positions_by_day_built: bool = false
+
 
 func mark_seen(pos: Vector2i, absolute_day: int) -> void:
+	if _positions_by_day_built:
+		var previous_day: int = int(last_seen_by_position.get(pos, -1))
+		if previous_day != absolute_day:
+			if previous_day >= 0:
+				_erase_from_day_index(pos, previous_day)
+			if not _positions_by_day.has(absolute_day):
+				_positions_by_day[absolute_day] = {}
+			_positions_by_day[absolute_day][pos] = true
 	last_seen_by_position[pos] = absolute_day
+
+
+# Celle viste per l'ultima volta il giorno `absolute_day` (vedi _positions_by_day). Sola lettura per chi la riceve.
+func positions_last_seen_on(absolute_day: int) -> Dictionary:
+	if not _positions_by_day_built:
+		_positions_by_day.clear()
+		for pos in last_seen_by_position:
+			var day: int = int(last_seen_by_position[pos])
+			if not _positions_by_day.has(day):
+				_positions_by_day[day] = {}
+			_positions_by_day[day][pos] = true
+		_positions_by_day_built = true
+	return _positions_by_day.get(absolute_day, {})
+
+
+func _erase_from_day_index(pos: Vector2i, day: int) -> void:
+	var bucket: Variant = _positions_by_day.get(day)
+	if bucket == null:
+		return
+	(bucket as Dictionary).erase(pos)
+	if (bucket as Dictionary).is_empty():
+		_positions_by_day.erase(day)
 
 
 func has_ever_been_seen(pos: Vector2i) -> bool:
@@ -120,5 +157,7 @@ func prune_stale(current_absolute_day: int, max_memory_days: int) -> Array[Vecto
 		if current_absolute_day - last_seen_by_position[pos] > max_memory_days and not floor_positions.has(pos):
 			stale_positions.append(pos)
 	for pos in stale_positions:
+		if _positions_by_day_built:
+			_erase_from_day_index(pos, int(last_seen_by_position[pos]))
 		last_seen_by_position.erase(pos)
 	return stale_positions

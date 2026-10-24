@@ -20,6 +20,7 @@ required_materials = {
 is_linear = true
 linear_link_group = "defensive_wall"
 is_gate = true
+allows_ground_beneath = true
 required_space = 1
 has_door = false
 visibility_radius = 2

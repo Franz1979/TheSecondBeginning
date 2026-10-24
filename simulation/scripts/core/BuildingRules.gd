@@ -131,6 +131,9 @@ extends Resource
 @export var linear_link_group: String = ""
 # Cancello (2026-10-23, richiesta utente): attraversabile solo se l'istanza è aperta (Building.gate_open, Building.is_walkable).
 @export var is_gate: bool = false
+# Strada sotto (2026-10-24, richiesta utente): un edificio calpestabile di suolo (walkable, es. sentiero, terra battuta) può
+# stare sulla stessa microcella di questo, sotto di lui (oggi il solo cancello). Vedi MicrocellObstacles.ground_hosts.
+@export var allows_ground_beneath: bool = false
 
 # Sepolture (2026-10-04, richiesta utente — cumulo sepolcrale, passo 1): numero massimo di defunti che l'edificio può
 # accogliere; 0 = non è un luogo di sepoltura. I sepolti stanno in Building.buried; il trasporto dei corpi e il funerale

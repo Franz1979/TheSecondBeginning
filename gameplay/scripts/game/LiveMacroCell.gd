@@ -74,6 +74,10 @@ var path_block_version: int = 0
 # cella). Un refresh da movimento (nessuno di questi eventi) trova il flag false e riusa
 # cached_vegetation_positions senza richiamare generate_positions.
 var needs_full_vegetation_recompute: bool = true
+# Progetto B fase 1 (2026-10-24, VegetationLayoutService): col ricalcolo sopra, true = rifare la disposizione col
+# generatore (prima attivazione, checkpoint: i numeri della vegetazione possono essere cambiati); false = basta
+# rileggere la disposizione tenuta (taglio, cantiere ripulito, edificio: cambiano solo individui e lotti bloccati).
+var needs_vegetation_layout_rebuild: bool = true
 # Valore di FogOfWarRenderer.visible_set_version letto dall'ULTIMO _refresh_resource_visuals di questa cella
 # (2026-09-20): il refresh da movimento in GameScene._process parte solo se la versione corrente e' diversa,
 # cioe' se dall'ultimo refresh e' comparsa almeno una cella visibile nuova (o e' cambiato il giorno). -1 =
@@ -89,6 +93,10 @@ var last_visible_positions: Variant = null
 # "grass_patch:<nome>"). Azzerati a ogni rigenerazione completa.
 var last_render_vegetation_positions: Variant = null
 var last_vegetation_rebuild_day: int = -1
+# Inizi dei gruppi per zona di alberi e arbusti in last_render_vegetation_positions (2026-10-24, progetto B fase 2b): al
+# taglio per lotto si riusano, spostati di uno, invece di rifare il filtro (VegetationCutPatchService.patch_render_positions).
+var last_tree_group_starts: Array = []
+var last_shrub_group_starts: Array = []
 var last_scattered_availability: Dictionary = {}
 # true dopo aver passato al fog of war la vegetazione sfocata (set_vegetation_presence) con le posizioni correnti; false
 # a ogni rigenerazione completa. Il ridisegno per movimento/nebbia la salta se è true (2026-10-03).
@@ -102,6 +110,10 @@ var scattered_cache_day: int = -1
 var scattered_visible_epoch: int = -1
 var scattered_visible_version: int = -1
 var scattered_layout_version: int = -1
+# Ultimo rinfresco delle capacità dei lotti (2026-10-24, progetto B fase 3): checkpoint e versione delle posizioni, per
+# saltarlo nei ridisegni per movimento quando nessuno dei due è cambiato (GameScene._refresh_resource_visuals).
+var lot_capacity_refresh_checkpoint_day: int = -1
+var lot_capacity_refresh_layout_version: int = -1
 var cached_vegetation_positions: Dictionary = {}
 
 # Cache del ratio disponibilità "fruit stock" per lotto (2026-09-17, richiesta utente —
