@@ -99,7 +99,7 @@ static func assign_work_area_hunt(
 # HUNTING) SENZA attesa: nessuna arma né in cintura né nello zaino = rifiutata (la preda si muove); arma nello zaino ma
 # cintura/zaino pieni = rifiutata. L'idoneità viene PRIMA del gate, che sposta davvero l'arma dallo zaino alla cintura.
 static func assign_prey_hunt(ctx: GameContext, worker: HumanIndividual, prey: AnimalVisualGroup, species: String, effects: GameEffects) -> void:
-	var definition := load(TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(TASK_DEFINITION_PATH)
 	if definition == null:
 		return
 	var task := TaskFactory.build_task(definition, {

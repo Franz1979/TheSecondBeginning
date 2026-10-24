@@ -490,19 +490,30 @@ static func choose_work_area_from(
 
 
 # Prima cella della zona con qualcosa tra `names` (null se nessuna), per la raggiungibilità dell'ordine del cassetto.
+# Letta direttamente e fermandosi alla prima (2026-10-24, richiesta utente — scatti della lista del cassetto: prima rifaceva
+# tutto _area_cell_totals, la cui memoria scade ogni CELL_TOTALS_MAX_AGE_MSEC e a ogni raccolta da terra); stesso ordine
+# di scansione, quindi la stessa cella di prima.
 static func first_available_cell(area: WorkArea, macro_state: MacroCellState, names: Array[String]) -> Variant:
 	if area == null or macro_state == null or names.is_empty():
 		return null
-	var totals := _area_cell_totals(area, macro_state, names)
-	return null if totals.is_empty() else totals[0][0]
+	for y in range(area.rect.position.y, area.rect.end.y):
+		for x in range(area.rect.position.x, area.rect.end.x):
+			var cell := Vector2i(x, y)
+			if _cell_has_any(macro_state, cell, names):
+				return cell
+	return null
 
 
-# true se la cella `cell` della zona ha ancora qualcosa tra `names` (dalla stessa memoria di _area_cell_totals).
+# true se la cella `cell` della zona ha ancora qualcosa tra `names` (letta direttamente, solo quella cella).
 static func is_cell_available(area: WorkArea, macro_state: MacroCellState, names: Array[String], cell: Vector2i) -> bool:
-	if area == null or macro_state == null or names.is_empty():
+	if area == null or macro_state == null or names.is_empty() or not area.rect.has_point(cell):
 		return false
-	for entry in _area_cell_totals(area, macro_state, names):
-		if entry[0] == cell:
+	return _cell_has_any(macro_state, cell, names)
+
+
+static func _cell_has_any(macro_state: MacroCellState, cell: Vector2i, names: Array[String]) -> bool:
+	for candidate_name in names:
+		if PickUpAction.get_source_available_at(macro_state, cell, PickUpAction.SourceKind.TERRAIN, candidate_name) > 0:
 			return true
 	return false
 

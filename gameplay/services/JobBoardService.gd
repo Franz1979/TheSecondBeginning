@@ -499,7 +499,7 @@ static func try_seek_job(individual: HumanIndividual, age_band: HumanTypes.AgeBa
 # "Cerca lavoro" verso il punto `point` (2026-10-09: estratto da try_seek_job, usato anche dal richiamo del
 # coordinatore). Nessun controllo sui lavori: lo fa il chiamante. true = assegnata.
 static func start_seek_job(individual: HumanIndividual, age_band: HumanTypes.AgeBand, point: Building) -> bool:
-	var definition := load(SEEK_JOB_TASK_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(SEEK_JOB_TASK_PATH)
 	if definition == null or point == null:
 		return false
 	var macro_offset := Vector2(Vector2i(point.macro_x, point.macro_y) - individual.home_macro_coords) * World.WIDTH

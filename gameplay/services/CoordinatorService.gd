@@ -444,7 +444,7 @@ static func _is_coordinating_at(member: HumanIndividual, point_id: int) -> bool:
 # "Coordina" (solo l'attesa): assegnata qui, la sua attivazione è l'evento che fa partire subito, nello stesso
 # fotogramma, la prima decisione del coordinatore.
 static func _start_coordinating(member: HumanIndividual, point: Building) -> bool:
-	var definition := load(COORDINATE_TASK_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(COORDINATE_TASK_PATH)
 	if definition == null or not age_band_resolver.is_valid():
 		return false
 	var task := TaskFactory.build_task(definition, {CONTEXT_POINT_ID: point.id})

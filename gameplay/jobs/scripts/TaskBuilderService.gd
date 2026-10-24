@@ -71,7 +71,7 @@ static func build_transport_task(
 	context["transport_delivery_resource"] = resource_name
 	context["transport_requested_remaining"] = requested_remaining
 	TaskRepeatRules.write(context, repeat_enabled, repeat_count)
-	var definition := load(TRANSPORT_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(TRANSPORT_TASK_DEFINITION_PATH)
 	return TaskFactory.build_task(definition, context)
 
 
@@ -106,7 +106,7 @@ static func transport_trip_target(destination_building: Building, resource_name:
 # context (HuntZoneService.CONTEXT_WORK_AREA_ID) per etichetta, scelta della preda e ritorno alla pattuglia.
 # `series` (2026-10-01, passo 2b): serie fino a un limite di carne ({} = una sola caccia).
 static func build_hunt_zone_task(area_id: int, series: Dictionary = {}) -> Task:
-	var definition := load(HuntZoneService.TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(HuntZoneService.TASK_DEFINITION_PATH)
 	if definition == null:
 		return null
 	var task := TaskFactory.build_task(definition, {HuntZoneService.FACTORY_WORK_AREA_KEY: area_id})
@@ -122,7 +122,7 @@ static func build_hunt_zone_task(area_id: int, series: Dictionary = {}) -> Task:
 # Task Cut (Walk + Cut) su `plant` ({"macro_coords", "object_type", "individual_key"}). `work_area_id` e `series` nel
 # context per etichetta e serie in zona (-1 / {} = comando col clic destro).
 static func build_cut_task(worker: HumanIndividual, plant: Dictionary, work_area_id: int = -1, series: Dictionary = {}) -> Task:
-	var definition := load(CUT_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(CUT_TASK_DEFINITION_PATH)
 	if definition == null:
 		return null
 	var macro_coords: Vector2i = plant["macro_coords"]
@@ -146,7 +146,7 @@ static func build_cut_task(worker: HumanIndividual, plant: Dictionary, work_area
 static func build_quarry_task(
 	worker: HumanIndividual, macro_coords: Vector2i, rock_position: Vector2i, work_area_id: int = -1, series: Dictionary = {}
 ) -> Task:
-	var definition := load(QUARRY_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(QUARRY_TASK_DEFINITION_PATH)
 	if definition == null:
 		return null
 	var task := TaskFactory.build_task(definition, {
@@ -163,7 +163,7 @@ static func build_quarry_task(
 
 # Repair Task per `worker` su `building` (Walk fino a un punto della microcella, poi Repair).
 static func build_repair_task(worker: HumanIndividual, building: Building) -> Task:
-	var definition := load(REPAIR_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(REPAIR_TASK_DEFINITION_PATH)
 	if definition == null:
 		return null
 	var task := TaskFactory.build_task(definition, {
@@ -180,7 +180,7 @@ static func build_repair_task(worker: HumanIndividual, building: Building) -> Ta
 static func build_produce_task(
 	worker: HumanIndividual, target_building: Building, resource_name: String, quantity: int, deliver_to_warehouse: bool
 ) -> Task:
-	var definition := load(PRODUCE_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(PRODUCE_TASK_DEFINITION_PATH)
 	if definition == null:
 		return null
 	var task := TaskFactory.build_task(definition, {
@@ -205,7 +205,7 @@ static func build_produce_task(
 static func build_output_job_task(worker: HumanIndividual, building: Building, resource_name: String) -> Task:
 	if resource_name == "":
 		return null
-	var definition := load(DELIVER_OUTPUT_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(DELIVER_OUTPUT_TASK_DEFINITION_PATH)
 	if definition == null:
 		return null
 	var offset := macro_offset(worker, Vector2i(building.macro_x, building.macro_y))
@@ -230,7 +230,7 @@ static func build_output_job_task(worker: HumanIndividual, building: Building, r
 static func build_tool_task(
 	target: HumanIndividual, definition_path: String, tool_name: String, building: Building, slot_index: int, is_apparel: bool = false
 ) -> Task:
-	var definition := load(definition_path) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(definition_path)
 	if definition == null:
 		return null
 	var task := TaskFactory.build_task(definition, {
@@ -257,7 +257,7 @@ static func build_equip_tool_task(target: HumanIndividual, building: Building, t
 
 # Task Inventario del magazzino `depot` (Walk + inventario).
 static func build_inventory_task(worker: HumanIndividual, depot: Building) -> Task:
-	var definition := load(INVENTORY_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(INVENTORY_TASK_DEFINITION_PATH)
 	if definition == null or depot == null:
 		return null
 	var offset := macro_offset(worker, Vector2i(depot.macro_x, depot.macro_y))
@@ -281,7 +281,7 @@ static func build_pickup_task(
 	criterion_kind: int, criterion_category: int, repeat_enabled: bool, repeat_count: int,
 	source_kind: int = PickUpAction.SourceKind.TERRAIN
 ) -> Task:
-	var definition := load(HAUL_RESOURCE_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(HAUL_RESOURCE_TASK_DEFINITION_PATH)
 	var context: Dictionary = {
 		"target_position": Vector2(target_position) + Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85)),
 		"pickup_position": target_position,
@@ -308,7 +308,7 @@ static func build_pickup_task(
 # ripetizione nel context. Walk e PickUp nascono a runtime dalla ricerca: i loro segnali (e quelli dell'Unload che
 # seguirà) passano da step_appended (GameScene._connect_haul_zone_step_appended).
 static func build_haul_zone_task(zone: Dictionary, repeat_enabled: bool, repeat_count: int) -> Task:
-	var definition := load(HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH)
 	var context: Dictionary = {HaulZoneService.CONTEXT_KEY: zone}
 	if repeat_enabled:
 		TaskRepeatRules.write(context, true, repeat_count)
@@ -351,7 +351,7 @@ static func build_butcher_task(
 	worker: HumanIndividual, pile: GroundPile, carcass_id: int, macro_state: MacroCellState,
 	butcher_destination: String = ButcherDestinationService.CAMPFIRE
 ) -> Task:
-	var definition := load(BUTCHER_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(BUTCHER_TASK_DEFINITION_PATH)
 	if definition == null:
 		return null
 	var task := TaskFactory.build_task(definition, {
@@ -385,7 +385,7 @@ static func build_butcher_task(
 # sospendibile come haul/transport). Arrivo in un punto casuale della microcella del magazzino, mai l'angolo esatto
 # (2026-09-27). Oggi per la dote dei visitatori (prima costruita a mano in GameScene._give_visitor_dowry).
 static func build_unload_resource_task(worker: HumanIndividual, warehouse: Building) -> Task:
-	var definition := load(UNLOAD_RESOURCE_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(UNLOAD_RESOURCE_TASK_DEFINITION_PATH)
 	if definition == null:
 		return null
 	var offset := macro_offset(worker, Vector2i(warehouse.macro_x, warehouse.macro_y))
@@ -399,7 +399,7 @@ static func build_unload_resource_task(worker: HumanIndividual, warehouse: Build
 # completamento evade l'ordine dell'edificio (RiteService.CONTEXT_ORDERED, letto da RiteAction.on_complete). I controlli
 # (edificio libero, rito ammesso, chi può celebrarlo) restano a chi la assegna.
 static func build_rite_task(worker: HumanIndividual, target_building: Building, rite_id: String) -> Task:
-	var definition := load(RITE_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(RITE_TASK_DEFINITION_PATH)
 	if definition == null:
 		return null
 	var offset := macro_offset(worker, Vector2i(target_building.macro_x, target_building.macro_y))

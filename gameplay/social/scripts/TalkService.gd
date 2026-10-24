@@ -69,7 +69,7 @@ static func resolve_age_band(individual: HumanIndividual) -> int:
 # non è di idoneità), "message": String (motivo tradotto per il giocatore, "" se ok)}.
 static func start_talk(caller: HumanIndividual, caller_age_band: int) -> Dictionary:
 	var result := {"ok": false, "assign_rejection": HumanIndividual.ASSIGN_OK, "message": ""}
-	var definition := load(TALK_TASK_DEFINITION_PATH) as TaskDefinition
+	var definition := TaskDefinitionCache.get_definition(TALK_TASK_DEFINITION_PATH)
 	if caller == null or definition == null:
 		return result
 	if not definition.allowed_age_bands.is_empty() and not definition.allowed_age_bands.has(caller_age_band):
@@ -212,7 +212,7 @@ static func tr_text(key: String, individual: HumanIndividual) -> String:
 static func _callable_task_names() -> Array[String]:
 	var names: Array[String] = []
 	for path in IdleTaskAssignmentService.IDLE_FALLBACK_TASK_PATHS:
-		var definition := load(path) as TaskDefinition
+		var definition := TaskDefinitionCache.get_definition(path)
 		if definition != null and definition.task_name != TALK_TASK_NAME:
 			names.append(definition.task_name)
 	return names

@@ -51,7 +51,7 @@ const ZONE_ORDER_TOOL_BLOCK_KEYS := {
 static func age_ok(ctx: GameContext, member: HumanIndividual, age_kind: String) -> bool:
 	var age_band := ctx.age_band_of(member)
 	if age_kind == DrawerOrderService.TYPE_HUNT:
-		var definition := load(HuntZoneService.TASK_DEFINITION_PATH) as TaskDefinition
+		var definition := TaskDefinitionCache.get_definition(HuntZoneService.TASK_DEFINITION_PATH)
 		return definition == null or definition.allowed_age_bands.is_empty() or definition.allowed_age_bands.has(int(age_band))
 	return age_band != HumanTypes.AgeBand.INFANT and age_band != HumanTypes.AgeBand.CHILD
 
@@ -138,7 +138,11 @@ static func _find_storage_tool(world: World, worker: HumanIndividual, category: 
 	for tool_name in fetchable_tool_names(category):
 		var origin := worker.position if worker != null else Vector2.ZERO
 		var origin_macro := worker.home_macro_coords if worker != null else Vector2i.ZERO
+		var timing := JobBoardTimingService.is_enabled()
+		var started := JobBoardTimingService.now() if timing else 0
 		var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
+		if timing:
+			JobBoardTimingService.add("deposito: raggiungibilità", started)
 		var source := _find_unreserved_source(world, origin, origin_macro, tool_name, reserved, reachability)
 		if source == null:
 			continue
@@ -156,15 +160,22 @@ static func _find_storage_tool(world: World, worker: HumanIndividual, category: 
 static func _find_unreserved_source(
 	world: World, origin: Vector2, origin_macro: Vector2i, tool_name: String, reserved: Dictionary, reachability: Callable
 ) -> Building:
+	# Tempo (2026-10-24, assegnatore): "deposito: ricerca depositi" (con la raggiungibilità di ogni deposito provato).
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var excluded: Array[int] = []
+	var found: Building = null
 	while true:
 		var source := WarehouseSelectionService.find_source_for_retrieval(world, origin, origin_macro, tool_name, excluded, 1, -1, reachability)
 		if source == null:
-			return null
+			break
 		if BuildingStorageService.get_available_quantity(source, tool_name) > int(reserved.get(_fetch_key(source, tool_name), 0)):
-			return source
+			found = source
+			break
 		excluded.append(source.id)
-	return null
+	if timing:
+		JobBoardTimingService.add("deposito: ricerca depositi", started)
+	return found
 
 
 # Motivo per cui nessuno può fare un lavoro che richiede `categories` ("" = qualcuno può): una categoria che nessuno ha
@@ -254,7 +265,11 @@ static func _compute_fetch_option(world: World, worker: HumanIndividual, categor
 		return best
 	var origin := worker.position if worker != null else Vector2.ZERO
 	var origin_macro := worker.home_macro_coords if worker != null else Vector2i.ZERO
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
+	if timing:
+		JobBoardTimingService.add("deposito: raggiungibilità", started)
 	var plain := find_storage_tool(world, worker, category)
 	if not plain.is_empty():
 		if worker == null:
@@ -887,6 +902,9 @@ static func _distance_to(individual: HumanIndividual, building: Building) -> flo
 
 # Prelievi già prenotati da altri (task aperte con `context_key` nel context): "id edificio:nome" -> quanti.
 static func _reserved_fetches(except: HumanIndividual, context_key: String) -> Dictionary:
+	# Tempo (2026-10-24, assegnatore): "deposito: prenotazioni" (giro su tutti i pipottini e le loro task).
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var reserved: Dictionary = {}
 	for member in GameSettings.active_human_individuals:
 		if member == except:
@@ -895,6 +913,8 @@ static func _reserved_fetches(except: HumanIndividual, context_key: String) -> D
 			var key: Variant = task.context.get(context_key, null)
 			if key != null:
 				reserved[key] = int(reserved.get(key, 0)) + 1
+	if timing:
+		JobBoardTimingService.add("deposito: prenotazioni", started)
 	return reserved
 
 

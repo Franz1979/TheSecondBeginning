@@ -2062,7 +2062,7 @@ func _debug_test_daydream_task() -> void:
 	# "think_duration" (float, letto da THINK — nuovo step_think.tres, context_keys=
 	# ["think_duration"]), entrambi consumati e ripuliti da build_task stesso (consumed_context_keys,
 	# vedi task_factory.gd), nessun erase() manuale necessario qui.
-	var daydream_definition := load(DAYDREAM_TASK_DEFINITION_PATH) as TaskDefinition
+	var daydream_definition := TaskDefinitionCache.get_definition(DAYDREAM_TASK_DEFINITION_PATH)
 	var context: Dictionary = {
 		"target_position": around_position,
 		"think_duration": think_duration,
@@ -2201,7 +2201,7 @@ func _assign_wander_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
 	var target_data: Dictionary = IdleTaskAssignmentService.resolve_wander_targets(individual, macro_world)
-	var wander_definition := load(WANDER_TASK_DEFINITION_PATH) as TaskDefinition
+	var wander_definition := TaskDefinitionCache.get_definition(WANDER_TASK_DEFINITION_PATH)
 	var context: Dictionary = {
 		"wander_target_1": target_data["target_1"],
 		"wander_target_2": target_data["target_2"],
@@ -2226,7 +2226,7 @@ func _assign_explore_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
 	var target_data: Dictionary = IdleTaskAssignmentService.resolve_explore_targets(individual)
-	var explore_definition := load(IdleTaskAssignmentService.EXPLORE_TASK_DEFINITION_PATH) as TaskDefinition
+	var explore_definition := TaskDefinitionCache.get_definition(IdleTaskAssignmentService.EXPLORE_TASK_DEFINITION_PATH)
 	var task := TaskFactory.build_task(explore_definition, IdleTaskAssignmentService.build_explore_context(target_data))
 	# Idoneità con il motivo (AssignService, 5B.2), senza icona; l'esito dell'assegnazione non si guarda, come prima.
 	if not _assign_check(AssignRequest.create(individual, task, "task_activity_explore")):
@@ -2265,7 +2265,7 @@ func _assign_play_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
 	var target_data: Dictionary = IdleTaskAssignmentService.resolve_play_targets(individual, macro_world)
-	var play_definition := load(PLAY_TASK_DEFINITION_PATH) as TaskDefinition
+	var play_definition := TaskDefinitionCache.get_definition(PLAY_TASK_DEFINITION_PATH)
 	var context: Dictionary = {
 		"play_target_1": target_data["target_1"],
 		"play_target_2": target_data["target_2"],
