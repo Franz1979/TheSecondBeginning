@@ -11857,10 +11857,10 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 	# (vivi+bloccati, vedi MicroCellRenderer._lot_extent_counts) — se arrivassero DOPO, userebbero
 	# ancora i valori dell'anno scorso per quei rebuild intermedi.
 	_step_start_usec = Time.get_ticks_usec()
-	# Ceppi e piante morte (2026-10-04): saltati con motivo movimento/nebbia se voci e conteggi dei loro lotti sono
-	# uguali all'ultima ricostruzione (MicroCellRenderer.set_cut_dead_positions).
+	# Ceppi e piante morte (2026-10-04; per zona dal 2026-10-24): si rifanno solo le zone con voci o conteggi dei lotti
+	# cambiati (MicroCellRenderer.set_cut_dead_positions), qualunque sia il motivo.
 	if not skip_vegetation:
-		if not cell.renderer.set_cut_dead_positions(_get_cut_positions(cell.macro_state), _get_dead_positions(cell.macro_state), reason == "movimento/nebbia"):
+		if not cell.renderer.set_cut_dead_positions(_get_cut_positions(cell.macro_state), _get_dead_positions(cell.macro_state)):
 			skipped.append("cut_dead_markers")
 		_veg_timings_ms["2d_cut_dead_markers"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 

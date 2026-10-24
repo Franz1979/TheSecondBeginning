@@ -630,7 +630,7 @@ func set_buildings(buildings_data: Array) -> void:
 
 func set_vegetation_positions(positions: Dictionary) -> void:
 	vegetation_positions = positions
-	_rebuild_selection_lot_index(SELECTION_SOURCE_LIVE)
+	_selection_lot_index_dirty[SELECTION_SOURCE_LIVE] = true
 	_defer_or_rebuild_tree()
 	_defer_or_rebuild_shrub()
 	_defer_or_rebuild_grass()
@@ -666,8 +666,9 @@ func get_individual_screen_position(object_type: GameTypes.WorldObjectType, indi
 # Indice per lotto della selezione col clic (2026-10-04, richiesta utente — la ricerca della vegetazione al clic costava
 # 38-220 ms: VegetationSelectorController copiava l'intero elenco di ogni tipo e, per ogni candidato vicino, rifaceva
 # _lot_extent_counts e has_individual sull'intera cella). Per TREE/SHRUB e per ogni fonte (vivi, ceppi, morti):
-# lotto -> indici nell'elenco della fonte, ricostruito nei setter delle posizioni (set_vegetation_positions,
-# set_cut_positions, set_dead_positions, set_cut_dead_positions), mai al clic. Ricorda gli elenchi da cui è stato
+# lotto -> indici nell'elenco della fonte. Dal 2026-10-24 i setter delle posizioni (set_vegetation_positions,
+# set_cut_positions, set_dead_positions, set_cut_dead_positions) lo segnano soltanto da rifare, e lo costruisce il primo
+# clic dopo (_selection_lot_index_dirty), invece di ogni ridisegno. Ricorda gli elenchi da cui è stato
 # costruito: se l'elenco corrente non è più lo stesso oggetto o ha cambiato lunghezza, l'indice non vale e il chiamante
 # ripiega sul metodo completo (find_selection_candidates ritorna null).
 # ============================================================================================
@@ -679,6 +680,9 @@ const SELECTION_INDEX_TYPES: Array[GameTypes.WorldObjectType] = [
 ]
 # [fonte][WorldObjectType] -> {"list": Array o null, "size": int, "lots": Dictionary Vector2i -> Array[int]}
 var _selection_lot_index: Array = [{}, {}, {}]
+# Da rifare alla prossima ricerca (2026-10-24, progetto B fase 2b): i setter segnano solo questo, l'indice si costruisce
+# al primo clic dopo (find_selection_candidates) invece che a ogni ridisegno (~6 ms).
+var _selection_lot_index_dirty: Array = [true, true, true]
 
 
 func _selection_source_list(source: int, object_type: GameTypes.WorldObjectType) -> Variant:
@@ -725,6 +729,9 @@ func _selection_index_entry_valid(source: int, object_type: GameTypes.WorldObjec
 # l'unico dove la chiave può stare. null se l'indice non vale per questi elenchi: il chiamante usa il metodo completo.
 func find_selection_candidates(object_type: GameTypes.WorldObjectType, click_lot: Vector2i) -> Variant:
 	for source in [SELECTION_SOURCE_LIVE, SELECTION_SOURCE_CUT, SELECTION_SOURCE_DEAD]:
+		if _selection_lot_index_dirty[source]:
+			_rebuild_selection_lot_index(source)
+			_selection_lot_index_dirty[source] = false
 		if not _selection_index_entry_valid(source, object_type):
 			return null
 	var found: Array = [] # [fonte, indice, chiave]
@@ -1176,64 +1183,34 @@ func set_tree_age_params(current_year: int, age_params: Dictionary, birth_year_s
 # mozzato / pianta secca), mai i blob vivi (quelli dipendono da vegetation_positions, invariato).
 func set_cut_positions(positions: Dictionary) -> void:
 	cut_positions = positions
-	_rebuild_selection_lot_index(SELECTION_SOURCE_CUT)
-	_cut_dead_signature = []
+	_selection_lot_index_dirty[SELECTION_SOURCE_CUT] = true
 	_rebuild_cut_dead_multimeshes()
 	queue_redraw()
 
 
 func set_dead_positions(positions: Dictionary) -> void:
 	dead_positions = positions
-	_rebuild_selection_lot_index(SELECTION_SOURCE_DEAD)
-	_cut_dead_signature = []
+	_selection_lot_index_dirty[SELECTION_SOURCE_DEAD] = true
 	_rebuild_cut_dead_multimeshes()
 	queue_redraw()
 
 
-# Ceppi e piante morte insieme, con il salto (2026-10-04, richiesta utente). Ogni segno dipende SOLO da: la sua voce
-# (chiave, size_multiplier, tipo), il numero di individui del suo lotto (_lot_extent_counts: vivi nell'elenco filtrato
-# per la nebbia + ceppi + morti — è da qui che arriva la dipendenza dalla visibilità) e costanti del file (vedi
+# Ceppi e piante morte insieme (2026-10-04, richiesta utente). Ogni segno dipende SOLO da: la sua voce (chiave,
+# size_multiplier, tipo), il numero di individui del suo lotto (_lot_extent_counts: vivi nell'elenco filtrato per la
+# nebbia + ceppi + morti — è da qui che arriva la dipendenza dalla visibilità) e costanti del file (vedi
 # _build_tree_stump_transform/_build_shrub_stump_transform/_build_dead_tree_transform/_build_dead_marker_transform, che
-# di _compute_*_visual usano solo "ground"/"center"). Firma = voci di ceppi e morti + quel conteggio per i soli lotti che
-# hanno un segno: con `allow_skip` e firma uguale all'ultima ricostruzione, nessuna ricostruzione. Va chiamata DOPO
-# set_vegetation_positions (vegetation_positions già aggiornato). Ritorna true se ha ricostruito.
-func set_cut_dead_positions(cut: Dictionary, dead: Dictionary, allow_skip: bool) -> bool:
+# di _compute_*_visual usano solo "ground"/"center"). Dal 2026-10-24 (progetto B fase 2b) a gruppi per zona
+# (_rebuild_cut_dead_multimeshes): si rifanno solo le zone con voci o conteggi cambiati, al posto della firma di tutto
+# (un ceppo nuovo rifaceva tutti i segni). Va chiamata DOPO set_vegetation_positions (vegetation_positions già
+# aggiornato). Ritorna true se almeno una zona è stata rifatta.
+func set_cut_dead_positions(cut: Dictionary, dead: Dictionary) -> bool:
 	cut_positions = cut
 	dead_positions = dead
-	_rebuild_selection_lot_index(SELECTION_SOURCE_CUT)
-	_rebuild_selection_lot_index(SELECTION_SOURCE_DEAD)
-	var signature: Array = [cut, dead, _cut_dead_lot_counts()]
-	if allow_skip and not _cut_dead_signature.is_empty() and signature == _cut_dead_signature:
-		return false
-	_cut_dead_signature = signature
-	_rebuild_cut_dead_multimeshes()
+	_selection_lot_index_dirty[SELECTION_SOURCE_CUT] = true
+	_selection_lot_index_dirty[SELECTION_SOURCE_DEAD] = true
+	var rebuilt := _rebuild_cut_dead_multimeshes()
 	queue_redraw()
-	return true
-
-
-# Firma dell'ultima ricostruzione di ceppi e morti ([] = nessuna o non confrontabile).
-var _cut_dead_signature: Array = []
-
-
-# Stesso conteggio di _lot_extent_counts, solo per i lotti con un ceppo o una pianta morta: tipo -> {lotto: conteggio}.
-func _cut_dead_lot_counts() -> Dictionary:
-	var result: Dictionary = {}
-	for object_type in [GameTypes.WorldObjectType.TREE, GameTypes.WorldObjectType.SHRUB]:
-		var counts: Dictionary = {}
-		for entry in cut_positions.get(object_type, []):
-			var key: Vector3i = entry["key"]
-			counts[Vector2i(key.x, key.y)] = int(counts.get(Vector2i(key.x, key.y), 0)) + 1
-		for entry in dead_positions.get(object_type, []):
-			var key: Vector3i = entry["key"]
-			counts[Vector2i(key.x, key.y)] = int(counts.get(Vector2i(key.x, key.y), 0)) + 1
-		if counts.is_empty():
-			continue
-		for individual_key in vegetation_positions.get(object_type, []):
-			var lot := Vector2i(individual_key.x, individual_key.y)
-			if counts.has(lot):
-				counts[lot] = int(counts[lot]) + 1
-		result[object_type] = counts
-	return result
+	return rebuilt
 
 
 # Il colore dell'erba e quello della chioma degli alberi NON conifer dipendono dalla stagione,
@@ -2833,35 +2810,88 @@ func _build_dead_tree_transform(key: Vector3i, size_multiplier: float, lot_count
 # (vedi le tre funzioni sopra). Ogni entry porta già "size_multiplier" (vedi
 # IndividualVegetationService.get_cut_positions/get_dead_positions) — nessun bisogno di risolverlo
 # qui, viene passato così com'è.
-func _rebuild_cut_dead_multimeshes() -> void:
+# A gruppi per zona (2026-10-24, progetto B fase 2b): per ogni elenco (ceppi o morti di un tipo) le voci si dividono per
+# zona (vegetation_zone_of), e una zona si rifà solo se le sue voci o il numero di individui dei suoi lotti sono cambiati;
+# poi le zone si concatenano nell'ordine delle zone. Ritorna true se almeno una zona è stata rifatta.
+var _cut_dead_groups: Dictionary = {}  # "cut:<tipo>" / "dead:<tipo>" -> Array di gruppi per zona
+
+
+func _rebuild_cut_dead_multimeshes() -> bool:
 	_ensure_vegetation_meshes()
 	_ensure_vegetation_multimeshes()
 
 	var tree_stump_transforms: Array = []
 	var shrub_stump_transforms: Array = []
-	for object_type in cut_positions:
-		var lot_counts := _lot_extent_counts(object_type)
-		for entry in cut_positions[object_type]:
-			var key: Vector3i = entry["key"]
-			var size_multiplier: float = entry["size_multiplier"]
-			if object_type == GameTypes.WorldObjectType.TREE:
-				tree_stump_transforms.append(_build_tree_stump_transform(key, size_multiplier, lot_counts))
-			else:
-				shrub_stump_transforms.append(_build_shrub_stump_transform(key, size_multiplier, lot_counts))
-	_apply_transforms(_tree_stump_multimesh, tree_stump_transforms)
-	_apply_transforms(_shrub_stump_multimesh, shrub_stump_transforms)
-
 	var dead_transforms: Array = []
 	var dead_tree_transforms: Array = []
-	for object_type in dead_positions:
-		var lot_counts := _lot_extent_counts(object_type)
-		for entry in dead_positions[object_type]:
-			if object_type == GameTypes.WorldObjectType.TREE:
-				dead_tree_transforms.append(_build_dead_tree_transform(entry["key"], entry["size_multiplier"], lot_counts))
+	var rebuilt := false
+	var used_kinds: Dictionary = {}
+	for source_name in ["cut", "dead"]:
+		var by_type: Dictionary = cut_positions if source_name == "cut" else dead_positions
+		for object_type in by_type:
+			var kind := "%s:%d" % [source_name, object_type]
+			used_kinds[kind] = true
+			var lot_counts := _lot_extent_counts(object_type)
+			var buckets := _cut_dead_entries_by_zone(by_type[object_type])
+			var groups: Array = _cut_dead_groups.get(kind, [])
+			if groups.size() != VEGETATION_ZONE_COUNT:
+				groups = []
+				groups.resize(VEGETATION_ZONE_COUNT)
+			var target: Array
+			if source_name == "cut":
+				target = tree_stump_transforms if object_type == GameTypes.WorldObjectType.TREE else shrub_stump_transforms
 			else:
-				dead_transforms.append(_build_dead_marker_transform(object_type, entry["key"], entry["size_multiplier"], lot_counts))
+				target = dead_tree_transforms if object_type == GameTypes.WorldObjectType.TREE else dead_transforms
+			for zone in range(VEGETATION_ZONE_COUNT):
+				var entries: Array = buckets[zone]
+				var group: Variant = groups[zone]
+				if group == null or group["entries"] != entries or not _group_lot_counts_match(group, lot_counts):
+					group = _build_cut_dead_group(source_name, object_type, entries, lot_counts)
+					groups[zone] = group
+					rebuilt = true
+				target.append_array(group["transforms"])
+			_cut_dead_groups[kind] = groups
+	for kind in _cut_dead_groups.keys():
+		if not used_kinds.has(kind):
+			_cut_dead_groups.erase(kind)
+			rebuilt = true
+	_apply_transforms(_tree_stump_multimesh, tree_stump_transforms)
+	_apply_transforms(_shrub_stump_multimesh, shrub_stump_transforms)
 	_apply_transforms(_dead_multimesh, dead_transforms)
 	_apply_transforms(_dead_tree_multimesh, dead_tree_transforms)
+	return rebuilt
+
+
+# Voci di ceppi o morti divise per zona (VEGETATION_ZONE_COUNT array), nell'ordine dell'elenco dentro ogni zona.
+func _cut_dead_entries_by_zone(entries: Array) -> Array:
+	var buckets: Array = []
+	buckets.resize(VEGETATION_ZONE_COUNT)
+	for i in range(VEGETATION_ZONE_COUNT):
+		buckets[i] = []
+	for entry in entries:
+		var key: Vector3i = entry["key"]
+		(buckets[vegetation_zone_of(key.x, key.y)] as Array).append(entry)
+	return buckets
+
+
+# Segni di una zona: stesse funzioni di sempre per ogni voce.
+func _build_cut_dead_group(source_name: String, object_type: GameTypes.WorldObjectType, entries: Array, lot_counts: Dictionary) -> Dictionary:
+	var transforms: Array = []
+	var keys: Array = []
+	for entry in entries:
+		var key: Vector3i = entry["key"]
+		var size_multiplier: float = entry["size_multiplier"]
+		keys.append(key)
+		if source_name == "cut":
+			if object_type == GameTypes.WorldObjectType.TREE:
+				transforms.append(_build_tree_stump_transform(key, size_multiplier, lot_counts))
+			else:
+				transforms.append(_build_shrub_stump_transform(key, size_multiplier, lot_counts))
+		elif object_type == GameTypes.WorldObjectType.TREE:
+			transforms.append(_build_dead_tree_transform(key, size_multiplier, lot_counts))
+		else:
+			transforms.append(_build_dead_marker_transform(object_type, key, size_multiplier, lot_counts))
+	return {"entries": entries, "transforms": transforms, "lot_counts": _group_lot_counts(keys, lot_counts)}
 
 
 # Quanti individui (vivi O bloccati da un'eccezione di taglio/morte) condividono ciascun lotto —
@@ -2875,7 +2905,33 @@ func _rebuild_cut_dead_multimeshes() -> void:
 # davvero deciso. SENZA questo, tagliare un individuo cambierebbe local_count per i suoi vicini di
 # lotto ancora vivi, e sia il disk-offset di TREE sia l'offset_range di SHRUB dipendono da
 # local_count — i vicini si sposterebbero pur non avendo perso la propria identità.
+# In memoria finché i tre elenchi sono gli stessi oggetti con la stessa lunghezza (2026-10-24, progetto B fase 2b: nello
+# stesso ridisegno lo chiedono ceppi, alberi e arbusti, ~2 ms l'uno sugli alberi). Sola lettura per chi lo riceve.
+var _lot_extent_counts_memo: Dictionary = {}  # tipo -> {"lists": Array, "sizes": Array, "counts": Dictionary}
+
+
 func _lot_extent_counts(object_type: GameTypes.WorldObjectType) -> Dictionary:
+	var lists: Array = [
+		vegetation_positions.get(object_type, null), cut_positions.get(object_type, null), dead_positions.get(object_type, null),
+	]
+	var sizes: Array = []
+	for list in lists:
+		sizes.append((list as Array).size() if list != null else -1)
+	var memo: Variant = _lot_extent_counts_memo.get(object_type)
+	if memo != null and memo["sizes"] == sizes:
+		var same := true
+		for i in range(lists.size()):
+			if not is_same(lists[i], memo["lists"][i]):
+				same = false
+				break
+		if same:
+			return memo["counts"]
+	var counts := _compute_lot_extent_counts(object_type)
+	_lot_extent_counts_memo[object_type] = {"lists": lists, "sizes": sizes, "counts": counts}
+	return counts
+
+
+func _compute_lot_extent_counts(object_type: GameTypes.WorldObjectType) -> Dictionary:
 	var combined: Array = vegetation_positions.get(object_type, []).duplicate()
 	for entry in cut_positions.get(object_type, []):
 		combined.append(entry["key"])
