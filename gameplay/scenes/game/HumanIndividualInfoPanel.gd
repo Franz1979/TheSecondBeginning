@@ -189,6 +189,9 @@ var _food_bar_fill_body_reserve: StyleBoxFlat = null
 # ridotta da 6 a 4 nel .tscn per non allargare il pannello.
 @onready var skill_social_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn/SocialBar
 @onready var skill_social_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn/SocialCaptionWrapper/SocialCaption
+# medicine (2026-10-25, richiesta utente) — 11a barra, in coda dopo social, stesso trattamento.
+@onready var skill_medicine_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/MedicineColumn/MedicineBar
+@onready var skill_medicine_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/MedicineColumn/MedicineCaptionWrapper/MedicineCaption
 @onready var carried_boxes_row: HBoxContainer = $CarryRowMargin/CarryRow/CarriedBoxesRow
 # Primo riquadro (slot 0), in scena: fa anche da modello per gli altri, duplicati in _build_carried_slots.
 @onready var carried_resource_box: ColorRect = $CarryRowMargin/CarryRow/CarriedBoxesRow/CarriedResourceBox
@@ -521,7 +524,7 @@ func show_individual(
 	max_faith: float, current_faith: float,
 	skill_leadership: float, skill_builder: float, skill_management: float,
 	skill_transporter: float, skill_gathering: float, skill_cognition: float,
-	skill_hunting: float, skill_crafting: float, skill_ritual: float, skill_social: float,
+	skill_hunting: float, skill_crafting: float, skill_ritual: float, skill_social: float, skill_medicine: float,
 	queued_task_descriptions: Array[String] = []
 ) -> void:
 	visible = true
@@ -600,16 +603,23 @@ func show_individual(
 	thirst_bar.value = current_thirst
 	thirst_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_thirst), int(max_thirst)])
 
-	# Malattia in corso (2026-10-24, IllnessService): il suo nome accanto a "Salute", senza i giorni (il giocatore non sa
-	# quando guarirà); malato per salute bassa: "sta male".
+	# Condizioni di salute in corso (2026-10-25, HealthConditionService): i nomi accanto a "Salute", senza i giorni (il
+	# giocatore non sa quando guarirà); malato per salute bassa: "sta male".
 	health_label.text = tr("individual_health_label")
-	if individual != null and individual.illness_id != "":
-		health_label.text += " " + IllnessService.display_name(individual)
+	if individual != null and not individual.health_conditions.is_empty():
+		health_label.text += " " + HealthConditionService.display_names(individual)
 	elif individual != null and individual.is_sick():
 		health_label.text += " " + tr("individual_health_sick_suffix")
 	health_bar.max_value = max_health
 	health_bar.value = current_health
-	health_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_health), int(max_health)])
+	# Tooltip (2026-10-25): sotto i valori una riga per condizione con la fase e se sta a letto, oppure il perché sta male
+	# senza condizioni (salute troppo bassa).
+	var health_tooltip := "%d/%d" % [int(current_health), int(max_health)]
+	if individual != null and not individual.health_conditions.is_empty():
+		health_tooltip += "\n" + "\n".join(HealthConditionService.tooltip_lines(individual))
+	elif individual != null and individual.is_sick():
+		health_tooltip += "\n" + tr("health_condition_low_health_tooltip")
+	health_bar.tooltip_text = TooltipText.wrap(health_tooltip)
 
 	mind_section_label.text = tr("individual_mind_section_label")
 
@@ -685,6 +695,11 @@ func show_individual(
 	skill_social_bar.value = skill_social
 	skill_social_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_social), int(HumanIndividual.SKILL_MAX)])
 	skill_social_caption.text = tr("skill_social_label")
+
+	skill_medicine_bar.max_value = HumanIndividual.SKILL_MAX
+	skill_medicine_bar.value = skill_medicine
+	skill_medicine_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_medicine), int(HumanIndividual.SKILL_MAX)])
+	skill_medicine_caption.text = tr("skill_medicine_label")
 
 	# Capacità di trasporto (2026-09-13, richiesta utente — spostata in FONDO alle barre, dopo i 5
 	# nuovi parametri vitali: nessun motivo funzionale, solo l'ordine visivo concordato) — la barra

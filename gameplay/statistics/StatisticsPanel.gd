@@ -27,21 +27,50 @@ extends Window
 # HumanPopulationInfoPanel), a differenza della "chrome" del pannello sopra (titolo finestra/tab/
 # CloseButton), che invece resta tr() come il resto del sistema di menu/dialog. Grafici a linea
 # (deaths/births per anno) via LineChart.gd, componente riusabile senza logica di dominio.
-const TAB_MORTALITY := 0
-# Step 5/6 piano statistiche (2026-09-06) — secondo/terzo tab, stessa convenzione (indice del
-# nodo figlio nel TabContainer, mai .visible toggled da codice).
-const TAB_BIRTHS := 1
-const TAB_POPULATION := 2
-# Quarto tab (2026-09-12, richiesta utente) — stessa identica convenzione dei tre sopra.
-const TAB_BUILDINGS := 3
-# Quinta scheda (2026-10-12, richiesta utente): valori assoluti P/C/R del popolo o del villaggio scelto.
-const TAB_INFLUENCE := 4
+#
+# Ordine delle schede (2026-10-25, richiesta utente): Popolazione, Par. vitali, Skills, Influenze, Natalità, Mortalità,
+# Edifici. Indice = posizione del nodo figlio nel TabContainer (StatisticsPanel.tscn), mai .visible toggled da codice.
+const TAB_POPULATION := 0
+# Parametri vitali (2026-10-25, richiesta utente): medie attuali (barre) e per anno (linee) dei parametri dei pipottini,
+# poi chi sta male e perché (HealthConditionService).
+const TAB_PARAMETERS := 1
+# Skill (2026-10-25, richiesta utente): stessa impostazione dei parametri sulle dieci skill, più il migliore per skill.
+const TAB_SKILLS := 2
+# Valori assoluti P/C/R del popolo o del villaggio scelto (2026-10-12, richiesta utente).
+const TAB_INFLUENCE := 3
+const TAB_BIRTHS := 4
+const TAB_MORTALITY := 5
+const TAB_BUILDINGS := 6
 # Colori delle tre serie e ordine di visualizzazione P, C, R.
 const INFLUENCE_DISPLAY := [
 	{"type": InfluenceService.InfluenceType.POLITICAL, "name": "statistics_influence_political", "color": Color(0.9, 0.45, 0.35)},
 	{"type": InfluenceService.InfluenceType.CULTURAL, "name": "statistics_influence_cultural", "color": Color(0.95, 0.8, 0.3)},
 	{"type": InfluenceService.InfluenceType.RELIGIOUS, "name": "statistics_influence_religious", "color": Color(0.6, 0.5, 0.95)},
 ]
+# Parametri della scheda Parametri, nell'ordine di VitalsAverageService.PARAMETERS: nome (chiave tr) e colore.
+const PARAMETER_DISPLAY := {
+	"health": {"name": "statistics_param_health", "color": Color(0.9, 0.35, 0.35)},
+	"happiness": {"name": "statistics_param_happiness", "color": Color(0.95, 0.8, 0.3)},
+	"stamina": {"name": "statistics_param_stamina", "color": Color(0.45, 0.8, 0.4)},
+	"thirst": {"name": "statistics_param_thirst", "color": Color(0.35, 0.65, 0.95)},
+	"loyalty": {"name": "statistics_param_loyalty", "color": Color(0.7, 0.5, 0.95)},
+	"faith": {"name": "statistics_param_faith", "color": Color(0.85, 0.85, 0.85)},
+}
+# Skill della scheda Skill, nell'ordine di VitalsAverageService.SKILLS: nome intero (chiave tr già usata dal pannello
+# dell'individuo), sigla sotto la barra e colore.
+const SKILL_DISPLAY := {
+	"leadership": {"name": "skill_leadership_label", "short": "skill_leadership_short", "color": Color(0.9, 0.45, 0.35)},
+	"builder": {"name": "skill_builder_label", "short": "skill_builder_short", "color": Color(0.8, 0.6, 0.35)},
+	"management": {"name": "skill_management_label", "short": "skill_management_short", "color": Color(0.95, 0.8, 0.3)},
+	"transporter": {"name": "skill_transporter_label", "short": "skill_transporter_short", "color": Color(0.6, 0.75, 0.3)},
+	"gathering": {"name": "skill_gathering_label", "short": "skill_gathering_short", "color": Color(0.35, 0.8, 0.45)},
+	"cognition": {"name": "skill_cognition_label", "short": "skill_cognition_short", "color": Color(0.35, 0.8, 0.8)},
+	"hunting": {"name": "skill_hunting_label", "short": "skill_hunting_short", "color": Color(0.35, 0.6, 0.95)},
+	"crafting": {"name": "skill_crafting_label", "short": "skill_crafting_short", "color": Color(0.55, 0.5, 0.95)},
+	"ritual": {"name": "skill_ritual_label", "short": "skill_ritual_short", "color": Color(0.85, 0.5, 0.9)},
+	"social": {"name": "skill_social_label", "short": "skill_social_short", "color": Color(0.85, 0.85, 0.85)},
+	"medicine": {"name": "skill_medicine_label", "short": "skill_medicine_short", "color": Color(0.4, 0.75, 0.55)},
+}
 # Didascalie dei grafici nella scena: percorso del Label -> chiave di traduzione.
 const CHART_CAPTIONS := [
 	["MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent/CauseDistributionCaption", "statistics_caption_cause_distribution"],
@@ -49,6 +78,11 @@ const CHART_CAPTIONS := [
 	["MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/BirthsPerYearCaption", "statistics_caption_births_per_year"],
 	["MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/AgeBandDistributionCaption", "statistics_caption_age_band_distribution"],
 	["MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/PopulationPerYearCaption", "statistics_caption_population_per_year"],
+	["MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent/CurrentParametersCaption", "statistics_caption_current_parameters"],
+	["MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent/ParametersPerYearCaption", "statistics_caption_parameters_per_year"],
+	["MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent/CurrentSkillsCaption", "statistics_caption_current_parameters"],
+	["MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent/SkillsPerYearCaption", "statistics_caption_parameters_per_year"],
+	["MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent/BestSkillsCaption", "statistics_caption_best_skills"],
 	["MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingsPerYearCaption", "statistics_caption_buildings_per_year"],
 	["MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingTypeDistributionCaption", "statistics_caption_building_type_distribution"],
 ]
@@ -80,6 +114,16 @@ const SCOPE_ALL := 0
 @onready var population_average_age_label: Label = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/PopulationAverageAgeLabel
 @onready var age_band_distribution_chart: PieChart = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/AgeBandDistributionChart
 @onready var population_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent/PopulationPerYearChart
+
+@onready var parameters_bar_chart: BarChart = $MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent/ParametersBarChart
+@onready var parameter_series_row: HFlowContainer = $MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent/ParameterSeriesRow
+@onready var parameters_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent/ParametersPerYearChart
+@onready var skills_bar_chart: BarChart = $MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent/SkillsBarChart
+@onready var skill_series_row: HFlowContainer = $MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent/SkillSeriesRow
+@onready var skills_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent/SkillsPerYearChart
+@onready var best_skills_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent/BestSkillsContainer
+@onready var sick_list_caption: Label = $MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent/SickListCaption
+@onready var sick_list_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent/SickListScroll/SickListContainer
 
 @onready var total_buildings_label: Label = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/TotalBuildingsLabel
 @onready var buildings_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent/BuildingsPerYearChart
@@ -119,15 +163,25 @@ var _buildings: Array[Building] = []
 # SCOPE_ALL o un Village.id; resta tra un'apertura e l'altra finché il villaggio esiste.
 var _scope_village_id: int = SCOPE_ALL
 var _folk: Folk = null
+# Caselle delle linee della scheda Parametri, create in _ready: parametro -> CheckBox.
+var _parameter_checks: Dictionary = {}
+# Individui dell'ambito all'ultimo ricalcolo: il grafico per anno aggiunge il loro valore attuale come punto dell'anno in
+# corso (stesso principio del grafico delle influenze).
+var _parameter_individuals: Array[HumanIndividual] = []
+# Stesse due cose per la scheda Skill.
+var _skill_checks: Dictionary = {}
+var _skill_individuals: Array[HumanIndividual] = []
 
 
 func _ready() -> void:
 	title = tr("statistics_tooltip")
-	tab_container.set_tab_title(TAB_MORTALITY, tr("statistics_tab_mortality"))
-	tab_container.set_tab_title(TAB_BIRTHS, tr("statistics_tab_births"))
 	tab_container.set_tab_title(TAB_POPULATION, tr("statistics_tab_population"))
+	tab_container.set_tab_title(TAB_PARAMETERS, tr("statistics_tab_parameters"))
 	tab_container.set_tab_title(TAB_BUILDINGS, tr("statistics_tab_buildings"))
+	tab_container.set_tab_title(TAB_BIRTHS, tr("statistics_tab_births"))
+	tab_container.set_tab_title(TAB_MORTALITY, tr("statistics_tab_mortality"))
 	tab_container.set_tab_title(TAB_INFLUENCE, tr("statistics_tab_influence"))
+	tab_container.set_tab_title(TAB_SKILLS, tr("statistics_tab_skills"))
 	for i in range(INFLUENCE_DISPLAY.size()):
 		influence_checks[i].text = tr(INFLUENCE_DISPLAY[i]["name"])
 		influence_checks[i].add_theme_color_override("font_color", INFLUENCE_DISPLAY[i]["color"])
@@ -142,6 +196,12 @@ func _ready() -> void:
 	for caption in CHART_CAPTIONS:
 		(get_node(String(caption[0])) as Label).text = tr(String(caption[1]))
 	cohesion_per_year_chart.min_axis_max = VillageCohesionService.MAX_COHESION
+	parameters_per_year_chart.set_axis_labels(tr("statistics_axis_year"), tr("statistics_axis_percent"))
+	parameters_per_year_chart.min_axis_max = 100.0
+	_parameter_checks = _build_series_checks(VitalsAverageService.PARAMETERS, PARAMETER_DISPLAY, parameter_series_row, _refresh_parameters_chart)
+	skills_per_year_chart.set_axis_labels(tr("statistics_axis_year"), tr("statistics_axis_percent"))
+	skills_per_year_chart.min_axis_max = 100.0
+	_skill_checks = _build_series_checks(VitalsAverageService.SKILLS, SKILL_DISPLAY, skill_series_row, _refresh_skills_chart)
 	# Titoli lista donne fertili/lista morti (richiesta utente, 2026-09-06) — tr(), non hardcoded
 	# come il resto del CONTENUTO dati di questo pannello: sono più simili alla "chrome" strutturale
 	# (titolo di una sezione, come i tab) che a un dato calcolato, stessa eccezione esplicitamente
@@ -229,6 +289,8 @@ func _refresh_all_tabs() -> void:
 		individuals, population_series, _game_data.year,
 		_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female
 	)
+	_refresh_parameters_tab(individuals)
+	_refresh_skills_tab(individuals)
 	_refresh_buildings_tab(_scoped_buildings(), building_series)
 	_refresh_influence_tab()
 
@@ -438,17 +500,156 @@ func _refresh_population_tab(
 	population_per_year_chart.set_data(population_snapshots)
 
 
+# Scheda Parametri (2026-10-25, richiesta utente), sui vivi dell'ambito scelto, ricalcolata a ogni apertura:
+# - barre: media attuale di ogni parametro in % del massimo, tooltip col valore medio reale (VitalsAverageService);
+# - linee: media di fine anno per parametro (GameData.vital_snapshots) più il punto dell'anno in corso;
+# - chi sta male: titolo "Malati: n - Feriti: n" (chi ha malattia e ferita conta in tutti e due; malato per salute bassa
+#   senza condizioni, HumanIndividual.is_sick, conta tra i malati) ed elenco col motivo accanto al nome.
+func _refresh_parameters_tab(human_individuals: Array[HumanIndividual]) -> void:
+	_parameter_individuals = human_individuals
+	parameters_bar_chart.set_bars(_build_bars(VitalsAverageService.PARAMETERS, PARAMETER_DISPLAY, VitalsAverageService.averages(human_individuals)))
+	_refresh_parameters_chart()
+
+	var sick: Array[HumanIndividual] = []
+	var ill_count := 0
+	var wounded_count := 0
+	for individual in human_individuals:
+		var has_conditions := not individual.health_conditions.is_empty()
+		if not has_conditions and not individual.is_sick():
+			continue
+		sick.append(individual)
+		if not has_conditions or HealthConditionService.has_category(individual, HealthConditionRules.Category.ILLNESS):
+			ill_count += 1
+		if HealthConditionService.has_category(individual, HealthConditionRules.Category.WOUND):
+			wounded_count += 1
+	sick_list_caption.text = tr("statistics_sick_title").format({"ill": ill_count, "wounded": wounded_count})
+
+	for child in sick_list_container.get_children():
+		child.queue_free()
+	for individual in sick:
+		var conditions := HealthConditionService.display_names(individual)
+		var label := Label.new()
+		label.add_theme_font_size_override("font_size", 10)
+		label.text = tr("statistics_sick_row").format({
+			"name": individual.name,
+			"conditions": conditions if conditions != "" else tr("statistics_condition_low_health"),
+			"health": int(individual.current_health), "max": int(individual.max_health),
+		})
+		sick_list_container.add_child(label)
+
+
+# Linee della scheda Parametri: una per parametro acceso, storia dell'ambito + punto dell'anno in corso.
+func _refresh_parameters_chart() -> void:
+	if _game_data == null:
+		return
+	var history: Dictionary = _game_data.vital_snapshots
+	if _scope_village_id != SCOPE_ALL:
+		history = _game_data.village_vital_snapshots.get(_scope_village_id, {})
+	parameters_per_year_chart.set_series(_build_series(
+		VitalsAverageService.PARAMETERS, PARAMETER_DISPLAY, _parameter_checks, history,
+		VitalsAverageService.average_percents(_parameter_individuals), not _parameter_individuals.is_empty()
+	))
+
+
+# Scheda Skill (2026-10-25, richiesta utente): stessa impostazione di Parametri sulle dieci skill (barre con la sigla
+# sotto e il nome intero nel tooltip, linee per anno da GameData.skill_snapshots), poi il migliore dell'ambito per
+# ogni skill.
+func _refresh_skills_tab(human_individuals: Array[HumanIndividual]) -> void:
+	_skill_individuals = human_individuals
+	skills_bar_chart.set_bars(_build_bars(VitalsAverageService.SKILLS, SKILL_DISPLAY, VitalsAverageService.skill_averages(human_individuals)))
+	_refresh_skills_chart()
+
+	for child in best_skills_container.get_children():
+		child.queue_free()
+	for i in range(VitalsAverageService.SKILLS.size()):
+		var skill := VitalsAverageService.SKILLS[i]
+		var best: HumanIndividual = null
+		var best_value := 0.0
+		for individual in human_individuals:
+			var value: float = individual.get(VitalsAverageService.SKILL_FIELDS[i])
+			if value > best_value:
+				best = individual
+				best_value = value
+		var label := Label.new()
+		label.add_theme_font_size_override("font_size", 10)
+		label.add_theme_color_override("font_color", SKILL_DISPLAY[skill]["color"])
+		label.text = tr("statistics_best_skill_row").format({
+			"skill": tr(SKILL_DISPLAY[skill]["name"]),
+			"name": best.name if best != null else tr("statistics_not_available"),
+			"value": int(best_value),
+		})
+		best_skills_container.add_child(label)
+
+
+func _refresh_skills_chart() -> void:
+	if _game_data == null:
+		return
+	var history: Dictionary = _game_data.skill_snapshots
+	if _scope_village_id != SCOPE_ALL:
+		history = _game_data.village_skill_snapshots.get(_scope_village_id, {})
+	skills_per_year_chart.set_series(_build_series(
+		VitalsAverageService.SKILLS, SKILL_DISPLAY, _skill_checks, history,
+		VitalsAverageService.skill_average_percents(_skill_individuals), not _skill_individuals.is_empty()
+	))
+
+
+# Caselle accese di default, una per chiave, col colore della sua linea; `on_toggled` ridisegna il grafico.
+func _build_series_checks(keys: Array[String], display: Dictionary, row: Container, on_toggled: Callable) -> Dictionary:
+	var checks := {}
+	for key in keys:
+		var check := CheckBox.new()
+		check.text = tr(display[key]["name"])
+		check.button_pressed = true
+		check.add_theme_color_override("font_color", display[key]["color"])
+		check.toggled.connect(func(_pressed: bool) -> void: on_toggled.call())
+		row.add_child(check)
+		checks[key] = check
+	return checks
+
+
+# Barre di BarChart da VitalsAverageService: sotto la barra la sigla ("short") se c'è, altrimenti il nome; nel tooltip
+# il nome intero e il valore medio reale.
+func _build_bars(keys: Array[String], display: Dictionary, averages: Dictionary) -> Array[Dictionary]:
+	var bars: Array[Dictionary] = []
+	for key in keys:
+		var name := tr(display[key]["name"])
+		var average: Dictionary = averages[key]
+		bars.append({
+			"label": tr(display[key]["short"]) if display[key].has("short") else name,
+			"value": average["percent"], "color": display[key]["color"],
+			"tooltip": tr("statistics_param_tooltip").format({
+				"name": name, "current": int(average["current"]), "max": int(average["max"]), "percent": roundi(average["percent"]),
+			}),
+		})
+	return bars
+
+
+# Una linea per chiave accesa: storia di fine anno + (se ci sono individui) il punto dell'anno in corso.
+func _build_series(
+	keys: Array[String], display: Dictionary, checks: Dictionary, history: Dictionary, current: Dictionary, add_current: bool
+) -> Array:
+	var series: Array = []
+	for key in keys:
+		if not (checks[key] as CheckBox).button_pressed:
+			continue
+		var by_year: Dictionary = (history.get(key, {}) as Dictionary).duplicate()
+		if add_current:
+			by_year[_game_data.year] = current[key]
+		series.append({"data": by_year, "color": display[key]["color"], "label": tr(display[key]["name"])})
+	return series
+
+
 # Quarto tab Edifici (2026-09-12, richiesta utente) — stesso principio degli altri tre: tutto
 # ricalcolato al volo ad ogni apertura, nessuna cache. Distribuzione per CATEGORIA (BuildingTypes.
 # Category: RESIDENTIAL/POLITICAL/STORAGE), non per singolo tipo di edificio (hut/pebble_circle/
 # deposit_site) — richiesta esplicita dell'utente. building_snapshots passato già risolto dal
 # chiamante (game_data.building_snapshots) — NON serve _fill_missing_years qui, stesso motivo di
 # population_snapshots in _refresh_population_tab sopra: uno snapshot viene registrato OGNI anno
-# per costruzione (GameScene._on_year_rolled_over), mai un buco da riempire.
+# per costruzione (StatisticsSnapshotService.record_year_end), mai un buco da riempire.
 #
 # MOVEMENT escluso (2026-10-03, richiesta utente — per categoria, mai per nome: le celle percorribili, es. terra
 # battuta, falsavano i numeri): "Edifici totali", la torta e il grafico per anno contano solo gli altri (building_snapshots
-# li esclude dal 2026-10-04, vedi GameScene._on_year_rolled_over). Le celle MOVEMENT compaiono solo come nota tenue sotto
+# li esclude dal 2026-10-04, vedi StatisticsSnapshotService.record_year_end). Le celle MOVEMENT compaiono solo come nota tenue sotto
 # la legenda della torta ("Vie di passaggio", PieChart.set_footer), volutamente non in evidenza.
 #
 # Solo edifici completi (2026-10-12, richiesta utente): i cantieri non contano; le macerie (categoria RUINS) non sono

@@ -227,7 +227,7 @@ func _get_labor_scale(individual: Variant, context: Dictionary) -> float:
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if station_labor <= 0.0 or recipe_rules == null:
 		return 1.0
-	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)
+	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context, target_building.rules.production_skill)
 	var effective_labor: float = maxf(station_labor / skill_factor, MIN_REQUIRED_LABOR_FRACTION * recipe_rules.recipe_labor)
 	if effective_labor <= 0.0:
 		return 1.0

@@ -24,8 +24,27 @@ static func apply_effects(individual: HumanIndividual, task: Task) -> void:
 	var effects := _get_effects()
 	if effects == null:
 		return
-	_apply_skill_effects(individual, task, effects.skill_effects_by_task_name.get(task.task_name, {}))
+	_apply_skill_effects(individual, task, _with_production_skill(task, effects.skill_effects_by_task_name.get(task.task_name, {})))
 	_apply_vital_effects(individual, task, effects.vital_effects_by_task_name.get(task.task_name, {}))
+
+
+# Produce in un edificio con BuildingRules.production_skill (2026-10-25, capanna del guaritore → Medicina): la crescita di
+# skill_crafting dei dati va a quella skill. Edificio letto dalla ProduceAction della Task (salvata con lei).
+static func _with_production_skill(task: Task, skill_effects: Dictionary) -> Dictionary:
+	if not skill_effects.has("skill_crafting"):
+		return skill_effects
+	for step in task.steps:
+		var produce := step as ProduceAction
+		if produce == null or produce.target_building == null or produce.target_building.rules == null:
+			continue
+		var skill_name := produce.target_building.rules.production_skill
+		if skill_name == "" or skill_name == "skill_crafting":
+			return skill_effects
+		var remapped := skill_effects.duplicate()
+		remapped[skill_name] = float(remapped.get(skill_name, 0.0)) + float(remapped["skill_crafting"])
+		remapped.erase("skill_crafting")
+		return remapped
+	return skill_effects
 
 
 # Somma l'incremento a ciascuna property skill_* indicata, con il tetto HumanIndividual.SKILL_MAX (2026-10-10; un

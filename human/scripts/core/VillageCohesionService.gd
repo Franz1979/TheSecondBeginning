@@ -64,16 +64,6 @@ static func apply_annual_decay(folk: Folk) -> void:
 		add(village, -village.cohesion / DECAY_DIVISOR, "calo annuale")
 
 
-# Un punto per villaggio e anno (GameData.village_cohesion_snapshots), dopo il calo: il valore di fine anno.
-static func record_snapshots(folk: Folk, game_data: GameData) -> void:
-	if folk == null or game_data == null:
-		return
-	for village in folk.villages:
-		if not game_data.village_cohesion_snapshots.has(village.id):
-			game_data.village_cohesion_snapshots[village.id] = {}
-		game_data.village_cohesion_snapshots[village.id][game_data.year] = village.cohesion
-
-
 # Media semplice delle coesioni dei villaggi; 0 senza villaggi.
 static func get_folk_cohesion(folk: Folk) -> float:
 	if folk == null or folk.villages.is_empty():

@@ -113,7 +113,10 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Appoggio per travois (2026-10-23, richiesta utente) — slot 22, submenu_row.slot_count portato a 24; Hut resta l'ultimo
 	# (slot 23). Categoria OTHER.
 	"travois_rack": 22,
-	"hut": 23,
+	# Capanna del guaritore (2026-10-25, richiesta utente) — slot 23, submenu_row.slot_count portato a 25; Hut resta
+	# l'ultimo (slot 24).
+	"healer_hut": 23,
+	"hut": 24,
 }
 
 # Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 10). RUINS esclusa:
@@ -246,7 +249,7 @@ func _ready() -> void:
 	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
 	# Legnaia (2026-10-08): richiede advanced_paleolithic_constructions, disabilitata da _refresh_building_slots_buildable.
 	# Capanna del vestiario (2026-10-11): richiede advanced_paleolithic_constructions, come la legnaia.
-	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack"]:
+	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack", "healer_hut"]:
 		submenu_row.configure_slot(
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)
@@ -381,7 +384,7 @@ func _refresh_hide_superseded_text() -> void:
 	_hide_superseded_check.text = ("☑ " if _hide_superseded_check.button_pressed else "☐ ") + tr("build_bar_hide_superseded")
 
 
-# Tooltip di un bottone edificio (BuildingCostTooltip): nome, descrizione breve, materiali (allestimento + costruzione),
+# Tooltip di un bottone edificio (BuildingCostTooltip): nome, descrizione breve, materiali (senza l'allestimento),
 # lavoro. Bottone spento: in fondo il motivo (`for_text` = tooltip di set_building_buildable, se diverso dal nome).
 func _building_tooltip(for_text: String, building_type_name: String, slot_button: TooltipButton) -> Control:
 	var title := tr("build_bar_%s_tooltip" % building_type_name)

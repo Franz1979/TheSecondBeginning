@@ -203,8 +203,17 @@ func set_footprint_preview(offset: Vector2, rect_px: Vector2, door_px: Vector2) 
 	queue_redraw()
 
 
+# Palizzata e cancello (2026-10-25, richiesta utente — servivano due R per ribaltarli): salta le direzioni che sul pezzo
+# corrente si disegnano uguali a quella attuale (sui pezzi dritti ne restano due, sugli angoli tutte e quattro).
 func rotate_clockwise() -> void:
-	rotation_dir = (rotation_dir + 1) % 4
+	var next: int = (rotation_dir + 1) % 4
+	if LinearShapes.has_side(building_type_name):
+		var current := LinearShapes.side_signature(building_type_name, _linear_mask, PalisadeShape.side_vector(rotation_dir))
+		for i in range(3):
+			if LinearShapes.side_signature(building_type_name, _linear_mask, PalisadeShape.side_vector(next)) != current:
+				break
+			next = (next + 1) % 4
+	rotation_dir = next
 
 
 func _draw() -> void:
@@ -317,6 +326,10 @@ func _draw_shape() -> void:
 	# Capanna del vestiario (2026-10-20): lo stesso disegno della mappa, semitrasparente.
 	if building_type_name == ClothingHutShape.TYPE:
 		ClothingHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
+		return
+	# Capanna del guaritore (2026-10-25): lo stesso disegno della mappa, semitrasparente.
+	if building_type_name == HealerHutShape.TYPE:
+		HealerHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
 		return
 	# Affumicatoio (2026-10-23): lo stesso disegno della mappa, semitrasparente, senza fumo.
 	if building_type_name == SmokehouseShape.TYPE:

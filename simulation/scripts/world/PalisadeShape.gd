@@ -83,6 +83,20 @@ static func _draw_stakes(
 		canvas.draw_circle(tip, STAKE_TIP_RADIUS * scale, tint.call(TIP))
 
 
+# Lato dei pali per ogni braccio presente (pezzo isolato: `outward` stesso): due direzioni con lo stesso risultato si
+# disegnano uguali (LinearShapes.side_signature).
+static func lean_signature(neighbor_mask: int, outward: Vector2) -> Array[Vector2]:
+	var leans: Array[Vector2] = []
+	for side in range(4):
+		if (neighbor_mask & (1 << side)) == 0:
+			continue
+		var direction: Vector2 = LinearShape.SIDE_DIRECTIONS[side]
+		leans.append(_lean(Vector2(-direction.y, direction.x), outward, 0))
+	if leans.is_empty():
+		leans.append(outward)
+	return leans
+
+
 # Direzione verso cui sporgono i pali per la direzione dell'edificio `direction` (Building.rotation).
 static func side_vector(direction: GameTypes.Direction) -> Vector2:
 	return TentShapes.direction_vector(direction)

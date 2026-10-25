@@ -163,6 +163,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.village_influence_snapshots = _village_influence_snapshots_from_json(data["game"].get("village_influence_snapshots", {}))
 	# Coesione per villaggio (2026-10-14): {} per i salvataggi precedenti.
 	game_data.village_cohesion_snapshots = _village_cohesion_snapshots_from_json(data["game"].get("village_cohesion_snapshots", {}))
+	# Media dei parametri per anno (2026-10-25): {} per i salvataggi precedenti.
+	game_data.vital_snapshots = _vital_snapshots_from_json(data["game"].get("vital_snapshots", {}))
+	game_data.village_vital_snapshots = _village_vital_snapshots_from_json(data["game"].get("village_vital_snapshots", {}))
+	# Media delle skill per anno (2026-10-25): stesso schema.
+	game_data.skill_snapshots = _vital_snapshots_from_json(data["game"].get("skill_snapshots", {}))
+	game_data.village_skill_snapshots = _village_vital_snapshots_from_json(data["game"].get("village_skill_snapshots", {}))
 	# Riti sociali in corso (2026-10-14): [] per i salvataggi precedenti; numeri JSON riportati a int dove servono.
 	game_data.active_social_rites.clear()
 	for raw_rite in data["game"].get("active_social_rites", []):
@@ -278,6 +284,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.job_board_return_borrowed_tools = bool(data["game"].get("job_board_return_borrowed_tools", true))
 	game_data.job_board_take_bag = bool(data["game"].get("job_board_take_bag", false))
 	game_data.job_board_wear_apparel = bool(data["game"].get("job_board_wear_apparel", false))
+	game_data.real_seconds_in_game = float(data["game"].get("real_seconds_in_game", 0.0))
+	game_data.real_seconds_playing = float(data["game"].get("real_seconds_playing", 0.0))
 	game_data.job_board_single_builder = bool(data["game"].get("job_board_single_builder", false))
 	# Inventario del magazzino (2026-10-11): salvataggi precedenti = mai fatto (il primo entra subito in coda).
 	game_data.inventory_interval_hours = maxi(int(data["game"].get("inventory_interval_hours", 24)), 1)
@@ -990,8 +998,22 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.max_thirst = float(individual_data.get("max_thirst", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.current_health = float(individual_data.get("current_health", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.max_health = float(individual_data.get("max_health", HumanIndividual.FALLBACK_MAX_VITAL))
-			individual.illness_id = String(individual_data.get("illness_id", ""))
-			individual.illness_days_remaining = int(individual_data.get("illness_days_remaining", 0))
+			# Condizioni di salute (2026-10-25); i salvataggi del 2026-10-24 avevano una sola malattia (illness_id).
+			individual.health_conditions.clear()
+			for entry in individual_data.get("health_conditions", []):
+				if entry is Dictionary and String(entry.get("id", "")) != "":
+					individual.health_conditions.append({
+						"id": String(entry["id"]), "days": int(entry.get("days", 0)),
+						"phase": String(entry.get("phase", HealthConditionService.PHASE_ACUTE)),
+						# Rimedio preso oggi (2026-10-25): assente nei salvataggi precedenti.
+						HealthConditionService.KEY_REMEDY: String(entry.get(HealthConditionService.KEY_REMEDY, "")),
+					})
+			var old_illness_id := String(individual_data.get("illness_id", ""))
+			if old_illness_id != "" and individual.health_conditions.is_empty():
+				individual.health_conditions.append({
+					"id": old_illness_id, "days": int(individual_data.get("illness_days_remaining", 0)),
+					"phase": HealthConditionService.PHASE_ACUTE,
+				})
 			individual.current_happiness = float(individual_data.get("current_happiness", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.max_happiness = float(individual_data.get("max_happiness", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.current_loyalty = float(individual_data.get("current_loyalty", HumanIndividual.FALLBACK_MAX_VITAL))
@@ -1016,6 +1038,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.skill_ritual = float(individual_data.get("skill_ritual", 0.0))
 			# skill_social (2026-10-13): 0.0 per i save precedenti alla skill.
 			individual.skill_social = float(individual_data.get("skill_social", 0.0))
+			# skill_medicine (2026-10-25): 0.0 per i save precedenti alla skill.
+			individual.skill_medicine = float(individual_data.get("skill_medicine", 0.0))
 			# Capacità di trasporto (2026-09-08, richiesta utente) — .get() con default "non sta
 			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
 			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre
@@ -1195,6 +1219,25 @@ func _population_snapshots_from_json(raw: Dictionary) -> Dictionary:
 	var result: Dictionary = {}
 	for year_key in raw.keys():
 		result[int(year_key)] = int(raw[year_key])
+	return result
+
+
+# Media dei parametri (2026-10-25): parametro (String) -> {anno -> valore}, anni riportati a int, valori float.
+func _vital_snapshots_from_json(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for parameter in raw.keys():
+		var by_year: Dictionary = {}
+		for year_key in (raw[parameter] as Dictionary).keys():
+			by_year[int(year_key)] = float(raw[parameter][year_key])
+		result[String(parameter)] = by_year
+	return result
+
+
+# Stesso schema per villaggio: Village.id -> {chiave -> {anno -> valore}}.
+func _village_vital_snapshots_from_json(raw: Dictionary) -> Dictionary:
+	var result: Dictionary = {}
+	for village_key in raw.keys():
+		result[int(village_key)] = _vital_snapshots_from_json(raw[village_key])
 	return result
 
 

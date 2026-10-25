@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_step_heal_give"]
+
+[resource]
+script = ExtResource("1_step_heal_give")
+action_type = 35
+context_keys = Array[String](["remedy_give_building", "remedy_give_source_kind", "remedy_give_mode"])
+step_description = "task_heal_step_give"

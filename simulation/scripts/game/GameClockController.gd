@@ -93,6 +93,12 @@ func get_game_day_delta(real_delta: float) -> float:
 	return real_delta / SECONDS_PER_DAY_BY_SPEED[speed]
 
 func _process(delta: float) -> void:
+	# Tempo reale di gioco (2026-10-25, debug — GameData.real_seconds_*): `delta` è reale, la velocità cambia solo i
+	# secondi per giorno.
+	if _game_data != null:
+		_game_data.real_seconds_in_game += delta
+		if is_playing:
+			_game_data.real_seconds_playing += delta
 	if not is_playing:
 		return
 	var seconds_per_day: float = SECONDS_PER_DAY_BY_SPEED[speed]

@@ -396,6 +396,21 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					restock_source_kind = int(context[step_definition.context_keys[1]])
 				steps.append(RestockPouchAction.new(context[restock_building_key], restock_source_kind))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.REMEDY:
+				# Rimedio (2026-10-25, autocura): stesso schema di RESTOCK_POUCH — context_keys[0] l'edificio (può valere null),
+				# context_keys[1] facoltativa la sorgente (RemedyAction.SourceKind), context_keys[2] facoltativo il modo
+				# (RemedyAction.Mode, cura somministrata). Nome del rimedio e malato restano nel context.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step REMEDY di TaskDefinition '%s'." % definition.task_name)
+					continue
+				var remedy_source_kind: int = RemedyAction.SourceKind.BUILDING
+				if step_definition.context_keys.size() >= 2 and context.has(step_definition.context_keys[1]):
+					remedy_source_kind = int(context[step_definition.context_keys[1]])
+				var remedy_mode: int = RemedyAction.Mode.USE
+				if step_definition.context_keys.size() >= 3 and context.has(step_definition.context_keys[2]):
+					remedy_mode = int(context[step_definition.context_keys[2]])
+				steps.append(RemedyAction.new(context[step_definition.context_keys[0]], remedy_source_kind, remedy_mode))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.UNLOAD:
 				# 1 argomento (target_building: Building) — stesso schema di SETUP_SITE/BUILD sopra.
 				# deposit_kind SEMPRE RESOURCE (vedi nota in testa al file per il perché) — mai letto da

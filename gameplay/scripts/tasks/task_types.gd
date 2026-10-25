@@ -124,6 +124,8 @@ enum ActionType {
 	# SOCIAL_RITE_ATTEND (2026-10-14, riti sociali — SocialRiteAttendAction, task costruita da SocialRiteService; nato come
 	# BANQUET_ATTEND, stesso valore) — IN CODA (34).
 	SOCIAL_RITE_ATTEND,
+	# REMEDY (2026-10-25, autocura — RemedyAction, take_remedy.tres) — IN CODA (35).
+	REMEDY,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

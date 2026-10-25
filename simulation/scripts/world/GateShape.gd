@@ -34,13 +34,7 @@ static func draw(
 		var base: Color = INVALID_TINT if invalid else color
 		return Color(base.r, base.g, base.b, base.a * alpha)
 	var axis := _axis(neighbor_mask)
-	var across := Vector2(-axis.y, axis.x)
-	var side := across
-	if outward != Vector2.ZERO:
-		var dot := across.dot(outward)
-		if absf(dot) < 0.001:
-			dot = across.dot(Vector2(-outward.y, outward.x))
-		side = across if dot > 0.0 else -across
+	var side := open_side(neighbor_mask, outward)
 	for sign in [-1.0, 1.0]:
 		var post: Vector2 = center + axis * sign * POST_OFFSET * scale
 		# Tratto d'argine dal palo al bordo: si salda ai pezzi vicini.
@@ -59,6 +53,19 @@ static func draw(
 
 static func draw_ground(canvas: CanvasItem, center: Vector2, neighbor_mask: int, clip_mask: int, fill_mask: int, color: Color) -> void:
 	LinearShape.draw_ground(canvas, center, neighbor_mask, clip_mask, fill_mask, PalisadeShape.STYLE, color)
+
+
+# Lato verso cui si aprono le ante: perpendicolare all'asse, dalla parte di `outward` (parallelo all'asse: `outward`
+# ruotato di 90° in senso orario, come la palizzata).
+static func open_side(neighbor_mask: int, outward: Vector2) -> Vector2:
+	var axis := _axis(neighbor_mask)
+	var across := Vector2(-axis.y, axis.x)
+	if outward == Vector2.ZERO:
+		return across
+	var dot := across.dot(outward)
+	if absf(dot) < 0.001:
+		dot = across.dot(Vector2(-outward.y, outward.x))
+	return across if dot > 0.0 else -across
 
 
 # Asse del varco: verticale se i vicini sono solo a nord/sud, altrimenti orizzontale.

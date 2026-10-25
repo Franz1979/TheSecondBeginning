@@ -253,6 +253,16 @@ task_daydream_step_leave,Walking away from the village center
 task_leisure_restock_name,Restocking
 task_leisure_restock_step_walk,Heading to the storehouse
 task_leisure_restock_step_restock,Restocking supplies
+task_take_remedy_name,Taking a remedy
+task_take_remedy_step_walk,Going to get a remedy
+task_take_remedy_step_take,Taking the remedy
+task_heal_name,Healing a patient
+task_heal_step_walk_source,Going to fetch the remedy for the patient
+task_heal_step_take,Taking the remedy for the patient
+task_heal_step_walk_patient,Bringing the remedy to the patient
+task_heal_step_give,Treating the patient
+task_heal_job_name,Heal {name}
+"task_heal_job_tooltip","Healing · {name} is bedridden (health {health}): bring them the remedy"
 task_restock_step_backpack,Eating from the backpack
 task_emergency_restock_name,Urgent restock
 pregnant,Pregnant
@@ -281,6 +291,7 @@ skill_hunting_label,Hunting
 skill_crafting_label,Crafting
 skill_ritual_label,Ritual
 skill_social_label,Sociality
+skill_medicine_label,Medicine
 individual_id_label,Folk: {folk} · Village: {village}
 individual_village_none,none
 individual_mother_id_label,Mother ID: {id}
@@ -342,7 +353,7 @@ influence_type_cultural,cultural
 influence_type_religious,religious
 building_resident_tooltip,{name} (age {age})
 building_storage_caption,Storage
-statistics_tab_births,Births
+statistics_tab_births,Birth rate
 statistics_tab_population,Population
 statistics_tab_buildings,Buildings
 statistics_movement_cells,Pathways: {count} cells
@@ -374,6 +385,7 @@ notification_body_reserve_started,{name} has run out of supplies and is using th
 death_cause_childbirth,childbirth
 death_cause_starvation,starvation
 death_cause_illness,illness
+death_cause_wounds,wounds
 birth_verb_male,born
 birth_verb_female,born
 offspring_word_male,son
@@ -424,6 +436,16 @@ random_event_illness_name,Illness
 random_event_illness_popup,{name} falls ill ({illness}): they must rest until they recover.
 illness_fever,fever
 individual_health_sick_suffix,unwell
+random_event_wound_name,Wound
+random_event_wound_popup,{name} is wounded ({wound}): they must rest until they recover.
+wound_laceration,laceration
+health_condition_convalescent,recovering from {condition}
+health_condition_phase_acute,acute phase
+health_condition_phase_convalescence,convalescence
+health_condition_bed_rest,bed rest
+health_condition_low_health_tooltip,"Health too low: must rest, no work."
+notification_condition_convalescence,{name} is convalescent ({condition}): this lasts until their health recovers.
+notification_condition_recovered,{name} has recovered: {condition}.
 debug_random_event_apply,Apply event
 debug_random_event_apply_tooltip,Trigger the chosen event now
 category_name_food,Food
@@ -439,6 +461,7 @@ carried_resource_tooltip_bone_awl,Bone awl
 carried_resource_tooltip_hide_bag,Hide bag
 carried_resource_tooltip_travois,Travois
 carried_resource_tooltip_stone_bowl,Stone bowl
+carried_resource_tooltip_herbal_infusion,Herbal infusion
 carried_resource_tooltip_meat,Raw meat
 carried_resource_tooltip_cooked_meat,Cooked meat
 carried_resource_tooltip_dried_meat,Dried meat
@@ -1197,6 +1220,7 @@ pending_output_delivery_rack,{building} full: bring the ready products to storag
 task_inventory_name,Inventory
 task_inventory_step_count,Counts the stock
 task_assignment_kind_inventory,Inventory
+task_assignment_kind_heal,Healing the sick
 task_assignment_inventory_tooltip,"Warehouse inventory: the stock is counted at the nearest storage; at the end the warehouse orders are issued."
 pending_inventory_overdue,Warehouse inventory waiting for {hours} h
 warehouse_inventory_off,Stock management off: a storage is needed
@@ -1242,6 +1266,9 @@ carried_resource_tooltip_hide_footwear,Hide footwear
 building_clothing_hut,Clothing hut
 build_bar_clothing_hut_tooltip,Clothing hut
 build_bar_clothing_hut_description,"Hide dresses, caps and footwear are sewn here."
+building_healer_hut,Healer's hut
+build_bar_healer_hut_tooltip,Healer's hut
+build_bar_healer_hut_description,Ointments and infusions are prepared here from medicinal herbs.
 notification_apparel_worn_out,{name}: {resource} is completely worn out
 task_activity_equip_apparel,fetch an item to wear
 task_activity_store_apparel,store an item of clothing
@@ -1263,7 +1290,35 @@ pending_village_without_center,{village}: no center
 pending_village_without_center_detail,Build a new Pebble circle to restore it.
 statistics_scope_label,Show:
 statistics_scope_folk,{folk} (whole people)
-statistics_tab_influence,Influence
+statistics_tab_influence,Influences
+statistics_tab_parameters,Vitals
+statistics_caption_current_parameters,Current averages
+statistics_caption_parameters_per_year,Averages per year
+statistics_axis_percent,%
+statistics_param_health,Health
+statistics_param_happiness,Happiness
+statistics_param_stamina,Stamina
+statistics_param_thirst,Thirst
+statistics_param_loyalty,Loyalty
+statistics_param_faith,Faith
+statistics_param_tooltip,"Average {name}: {current}/{max} ({percent}%)"
+statistics_tab_skills,Skills
+statistics_caption_best_skills,The best
+statistics_best_skill_row,{skill}: {name} ({value})
+skill_leadership_short,Lead.
+skill_builder_short,Build.
+skill_management_short,Mgmt.
+skill_transporter_short,Transp.
+skill_gathering_short,Manual
+skill_cognition_short,Cogn.
+skill_hunting_short,Hunt.
+skill_crafting_short,Craft.
+skill_ritual_short,Ritual
+skill_social_short,Social
+skill_medicine_short,Med.
+statistics_condition_low_health,Low health
+statistics_sick_title,Ill: {ill} - Wounded: {wounded}
+statistics_sick_row,"{name} — {conditions} — health {health}/{max}"
 statistics_influence_political,Political
 statistics_influence_cultural,Cultural
 statistics_influence_religious,Religious

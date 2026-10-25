@@ -63,6 +63,10 @@ skill_effects_by_task_name = {
 "task_explore_name": {},
 "task_talk_name": {
 "skill_social": 1.0
+},
+"task_take_remedy_name": {},
+"task_heal_name": {
+"skill_medicine": 1.0
 }
 }
 vital_effects_by_task_name = {

@@ -250,6 +250,10 @@ var _current_age_band: HumanTypes.AgeBand = HumanTypes.AgeBand.FERTILE_ADULT
 var _last_drawn_apparel: String = ""
 # Mezzo da traino disegnato l'ultima volta (2026-10-23, travois).
 var _last_drawn_towed: String = ""
+# Icona di salute sopra la testa (2026-10-25, HealthConditionIcon): figlio creato in setup, nascosto senza condizioni.
+# Centro dell'icona rispetto al centro della testa, in pixel dello schermo (Y negativo = in alto), uguale per tutti.
+const HEALTH_ICON_OFFSET := Vector2(0.0, -5.0)
+var _health_icon: HealthConditionIcon = null
 
 # --- Colori del vestiario (2026-10-11, richiesta utente) ---
 # Il tratto clothing_color resta sull'individuo ma non colora più il busto finché non esistono capi tinti: chi indossa un
@@ -370,6 +374,10 @@ func setup(p_individual: HumanIndividual, p_game_data: GameData, p_human_rules: 
 	individual = p_individual
 	game_data = p_game_data
 	human_rules = p_human_rules
+	if _health_icon == null:
+		_health_icon = HealthConditionIcon.new()
+		_health_icon.visible = false
+		add_child(_health_icon)
 
 
 # Riavvia lo scatto verticale da capo (vedi _jump_bounce_time_left sopra) — se un secondo salto
@@ -430,6 +438,7 @@ func _process(delta: float) -> void:
 	# advance_movement è ora l'unico scrittore (stesso principio "chi muove position possiede anche
 	# la direzione", vedi HumanIndividual.gd), questa view si limita a leggerla.
 	rotation = individual.facing_direction.angle()
+	_update_health_icon()
 	# position/rotation/scale appena aggiornate sopra sono proprietà di TRASFORMAZIONE del nodo:
 	# Godot le riapplica da sé ogni frame ricompositando le istruzioni di disegno già cachate
 	# dall'ultimo _draw() reale — muovere/ruotare/scalare non richiede mai queue_redraw(), solo
@@ -453,6 +462,39 @@ func _process(delta: float) -> void:
 		_has_drawn_once = true
 		queue_redraw()
 	_maybe_print_timing_window()
+
+
+# Icona di salute (2026-10-25): stato dalle fasi delle condizioni (ACUTE se almeno una è acuta), poi rotazione e scala del
+# pipottino annullate, così resta dritta, della stessa misura per tutti e sempre sopra la testa. Senza condizioni non fa
+# nulla oltre al controllo della lista vuota; l'icona si ridisegna solo quando cambia stato (set_state).
+func _update_health_icon() -> void:
+	if _health_icon == null:
+		return
+	# Uno stato per categoria: ACUTE se una condizione di quella categoria è acuta, altrimenti CONVALESCENCE se ce n'è una.
+	var illness_state := HealthConditionIcon.State.NONE
+	var wound_state := HealthConditionIcon.State.NONE
+	for entry in individual.health_conditions:
+		var rules := HealthConditionService.get_rules(String(entry.get("id", "")))
+		if rules == null:
+			continue
+		var acute := String(entry.get("phase", HealthConditionService.PHASE_ACUTE)) == HealthConditionService.PHASE_ACUTE
+		if rules.category == HealthConditionRules.Category.WOUND:
+			wound_state = _merged_icon_state(wound_state, acute)
+		else:
+			illness_state = _merged_icon_state(illness_state, acute)
+	_health_icon.set_states(illness_state, wound_state)
+	if not _health_icon.visible or scale.x == 0.0:
+		return
+	_health_icon.rotation = -rotation
+	_health_icon.scale = Vector2.ONE / scale
+	_health_icon.position = (HEALTH_ICON_OFFSET / scale).rotated(-rotation)
+
+
+# Fase acuta vince sulla convalescenza.
+static func _merged_icon_state(current: HealthConditionIcon.State, acute: bool) -> HealthConditionIcon.State:
+	if acute or current == HealthConditionIcon.State.ACUTE:
+		return HealthConditionIcon.State.ACUTE
+	return HealthConditionIcon.State.CONVALESCENCE
 
 
 # Nomi dei capi del corpo e della testa: cambia quando un capo viene tolto, indossato o consumato.

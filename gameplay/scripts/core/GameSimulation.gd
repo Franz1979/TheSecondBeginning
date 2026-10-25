@@ -65,10 +65,8 @@ func setup_population(human_rules: HumanRules, start_macro_coords: Vector2i) -> 
 	# Tutto il gruppo nasce nella macrocella di partenza (posizioni già assolute, centrate da HumanSeedingService).
 	for member in individuals:
 		member.home_macro_coords = start_macro_coords
-	# Istantanee dell'anno 0 (l'anno di partenza non "rotola" mai, quindi GameTimeService non le scriverebbe): popolazione
-	# dei fondatori ed edifici (sempre 0 a inizio partita).
-	game_data.population_snapshots[0] = individuals.size()
-	game_data.building_snapshots[0] = 0
+	# Istantanee dell'anno 0 (l'anno di partenza non "rotola" mai, quindi GameTimeService non le scriverebbe).
+	StatisticsSnapshotService.record_year_zero(game_data, individuals)
 	return false
 
 
@@ -308,42 +306,12 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 
 
 # Giro annuale (2026-10-18, blocco 5e — prima in GameScene._on_year_rolled_over), al cambio d'anno dell'orologio:
-#   - valori assoluti R/C/P dei villaggi (+ somma dei raggi effettivi di questo momento, regola 1 del 2026-10-12);
-#   - storia di quei valori per la scheda Influenza delle statistiche: un punto per villaggio, tipo e anno;
-#   - istantanea degli edifici dell'anno (scheda Statistiche/Edifici, GameData.building_snapshots): solo completi, senza
-#     macerie né edifici di movimento (stesso criterio di "Edifici totali" in StatisticsPanel); la stessa serie per
-#     villaggio. La popolazione dell'anno la registra GameTimeService.
+#   - valori assoluti R/C/P dei villaggi (+ somma dei raggi effettivi di questo momento, regola 1 del 2026-10-12).
+# Le serie di fine anno delle statistiche (anche influenze ed edifici) le registra StatisticsSnapshotService, chiamato da
+# GameTimeService subito dopo questo giro.
 # Pannelli di popolazione, individuo selezionato ed edifici rinfrescati come rete di sicurezza periodica.
 static func tick_year(ctx: GameContext, effects: GameEffects) -> void:
-	var game_data := ctx.game_data
 	VillageInfluenceService.apply_annual_growth(ctx.folk, ctx.world)
-	if ctx.folk != null:
-		for village in ctx.folk.villages:
-			if not game_data.village_influence_snapshots.has(village.id):
-				game_data.village_influence_snapshots[village.id] = {}
-			var by_type: Dictionary = game_data.village_influence_snapshots[village.id]
-			for influence_type in InfluenceService.InfluenceType.values():
-				if not by_type.has(influence_type):
-					by_type[influence_type] = {}
-				by_type[influence_type][game_data.year] = village.get_influence_value(influence_type)
-	var building_count := 0
-	var village_building_counts: Dictionary = {}
-	if ctx.folk != null:
-		for village in ctx.folk.villages:
-			village_building_counts[village.id] = 0
-	if ctx.world != null:
-		for building in ctx.world.buildings:
-			if not building.is_complete or building.is_demolished or building.is_rubble():
-				continue
-			if building.rules == null or building.rules.category != BuildingTypes.Category.MOVEMENT:
-				building_count += 1
-				if village_building_counts.has(building.village_id):
-					village_building_counts[building.village_id] += 1
-	game_data.building_snapshots[game_data.year] = building_count
-	for village_id in village_building_counts:
-		if not game_data.village_building_snapshots.has(village_id):
-			game_data.village_building_snapshots[village_id] = {}
-		game_data.village_building_snapshots[village_id][game_data.year] = village_building_counts[village_id]
 	effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
 	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)

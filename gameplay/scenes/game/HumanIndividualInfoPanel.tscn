@@ -145,6 +145,13 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_medicine_fill"]
+bg_color = Color(0.4, 0.75, 0.55, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tool_slot"]
 bg_color = Color(0.25, 0.25, 0.25, 0.35)
 border_width_left = 1
@@ -763,6 +770,33 @@ layout_mode = 2
 custom_minimum_size = Vector2(20, 70)
 
 [node name="SocialCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn/SocialCaptionWrapper"]
+layout_mode = 0
+offset_left = -24.0
+offset_top = 25.0
+offset_right = 44.0
+offset_bottom = 45.0
+pivot_offset = Vector2(34, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="MedicineColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="MedicineBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/MedicineColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_medicine_fill")
+show_percentage = false
+
+[node name="MedicineCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/MedicineColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(20, 70)
+
+[node name="MedicineCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/MedicineColumn/MedicineCaptionWrapper"]
 layout_mode = 0
 offset_left = -24.0
 offset_top = 25.0

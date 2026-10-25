@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_heal_walk_source.tres" id="2_walk_source"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_heal_take.tres" id="3_take"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_heal_walk_patient.tres" id="4_walk_patient"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_heal_give.tres" id="5_give"]
+
+[resource]
+script = ExtResource("1_def")
+task_name = "task_heal_name"
+steps = [ExtResource("2_walk_source"), ExtResource("3_take"), ExtResource("4_walk_patient"), ExtResource("5_give")]
+allowed_age_bands = Array[int]([3, 4, 5])

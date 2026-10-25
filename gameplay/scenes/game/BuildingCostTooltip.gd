@@ -56,19 +56,17 @@ static func get_short_description(building_type_name: String) -> String:
 	return "" if text == key else text
 
 
-# Materiali di una costruzione nuova: allestimento del cantiere (setup_site_material_per_cell × required_space) più
-# required_materials, sommati se è la stessa risorsa.
+# Materiali di una costruzione nuova: solo required_materials. L'allestimento del cantiere
+# (setup_site_material_per_cell × required_space) non si conta (2026-10-25, richiesta utente: il tooltip deve mostrare
+# i materiali dell'edificio, non i legnetti del cantiere).
 static func get_build_materials(rules: BuildingRules) -> Dictionary:
 	var materials: Dictionary = {}
 	if rules == null:
 		return materials
-	var setup_required: int = rules.setup_site_material_per_cell * rules.required_space
-	if rules.setup_site_material_name != "" and setup_required > 0:
-		materials[rules.setup_site_material_name] = setup_required
 	for material_name in rules.required_materials.keys():
 		var quantity: int = int(rules.required_materials[material_name])
 		if quantity > 0:
-			materials[String(material_name)] = int(materials.get(String(material_name), 0)) + quantity
+			materials[String(material_name)] = quantity
 	return materials
 
 

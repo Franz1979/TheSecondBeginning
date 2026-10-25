@@ -92,6 +92,11 @@ func save_game_to_json(
 			"village_building_snapshots": game_data.village_building_snapshots,
 			"village_influence_snapshots": game_data.village_influence_snapshots,
 			"village_cohesion_snapshots": game_data.village_cohesion_snapshots,
+			# Media dei parametri per anno (2026-10-25): stesso trattamento.
+			"vital_snapshots": game_data.vital_snapshots,
+			"village_vital_snapshots": game_data.village_vital_snapshots,
+			"skill_snapshots": game_data.skill_snapshots,
+			"village_skill_snapshots": game_data.village_skill_snapshots,
 			# Riti sociali in corso (2026-10-14, SocialRiteService).
 			"active_social_rites": game_data.active_social_rites,
 			"next_social_rite_uid": game_data.next_social_rite_uid,
@@ -135,6 +140,8 @@ func save_game_to_json(
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
 			"job_board_take_bag": game_data.job_board_take_bag,
 			"job_board_wear_apparel": game_data.job_board_wear_apparel,
+			"real_seconds_in_game": game_data.real_seconds_in_game,
+			"real_seconds_playing": game_data.real_seconds_playing,
 			"job_board_single_builder": game_data.job_board_single_builder,
 			"inventory_interval_hours": game_data.inventory_interval_hours,
 			"last_inventory_end": game_data.last_inventory_end,
@@ -676,9 +683,8 @@ func save_game_to_json(
 				"max_thirst": individual.max_thirst,
 				"current_health": individual.current_health,
 				"max_health": individual.max_health,
-				# Malattia in corso (2026-10-24, IllnessService).
-				"illness_id": individual.illness_id,
-				"illness_days_remaining": individual.illness_days_remaining,
+				# Condizioni di salute in corso (2026-10-25, HealthConditionService).
+				"health_conditions": individual.health_conditions,
 				"current_happiness": individual.current_happiness,
 				"max_happiness": individual.max_happiness,
 				"current_loyalty": individual.current_loyalty,
@@ -700,6 +706,7 @@ func save_game_to_json(
 				"skill_crafting": individual.skill_crafting,
 				"skill_ritual": individual.skill_ritual,
 				"skill_social": individual.skill_social,
+				"skill_medicine": individual.skill_medicine,
 				# Capacità di trasporto (2026-09-08, richiesta utente) — lo zaino è l'unico stato "posseduto"
 				# da un individuo che sparirebbe silenziosamente al reload senza persistenza (stesso
 				# principio di dependent_child_id sopra: un possesso, non un dato ricalcolabile al volo).

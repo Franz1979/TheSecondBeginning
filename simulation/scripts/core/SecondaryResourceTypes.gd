@@ -22,6 +22,8 @@ class_name SecondaryResourceTypes
 # RAW_MATERIAL è `category = 1` in stick/pebble/plant_fiber) e Building.enabled_categories viene
 # serializzato come Array[int] — inserirlo prima di RAW_MATERIAL avrebbe cambiato in silenzio la
 # categoria di ogni risorsa esistente e i filtri già salvati. Mai riordinare questi valori.
+# Dal 2026-10-25 (richiesta utente) le erbe medicinali, raccolte e non lavorate, sono RAW_MATERIAL come pelle e osso:
+# MEDICINAL resta per i soli preparati (herbal_infusion, capanna del guaritore).
 #
 # SEMI_FINISHED/TOOL (2026-09-23, richiesta utente — sistema di produzione, step 1: solo dati)
 # aggiunti IN FONDO per lo stesso motivo: risorse prodotte presso una workstation (es. corda) e

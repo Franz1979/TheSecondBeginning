@@ -29,9 +29,9 @@ extends PanelContainer
 # di gioco — vedi _process.
 @onready var fps_label: Label = $MarginContainer/HBoxContainer/ContentGroup/FpsLabel
 var _last_fps: int = -1
-# Malato (2026-10-24, richiesta utente — al posto del vecchio interruttore "Perditempo"): fa ammalare o guarire
-# l'individuo selezionato, inoltrato come action_pressed a GameScene._on_debug_action_pressed.
-@onready var sick_button: Button = $MarginContainer/HBoxContainer/ContentGroup/SickButton
+# Tempo reale di gioco (2026-10-25, richiesta utente): "in partita" e "in play" della partita, da GameScene
+# (set_playtime, con i riepiloghi di debug).
+@onready var playtime_label: Label = $MarginContainer/HBoxContainer/ContentGroup/PlaytimeLabel
 # Eventi casuali (2026-09-26, richiesta utente — gameplay/events/): menu a tendina con tutti gli eventi definiti
 # (RandomEventService.list_rules, nome tradotto, id come metadata) e pulsante per scatenare quello scelto.
 @onready var random_event_option_button: OptionButton = $MarginContainer/HBoxContainer/ContentGroup/RandomEventOptionButton
@@ -68,14 +68,12 @@ func _ready() -> void:
 	content_row.configure_slot(
 		3, "🔬", tr("game_info_macro_cell_debug"), &"macro_cell_debug", tr("game_info_macro_cell_debug_description")
 	)
-	# Spostato qui dalla CalendarHeaderContainer della Sidebar (richiesta utente, 2026-09-01) —
-	# stesso action_id/tooltip di prima, solo il pannello che lo ospita e' cambiato.
-	content_row.configure_slot(4, "+1", tr("advance_year_tooltip"), &"advance_year")
+	# Bottone "+1" (advance_year) e bottone del malato tolti (2026-10-25, richiesta utente — non servono più; per il malato
+	# c'è l'evento della malattia nel menu degli eventi): le azioni restano in GameScene._on_debug_action_pressed.
 	content_row.action_pressed.connect(func(action_id: StringName) -> void: action_pressed.emit(action_id))
 	control_button.pressed.connect(_on_control_button_pressed)
-	sick_button.tooltip_text = TooltipText.wrap(tr("debug_sick_button_tooltip"))
+	playtime_label.tooltip_text = TooltipText.wrap("Tempo reale di questa partita: Partita = con la partita aperta, pause comprese; Play = solo con il tempo che scorre")
 	animal_summary_label.tooltip_text = TooltipText.wrap("Animali della macrocella del giocatore: quota della cella / individui istanziati (≠ = discrepanza)")
-	sick_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_sick"))
 	_fill_random_events()
 	random_event_apply_button.text = tr("debug_random_event_apply")
 	random_event_apply_button.tooltip_text = TooltipText.wrap(tr("debug_random_event_apply_tooltip"))
@@ -140,6 +138,20 @@ func set_slot_toggled(index: int, is_active: bool) -> void:
 # testuale di prima ("Coords: x, y"), GameScene chiama questo invece di quello.
 func set_coords(x: int, y: int) -> void:
 	coords_label.text = "Coords: " + str(x) + ", " + str(y)
+
+
+# Tempo reale di gioco in secondi, mostrato in ore e minuti; ridimensiona solo se il testo cambia.
+func set_playtime(in_game_seconds: float, playing_seconds: float) -> void:
+	var text := "Partita %s · Play %s" % [_format_hours_minutes(in_game_seconds), _format_hours_minutes(playing_seconds)]
+	if playtime_label.text == text:
+		return
+	playtime_label.text = text
+	reset_size()
+
+
+static func _format_hours_minutes(seconds: float) -> String:
+	var minutes := int(seconds / 60.0)
+	return "%dh %02dm" % [int(minutes / 60.0), minutes % 60]
 
 
 # Celle vive (2026-09-26, debug): `lines` = una riga per cella, già composta da GameScene ("(87,68):

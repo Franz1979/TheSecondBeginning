@@ -14,6 +14,14 @@ static func has_side(type_name: String) -> bool:
 	return type_name == "palisade" or type_name == "gate"
 
 
+# Come si disegna il lato di `type_name` (has_side) per `outward` sul pezzo `neighbor_mask`: due direzioni con la stessa
+# firma danno lo stesso disegno (2026-10-25: il tasto di rotazione le salta, BuildingGhost.rotate_clockwise).
+static func side_signature(type_name: String, neighbor_mask: int, outward: Vector2) -> Array[Vector2]:
+	if type_name == "gate":
+		return [GateShape.open_side(neighbor_mask, outward)]
+	return PalisadeShape.lean_signature(neighbor_mask, outward)
+
+
 # true se `type_name` ha un disegno lineare.
 static func has_shape(type_name: String) -> bool:
 	return type_name in ["earthwork", "palisade", "gate", "pebble_path"]

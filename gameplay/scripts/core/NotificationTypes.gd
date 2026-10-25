@@ -60,4 +60,7 @@ enum NotificationPopupType {
 	# Villaggio fondato, centro ripristinato o perso (2026-10-12, passo 2 Folk/Village — VillageService). Stile di
 	# default. Aggiunto IN CODA.
 	VILLAGE_CENTER_CHANGED,
+	# Condizione di salute passata in convalescenza o guarita (2026-10-25, HealthConditionService). Stile di default.
+	# Aggiunto IN CODA.
+	HEALTH_CONDITION_CHANGED,
 }

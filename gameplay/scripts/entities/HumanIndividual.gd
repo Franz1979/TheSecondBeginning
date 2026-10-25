@@ -287,10 +287,9 @@ var current_thirst: float = 0.0
 var max_thirst: float = 0.0
 var current_health: float = 0.0
 var max_health: float = 0.0
-# Malattia in corso (2026-10-24, IllnessService): id di IllnessRules ("" = nessuna) e giorni che restano (il giocatore
-# non li vede). Salvati con la partita.
-var illness_id: String = ""
-var illness_days_remaining: int = 0
+# Condizioni di salute in corso (2026-10-25, HealthConditionService — malattie e ferite): lista di {"id" di
+# HealthConditionRules, "days" che restano} (il giocatore non vede i giorni). Salvate con la partita.
+var health_conditions: Array[Dictionary] = []
 var current_happiness: float = 0.0
 var max_happiness: float = 0.0
 var current_loyalty: float = 0.0
@@ -551,6 +550,10 @@ var skill_ritual: float = 0.0
 # nella semina iniziale (dote innata, non esclusa come ritual). Nessuna azione la usa né la fa crescere ancora
 # (arriverà con la task talk; poi feste e riunioni).
 var skill_social: float = 0.0
+# medicine (2026-10-25, richiesta utente — 11a skill, guaritore): stesso trattamento/default delle altre, inclusa nella
+# semina iniziale. Cresce somministrando rimedi (task heal) e producendo alla capanna del guaritore
+# (BuildingRules.production_skill); accelera solo i tempi, mai l'effetto del rimedio.
+var skill_medicine: float = 0.0
 
 
 # Nomi di TUTTE le property skill_* dell'istanza, raccolti via reflection (2026-09-13, richiesta
@@ -911,10 +914,10 @@ const FALLBACK_SICK_HEALTH_THRESHOLD: float = 1000.0
 const SICK_ALLOWED_TASK_NAMES: Array[String] = ["task_leisure_rest_name", "task_leisure_restock_name"]
 
 
-# Malattia in corso (IllnessService) oppure salute sotto HumanRules.sick_health_threshold: solo bisogni (riposo, provviste), nessun lavoro, svago, rito o
+# Condizione che manda a letto (HealthConditionService) oppure salute sotto HumanRules.sick_health_threshold: solo bisogni (riposo, provviste), nessun lavoro, svago, rito o
 # comando diretto (vedi get_assign_rejection_reason). Il compito già in corso si finisce.
 func is_sick() -> bool:
-	if illness_id != "":
+	if not health_conditions.is_empty() and HealthConditionService.requires_bed_rest(self):
 		return true
 	var threshold := FALLBACK_SICK_HEALTH_THRESHOLD
 	if folk_ref != null and folk_ref.human_rules_ref != null:

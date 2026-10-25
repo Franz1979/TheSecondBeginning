@@ -47,6 +47,8 @@ const RESOURCE_ICONS := {
 	"fiber_rope": "🪢",
 	# Ciotola di pietra (2026-10-24, richiesta utente): emoji provvisoria.
 	"stone_bowl": "🥣",
+	# Infuso di erbe (2026-10-25, richiesta utente — capanna del guaritore): emoji provvisoria.
+	"herbal_infusion": "🍵",
 	# Legna da ardere (2026-10-16, legnaia): ciocchi spaccati da un tronco.
 	"firewood": "🪵",
 	# Detriti (2026-10-18, macerie da portare alla Fossa dei rifiuti): emoji provvisorio.
@@ -167,6 +169,8 @@ const BUILDING_ICONS := {
 	"campfire": "🔥",
 	# Capanna dell'attrezzista (2026-09-24, richiesta utente) — emoji provvisorio.
 	"toolmaker_hut": "🛠️",
+	# Capanna del guaritore (2026-10-25, richiesta utente) — emoji di riserva, la barra usa HealerHutIcon.
+	"healer_hut": "🌿",
 }
 
 
@@ -214,6 +218,8 @@ const BUILDING_ICON_NODES := {
 	"travois_rack": preload("res://simulation/scripts/ui/TravoisRackIcon.gd"),
 	# Capanna del vestiario (2026-10-11, segnaposto): stesso schema della legnaia.
 	"clothing_hut": preload("res://simulation/scripts/ui/ClothingHutIcon.gd"),
+	# Capanna del guaritore (2026-10-25): vista di fronte con i mazzetti di erbe appesi.
+	"healer_hut": preload("res://simulation/scripts/ui/HealerHutIcon.gd"),
 	# Macerie (2026-10-10, richiesta utente — crollo): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rubble": preload("res://simulation/scripts/ui/RubbleIcon.gd"),
 	# Ceppo dell'insegnamento (2026-10-16, richiesta utente): stesso disegno della mappa (PlaceholderBuildingShapes).
@@ -280,6 +286,8 @@ const COMMAND_ICONS := {
 	"cut": "🪓",
 	# "quarry" (2026-10-05, task Quarry): sulla mappa vale l'icona disegnata (CommandPickaxeIcon); questa per le righe del popup.
 	"quarry": "⛏️",
+	# "heal" (2026-10-25, cura dei malati allettati): solo emoji, nessuna icona disegnata.
+	"heal": "🩹",
 	"task_rejected": "❌",
 }
 

@@ -22,4 +22,6 @@ enum DeathCause {
 	# popup di morte (chiave tr "death_cause_<nome minuscolo>") le registrano.
 	STARVATION,
 	ILLNESS,
+	# Ferite (2026-10-25, richiesta utente): salute a 0 con solo ferite tra le condizioni (HealthConditionService.death_cause).
+	WOUNDS,
 }

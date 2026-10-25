@@ -85,6 +85,10 @@ signal individual_apparel_worn_out(individual: HumanIndividual, resource_name: S
 # lo trasforma in un popup di alert.
 signal individual_started_body_reserve(individual: HumanIndividual)
 
+# Una condizione di salute è passata in convalescenza o è guarita (2026-10-25, HealthConditionService): change è
+# "convalescence" o "recovered". GameScene lo trasforma in un popup.
+signal health_condition_changed(individual: HumanIndividual, condition_id: String, change: String)
+
 # Riscaldamento delle case (2026-10-22, HouseHeatingService): case il cui stato "riscaldata" è cambiato oggi. GameScene
 # ridisegna le loro celle (fumo sul tetto) e il pannello dell'edificio.
 signal houses_heating_changed(buildings: Array)
@@ -416,7 +420,12 @@ func _apply_daily_vitals_interaction() -> void:
 		var home_multiplier := float(home_multipliers.get(individual.house_id, 1.0))
 		if cold and not heated.has(individual.house_id):
 			home_multiplier = 0.0
+		# Condizioni di salute (2026-10-25): fasi di prima solo per chi ne ha, per annunciare convalescenze e guarigioni.
+		var phases_before := HealthConditionService.phases(individual) if not individual.health_conditions.is_empty() else {}
 		HumanVitalsInteractionService.apply_daily_interaction(individual, home_multiplier, united.has(individual.id))
+		if not phases_before.is_empty():
+			for change in HealthConditionService.phase_changes(individual, phases_before):
+				health_condition_changed.emit(individual, String(change["id"]), String(change["change"]))
 
 
 # Avanzamento giornaliero della decay_fraction di ogni varietà di HumanIndividual.carried_resources per l'INTERA popolazione
@@ -906,24 +915,10 @@ func _run_annual_human_births() -> void:
 
 func _on_year_rolled_over() -> void:
 	print("GameTimeService: nuovo anno, year=%d" % _game_data.year)
-	# Step 3 del piano statistiche (2026-09-06) — snapshot annuale della popolazione umana totale,
-	# per il futuro grafico popolazione/anno del pannello statistiche: non ricavabile in modo
-	# affidabile dai soli death_events/birth_events (dipenderebbe dal numero di fondatori iniziali
-	# restare sempre corretto, fragile con un'eventuale futura immigrazione), quindi un log
-	# dedicato, un punto per anno. Qui, non dentro _run_annual_human_mortality_determination sotto:
-	# vogliamo la popolazione COSÌ COM'È all'inizio dell'anno (year già incrementato da
-	# GameData.advance_day prima che questo segnale scattasse), prima che qualunque logica di
-	# quest'anno (determinazione mortalità, coupling, concepimento, parto) la tocchi.
-	_game_data.population_snapshots[_game_data.year] = _human_individuals.size()
-	# Stessa serie per villaggio (2026-10-12, statistiche filtrabili per villaggio).
-	if _human_folk != null:
-		for village in _human_folk.villages:
-			if not _game_data.village_population_snapshots.has(village.id):
-				_game_data.village_population_snapshots[village.id] = {}
-			_game_data.village_population_snapshots[village.id][_game_data.year] = village.count_inhabitants(_human_individuals)
-	# Coesione (2026-10-14): calo annuale, poi il punto di fine anno per le statistiche.
+	# Coesione (2026-10-14): calo annuale, poi le serie di fine anno per le statistiche (popolazione, coesione, medie,
+	# influenze, edifici), prima della determinazione della mortalità: StatisticsSnapshotService.
 	VillageCohesionService.apply_annual_decay(_human_folk)
-	VillageCohesionService.record_snapshots(_human_folk, _game_data)
+	StatisticsSnapshotService.record_year_end(_game_data, _human_individuals, _human_folk, _world)
 	_run_annual_human_mortality_determination()
 
 
@@ -1297,7 +1292,8 @@ func _apply_daily_starvation() -> void:
 	human_population_changed.emit()
 
 
-# Morte per malattia (2026-10-24, richiesta utente): chi ha la salute a 0 muore lo stesso giorno, causa ILLNESS. Stesso
+# Morte per malattia (2026-10-24, richiesta utente): chi ha la salute a 0 muore lo stesso giorno, causa ILLNESS (WOUNDS
+# se aveva solo ferite, 2026-10-25: HealthConditionService.death_cause). Stesso
 # percorso della fame (_kill_individual: death_events, corpo, popup "death_cause_illness", figlio a carico).
 func _apply_daily_illness_deaths() -> void:
 	var doomed: Array[HumanIndividual] = []
@@ -1312,13 +1308,14 @@ func _apply_daily_illness_deaths() -> void:
 		if index == -1:
 			continue
 		var age_at_death := _game_data.year - individual.birth_year_virtual
+		var cause := HealthConditionService.death_cause(individual)
 		var partner_freed := _kill_individual(
-			individual, index, DeathTypes.DeathCause.ILLNESS, _game_data.current_day, age_at_death
+			individual, index, cause, _game_data.current_day, age_at_death
 		)
 		if DebugLogging.ENABLED:
 			removed_log_lines.append("#%d %s (eta'=%d, causa=%s%s)" % [
 				individual.id, individual.name, age_at_death,
-				_cause_debug_name(DeathTypes.DeathCause.ILLNESS), ", coniuge liberato" if partner_freed else ""
+				_cause_debug_name(cause), ", coniuge liberato" if partner_freed else ""
 			])
 	if DebugLogging.ENABLED and not removed_log_lines.is_empty():
 		print("[HUMAN DEATH] giorno=%d: %s" % [_game_data.current_day, ", ".join(removed_log_lines)])

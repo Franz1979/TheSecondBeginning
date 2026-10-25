@@ -322,3 +322,14 @@ extends Resource
 # indossato. Generico: i capi indossati si moltiplicano tra loro (HumanIndividual.get_apparel_walk_stamina_multiplier).
 # 1.0 = nessun effetto; < 1.0 = si cammina con meno fatica.
 @export var walk_stamina_multiplier: float = 1.0
+
+@export_group("Remedy")
+# Campi dei rimedi (2026-10-25, richiesta utente — capanna del guaritore; di norma category MEDICINAL). Vuoto
+# remedy_treats_condition_ids = la risorsa non cura nulla. Il limite di un'applicazione al giorno per condizione è una
+# regola fissa, uguale per tutti i rimedi. Chi applica il rimedio e quando: ancora da decidere, nessuna logica li legge.
+# Condizioni curate: id dei .tres di HealthConditionRules (es. "fever").
+@export var remedy_treats_condition_ids: Array[String] = []
+# Salute restituita a ogni applicazione (valore assoluto, stessa scala di HealthConditionRules.daily_health_loss).
+@export var remedy_health_restore: float = 0.0
+# true = nel giorno dell'applicazione la condizione curata non toglie salute.
+@export var remedy_blocks_daily_loss: bool = false

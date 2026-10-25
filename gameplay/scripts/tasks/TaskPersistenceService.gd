@@ -281,6 +281,9 @@ static func _action_type_for_step(step: Action) -> int:
 	# SOCIAL_RITE_ATTEND (2026-10-14, SocialRiteAttendAction), aggiunta insieme al proprio case in _build_step.
 	if step is SocialRiteAttendAction:
 		return TaskTypes.ActionType.SOCIAL_RITE_ATTEND
+	# REMEDY (2026-10-25, RemedyAction, take_remedy.tres), aggiunta insieme al proprio case in _build_step.
+	if step is RemedyAction:
+		return TaskTypes.ActionType.REMEDY
 	push_error("TaskPersistenceService._action_type_for_step: tipo Action sconosciuto (%s)." % step.get_script().get_global_name())
 	return -1
 
@@ -552,6 +555,13 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.TALK:
 			# Nessun argomento: il partner è nel context della Task, attesa e conversazione da load_save_data.
 			step = TalkAction.new()
+		TaskTypes.ActionType.REMEDY:
+			# Edificio per id (assente = zaino) e sorgente; il nome del rimedio è nel context, il tempo da load_save_data.
+			step = RemedyAction.new(
+				_find_building_by_id(world, int(step_data.get("target_building_id", -1))),
+				int(step_data.get("source_kind", RemedyAction.SourceKind.BUILDING)),
+				int(step_data.get("mode", RemedyAction.Mode.USE))
+			)
 		TaskTypes.ActionType.SOCIAL_RITE_ATTEND:
 			# Solo l'edificio: lo stato del rito è in GameData.active_social_rites.
 			# Numero del rito (2026-10-24): -1 per i salvataggi precedenti (vale per qualunque rito, come prima).

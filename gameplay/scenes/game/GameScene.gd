@@ -8031,7 +8031,40 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _inventory_job_release,
 		})
+		# Cura dei malati allettati (2026-10-25): un lavoro per malato con un rimedio disponibile, vedi HealJobProvider.
+		_job_board_provider_list.append({
+			"name": "heal",
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return HealJobProvider.collect(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return HealJobProvider.rejection(_game_context(), worker, job),
+			"assign": _assign_heal_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return HealJobProvider.workers(_game_context(), job),
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": true, "cancel_tooltip": ""},
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _heal_job_release,
+		})
 	return _job_board_provider_list
+
+
+# Cura presa dalla lista (2026-10-25): un solo lavoratore per malato.
+func _assign_heal_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var ctx := _game_context()
+	if not HealJobProvider.workers(ctx, job).is_empty():
+		return
+	var task := HealJobProvider.build_task(ctx, worker, job)
+	if task == null:
+		return
+	worker.assign_task(task, _resolve_age_band(worker))
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
+# Rimetti in coda / Blocca: la cura si ferma con l'effetto di H (un rimedio già nello zaino torna al magazzino).
+func _heal_job_release(job: Dictionary) -> void:
+	for member in HealJobProvider.workers(_game_context(), job):
+		if member.current_task != null and member.current_task.task_name == HealJobProvider.TASK_NAME:
+			member.skip_job_board_once = true
+			_stop_member_task(member)
 
 
 # Tutti i lavori della lista, assegnati e no, di tutti i fornitori.
@@ -9709,7 +9742,7 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		target.max_faith, target.current_faith,
 		target.skill_leadership, target.skill_builder, target.skill_management,
 		target.skill_transporter, target.skill_gathering, target.skill_cognition,
-		target.skill_hunting, target.skill_crafting, target.skill_ritual, target.skill_social,
+		target.skill_hunting, target.skill_crafting, target.skill_ritual, target.skill_social, target.skill_medicine,
 		queued_task_descriptions
 	)
 	# Titolo header consolidato (2026-09-13, richiesta utente — "perché la riga del center è
@@ -10322,6 +10355,19 @@ func _on_individual_started_body_reserve(individual: HumanIndividual) -> void:
 	notification_popup.enqueue(
 		NotificationTypes.NotificationPopupType.BODY_RESERVE_IN_USE,
 		tr("notification_body_reserve_started").format({"name": individual.name})
+	)
+
+
+# Una condizione di salute è passata in convalescenza o è guarita (2026-10-25): popup di default, stesso gate. Se
+# l'individuo è selezionato si aggiorna anche il suo pannello (riga della salute).
+func _on_health_condition_changed(individual: HumanIndividual, condition_id: String, change: String) -> void:
+	if not UserOptions.show_notification_popups:
+		return
+	var rules := HealthConditionService.get_rules(condition_id)
+	var key := "notification_condition_recovered" if change == "recovered" else "notification_condition_convalescence"
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.HEALTH_CONDITION_CHANGED,
+		tr(key).format({"name": individual.name, "condition": tr(rules.display_name) if rules != null else condition_id})
 	)
 
 
@@ -11323,6 +11369,8 @@ func _refresh_debug_summaries() -> void:
 	_debug_summary_refresh_timer = 0.0
 	_refresh_debug_animal_summary()
 	_refresh_debug_live_cells()
+	if game_data != null:
+		debug_bar.set_playtime(game_data.real_seconds_in_game, game_data.real_seconds_playing)
 
 
 # Barra riaperta: riepiloghi aggiornati subito invece di mostrare quelli di quando era stata chiusa.
@@ -13226,6 +13274,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Capanna del vestiario (2026-10-11, richiesta utente — segnaposto) — azione cablata in BuildBar._ready.
 		&"build_clothing_hut":
 			return "clothing_hut"
+		# Capanna del guaritore (2026-10-25, richiesta utente) — azione cablata in BuildBar._ready.
+		&"build_healer_hut":
+			return "healer_hut"
 		# Ceppo dell'insegnamento (2026-10-16, richiesta utente) — azione cablata in BuildBar._ready.
 		&"build_teaching_stump":
 			return "teaching_stump"
@@ -15438,7 +15489,7 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"travois_count": int((building.stored_resources.get("travois", {}) as Dictionary).get("quantity", 0)),
 				# Casa riscaldata oggi (2026-10-22, HouseHeatingService): fumo fermo sul tetto.
 				"heated": building.heated_today and building.is_complete,
-				# Affumicatoio al lavoro (2026-10-23, ProductionService.refresh_smoking): fumo dal foro.
+				# Affumicatoio e capanna del guaritore al lavoro (2026-10-23/25, ProductionService.refresh_smoking): fumo dal foro.
 				"smoking": building.smoking_now and building.is_complete,
 			}
 			# "slot_breakdown" (2026-09-11, richiesta utente — "sul deposit site... disegna gli
@@ -16113,6 +16164,8 @@ func _setup_clock() -> void:
 	game_time_service.individual_apparel_worn_out.connect(_on_individual_apparel_worn_out)
 	# Inizio consumo della riserva corporea (2026-09-19, richiesta utente) - alert giallo, stesso gate.
 	game_time_service.individual_started_body_reserve.connect(_on_individual_started_body_reserve)
+	# Convalescenza e guarigione (2026-10-25, HealthConditionService) - popup di default, stesso gate.
+	game_time_service.health_condition_changed.connect(_on_health_condition_changed)
 	clock.building_resources_decayed.connect(_on_building_resources_decayed)
 	# Cantiere bloccato per mancanza di materiale (2026-09-14, richiesta utente) — vive su
 	# individual_action_service (già un campo di GameScene, la STESSA istanza che guida apply_action

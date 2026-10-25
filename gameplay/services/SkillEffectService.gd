@@ -13,7 +13,10 @@ extends RefCounted
 #   - "build": BuildAction e DemolishAction (lavoro richiesto diviso per il fattore);
 #   - "butcher": ButcherAction, "pickup": PickUpAction (durata divisa per il fattore);
 #   - "walk_loaded": WalkAction a zaino carico (costo di stamina per microcella diviso per il fattore);
-#   - "teach": lezione (TeachingRiteService.student_gain, guadagno degli allievi moltiplicato per il fattore).
+#   - "teach": lezione (TeachingRiteService.student_gain, guadagno degli allievi moltiplicato per il fattore);
+#   - "heal": cura somministrata (RemedyAction GIVE, salute data dal rimedio moltiplicata per il fattore; 2026-10-25).
+# `skill_override` (2026-10-25, BuildingRules.production_skill): stessa formula ma con un'altra skill al posto di quella
+# della tabella (es. Medicina per la Produce alla capanna del guaritore).
 
 const EFFECTS_PATH := "res://gameplay/data/skill_effects/skill_action_effects.tres"
 
@@ -24,22 +27,22 @@ static var _effects_loaded: bool = false
 
 # Fattore della skill per l'azione `action` eseguita da `individual`: la chiave arriva da
 # Action.get_skill_effect_key (fissa o dipendente dallo stato dell'azione).
-static func get_factor_for_action(action: Action, individual: Variant, context: Dictionary = {}) -> float:
+static func get_factor_for_action(action: Action, individual: Variant, context: Dictionary = {}, skill_override: String = "") -> float:
 	if action == null:
 		return 1.0
-	return get_factor(action.get_skill_effect_key(individual, context), individual)
+	return get_factor(action.get_skill_effect_key(individual, context), individual, skill_override)
 
 
 # Fattore della skill per la chiave d'azione `action_key` e `individual`. 1.0 se la chiave è vuota, non è in
 # tabella, la skill non esiste sull'individuo o skill_max non è positivo.
-static func get_factor(action_key: String, individual: Variant) -> float:
+static func get_factor(action_key: String, individual: Variant, skill_override: String = "") -> float:
 	if action_key == "" or individual == null:
 		return 1.0
 	var effects := _get_effects()
 	if effects == null or not effects.effects_by_action_key.has(action_key):
 		return 1.0
 	var entry: Dictionary = effects.effects_by_action_key[action_key]
-	var skill_name := String(entry.get("skill", ""))
+	var skill_name := skill_override if skill_override != "" else String(entry.get("skill", ""))
 	var skill_max := float(entry.get("skill_max", 0.0))
 	var bonus := float(entry.get("bonus", 0.0))
 	if skill_name == "" or skill_max <= 0.0:

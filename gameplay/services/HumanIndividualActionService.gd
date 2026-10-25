@@ -2331,6 +2331,11 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 		NeedTaskAssignmentService.assign_sick_rest_task(individual, world, age_band)
 		return
 
+	# Autocura (2026-10-25, richiesta utente — SelfRemedyService): malato o convalescente in piedi con un rimedio
+	# disponibile, prima di riprendere la coda (con la coda sempre piena non ci arriverebbe mai).
+	if SelfRemedyService.try_take_remedy(individual, age_band, world):
+		return
+
 	var resumed_task := TaskQueueService.pop_suspended_task(individual)
 	# Cantieri rimandati per materiale (2026-10-16): restano in coda finché il materiale non c'è, si passa alla successiva.
 	var held_for_material: Array[Task] = []

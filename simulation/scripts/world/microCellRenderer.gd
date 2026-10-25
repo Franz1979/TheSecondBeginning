@@ -1412,6 +1412,10 @@ func _draw_buildings() -> void:
 		if building_type_name == ClothingHutShape.TYPE:
 			ClothingHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
+		# Capanna del guaritore (2026-10-25): vista dall'alto, ruota con la porta; fumo solo mentre scalda un infuso (HealerHutShape).
+		if building_type_name == HealerHutShape.TYPE:
+			HealerHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
+			continue
 		# Affumicatoio (2026-10-23): vista dall'alto, ruota con la porta; fumo solo mentre produce (SmokehouseShape).
 		if building_type_name == SmokehouseShape.TYPE:
 			SmokehouseShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
@@ -1770,6 +1774,8 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"travois_rack",
 	# Capanna del vestiario (2026-10-11, segnaposto).
 	"clothing_hut",
+	# Capanna del guaritore (2026-10-25).
+	"healer_hut",
 	# Ceppo dell'insegnamento (2026-10-16).
 	"teaching_stump",
 	# Spiazzo delle feste (2026-10-17): un tile per microcella del rettangolo ("dirt_cells"), sotto il cerchio di sassi.

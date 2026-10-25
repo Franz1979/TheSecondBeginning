@@ -27,6 +27,8 @@ const HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/d
 const BUTCHER_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/butcher.tres"
 # Scarico di quello che si ha già nello zaino in un magazzino (2026-10-17): Walk -> Unload.
 const UNLOAD_RESOURCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/unload_resource.tres"
+# Cura somministrata (2026-10-25, HealJobProvider): Walk all'edificio -> Remedy TAKE -> Walk al malato -> Remedy GIVE.
+const HEAL_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/heal.tres"
 
 # Id dell'edificio della consegna dei Prodotti finiti nel context della task (salvato con lei).
 const CONTEXT_OUTPUT_JOB_BUILDING_ID := "output_job_building_id"
@@ -43,6 +45,26 @@ static func macro_offset(worker: HumanIndividual, macro_coords: Vector2i) -> Vec
 static func building_arrival_point(worker: HumanIndividual, building: Building) -> Vector2:
 	var jitter := Vector2(randf_range(0.15, 0.85), randf_range(0.15, 0.85))
 	return Vector2(building.micro_x, building.micro_y) + jitter + macro_offset(worker, Vector2i(building.macro_x, building.macro_y))
+
+
+# Cura somministrata: `worker` preleva un'unità di `remedy_name` da `source` e la porta al letto di `patient` (posizione al
+# momento dell'assegnazione: l'allettato sta fermo). Malato e rimedio restano in task.context (e nel salvataggio).
+static func build_heal_task(worker: HumanIndividual, patient: HumanIndividual, source: Building, remedy_name: String) -> Task:
+	var definition := TaskDefinitionCache.get_definition(HEAL_TASK_DEFINITION_PATH)
+	if definition == null or patient == null or source == null:
+		return null
+	return TaskFactory.build_task(definition, {
+		RemedyAction.CONTEXT_REMEDY_NAME: remedy_name,
+		RemedyAction.CONTEXT_PATIENT_ID: patient.id,
+		"remedy_target_position": building_arrival_point(worker, source),
+		"remedy_target_building": source,
+		"remedy_source_kind": RemedyAction.SourceKind.BUILDING,
+		"remedy_take_mode": RemedyAction.Mode.TAKE,
+		"heal_patient_position": patient.position + macro_offset(worker, patient.home_macro_coords),
+		"remedy_give_building": null,
+		"remedy_give_source_kind": RemedyAction.SourceKind.BACKPACK,
+		"remedy_give_mode": RemedyAction.Mode.GIVE,
+	})
 
 
 # Transport Task [Walk, Retrieve, Walk, Unload]. `trip_target` = quanto RECUPERARE in questo viaggio (transport_quantity

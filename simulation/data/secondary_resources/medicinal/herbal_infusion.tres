@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_herbal_infusion"]
+
+[resource]
+script = ExtResource("1_herbal_infusion")
+secondary_resource_name = "herbal_infusion"
+calories_per_unit = 0.0
+category = 2
+required_idea_id = "herbal_medicine"
+generation_source = 2
+day_durability = 60
+recipe_inputs = {
+"bone": 2,
+"medicinal_herbs": 4
+}
+recipe_labor = 400.0
+recipe_fuel_required = 4.0
+recipe_workstation_types = Array[String](["healer_hut"])
+recipe_required_tool_categories = Array[int]([11])
+remedy_treats_condition_ids = Array[String](["fever"])
+remedy_health_restore = 500.0
+remedy_blocks_daily_loss = true

@@ -323,6 +323,10 @@ extends Resource
 # Moltiplicatore del lavoro richiesto (SecondaryResourceRules.recipe_labor) quando si produce in
 # questo edificio — < 1.0 = serve meno lavoro, 1.0 = neutro.
 @export var production_labor_multiplier: float = 1.0
+# Skill della produzione in questo edificio (2026-10-25, richiesta utente — capanna del guaritore → "skill_medicine"):
+# nome della property skill_* che la Produce qui fa crescere (TaskCompletionEffectService) e che ne accelera il lavoro
+# (SkillEffectService, chiave "produce"). Vuoto = quella dei dati, skill_crafting.
+@export var production_skill: String = ""
 # Capienza del buffer di uscita (2026-09-23, richiesta utente) — numero di PEZZI prodotti che
 # l'edificio può tenere in Building.production_output, separato dallo storage a slot e contato a
 # unità, non a spazio. 0 = nessun buffer: nessuna produzione può completarsi (il prodotto non avrebbe

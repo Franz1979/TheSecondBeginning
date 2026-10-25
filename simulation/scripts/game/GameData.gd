@@ -156,7 +156,7 @@ var birth_events: Array[Dictionary] = []
 
 # Snapshot annuale della popolazione umana totale (Step 3 piano statistiche, 2026-09-06) — year
 # (int) -> conteggio individui vivi in quell'anno, un punto per anno, scritto da
-# GameTimeService._on_year_rolled_over (SEMPRE, non condizionato) per ogni anno che ROTOLA
+# StatisticsSnapshotService.record_year_end (SEMPRE, non condizionato) per ogni anno che ROTOLA
 # (1, 2, 3...) — l'anno 0 non rotola mai (è l'anno di partenza, non un rollover), quindi quel primo
 # punto (il conteggio dei fondatori) è scritto UNA volta a parte da GameScene, nel bootstrap di una
 # partita nuova (mai per una partita caricata/ripristinata). Due soli scrittori, entrambi "una
@@ -176,9 +176,8 @@ var population_snapshots: Dictionary = {}
 # Anno (int) -> numero totale di edifici esistenti in quell'anno, un punto per anno (2026-09-12,
 # richiesta utente — tab Statistiche/Edifici, grafico "numero di edifici nel tempo") — STESSO
 # identico schema/STESSA identica ragione di population_snapshots sopra (Dictionary chiave int, non
-# Array[Dictionary]: la chiave stessa è il dato identificante). Due soli scrittori: GameScene.
-# _on_year_rolled_over scrive un punto per ogni anno che ROTOLA (mai GameTimeService, che non
-# possiede macro_world.buildings — vedi lì), GameScene scrive anche il punto anno 0 nel bootstrap
+# Array[Dictionary]: la chiave stessa è il dato identificante). Due soli scrittori: StatisticsSnapshotService.
+# record_year_end scrive un punto per ogni anno che ROTOLA, record_year_zero scrive anche il punto anno 0 nel bootstrap
 # di una partita nuova (0 edifici, coerente con population_snapshots[0] = fondatori scritto nello
 # stesso punto). ATTENZIONE persistenza — stessa nota di population_snapshots: chiavi int
 # convertite a String da JSON.stringify al salvataggio, riconvertite esplicitamente al caricamento.
@@ -197,6 +196,15 @@ var village_influence_snapshots: Dictionary = {}
 # -> {anno (int) -> valore (float)}. La popolazione è la media dei villaggi, calcolata dal pannello. Stesse note di
 # persistenza (chiavi int -> String in JSON).
 var village_cohesion_snapshots: Dictionary = {}
+# Media dei parametri dei vivi a ogni cambio d'anno, in percentuale del massimo (2026-10-25, scheda Parametri delle
+# statistiche, VitalsAverageService): parametro (String, VitalsAverageService.PARAMETERS) -> {anno (int) -> valore
+# (float)}, e la stessa serie per villaggio, Village.id (int) -> {parametro -> {anno -> valore}}. Stesse note di
+# persistenza (chiavi int -> String in JSON).
+var vital_snapshots: Dictionary = {}
+var village_vital_snapshots: Dictionary = {}
+# Stesse due serie per le skill (2026-10-25, scheda Skill): skill (String, VitalsAverageService.SKILLS) -> {anno -> %}.
+var skill_snapshots: Dictionary = {}
+var village_skill_snapshots: Dictionary = {}
 # Riti sociali in corso (2026-10-14, SocialRiteService — un record per edificio, formato in testa a SocialRiteService).
 # Salvati; la chiave "_frame" è solo di sessione.
 var active_social_rites: Array[Dictionary] = []
@@ -313,6 +321,11 @@ var job_board_take_bag: bool = false
 # chi si libera con uno slot del vestiario vuoto va a prendere in deposito i capi che gli mancano e li indossa. Separata
 # dalla sacca. Salvata da GameSaveService ("job_board_wear_apparel"); partita nuova e salvataggi vecchi: spenta.
 var job_board_wear_apparel: bool = false
+# Tempo reale di gioco (2026-10-25, richiesta utente — debug): secondi reali con una scena della partita aperta (pausa
+# compresa) e solo con l'orologio in play, contati da GameClockController._process e mostrati nella barra di debug.
+# Salvati da GameSaveService; salvataggi vecchi: da zero.
+var real_seconds_in_game: float = 0.0
+var real_seconds_playing: float = 0.0
 # Regola di assegnazione "Un solo costruttore per cantiere" (2026-10-17, più costruttori): accesa, la coda dei lavori manda
 # al più un costruttore per cantiere invece che fino a BuildingRules.max_builders (BuildingJobProvider.build_limit). Il
 # comando manuale non ne tiene conto. Salvata da GameSaveService ("job_board_single_builder"); partita nuova e salvataggi

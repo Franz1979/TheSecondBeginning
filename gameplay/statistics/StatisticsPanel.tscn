@@ -1,0 +1,344 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://gameplay/statistics/StatisticsPanel.gd" id="1_stats"]
+[ext_resource type="Script" path="res://gameplay/statistics/LineChart.gd" id="2_chart"]
+[ext_resource type="Script" path="res://gameplay/statistics/PieChart.gd" id="3_pie"]
+[ext_resource type="Script" path="res://gameplay/statistics/BarChart.gd" id="4_bar"]
+
+[node name="StatisticsPanel" type="Window"]
+visible = false
+size = Vector2i(660, 880)
+script = ExtResource("1_stats")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBoxContainer" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="ScopeRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ScopeLabel" type="Label" parent="MarginContainer/VBoxContainer/ScopeRow"]
+layout_mode = 2
+
+[node name="ScopeSelector" type="OptionButton" parent="MarginContainer/VBoxContainer/ScopeRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TabContainer" type="TabContainer" parent="MarginContainer/VBoxContainer"]
+custom_minimum_size = Vector2(640, 780)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PopulationTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+layout_mode = 2
+
+[node name="PopulationContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TotalPopulationLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+
+[node name="MaleCountLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+
+[node name="FemaleCountLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+
+[node name="PopulationAverageAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+
+[node name="AgeBandDistributionCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+text = "Distribuzione per fascia d'età"
+
+[node name="AgeBandDistributionChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="PopulationPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+text = "Popolazione per anno"
+
+[node name="PopulationPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/PopulationTab/PopulationContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="ParametersTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="ParametersContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CurrentParametersCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent"]
+layout_mode = 2
+text = "Valori medi attuali"
+
+[node name="ParametersBarChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent"]
+layout_mode = 2
+script = ExtResource("4_bar")
+
+[node name="ParametersPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent"]
+layout_mode = 2
+text = "Valori medi per anno"
+
+[node name="ParameterSeriesRow" type="HFlowContainer" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent"]
+layout_mode = 2
+theme_override_constants/h_separation = 12
+
+[node name="ParametersPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="HSeparator4" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent"]
+layout_mode = 2
+
+[node name="SickListCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent"]
+layout_mode = 2
+
+[node name="SickListScroll" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent"]
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SickListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/ParametersTab/ParametersContent/SickListScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SkillsTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="SkillsContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/SkillsTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CurrentSkillsCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent"]
+layout_mode = 2
+text = "Valori medi attuali"
+
+[node name="SkillsBarChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent"]
+layout_mode = 2
+script = ExtResource("4_bar")
+
+[node name="SkillsPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent"]
+layout_mode = 2
+text = "Valori medi per anno"
+
+[node name="SkillSeriesRow" type="HFlowContainer" parent="MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent"]
+layout_mode = 2
+theme_override_constants/h_separation = 12
+
+[node name="SkillsPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="HSeparator5" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent"]
+layout_mode = 2
+
+[node name="BestSkillsCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent"]
+layout_mode = 2
+text = "I migliori"
+
+[node name="BestSkillsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/SkillsTab/SkillsContent"]
+layout_mode = 2
+
+[node name="InfluenceTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="InfluenceContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PoliticalValueLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="CulturalValueLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="ReligiousValueLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="SeriesRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="PoliticalCheck" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow"]
+layout_mode = 2
+button_pressed = true
+
+[node name="CulturalCheck" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow"]
+layout_mode = 2
+button_pressed = true
+
+[node name="ReligiousCheck" type="CheckBox" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/SeriesRow"]
+layout_mode = 2
+button_pressed = true
+
+[node name="InfluencePerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="CohesionValueLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="CohesionPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="PiesContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent"]
+layout_mode = 2
+
+[node name="PiesCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+
+[node name="PoliticalPieCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+
+[node name="PoliticalPieChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="CulturalPieCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+
+[node name="CulturalPieChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="ReligiousPieCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+
+[node name="ReligiousPieChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/InfluenceTab/InfluenceContent/PiesContainer"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="BirthsTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="BirthsContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TotalBirthsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="BirthsBreakdownLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="BirthsPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+text = "Nascite per anno"
+
+[node name="BirthsPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="AverageChildrenLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="HSeparator3" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="FertileWomenListCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="FertileWomenListScroll" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="FertileWomenListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/FertileWomenListScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MortalityTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="MortalityContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TotalLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+
+[node name="AverageAgeLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+
+[node name="CauseDistributionCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+text = "Distribuzione per causa"
+
+[node name="CauseDistributionChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="DeathsPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+text = "Morti per anno"
+
+[node name="DeathsPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="HSeparator2" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+
+[node name="DeathListCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+layout_mode = 2
+
+[node name="DeathListScroll" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent"]
+custom_minimum_size = Vector2(0, 120)
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DeathListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/MortalityTab/MortalityContent/DeathListScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="BuildingsTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+
+[node name="BuildingsContent" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TotalBuildingsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+
+[node name="BuildingsPerYearCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+text = "Edifici per anno"
+
+[node name="BuildingsPerYearChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+script = ExtResource("2_chart")
+
+[node name="BuildingTypeDistributionCaption" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+text = "Distribuzione per tipo"
+
+[node name="BuildingTypeDistributionChart" type="Control" parent="MarginContainer/VBoxContainer/TabContainer/BuildingsTab/BuildingsContent"]
+layout_mode = 2
+script = ExtResource("3_pie")
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="CloseButton" type="Button" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2

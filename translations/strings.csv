@@ -61,7 +61,7 @@ help_era_advancement_title,Avanzamento Era
 "help_era_advancement_not_yet_active,""Questa meccanica è ancora in sviluppo: al momento non esiste ancora un modo per far avanzare il tuo popolo a un'Era successiva."""
 statistics_tooltip,Statistiche
 statistics_tab_mortality,Mortalità
-statistics_tab_births,Nascite
+statistics_tab_births,Natalità
 statistics_tab_population,Popolazione
 statistics_tab_buildings,Edifici
 statistics_movement_cells,Vie di passaggio: {count} celle
@@ -249,6 +249,7 @@ death_cause_murder,omicidio
 death_cause_childbirth,parto
 death_cause_starvation,fame
 death_cause_illness,malattia
+death_cause_wounds,ferite
 notification_birth,"{name} è {birth_verb}, {offspring_word} di {mother}"
 notification_stillbirth,{mother} ha perso il bambino durante il parto
 birth_verb_male,nato
@@ -333,6 +334,16 @@ task_transport_step_unload,Consegnando
 task_leisure_restock_name,Rifornirsi
 task_leisure_restock_step_walk,Andando al magazzino
 task_leisure_restock_step_restock,Rifornendo le provviste
+task_take_remedy_name,Prendere il rimedio
+task_take_remedy_step_walk,Andando a prendere il rimedio
+task_take_remedy_step_take,Prendendo il rimedio
+task_heal_name,Curare un malato
+task_heal_step_walk_source,Andando a prendere il rimedio per il malato
+task_heal_step_take,Prendendo il rimedio per il malato
+task_heal_step_walk_patient,Portando il rimedio al malato
+task_heal_step_give,Curando il malato
+task_heal_job_name,Cura {name}
+"task_heal_job_tooltip","Cura · {name} è a letto (salute {health}): portargli il rimedio"
 task_restock_step_backpack,Mangiando dallo zaino
 task_emergency_restock_name,Rifornimento urgente
 transport_dialog_title,Trasporta risorsa
@@ -372,6 +383,7 @@ carried_resource_tooltip_bone_awl,Punteruolo d'osso
 carried_resource_tooltip_hide_bag,Sacca di pelle
 carried_resource_tooltip_travois,Travois
 carried_resource_tooltip_stone_bowl,Ciotola di pietra
+carried_resource_tooltip_herbal_infusion,Infuso di erbe
 carried_resource_tooltip_meat,Carne cruda
 carried_resource_tooltip_cooked_meat,Carne cotta
 carried_resource_tooltip_dried_meat,Carne essiccata
@@ -480,6 +492,7 @@ skill_hunting_label,Caccia
 skill_crafting_label,Artigianato
 skill_ritual_label,Ritualità
 skill_social_label,Socialità
+skill_medicine_label,Medicina
 individual_id_label,Popolo: {folk} · Villaggio: {village}
 individual_village_none,nessuno
 individual_mother_id_label,ID Madre: {id}
@@ -597,6 +610,16 @@ random_event_illness_name,Malattia
 random_event_illness_popup,{name} si ammala ({illness}): dovrà riposare finché non guarisce.
 illness_fever,febbre
 individual_health_sick_suffix,sta male
+random_event_wound_name,Ferita
+random_event_wound_popup,{name} si ferisce ({wound}): dovrà riposare finché non guarisce.
+wound_laceration,lacerazione
+health_condition_convalescent,convalescente da {condition}
+health_condition_phase_acute,fase acuta
+health_condition_phase_convalescence,convalescenza
+health_condition_bed_rest,a letto
+health_condition_low_health_tooltip,"Salute troppo bassa: deve riposare, niente lavori."
+notification_condition_convalescence,{name} è in convalescenza ({condition}): resterà così finché la salute non risale.
+notification_condition_recovered,Guarigione: {name} ({condition}).
 debug_random_event_apply,Applica evento
 debug_random_event_apply_tooltip,Scatena subito l'evento scelto nel menu
 building_awaiting_fuel_production_label,"Combustibile mancante: {amount} ({fuels})"
@@ -1251,6 +1274,7 @@ pending_output_delivery_rack,{building} pieno: porta i prodotti pronti al deposi
 task_inventory_name,Inventario
 task_inventory_step_count,Conta le scorte
 task_assignment_kind_inventory,Inventario
+task_assignment_kind_heal,Cura dei malati
 task_assignment_inventory_tooltip,"Inventario del magazzino: al deposito più vicino si contano le scorte; alla fine escono gli ordini del magazzino."
 pending_inventory_overdue,Inventario del magazzino in attesa da {hours} h
 warehouse_inventory_off,Gestione scorte spenta: serve un deposito
@@ -1296,6 +1320,9 @@ carried_resource_tooltip_hide_footwear,Calzari di pelle
 building_clothing_hut,Capanna del vestiario
 build_bar_clothing_hut_tooltip,Capanna del vestiario
 build_bar_clothing_hut_description,"Qui si cuciono vesti, cappelli e calzari di pelle."
+building_healer_hut,Capanna del guaritore
+build_bar_healer_hut_tooltip,Capanna del guaritore
+build_bar_healer_hut_description,Qui si preparano unguenti e infusi con le erbe medicinali.
 notification_apparel_worn_out,{name}: {resource} si è consumato del tutto
 task_activity_equip_apparel,prendere un capo da indossare
 task_activity_store_apparel,riporre un capo
@@ -1317,7 +1344,35 @@ pending_village_without_center,{village}: senza centro
 pending_village_without_center_detail,Costruisci un nuovo Cerchio di sassi per ripristinarlo.
 statistics_scope_label,Mostra:
 statistics_scope_folk,{folk} (tutto il popolo)
-statistics_tab_influence,Influenza
+statistics_tab_influence,Influenze
+statistics_tab_parameters,Par. vitali
+statistics_caption_current_parameters,Valori medi attuali
+statistics_caption_parameters_per_year,Valori medi per anno
+statistics_axis_percent,%
+statistics_param_health,Salute
+statistics_param_happiness,Felicità
+statistics_param_stamina,Stamina
+statistics_param_thirst,Sete
+statistics_param_loyalty,Lealtà
+statistics_param_faith,Fede
+statistics_param_tooltip,"{name} media: {current}/{max} ({percent}%)"
+statistics_tab_skills,Skills
+statistics_caption_best_skills,I migliori
+statistics_best_skill_row,{skill}: {name} ({value})
+skill_leadership_short,Lead.
+skill_builder_short,Costr.
+skill_management_short,Gest.
+skill_transporter_short,Trasp.
+skill_gathering_short,Man.
+skill_cognition_short,Cogn.
+skill_hunting_short,Caccia
+skill_crafting_short,Artig.
+skill_ritual_short,Rito
+skill_social_short,Soc.
+skill_medicine_short,Med.
+statistics_condition_low_health,Salute bassa
+statistics_sick_title,Malati: {ill} - Feriti: {wounded}
+statistics_sick_row,"{name} — {conditions} — salute {health}/{max}"
 statistics_influence_political,Politico
 statistics_influence_cultural,Culturale
 statistics_influence_religious,Religioso

@@ -446,6 +446,11 @@ const SHOW_HELP_DIALOG_LOGS := false
 # il motivo, posto liberato al caricamento. Solo log.
 const SHOW_COORDINATOR_LOGS := false
 
+# Scelta del vestito (2026-10-25, richiesta utente — ToolFetchService): una riga [APPAREL CHOICE] per slot quando un
+# pipottino libero sceglie un capo per uno slot vuoto (candidati col punteggio di stagione, dove lo prende o perché
+# niente) e, nel cambio di stagione della Hut, quando esiste un capo migliore (scelto o perché no). Solo log.
+const SHOW_APPAREL_CHOICE_LOGS := true
+
 # Talk (2026-10-13, socialità — TalkService/TalkAction): una riga [TALK] per chiamata (partner, raggio, punti
 # d'incontro), nessun partner, inizio e fine della conversazione, chiusura senza effetti con il motivo. Acceso su
 # richiesta per le prime prove.

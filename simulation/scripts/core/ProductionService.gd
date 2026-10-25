@@ -108,6 +108,10 @@ static func known_workstation_display_name(resource_name: String, folk: Folk) ->
 # qualcuno ci sta facendo la ProduceAction vera e propria, non ferma per materiali, attrezzi o Prodotti finiti pieni (la
 # stessa regola del suono della scheggiatura, WorkSoundController._detect_knapping). Aggiorna Building.smoking_now e
 # ritorna gli affumicatoi il cui stato è cambiato (cella da ridisegnare). Una volta al secondo (GameSimulation).
+# Capanna del guaritore (2026-10-25, richiesta utente — fuoco interno): stessa regola per ogni tipo in SMOKING_TYPES, ma
+# fuma solo se la ricetta in lavorazione brucia combustibile (recipe_fuel_required > 0; l'infuso sì, l'unguento no).
+const SMOKING_TYPES: Array[String] = ["smokehouse", "healer_hut"]
+
 static func refresh_smoking(world: World, individuals: Array[HumanIndividual]) -> Array[Building]:
 	var changed: Array[Building] = []
 	if world == null:
@@ -118,12 +122,15 @@ static func refresh_smoking(world: World, individuals: Array[HumanIndividual]) -
 		if task == null or task.is_finished():
 			continue
 		var action := task.get_current_action() as ProduceAction
-		if action == null or action.target_building == null or action.target_building.building_type_name != SmokehouseShape.TYPE:
+		if action == null or action.target_building == null or not SMOKING_TYPES.has(action.target_building.building_type_name):
+			continue
+		var recipe_rules := CaloricCalculator.get_caloric_source_rules(action.resource_name)
+		if recipe_rules == null or recipe_rules.recipe_fuel_required <= 0.0:
 			continue
 		if not action.is_blocked_by_materials() and not action.is_waiting_for_tools() and not is_output_blocking(action.target_building):
 			working[action.target_building.id] = true
 	for building in world.buildings:
-		if building.building_type_name != SmokehouseShape.TYPE:
+		if not SMOKING_TYPES.has(building.building_type_name):
 			continue
 		var smoking := working.has(building.id) and not building.is_demolished
 		if smoking != building.smoking_now:

@@ -911,9 +911,11 @@ static func try_wear_apparel(individual: HumanIndividual, age_band: HumanTypes.A
 	var home := HouseWardrobeService.home_wardrobe(world, individual)
 	var depot: Building = null
 	var plan: Array[Dictionary] = []
+	var log_choice := DebugLogging.ENABLED and DebugLogging.SHOW_APPAREL_CHOICE_LOGS
 	for slot in empty_slots:
 		var chosen := ""
 		var candidates := _convenient_apparel_for_slot(individual, slot, season)
+		var first_slot := depot == null
 		if depot == null:
 			if home != null:
 				chosen = _best_free_in(home, candidates, reserved)
@@ -949,6 +951,19 @@ static func try_wear_apparel(individual: HumanIndividual, age_band: HumanTypes.A
 					chosen = apparel_name
 					chosen_score = score
 					chosen_free = free
+		if log_choice:
+			var outcome := ""
+			if candidates.is_empty():
+				outcome = "nessun capo conveniente (nessuno batte lo slot vuoto)"
+			elif chosen == "":
+				outcome = "nessun capo libero raggiungibile" if first_slot else "nessuno libero in %s #%d, dove va per gli altri slot" % [depot.building_type_name, depot.id]
+			elif first_slot:
+				outcome = "sceglie %s %s" % [chosen, "dal guardaroba di casa" if depot == home else "in %s #%d, il più vicino con la fascia migliore disponibile" % [depot.building_type_name, depot.id]]
+			else:
+				outcome = "sceglie %s nello stesso %s #%d (punteggio più alto, a parità più pezzi)" % [chosen, depot.building_type_name, depot.id]
+			_apparel_choice_log(individual, "slot vuoto %d, stagione %s, candidati [%s] → %s." % [
+				slot, GameTypes.Season.keys()[season], _scored_names(candidates), outcome
+			])
 		if chosen == "":
 			continue
 		plan.append({"slot": slot, "name": chosen})
@@ -1011,9 +1026,10 @@ static func try_swap_seasonal_apparel(individual: HumanIndividual, age_band: Hum
 	var season := HumanVitalsInteractionService.current_season()
 	var reserved := _reserved_fetches(individual, APPAREL_FETCH_KEY)
 	var reachability := PathfindingService.reachability_for(individual)
+	var log_choice := DebugLogging.ENABLED and DebugLogging.SHOW_APPAREL_CHOICE_LOGS
 	for slot in APPAREL_FETCH_ORDER:
 		var current := individual.get_equipped_apparel(slot)
-		if current == "" or BuildingStorageService.get_max_depositable(home, current) < 1:
+		if current == "":
 			continue
 		var current_score := HumanVitalsInteractionService.apparel_season_score(current, season)
 		var better: Array[Dictionary] = []
@@ -1024,19 +1040,54 @@ static func try_swap_seasonal_apparel(individual: HumanIndividual, age_band: Hum
 		if better.is_empty():
 			continue
 		better.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["score"]) > float(b["score"]))
+		var log_prefix := ""
+		if log_choice:
+			log_prefix = "cambio di stagione, slot %d, stagione %s, indossa %s %.2f, migliori [%s] → " % [
+				slot, GameTypes.Season.keys()[season], current, current_score, _scored_names(better)
+			]
+		if BuildingStorageService.get_max_depositable(home, current) < 1:
+			if log_choice:
+				_apparel_choice_log(individual, log_prefix + "nessun cambio: il guardaroba di casa #%d non ha posto per %s." % [home.id, current])
+			continue
 		var at_home := _best_free_in(home, better, reserved)
 		if at_home != "":
 			if not _has_backpack_room(individual, at_home):
+				if log_choice:
+					_apparel_choice_log(individual, log_prefix + "nessun cambio: %s è a casa ma non c'è posto nello zaino." % at_home)
 				continue
+			if log_choice:
+				_apparel_choice_log(individual, log_prefix + "sceglie %s dal guardaroba di casa #%d." % [at_home, home.id])
 			return _assign_depot_swap(individual, age_band, home, home, slot, current, at_home)
+		var no_room: Array[String] = []
 		for candidate in better:
 			var apparel_name := String(candidate["name"])
 			if not _has_backpack_room(individual, apparel_name):
+				no_room.append(apparel_name)
 				continue
 			var source := _find_free_source(individual, world, apparel_name, reserved, reachability)
 			if source != null and source != home:
+				if log_choice:
+					_apparel_choice_log(individual, log_prefix + "sceglie %s in %s #%d (a casa nessuno migliore libero)." % [
+						apparel_name, source.building_type_name, source.id
+					])
 				return _assign_depot_swap(individual, age_band, home, source, slot, current, apparel_name)
+		if log_choice:
+			_apparel_choice_log(individual, log_prefix + "nessun cambio: nessun capo migliore libero e raggiungibile%s." % [
+				"" if no_room.is_empty() else " (senza posto nello zaino: %s)" % ", ".join(no_room)
+			])
 	return false
+
+
+static func _apparel_choice_log(individual: HumanIndividual, text: String) -> void:
+	print("[APPAREL CHOICE] #%d %s: %s" % [individual.id, individual.name, text])
+
+
+# "nome punteggio" per ogni voce di `candidates` ({"name", "score"}), per i log.
+static func _scored_names(candidates: Array) -> String:
+	var parts: Array[String] = []
+	for candidate in candidates:
+		parts.append("%s %.2f" % [String(candidate["name"]), float(candidate["score"])])
+	return ", ".join(parts)
 
 
 static func _has_backpack_room(individual: HumanIndividual, apparel_name: String) -> bool:

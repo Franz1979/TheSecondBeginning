@@ -72,9 +72,13 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 # Idoneità alla presa, in silenzio: la stessa Produce Task dell'assegnazione (mai assegnata) passa il controllo di
 # idoneità, e ogni categoria di attrezzo che l'Attrezzeria dell'edificio non copre il pipottino ce l'ha già o può
 # prenderla in deposito (ToolFetchService.rejection). Senza l'attrezzo il lavoro resta in coda per un altro pipottino.
+# Ricetta che l'edificio non sa più fare (2026-10-25, bugfix — ordine di un salvataggio fatto prima che la ricetta
+# cambiasse edifici): scartata qui, altrimenti vinceva la scelta e assign_produce la rifiutava, mandando tutti in svago.
 static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary) -> String:
 	var building: Building = job["target"]
 	var order_key := String(job["order_key"])
+	if not ProductionService.can_produce_at(building, String(job["recipe"])):
+		return "ricetta non producibile in questo edificio"
 	var task := TaskBuilderService.build_produce_task(
 		worker, building, String(job["recipe"]), maxi(ProductionService.get_order_units(building, order_key), 1),
 		ProductionService.get_order_deliver_to_warehouse(building, order_key)
