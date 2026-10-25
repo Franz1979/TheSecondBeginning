@@ -324,7 +324,7 @@ const SHOW_UNLOAD_PROGRESS_LOGS := false
 # RecoverWeaponAction), quale Task/step la consuma, la ricezione in GameScene (e il rifiuto se la carcassa ha già
 # una macellazione in corso o in coda), l'accodamento, e [BUTCHER] a macellazione compiuta. Ogni riga ha anno,
 # giorno e frame del motore (HuntService.describe_now).
-const SHOW_HUNT_LOGS := true
+const SHOW_HUNT_LOGS := false
 # Intervallo tra due righe di avvicinamento, in GIORNI DI GIOCO (1 giorno = 8 s reali a 1x): 0.125 =
 # circa una riga al secondo a velocità 1x.
 const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
@@ -431,7 +431,7 @@ const SHOW_JOB_BOARD_LOGS := false
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per
 # voce) e un riepilogo al secondo (chiamanti, liste rifatte, picco del fotogramma). Acceso per la misura; solo log.
-const SHOW_JOB_BOARD_TIMING_LOGS := true
+const SHOW_JOB_BOARD_TIMING_LOGS := false
 
 # "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
 # quando la sua riga compare o cambia (task attiva, testo, coda o diretto e perché, chiavi del context). Solo log.

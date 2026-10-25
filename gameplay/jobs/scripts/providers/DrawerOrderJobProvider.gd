@@ -166,6 +166,11 @@ static func transport_rejection(ctx: GameContext, worker: HumanIndividual, job: 
 # icona del lavoro; 🎯 sulla zona fissata.
 static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary, claims: Dictionary) -> Dictionary:
 	var order_type := String(order.get("type", DrawerOrderService.TYPE_CUT))
+	# Tempi (2026-10-25, picco di "ordine:gather" fuori dal bersaglio): "voce <tipo>: riga" (prenotazioni, avanzamento,
+	# scritte), "voce <tipo>: blocco" (zone_blocked_reason, con dentro "attrezzi (lista)" e "bersaglio <tipo>: …"),
+	# "voce <tipo>: chiusura" (raggiungibilità e voce).
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var is_quarry := order_type == DrawerOrderService.TYPE_QUARRY
 	var order_id := int(order["id"])
 	var zone_id := int(order.get("zone_id", -1))
@@ -180,7 +185,7 @@ static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary,
 	# La carne consegnata può superare l'obiettivo (l'ultima preda porta tutta la sua); gli altri tipi no.
 	if order_type != DrawerOrderService.TYPE_HUNT:
 		done = mini(done, total)
-	var started := bool(order.get("started", false)) or is_assigned or done > 0
+	var is_started := bool(order.get("started", false)) or is_assigned or done > 0
 	var row_key := "drawer_order_quarry_row" if is_quarry else "drawer_order_cut_row"
 	var icon_key := "quarry" if is_quarry else "cut"
 	var row_args := {"count": total, "done": done, "total": total}
@@ -193,7 +198,7 @@ static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary,
 		icon_key = "hunt"
 	# Avviato (2026-10-11): il nome senza conto, "fatti/totale" va nella seconda riga della voce ("progress").
 	var progress := ""
-	if started:
+	if is_started:
 		row_key = row_key.replace("_row", "_started_row")
 		progress = "%d/%d" % [done, total]
 	elif total == 1:
@@ -210,9 +215,18 @@ static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary,
 		microcell = area.rect.position + area.rect.size / 2
 	# Ordine creato dal magazzino (2026-10-11): magazzino nell'angolo dell'icona della riga.
 	var from_warehouse := order.has(StockRequestService.ORDER_KEY)
+	if timing:
+		JobBoardTimingService.add("voce %s: riga" % order_type, started)
+		started = JobBoardTimingService.now()
 	# Prima della voce: per taglio/estrazione sceglie anche il bersaglio dell'ordine, letto da reach_target.
-	var blocked_reason := "" if is_assigned else zone_blocked_reason(ctx, order_type, zone_id, area, order)
-	return {
+	# Ordine preso che in questo momento nessuno porta (2026-10-25, richiesta utente — picchi di 6–7 ms in "voce gather:
+	# blocco"): niente motivo di blocco, come per quelli portati. Prima passava dal giro su tutte le zone
+	# (area_has_targets, celle rilette a memoria scaduta); settle_zone_orders lo rimette in coda e da lì vale il bersaglio.
+	var blocked_reason := "" if bool(order.get("taken", false)) else zone_blocked_reason(ctx, order_type, zone_id, area, order)
+	if timing:
+		JobBoardTimingService.add("voce %s: blocco" % order_type, started)
+		started = JobBoardTimingService.now()
+	var job := {
 		"key": JobBoardService.drawer_order_key(order_id), "kind": order_type, "name": row_name,
 		"warehouse": from_warehouse, "progress": progress,
 		"text": (row_name + "\n" + GameContext.tr_text("task_assignment_warehouse_tag_tooltip")) if from_warehouse else row_name,
@@ -229,6 +243,9 @@ static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary,
 		"blocked_reason": blocked_reason,
 		"target": area, "provider": provider, "order": order,
 	}
+	if timing:
+		JobBoardTimingService.add("voce %s: chiusura" % order_type, started)
+	return job
 
 
 # Cosa raccogliere, per la riga di "Raccogli": la risorsa, "Tutto il cibo" / "Tutti i materiali" o "Tutto" (gli stessi

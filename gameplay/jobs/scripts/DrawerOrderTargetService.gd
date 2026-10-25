@@ -48,14 +48,25 @@ static func ensure_target(ctx: GameContext, order: Dictionary) -> bool:
 	if ctx == null or ctx.game_data == null or ctx.world == null or not uses_order_target(order_type):
 		return false
 	var reserved := _reserved_for(ctx, order, order_type)
+	# Tempi (2026-10-25, picchi di "ordine:gather"): "bersaglio <tipo>: controllo" (cella tenuta, o un'altra della zona)
+	# e "bersaglio <tipo>: nuova scelta" (zona e bersaglio da capo).
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	if has_target(order):
-		if _is_target_valid(ctx, order, order_type, reserved):
+		var valid := _is_target_valid(ctx, order, order_type, reserved)
+		if timing:
+			JobBoardTimingService.add("bersaglio %s: controllo" % order_type, started)
+		if valid:
 			return true
 		clear_target(order)
 	var order_id := int(order.get("id", -1))
 	if Time.get_ticks_msec() < int(_retry_after.get(order_id, 0)):
 		return false
-	if _choose_target(ctx, order, order_type, reserved):
+	started = JobBoardTimingService.now() if timing else 0
+	var chosen := _choose_target(ctx, order, order_type, reserved)
+	if timing:
+		JobBoardTimingService.add("bersaglio %s: nuova scelta" % order_type, started)
+	if chosen:
 		_retry_after.erase(order_id)
 		return true
 	if _retry_after.size() > 256:
@@ -243,15 +254,36 @@ static func _choose_target(ctx: GameContext, order: Dictionary, order_type: Stri
 
 
 # Raccolta: la zona ha ancora roba per la scelta dell'ordine; se la cella tenuta è vuota ne prende un'altra della zona.
+# Controllo saltato (2026-10-25, richiesta utente — "bersaglio gather: controllo" 1–2 ms ogni secondo: la cella si legge
+# per ogni risorsa ammessa) se la stessa cella era buona all'ultimo controllo e da allora nessuno ha raccolto da terra
+# (TerrainScatteredResourceService.consume_revision), il giorno è lo stesso e non sono passati GATHER_CHECK_MAX_AGE_MSEC:
+# la stessa regola della memoria delle zone (HaulZoneService._area_cell_totals). Gli altri cambiamenti arrivano entro la
+# durata massima; la raccolta vera ricontrolla sul posto. Memoria non salvata.
+const GATHER_CHECK_MAX_AGE_MSEC := 2000
+static var _gather_checks: Dictionary = {}  # id ordine -> {"cell", "area_id", "revision", "day", "time"}
+
+
 static func _refresh_gather_cell(ctx: GameContext, order: Dictionary, area: WorkArea, cell: Vector2i) -> bool:
+	var order_id := int(order.get("id", -1))
+	var now_msec := Time.get_ticks_msec()
+	var day := ctx.game_data.get_absolute_day()
+	var revision := TerrainScatteredResourceService.consume_revision
+	var last: Variant = _gather_checks.get(order_id)
+	if last != null and last["cell"] == cell and int(last["area_id"]) == area.id and int(last["revision"]) == revision \
+			and int(last["day"]) == day and now_msec - int(last["time"]) < GATHER_CHECK_MAX_AGE_MSEC:
+		return true
 	var macro_state: MacroCellState = ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
 	var names := _gather_names(order, area)
-	if HaulZoneService.is_cell_available(area, macro_state, names, cell):
-		return true
-	var other: Variant = HaulZoneService.first_available_cell(area, macro_state, names)
-	if other == null:
-		return false
-	_store(order, area, area.macro_coords, other, 0, 0)
+	var good_cell: Variant = cell
+	if not HaulZoneService.is_cell_available(area, macro_state, names, cell):
+		good_cell = HaulZoneService.first_available_cell(area, macro_state, names)
+		if good_cell == null:
+			_gather_checks.erase(order_id)
+			return false
+		_store(order, area, area.macro_coords, good_cell, 0, 0)
+	if _gather_checks.size() > 256:
+		_gather_checks.clear()
+	_gather_checks[order_id] = {"cell": good_cell, "area_id": area.id, "revision": revision, "day": day, "time": now_msec}
 	return true
 
 

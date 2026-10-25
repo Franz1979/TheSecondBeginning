@@ -16,6 +16,7 @@ storage_slot_count = 8
 storage_space_per_slot = 100
 accepted_categories = Array[int]([0, 1, 3])
 categories_locked = true
+durability_multiplier_by_category = Array[float]([1.0, 1.2, 1.0, 1.0, 1.0, 1.0])
 required_materials = {
 "stick": 20,
 "stone": 10,
@@ -26,8 +27,9 @@ has_door = true
 visibility_radius = 3
 is_workstation = true
 fuel_stock_min = 20
-production_output_slots = 10
+production_output_slots = 20
 production_output_to_storage = false
 storage_accepts_recipe_materials_only = true
 production_max_quantity = 10
 production_max_orders = 2
+production_concurrent_orders = 2

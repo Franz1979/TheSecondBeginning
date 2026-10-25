@@ -149,6 +149,9 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		HuntService.log_event(individual, "avvicinamento finito: preda %s #%d irraggiungibile (nessun percorso a piedi) — la caccia si chiude." % [
 			prey_species, prey_id
 		])
+		# Caccia in zona (2026-10-25, loop "avvistata, irraggiungibile, riavvistata" decine di volte al secondo): la preda
+		# va tra quelle ignorate per il resto dell'uscita, come dopo troppi tiri a vuoto; la pattuglia non la riavvista.
+		HuntZoneService.ignore_prey(context, prey_id)
 		abort_task_unreachable(individual, context, "preda %s #%d irraggiungibile" % [prey_species, prey_id])
 		return
 	if _prey_lost:

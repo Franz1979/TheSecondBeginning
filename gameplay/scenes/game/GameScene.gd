@@ -1183,9 +1183,13 @@ func _process(delta: float) -> void:
 	_pending_clock += clock.get_game_day_delta(delta) if clock != null else 0.0
 	# Attesa per l'assegnazione a mano della lista dei lavori (2026-10-07): secondi reali, solo a gioco in corso.
 	_pending_refresh_timer += delta
+	# Giro della lista a tappe (2026-10-25, JobBoardRound): un fornitore per fotogramma; a giro finito, il refresh di
+	# sempre con la lista raccolta.
+	if _job_board_round.is_running() and _job_board_round.step():
+		_refresh_pending_entries(_job_board_round.take_result())
 	if _pending_refresh_timer >= PENDING_REFRESH_INTERVAL_SEC:
 		_pending_refresh_timer = 0.0
-		_refresh_pending_entries()
+		_start_job_board_round()
 		_expire_panel_messages()
 		# Attività della lista della popolazione (2026-10-09): le scritte seguono la task attiva, non solo una volta al
 		# giorno.
@@ -7444,9 +7448,14 @@ func _free_dead_body_view(body_id: int) -> void:
 # Lo stato della lista NON tocca questa scheda: qui le voci restano quelle di sempre, con o senza l'idea.
 # ============================================================================================
 
-func _refresh_pending_entries() -> void:
+# `round_result` (2026-10-25): la lista raccolta a tappe dal giro al secondo (JobBoardRound.take_result); vuoto = lista
+# fatta qui in un colpo, come prima (refresh dopo un evento), e l'eventuale giro in corso si butta.
+func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 	if pending_panel == null or game_data == null:
 		return
+	var from_round := not round_result.is_empty()
+	if not from_round:
+		_job_board_round.cancel()
 	var assigned := JobWorkScanService.collect_assignments(human_individuals)
 	var entries: Array[Dictionary] = []
 	var body_entries: Array[Dictionary] = []
@@ -7494,9 +7503,15 @@ func _refresh_pending_entries() -> void:
 	if board_timing:
 		JobBoardTimingService.caller = "cassetto"
 		JobBoardTimingService.begin_call(null)
-	var board_jobs := _collect_job_board_jobs(assigned)
+	var board_jobs: Array[Dictionary] = []
 	# Lista unica (2026-10-24, assegnatore fase 2): la stessa lista vale per le domande fino al prossimo cambiamento.
-	_store_job_board_candidates(board_jobs, assigned)
+	# Dal giro a tappe con la firma presa all'inizio del giro (JobBoardRound).
+	if from_round:
+		board_jobs = round_result["jobs"]
+		_store_job_board_candidates(board_jobs, round_result["assigned"], int(round_result["signature"]))
+	else:
+		board_jobs = _collect_job_board_jobs(assigned)
+		_store_job_board_candidates(board_jobs, assigned)
 	_update_job_board_waits(board_jobs)
 	# Richiamo del coordinatore (2026-10-09): un lavoro diventato prendibile (nuovo in coda o finita la sua attesa) è
 	# un evento per i coordinatori che aspettano senza fila.
@@ -8259,10 +8274,27 @@ func _current_job_board_candidates() -> Dictionary:
 
 
 # Lista appena fatta (`jobs`: tutti i lavori dei fornitori con le assegnazioni `assigned`): in memoria per chi la chiede.
-func _store_job_board_candidates(jobs: Array[Dictionary], assigned: Dictionary) -> void:
+# `signature` (2026-10-25): la firma di quando è cominciata la raccolta (giro a tappe); -1 = quella di adesso.
+func _store_job_board_candidates(jobs: Array[Dictionary], assigned: Dictionary, signature: int = -1) -> void:
 	_job_board_candidates_cache = JobBoardService.collect_candidates(jobs)
-	_job_board_candidates_signature = _job_board_candidates_signature_of(assigned)
+	_job_board_candidates_signature = signature if signature != -1 else _job_board_candidates_signature_of(assigned)
 	_job_board_candidates_valid = true
+
+
+# Giro della lista a tappe (2026-10-25, richiesta utente — picco del giro al secondo, JobBoardRound).
+var _job_board_round := JobBoardRound.new()
+
+
+# Comincia il giro al secondo: assegnazioni e firma di adesso, poi un fornitore per fotogramma (_process). Senza mondo o
+# senza pannello, il refresh di prima in un colpo. Un giro ancora in corso continua.
+func _start_job_board_round() -> void:
+	if _job_board_round.is_running():
+		return
+	if pending_panel == null or game_data == null or macro_world == null:
+		_refresh_pending_entries()
+		return
+	var assigned := JobWorkScanService.collect_assignments(human_individuals)
+	_job_board_round.start(_job_board_providers(), assigned, _job_board_candidates_signature_of(assigned))
 
 
 # Presa riuscita del lavoro `job_key` (2026-10-24, assegnatore fase 2): fuori dalla lista in memoria (o un posto in meno,

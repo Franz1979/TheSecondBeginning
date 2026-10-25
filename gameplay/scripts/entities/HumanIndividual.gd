@@ -51,6 +51,11 @@ var path_pending: bool = false
 var path_active: bool = false
 var path_failed: bool = false
 var path_block_version: int = -1
+# Arrivo prima di una barriera (2026-10-25, PathfindingService.find_path): destinazione originale della camminata il cui
+# percorso è stato accorciato alla microcella libera prima (path_target è allora quella cella). WalkAction la usa per
+# considerarsi arrivata lì (lavori su vallo, palizzata, cancello chiuso e loro cantieri dalla cella accanto).
+var path_barrier_stop: bool = false
+var path_barrier_destination: Vector2 = Vector2.ZERO
 # microcelle/secondo — ridotto da 4.5 a 2.0 (richiesta utente, 2026-09-04: troppo veloce per
 # leggere l'animazione delle gambe appena aggiunta a HumanIndividualView), poi ulteriormente a 1.2
 # (richiesta utente, 2026-09-04: ancora troppo veloce, indipendentemente dal ritmo delle gambe —
@@ -1306,6 +1311,7 @@ func clear_path() -> void:
 	path_pending = false
 	path_active = false
 	path_failed = false
+	path_barrier_stop = false
 
 
 # discard_cargo (2026-09-21, richiesta utente): false = lascia lo zaino com'è (usato quando un edificio

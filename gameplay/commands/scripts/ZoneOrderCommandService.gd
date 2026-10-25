@@ -17,16 +17,25 @@ static func assign_drawer_zone_job(ctx: GameContext, worker: HumanIndividual, jo
 		return
 	# Taglio/estrazione (2026-10-23), raccolta e caccia (2026-10-24): il bersaglio scelto dall'ordine
 	# (DrawerOrderTargetService).
+	# Tempi (2026-10-25, presa da 4–7 ms): "presa ordine: bersaglio", "presa ordine: attrezzi", "presa ordine: task".
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var pick: Dictionary = {}
 	if DrawerOrderTargetService.uses_order_target(order_type):
 		if DrawerOrderTargetService.ensure_target(ctx, order):
 			pick = DrawerOrderTargetService.get_pick(ctx, order)
 	else:
 		pick = DrawerOrderJobProvider.pick_zone_target(ctx, worker, job)
+	if timing:
+		JobBoardTimingService.add("presa ordine: bersaglio", started)
 	if pick.is_empty():
 		return
 	var area: WorkArea = pick["area"]
+	started = JobBoardTimingService.now() if timing else 0
 	var fetch_plan := ToolFetchService.plan_fetch(ctx.world, worker, DrawerOrderService.tool_categories(order_type))
+	if timing:
+		JobBoardTimingService.add("presa ordine: attrezzi", started)
+	started = JobBoardTimingService.now() if timing else 0
 	var series: Dictionary = {}
 	if order_type == DrawerOrderService.TYPE_GATHER:
 		var trips := maxi(int(order.get("count", 1)), 1)
@@ -56,6 +65,8 @@ static func assign_drawer_zone_job(ctx: GameContext, worker: HumanIndividual, jo
 		if DrawerOrderService.order_cut_yield(order) != "":
 			series[CutZoneService.SERIES_YIELD_KEY] = DrawerOrderService.order_cut_yield(order)
 		ExtractionCommandService.assign_cut(ctx, worker, pick["plant"], area.id, series, true, effects)
+	if timing:
+		JobBoardTimingService.add("presa ordine: task %s" % order_type, started)
 	for task in JobWorkScanService.open_tasks(worker):
 		if DrawerOrderService.order_of_task(task) == order_id:
 			order["taken"] = true

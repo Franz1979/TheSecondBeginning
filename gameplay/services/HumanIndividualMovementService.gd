@@ -100,6 +100,8 @@ func _update_path(individual: HumanIndividual, live_cells: Dictionary) -> void:
 	# viene invalidato al prossimo frame).
 	var last_cell: Vector2i = cells[cells.size() - 1]
 	if last_cell != to:
+		individual.path_barrier_stop = true
+		individual.path_barrier_destination = individual.path_target
 		individual.target_position = Vector2(last_cell) + Vector2(0.5, 0.5)
 		individual.path_target = individual.target_position
 	# Waypoint: i centri delle microcelle intermedie (né quella di partenza né quella d'arrivo); l'ultimo tratto va

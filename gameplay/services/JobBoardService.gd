@@ -740,11 +740,19 @@ static func take_job(worker: HumanIndividual, game_data: GameData, found: Dictio
 	var takeable_jobs: Array[Dictionary] = []
 	takeable_jobs.assign(found.get("jobs", []))
 	var found_text := String(found.get("found_text", ""))
+	# Tempi (2026-10-25, presa da 4–7 ms): "presa: scelta" e "presa: assegna <tipo>" dentro "presa (assign)".
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var pick := pick_job(game_data, worker, takeable_jobs)
 	var best: Dictionary = pick["job"]
+	if timing:
+		JobBoardTimingService.add("presa: scelta", started)
 	var task_before := worker.current_task
 	var queue_size_before := worker.task_queue.size()
+	started = JobBoardTimingService.now() if timing else 0
 	best["provider"]["assign"].call(worker, best)
+	if timing:
+		JobBoardTimingService.add("presa: assegna %s" % String(best.get("kind", "?")), started)
 	var taken := (worker.current_task != null and worker.current_task != task_before) or worker.task_queue.size() > queue_size_before
 	var job_text := "%s %s" % [String(best["key"]), String(best["log_name"])]
 	if taken:

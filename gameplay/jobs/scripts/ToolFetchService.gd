@@ -708,6 +708,9 @@ static func try_return_borrowed_tools(individual: HumanIndividual, age_band: Hum
 
 # Toglie dai prestiti gli attrezzi non più in cintura (rotti, spostati a mano). Una volta al secondo per tutti (GameSimulation,
 # così il pannello resta giusto anche per chi non si libera) e prima di ogni restituzione.
+# Prelievo in corso (2026-10-25, bugfix: il prestito si segna alla partenza, start_fetch, e la pulizia lo toglieva prima
+# che l'attrezzo arrivasse in cintura — diventava suo, fuori dalla scorta e mai riposto): resta finché c'è una sua task
+# aperta con TOOL_FETCH_SOURCE_KEY di quell'edificio e attrezzo. Prelievo fallito: la task si chiude e il giro dopo lo toglie.
 static func prune_borrowed_tools(ctx: GameContext) -> void:
 	for member in ctx.individuals:
 		if not member.borrowed_tools.is_empty():
@@ -715,9 +718,16 @@ static func prune_borrowed_tools(ctx: GameContext) -> void:
 
 
 static func _prune_borrowed_tools(member: HumanIndividual) -> void:
+	var fetching: Dictionary = {}
+	for task in JobWorkScanService.open_tasks(member):
+		var key: Variant = task.context.get(TOOL_FETCH_SOURCE_KEY, null)
+		if key != null:
+			fetching[String(key)] = true
 	var still_equipped: Array = []
 	for entry in member.borrowed_tools:
-		if find_belt_slot_by_name(member, String(entry.get("tool_name", ""))) != -1:
+		var tool_name := String(entry.get("tool_name", ""))
+		if find_belt_slot_by_name(member, tool_name) != -1 \
+				or fetching.has("%d:%s" % [int(entry.get("building_id", -1)), tool_name]):
 			still_equipped.append(entry)
 	member.borrowed_tools = still_equipped
 

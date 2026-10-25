@@ -182,6 +182,10 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 	# Destinazione irraggiungibile (2026-09-27, pathfinding): lo step "finisce" subito e on_complete chiude la Task.
 	if is_path_unreachable(individual, target):
 		return true
+	# Destinazione su una barriera (2026-10-25): il percorso si ferma alla microcella libera prima (path_target), e
+	# l'arrivo è lì — altrimenti la camminata non finirebbe mai e il lavoro sull'edificio non partirebbe.
+	if individual.path_barrier_stop and individual.path_barrier_destination == target:
+		return individual.position.distance_to(individual.path_target) <= ARRIVAL_TOLERANCE
 	return individual.position.distance_to(target) <= ARRIVAL_TOLERANCE
 
 
