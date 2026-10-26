@@ -547,6 +547,8 @@ static func _finish(record: Dictionary, building: Building, rules: SocialRiteRul
 		var individual := _find(individuals, int(key))
 		if individual != null and is_attending(individual, building.id):
 			present.append(individual)
+	# Contagio (2026-10-25, ContagionService): ogni presente tira per ogni contagioso presente.
+	ContagionService.expose_group(present, game_data, "rito '%s' all'edificio #%d" % [rules.id, building.id])
 	var share := float(present.size())
 	var banquet := rules as BanquetRiteRules
 	for individual in present:

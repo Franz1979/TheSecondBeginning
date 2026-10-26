@@ -19,7 +19,8 @@ const PHASE_ACUTE := "acute"
 const PHASE_CONVALESCENCE := "convalescence"
 # Rimedio preso oggi (2026-10-25, richiesta utente — infuso): chiave nel dizionario della condizione, messa da
 # apply_remedy e tolta dal prossimo advance_daily (che quel giorno non toglie salute se il rimedio lo blocca). Vale anche
-# come "massimo un rimedio al giorno per condizione". Salvata con la condizione.
+# come "massimo un rimedio al giorno per condizione". Salvata con la condizione. Con remedy_lasts_whole_condition la
+# chiave resta fino alla guarigione (una sola applicazione).
 const KEY_REMEDY := "remedy"
 const RESOURCE_DIR := "res://simulation/data/secondary_resources/"
 
@@ -86,6 +87,7 @@ static func advance_daily(individual: HumanIndividual) -> float:
 			_lose(individual, rules.daily_health_loss * health_factor, rules.daily_happiness_loss)
 			days -= 1
 			if days <= 0:
+				_apply_untreated_sequela(individual, rules, remedy_rules)
 				if _is_recovered(individual, rules):
 					continue
 				phase = PHASE_CONVALESCENCE
@@ -93,7 +95,11 @@ static func advance_daily(individual: HumanIndividual) -> float:
 			_lose(individual, rules.convalescence_daily_health_loss * health_factor, rules.convalescence_daily_happiness_loss)
 			if _is_recovered(individual, rules):
 				continue
-		remaining.append({"id": rules.id, "days": maxi(days, 0), "phase": phase})
+		var kept := {"id": rules.id, "days": maxi(days, 0), "phase": phase}
+		# Rimedio una tantum (steccatura): resta segnato fino alla guarigione.
+		if remedy_rules != null and remedy_rules.remedy_lasts_whole_condition:
+			kept[KEY_REMEDY] = remedy_rules.secondary_resource_name
+		remaining.append(kept)
 	individual.health_conditions = remaining
 	return health_before - individual.current_health
 
@@ -150,6 +156,21 @@ static func apply_remedy(individual: HumanIndividual, remedy_name: String, healt
 	return true
 
 
+# --- Postumi (2026-10-26, richiesta utente — frattura mal saldata) ---
+# A fine fase acuta senza un rimedio che dura tutta la condizione (steccatura, rimasta segnata in KEY_REMEDY): salute
+# massima persa per sempre (HumanIndividual.permanent_max_health_loss, tolta ogni giorno in recalculate_vitals).
+static func _apply_untreated_sequela(individual: HumanIndividual, rules: HealthConditionRules, remedy_rules: SecondaryResourceRules) -> void:
+	if rules.untreated_sequela_max_health_loss <= 0.0:
+		return
+	if remedy_rules != null and remedy_rules.remedy_lasts_whole_condition:
+		return
+	individual.permanent_max_health_loss += rules.untreated_sequela_max_health_loss
+	individual.max_health -= rules.untreated_sequela_max_health_loss
+	print("[SEQUELA] #%d %s: %s senza rimedio, salute massima -%d (persa in tutto %d)" % [
+		individual.id, individual.name, rules.id, int(rules.untreated_sequela_max_health_loss),
+		int(individual.permanent_max_health_loss)])
+
+
 # A letto e con un rimedio utile: lo deve portare un guaritore (HealJobProvider); chi non è a letto se lo prende da sé.
 static func needs_remedy_from_healer(individual: HumanIndividual) -> bool:
 	return requires_bed_rest(individual) and not useful_remedies(individual).is_empty()
@@ -175,8 +196,10 @@ static func phase_changes(individual: HumanIndividual, before: Dictionary) -> Ar
 	return changes
 
 
+# Salute senza limite a 0 (2026-10-25): advance_daily è chiamata solo da HumanVitalsInteractionService.apply_daily_interaction,
+# che somma tutte le voci del giorno e limita una volta sola alla fine.
 static func _lose(individual: HumanIndividual, health_loss: float, happiness_loss: float) -> void:
-	individual.current_health = maxf(individual.current_health - health_loss, 0.0)
+	individual.current_health -= health_loss
 	individual.current_happiness = maxf(individual.current_happiness - happiness_loss, 0.0)
 
 

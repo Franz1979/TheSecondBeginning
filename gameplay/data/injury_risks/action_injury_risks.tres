@@ -1,0 +1,62 @@
+[gd_resource type="Resource" script_class="ActionInjuryRisks" format=3]
+
+[ext_resource type="Script" path="res://gameplay/scripts/core/ActionInjuryRisks.gd" id="1_air"]
+
+[resource]
+script = ExtResource("1_air")
+risks_by_action_key = {
+"hunt_throw": {
+"activity": "injury_activity_hunting",
+"skill_reduction": 0.6,
+"wounds": {
+"laceration": 0.003,
+"fracture": 0.001
+}
+},
+"butcher": {
+"activity": "injury_activity_butchering",
+"skill_reduction": 0.6,
+"wounds": {
+"laceration": 0.005
+}
+},
+"cut": {
+"activity": "injury_activity_cutting",
+"skill_reduction": 0.6,
+"wounds": {
+"laceration": 0.0005,
+"fracture": 0.0002
+}
+},
+"quarry": {
+"activity": "injury_activity_quarrying",
+"skill_reduction": 0.6,
+"wounds": {
+"laceration": 0.0003,
+"fracture": 0.0004
+}
+},
+"build": {
+"activity": "injury_activity_building",
+"skill_reduction": 0.6,
+"wounds": {
+"laceration": 0.0007,
+"fracture": 0.0005
+}
+},
+"produce": {
+"activity": "injury_activity_working",
+"skill_reduction": 0.6,
+"wounds": {
+"laceration": 0.0005,
+"burn": 0.0004
+}
+},
+"pickup": {
+"activity": "injury_activity_gathering",
+"skill_reduction": 0.6,
+"wounds": {
+"laceration": 0.0001
+}
+}
+}

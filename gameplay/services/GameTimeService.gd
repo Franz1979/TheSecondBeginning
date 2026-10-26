@@ -171,9 +171,9 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	_apply_daily_vitals_interaction()
 	# Morte per malattia (2026-10-24, richiesta utente): dopo l'interazione dei vitali, che cambia la salute.
 	_apply_daily_illness_deaths()
-	# Malati (2026-10-24, richiesta utente): dopo l'interazione dei vitali, che cambia la salute, i lavori in coda di chi
-	# è malato tornano agli altri.
-	SicknessService.release_sick_queues(_human_individuals)
+	# Malati (2026-10-24, richiesta utente): dopo l'interazione dei vitali, che cambia la salute, chi è malato va a letto
+	# (2026-10-25: lascia anche il compito in corso, come con H) e i suoi lavori tornano agli altri.
+	SicknessService.release_sick_queues(_build_random_event_context(null, {}).game_context())
 	_advance_daily_individual_resource_decay()
 	_run_daily_random_events()
 	# Mucchi a terra (2026-09-26, ground drop): deperimento a velocità doppia e durata massima, vedi
@@ -416,6 +416,8 @@ func _apply_daily_vitals_interaction() -> void:
 	if not (heating["changed"] as Array).is_empty():
 		houses_heating_changed.emit(heating["changed"])
 	var cold := HouseHeatingService.is_cold_season(season)
+	# Contagio (2026-10-25, ContagionService): contagiosi per casa, una volta sola; vuoto = nessun tiro.
+	var contagion_sources := ContagionService.household_sources(_human_individuals)
 	for individual in _human_individuals:
 		var home_multiplier := float(home_multipliers.get(individual.house_id, 1.0))
 		if cold and not heated.has(individual.house_id):
@@ -425,7 +427,12 @@ func _apply_daily_vitals_interaction() -> void:
 		HumanVitalsInteractionService.apply_daily_interaction(individual, home_multiplier, united.has(individual.id))
 		if not phases_before.is_empty():
 			for change in HealthConditionService.phase_changes(individual, phases_before):
+				if String(change["change"]) == "recovered":
+					ContagionService.grant_immunity(individual, String(change["id"]), _game_data)
 				health_condition_changed.emit(individual, String(change["id"]), String(change["change"]))
+		# Fine dell'incubazione (malattia che si manifesta: a letto con SicknessService.release_sick_queues) e tiri di casa.
+		for condition_id in ContagionService.advance_daily(individual, contagion_sources, _game_data):
+			health_condition_changed.emit(individual, condition_id, "onset")
 
 
 # Avanzamento giornaliero della decay_fraction di ogni varietà di HumanIndividual.carried_resources per l'INTERA popolazione
@@ -722,6 +729,8 @@ func _run_annual_human_conception() -> void:
 	var excluded_self_not_fertile: Array[HumanIndividual] = result["excluded_self_not_fertile"]
 	var excluded_partner_not_fertile: Array[HumanIndividual] = result["excluded_partner_not_fertile"]
 	var excluded_partner_missing: Array[HumanIndividual] = result["excluded_partner_missing"]
+	var excluded_self_sick: Array[HumanIndividual] = result["excluded_self_sick"]
+	var excluded_partner_sick: Array[HumanIndividual] = result["excluded_partner_sick"]
 	var discarded_for_spacing: Array[HumanIndividual] = result["discarded_for_spacing"]
 	var candidates: Array[HumanIndividual] = result["candidates"]
 	var newly_pregnant: Array[HumanIndividual] = result["newly_pregnant"]
@@ -737,6 +746,7 @@ func _run_annual_human_conception() -> void:
 	var excluded_total := (
 		excluded_already_pregnant.size() + excluded_self_not_fertile.size()
 		+ excluded_partner_not_fertile.size() + excluded_partner_missing.size()
+		+ excluded_self_sick.size() + excluded_partner_sick.size()
 	)
 	var total_couples := eligible_women.size() + excluded_total
 	var excluded_details: Array[String] = []
@@ -748,6 +758,10 @@ func _run_annual_human_conception() -> void:
 		excluded_details.append("#%d %s (partner non più fertile)" % [woman.id, woman.name])
 	for woman in excluded_partner_missing:
 		excluded_details.append("#%d %s (partner introvabile)" % [woman.id, woman.name])
+	for woman in excluded_self_sick:
+		excluded_details.append("#%d %s (lei a letto)" % [woman.id, woman.name])
+	for woman in excluded_partner_sick:
+		excluded_details.append("#%d %s (partner a letto)" % [woman.id, woman.name])
 
 	# Stage "scartate per spaziamento" SEMPRE presente, anche a zero (richiesta utente, 2026-09-06 —
 	# la sua ASSENZA veniva letta come "il controllo non è stato fatto", non come "0 scartate":
@@ -757,7 +771,7 @@ func _run_annual_human_conception() -> void:
 	var stages: Array[String] = []
 	stages.append("%d coppie totali" % total_couples)
 	stages.append(
-		"%d escluse per fertilità/gravidanza%s" % [
+		"%d escluse per fertilità/gravidanza/salute%s" % [
 			excluded_total, (": " + ", ".join(excluded_details)) if excluded_total > 0 else ""
 		]
 	)
@@ -857,7 +871,8 @@ func _run_annual_human_births() -> void:
 				)
 			# Casa per chi ne è senza (2026-10-18, refactoring GameScene blocco 5c — prima in GameScene, subito prima della
 			# vista del neonato).
-			AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.year)
+			AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.year, {},
+				"nascita di %s #%d" % [newborn.name, newborn.id])
 			individual_born.emit(newborn)
 		else:
 			human_stillbirth.emit(mother)
@@ -890,6 +905,8 @@ func _run_annual_human_births() -> void:
 		var roll: Dictionary = entry["survival_roll"]
 		var mother_roll_text := "SUCCESSO" if roll["mother_survived_roll"] else "FALLIMENTO"
 		var mother_outcome_suffix := "" if roll["mother_survived_roll"] else " | MADRE DECEDUTA (causa: parto)"
+		if roll.get("mother_bedridden", false):
+			mother_outcome_suffix = " | madre a letto" + mother_outcome_suffix
 		if newborn != null:
 			details.append(
 				"#%d %s -> #%d %s (padre #%d) [sopravvivenza_figlio: %.1f%% -> SUCCESSO, sopravvivenza_madre: %.1f%% -> %s]%s" % [
@@ -954,8 +971,12 @@ func _run_annual_human_mortality_determination() -> void:
 			var probability := HumanCalculator.get_annual_death_probability(
 				age, _human_folk.human_rules_ref, durations_male, durations_female
 			)
-			print("[HUMAN MORTALITY DEBUG] #%d %s eta'=%d age_band=%s probabilita'=%.4f" % [
-				individual.id, individual.name, age, HumanTypes.AgeBand.keys()[age_band], probability
+			# Salute al tiro (2026-10-25): proporzione, moltiplicatore e probabilità finale usata da check_mortality.
+			var health_ratio := HumanMortalityIndividualService.get_health_ratio(individual)
+			var health_multiplier := HumanCalculator.get_mortality_health_multiplier(_human_folk.human_rules_ref, health_ratio)
+			print("[HUMAN MORTALITY DEBUG] #%d %s eta'=%d age_band=%s probabilita'=%.4f salute=%.0f%% x%.2f -> %.4f" % [
+				individual.id, individual.name, age, HumanTypes.AgeBand.keys()[age_band], probability,
+				health_ratio * 100.0, health_multiplier, probability * health_multiplier
 			])
 	var marked := HumanMortalityIndividualService.check_mortality(
 		_human_individuals, _human_folk.human_rules_ref, _game_data.year, durations_male, durations_female
@@ -1176,7 +1197,8 @@ func _kill_individual(
 	individual_died.emit(individual, index, age_at_death, partner_freed, cause, day)
 	_human_individuals.remove_at(index)
 	# Case dei vivi riassegnate (2026-10-18, refactoring GameScene blocco 5c — prima in GameScene._on_human_individual_died).
-	AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.year)
+	AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.year, {},
+		"morte di %s #%d" % [individual.name, individual.id])
 	return partner_freed
 
 

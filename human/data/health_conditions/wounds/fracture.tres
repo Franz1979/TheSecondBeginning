@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="HealthConditionRules" format=3]
+
+[ext_resource type="Script" path="res://human/scripts/core/HealthConditionRules.gd" id="1_condition"]
+
+[resource]
+script = ExtResource("1_condition")
+id = "fracture"
+display_name = "wound_fracture"
+category = 1
+severity = 1
+age_bands = Array[int]([2, 3, 4, 5])
+immediate_health_loss = 2000.0
+min_duration_days = 20
+max_duration_days = 35
+daily_health_loss = 40.0
+daily_happiness_loss = 80.0
+bed_rest = true
+recovery_health_ratio = 0.5
+convalescence_daily_health_loss = 0.0
+convalescence_daily_happiness_loss = 40.0
+convalescence_bed_rest = true
+untreated_sequela_max_health_loss = 500.0

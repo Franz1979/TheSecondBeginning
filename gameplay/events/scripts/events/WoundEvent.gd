@@ -3,8 +3,8 @@ extends RandomEvent
 
 # Ferita (2026-10-25, richiesta utente — ferita di debug): un pipottino vivo a caso che può prenderla
 # (HealthConditionService.can_get: non già lacerato, fascia d'età ammessa) riceve una lacerazione. Stesso schema di
-# IllnessEvent: da subito è a letto, la sua coda torna agli altri (SicknessService). annual_probability 0: si lancia dal
-# menu eventi della barra di debug.
+# IllnessEvent: da subito è a letto, lascia il compito in corso come con H e la sua coda torna agli altri
+# (SicknessService.on_bedridden). annual_probability 0: si lancia dal menu eventi della barra di debug.
 
 const WOUND_ID := "laceration"
 
@@ -22,7 +22,7 @@ func apply(context: RandomEventContext) -> bool:
 	if not HealthConditionService.add_condition(_victim, WOUND_ID, context.game_data):
 		_victim = null
 		return false
-	SicknessService.release_queued_tasks(_victim, context.human_individuals)
+	SicknessService.on_bedridden(context.game_context(), _victim, GameEffects.new())
 	if DebugLogging.ENABLED:
 		print("[WOUND] #%d %s si ferisce: %s (salute %.1f/%.1f)." % [
 			_victim.id, _victim.name, HealthConditionService.debug_text(_victim), _victim.current_health, _victim.max_health

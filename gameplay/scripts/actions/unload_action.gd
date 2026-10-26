@@ -706,7 +706,8 @@ func _complete_unequip(individual: Variant, context: Dictionary) -> void:
 		return
 	# Cambio del guardaroba (2026-10-22): mai nudi — il vecchio si toglie solo se il nuovo è già nello zaino.
 	if unequip_apparel and replace_with_apparel != "" and individual.get_carried_quantity(replace_with_apparel) <= 0:
-		print("[WARDROBE] #%d %s: %s non è nello zaino, si tiene %s." % [individual.id, individual.name, replace_with_apparel, tool_name])
+		if DebugLogging.ENABLED and DebugLogging.SHOW_WARDROBE_LOGS:
+			print("[WARDROBE] #%d %s: %s non è nello zaino, si tiene %s." % [individual.id, individual.name, replace_with_apparel, tool_name])
 		return
 	# Usi residui conservati (2026-09-26, attrezzi come istanze): l'attrezzo entra nel magazzino con il
 	# suo stato (tra i nuovi se a usi pieni, come istanza se consumato). Un capo di vestiario (2026-10-11) entra con
@@ -722,7 +723,8 @@ func _complete_unequip(individual: Variant, context: Dictionary) -> void:
 		individual.take_equipped_apparel(unequip_slot_index)
 		if replace_with_apparel != "":
 			var worn: bool = individual.equip_apparel_from_backpack(replace_with_apparel, unequip_slot_index)
-			print("[WARDROBE] #%d %s: %s riposto in %s #%d%s." % [
+			if DebugLogging.ENABLED and DebugLogging.SHOW_WARDROBE_LOGS:
+				print("[WARDROBE] #%d %s: %s riposto in %s #%d%s." % [
 				individual.id, individual.name, tool_name, target_building.get_display_name(), target_building.id,
 				(", indossa %s" % replace_with_apparel) if worn else ", %s non indossato" % replace_with_apparel,
 			])

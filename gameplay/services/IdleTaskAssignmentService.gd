@@ -325,11 +325,19 @@ static func resolve_daydream_around_position(individual: HumanIndividual, distan
 
 # Eleggibilita' di leisure_restock nel sorteggio idle: spazio libero nelle provviste >=
 # LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO x capacita'. Capacita' <= 0 -> non eleggibile.
+# Anche sulle calorie (2026-10-25, bugfix "Merik malato in giro sul magazzino"): il prelievo si ferma al tetto di
+# autonomia (HumanIndividualActionService.get_restock_pouch_calorie_cap), quindi con la sacca mezza vuota di cibi
+# calorici prendeva 0 e ripartiva. Stessa soglia sul margine di calorie sotto il tetto; tetto INF = solo lo spazio.
 static func _is_leisure_restock_eligible(individual: HumanIndividual) -> bool:
 	if individual.food_space_capacity <= 0.0:
 		return false
 	var free_space: float = individual.food_space_capacity - individual.food_space_used
-	return free_space >= LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO * individual.food_space_capacity
+	if free_space < LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO * individual.food_space_capacity:
+		return false
+	var calorie_cap: float = HumanIndividualActionService.get_restock_pouch_calorie_cap(individual)
+	if is_inf(calorie_cap):
+		return true
+	return calorie_cap - individual.food_calories_held >= LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO * calorie_cap
 
 
 # Costruisce la Task runtime per UNO dei path di IDLE_FALLBACK_TASK_PATHS — match ESPLICITO per

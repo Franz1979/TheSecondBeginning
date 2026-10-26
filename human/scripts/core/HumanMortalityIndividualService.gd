@@ -64,7 +64,10 @@ static func check_mortality(
 		var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, float(age))
 		if age_band != HumanTypes.AgeBand.MATURE_ADULT and age_band != HumanTypes.AgeBand.OLD:
 			continue
-		if randf() < HumanCalculator.get_annual_death_probability(age, rules, durations_male, durations_female):
+		# Salute al momento del tiro (2026-10-25, richiesta utente): moltiplicatore da HumanRules.mortality_health_*.
+		var probability := HumanCalculator.get_annual_death_probability(age, rules, durations_male, durations_female) \
+			* HumanCalculator.get_mortality_health_multiplier(rules, get_health_ratio(individual))
+		if randf() < probability:
 			# 0..DAYS_PER_YEAR-1 (0..364), non 0..365: stesso range di GameData.current_day — 365
 			# non è mai un giorno valido (GameData.advance_day avvolge a 0 prima di raggiungerlo).
 			individual.scheduled_death_day = randi() % GameData.DAYS_PER_YEAR
@@ -74,3 +77,10 @@ static func check_mortality(
 			individual.scheduled_death_cause = DeathTypes.DeathCause.OLD_AGE
 			marked_for_death.append(individual)
 	return marked_for_death
+
+
+# Salute attuale / salute massima della sua fascia (0 se il massimo non è valido), letta al tiro annuale.
+static func get_health_ratio(individual: HumanIndividual) -> float:
+	if individual.max_health <= 0.0:
+		return 0.0
+	return clampf(individual.current_health / individual.max_health, 0.0, 1.0)

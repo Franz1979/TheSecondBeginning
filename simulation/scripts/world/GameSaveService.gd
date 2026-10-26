@@ -685,6 +685,11 @@ func save_game_to_json(
 				"max_health": individual.max_health,
 				# Condizioni di salute in corso (2026-10-25, HealthConditionService).
 				"health_conditions": individual.health_conditions,
+				# Postumi permanenti (2026-10-26).
+				"permanent_max_health_loss": individual.permanent_max_health_loss,
+				# Contagio (2026-10-25, ContagionService): incubazioni e immunità.
+				"incubating_conditions": individual.incubating_conditions,
+				"immunities": individual.immunities,
 				"current_happiness": individual.current_happiness,
 				"max_happiness": individual.max_happiness,
 				"current_loyalty": individual.current_loyalty,

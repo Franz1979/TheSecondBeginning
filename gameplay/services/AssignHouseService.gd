@@ -72,14 +72,25 @@ static func count_free_slots(world: World, human_individuals: Array[HumanIndivid
 	return free_slots
 
 
+# Motivo della chiamata in corso (2026-10-25, richiesta utente — log): riga "[ASSIGN HOUSE] Motivo: …" stampata una
+# volta sola, prima del primo cambio di casa della chiamata; nessun cambio = nessuna riga.
+static var _trigger: String = ""
+static var _trigger_printed: bool = false
+
+
+# `trigger`: perché si riassegna ("casa completata: Capanna #82", "nascita di …"), solo per il log.
 static func assign_pending_residents(
-	world: World, human_individuals: Array[HumanIndividual], current_year: int, priority_by_building: Dictionary = {}
+	world: World, human_individuals: Array[HumanIndividual], current_year: int, priority_by_building: Dictionary = {},
+	trigger: String = ""
 ) -> void:
 	if world == null:
 		return
+	_trigger = trigger
+	_trigger_printed = false
 	_assign_nucleus_houses(world, human_individuals, current_year, priority_by_building)
 	_assign_common_houses(world, human_individuals, current_year)
 	_assign_guest_houses(world, human_individuals, current_year)
+	_trigger = ""
 
 
 # Case di nucleo complete e in servizio.
@@ -145,6 +156,7 @@ static func _assign_nucleus_houses(
 		if waiting.is_empty():
 			return
 		var chosen := ""
+		var reason := "aveva la precedenza: viveva qui prima del miglioramento"
 		for resident_id in priority_by_building.get(house.id, []):
 			var key := String(by_member.get(int(resident_id), ""))
 			if key != "" and waiting.has(key):
@@ -152,7 +164,14 @@ static func _assign_nucleus_houses(
 				break
 		if chosen == "":
 			chosen = String(waiting[0])
+			if waiting.size() == 1:
+				reason = "unico nucleo senza casa di nucleo"
+			elif (nuclei["members"][waiting[1]] as Array).size() == (nuclei["members"][chosen] as Array).size():
+				reason = "a parità di membri, quello col membro più anziano"
+			else:
+				reason = "il nucleo più numeroso senza casa di nucleo"
 		waiting.erase(chosen)
+		_log_nucleus_choice(house, chosen, nuclei, reason, waiting)
 		housed[chosen] = house
 		_fit_nucleus(house, chosen, nuclei, current_year)
 	# Nuclei ancora in attesa: si riprendono le case senza nucleo, dalla meno abitata.
@@ -167,6 +186,7 @@ static func _assign_nucleus_houses(
 		if waiting.is_empty():
 			return
 		var chosen := String(waiting.pop_front())
+		_log_nucleus_choice(house, chosen, nuclei, "nessuna hut vuota: si riprende la hut senza nucleo meno abitata", waiting)
 		for guest in guest_houses[house.id]:
 			if (guest as HumanIndividual).house_id == house.id:
 				_move_out(guest, house, "esce: la hut serve a un nucleo")
@@ -270,9 +290,40 @@ static func _move_out(individual: HumanIndividual, house: Building, reason: Stri
 # Riga [ASSIGN HOUSE] (2026-10-22, richiesta utente — sempre stampata, come [EVICTION]): solo quando qualcuno cambia
 # davvero casa, quindi il controllo giornaliero non scrive nulla se nulla cambia. `to` null = resta senza casa.
 static func _log_house(individual: HumanIndividual, from_house_id: int, to: Building, reason: String) -> void:
+	_print_trigger_once()
 	var from_text := "senza casa" if from_house_id == -1 else "casa #%d" % from_house_id
 	var to_text := "senza casa" if to == null else "%s #%d" % [to.get_display_name(), to.id]
 	print("[ASSIGN HOUSE] #%d %s: da %s a %s (%s)." % [individual.id, individual.name, from_text, to_text, reason])
+
+
+static func _print_trigger_once() -> void:
+	if _trigger_printed:
+		return
+	_trigger_printed = true
+	print("[ASSIGN HOUSE] Motivo: %s." % (_trigger if _trigger != "" else "non indicato"))
+
+
+# Riga della scelta del nucleo per una casa di nucleo (2026-10-25, richiesta utente): a chi va, perché, e chi resta in
+# attesa (già tolto il prescelto da `waiting`).
+static func _log_nucleus_choice(house: Building, nucleus_key: String, nuclei: Dictionary, reason: String, waiting: Array) -> void:
+	_print_trigger_once()
+	var others: Array[String] = []
+	for key in waiting:
+		others.append(_nucleus_label(nuclei, String(key)))
+	print("[ASSIGN HOUSE] %s #%d al %s: %s. In attesa: %s." % [
+		house.get_display_name(), house.id, _nucleus_label(nuclei, nucleus_key), reason,
+		"nessuno" if others.is_empty() else "; ".join(others),
+	])
+
+
+# "nucleo di Tumak e Vasha (6 membri)": i capi del nucleo e quanti sono in tutto.
+static func _nucleus_label(nuclei: Dictionary, nucleus_key: String) -> String:
+	var members: Array = nuclei["members"][nucleus_key]
+	var heads: Array[String] = []
+	for member in members:
+		if FamilyNucleusService.is_head(nuclei, nucleus_key, member):
+			heads.append((member as HumanIndividual).name)
+	return "nucleo di %s (%d membri)" % [" e ".join(heads), members.size()]
 
 
 # Residenti per casa in un solo giro: house_id -> Array di HumanIndividual.

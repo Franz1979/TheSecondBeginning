@@ -114,6 +114,9 @@ signal cancel_empty_pit_requested(building: Building)
 signal waste_closed_toggle_requested(building: Building)
 # Cancello (2026-10-23): Apri/Chiudi.
 signal gate_toggle_requested(building: Building)
+# Edifici sulla stessa microcella (2026-10-25, richiesta utente): una riga "Anche qui:" chiede di selezionare quell'edificio
+# (show_shared_building_links).
+signal shared_building_requested(building: Building)
 
 # Icone di influenza (2026-10-02, richiesta utente — sostituiscono il bottone "Mostra influenza"): una per tipo
 # (politica, cultura, religione), nell'intestazione della scheda accanto al 🎯. Clic: GameScene mostra per qualche
@@ -246,6 +249,9 @@ const STORAGE_SLOT_OVER_CAPACITY_MODULATE := Color(1.0, 0.5, 0.5, 0.75)
 # edificio MOVEMENT, dove un mucchio può stare): vedi show_ground_pile.
 @onready var ground_pile_caption: Label = $GroundPileCaption
 @onready var ground_pile_container: VBoxContainer = $GroundPileContainer
+# Righe degli altri edifici sulla stessa microcella (show_shared_building_links), contenitore creato in _ready prima delle
+# impostazioni.
+var _shared_links_box: VBoxContainer
 @onready var settings_separator: HSeparator = $SettingsSeparator
 @onready var settings_caption: Label = $SettingsCaption
 @onready var accepted_categories_caption: Label = $AcceptedCategoriesCaption
@@ -416,6 +422,11 @@ func _ready() -> void:
 	_buried_box.add_theme_constant_override("separation", 0)
 	add_child(_buried_box)
 	move_child(_buried_box, _sacredness_box.get_index() + 1)
+	# In fondo ai dati dell'edificio, subito prima delle impostazioni (2026-10-25, richiesta utente).
+	_shared_links_box = VBoxContainer.new()
+	_shared_links_box.add_theme_constant_override("separation", 0)
+	add_child(_shared_links_box)
+	move_child(_shared_links_box, settings_separator.get_index())
 	_build_durability_rows()
 	_build_repair_materials_rows()
 	_build_waste_rows()
@@ -1516,6 +1527,7 @@ func clear() -> void:
 	_end_influence_preview()
 	_current_building = null
 	show_ground_pile([])
+	show_shared_building_links([])
 
 
 # Contenuto del mucchio a terra nella stessa microcella dell'edificio (2026-09-26, ground drop), una riga per
@@ -1533,6 +1545,33 @@ func show_ground_pile(lines: Array[String]) -> void:
 		label.add_theme_font_size_override("font_size", 10)
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		ground_pile_container.add_child(label)
+
+
+# Altri edifici sulla stessa microcella (2026-10-25, richiesta utente): `links` = [{"building", "text"}], testo già
+# composto da GameScene ("Anche qui: …" con lo stato); vuoto = nessuna riga. Chiamata dopo show_building.
+func show_shared_building_links(links: Array[Dictionary]) -> void:
+	for child in _shared_links_box.get_children():
+		child.queue_free()
+	_shared_links_box.visible = not links.is_empty()
+	# Testo normale + pulsante 🔄 a destra (2026-10-25, richiesta utente): si capisce che il click cambia edificio.
+	for link in links:
+		var other: Building = link["building"]
+		var row := HBoxContainer.new()
+		var label := Label.new()
+		label.text = String(link["text"])
+		label.add_theme_font_size_override("font_size", 10)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(label)
+		var button := Button.new()
+		button.text = "🔄"
+		button.custom_minimum_size = Vector2(28, 24)
+		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		button.tooltip_text = TooltipText.wrap(tr("building_shared_microcell_tooltip"))
+		button.pressed.connect(func(): shared_building_requested.emit(other))
+		row.add_child(button)
+		_shared_links_box.add_child(row)
 
 
 # Fase di lavorazione ATTIVA (2026-09-14, richiesta utente — ESTRATTA da _refresh_construction_

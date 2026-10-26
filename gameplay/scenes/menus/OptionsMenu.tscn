@@ -164,6 +164,16 @@ size_flags_horizontal = 3
 [node name="CheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/AlertSoundRow"]
 layout_mode = 2
 
+[node name="HealthIconsRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/HealthIconsRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/HealthIconsRow"]
+layout_mode = 2
+
 [node name="HSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 

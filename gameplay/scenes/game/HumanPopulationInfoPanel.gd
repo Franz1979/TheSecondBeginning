@@ -46,6 +46,14 @@ const COLOR_HOUSING_ALERT := Color(0.9, 0.3, 0.3)
 # sentinella "nessuna casa" già in uso ovunque per questo campo).
 const HOUSE_ICON_TEXT := "🏠"
 
+# Icone di salute per riga (2026-10-25, richiesta utente): gli stessi distintivi sopra la testa (HealthConditionIcon,
+# senza punta), in fondo alla riga del task (sulla riga del nome coprivano i pulsanti delle azioni). Scala 3: distintivo di
+# ~13 px, si riconosce senza alzare troppo la riga (a 2.0 era un pallino). Con i task nascosti non si vedono.
+const HEALTH_ICON_SCALE: float = 3.0
+# Larghezza di un distintivo e spazio tra due affiancati, in pixel della lista.
+const HEALTH_BADGE_WIDTH: float = (HealthConditionIcon.RADIUS + HealthConditionIcon.OUTLINE_WIDTH) * 2.0 * HEALTH_ICON_SCALE
+const HEALTH_BADGE_GAP: float = HealthConditionIcon.GAP * HEALTH_ICON_SCALE
+
 # Riga task per-individuo (2026-09-18, richiesta utente — "accanto al pipottino anche la task che
 # sta facendo... scrivilo nella riga sotto un po' indentata e metti un button hide tasks che
 # ricompatta le righe") — SOTTO la riga esistente, non affiancata: allargherebbe il pannello, cosa
@@ -127,8 +135,8 @@ const COMMAND_BUTTON_SIZE: float = 18.0
 const COMMAND_BUTTON_SEPARATION: int = 1
 const COMMAND_BUTTON_DISABLED_MODULATE := Color(1, 1, 1, 0.35)
 var command_state_provider: Callable = Callable()
-# Una voce per riga: {"member", "wrapper" (blocco nome + task), "name_row", "house_icon" (Control o null),
-# "name_spacer", "task_spacer"}.
+# Una voce per riga: {"member", "wrapper" (blocco nome + task), "name_row", "house_icon" (dove finisce il riquadro dei
+# pulsanti), "health_slot", "health_icon", "name_spacer", "task_spacer", "task_label"}.
 var _command_rows: Array[Dictionary] = []
 var _hovered_command_row: int = -1
 var _command_overlay: HBoxContainer = null
@@ -341,20 +349,20 @@ func show_population(
 		var name_spacer := Control.new()
 		name_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(name_spacer)
-		var house_icon_node: Control = null
 
-		# Simbolo casa (2026-09-12, richiesta utente) — SOLO se ha una casa assegnata, nessun
-		# placeholder/spazio vuoto per chi non ce l'ha (stesso principio "assente = niente" già
-		# seguito altrove, es. is_pregnant sulla stessa riga dell'age_band in HumanIndividualInfoPanel).
+		# Simbolo casa (2026-09-12, richiesta utente). Posto riservato anche senza casa (2026-10-25): stesso glifo
+		# trasparente, così le case restano in colonna su tutte le righe.
+		var house_icon := Label.new()
+		house_icon.text = HOUSE_ICON_TEXT
+		house_icon.add_theme_font_size_override("font_size", 10)
 		if member.house_id != -1:
-			var house_icon := Label.new()
-			house_icon.text = HOUSE_ICON_TEXT
-			house_icon.add_theme_font_size_override("font_size", 10)
 			house_icon.tooltip_text = TooltipText.wrap("ID Casa: %d" % member.house_id)
 			# Tiene il suo clic (2026-10-07): un clic sulla casa non seleziona la riga.
 			house_icon.mouse_filter = Control.MOUSE_FILTER_STOP
-			row.add_child(house_icon)
-			house_icon_node = house_icon
+		else:
+			house_icon.modulate = Color(1, 1, 1, 0)
+			house_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(house_icon)
 
 		# Riga task indentata, SOTTO la riga dell'individuo (2026-09-18, richiesta utente) —
 		# row_wrapper (VBoxContainer) tiene insieme le due righe come un solo blocco, così l'ordine
@@ -394,11 +402,24 @@ func show_population(
 		var task_spacer := Control.new()
 		task_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		task_line.add_child(task_spacer)
+		# Icone di salute in fondo alla riga del task (2026-10-25, spostate dalla riga del nome dove coprivano i pulsanti
+		# delle azioni): larghe quanto i distintivi presenti, nascoste mentre la riga mostra i pulsanti.
+		var health_slot := Control.new()
+		health_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var health_icon := HealthConditionIcon.new()
+		health_icon.show_tail = false
+		health_icon.scale = Vector2.ONE * HEALTH_ICON_SCALE
+		health_icon.visible = false
+		health_slot.add_child(health_icon)
+		health_slot.resized.connect(func() -> void: health_icon.position = health_slot.size * 0.5)
+		task_line.add_child(health_slot)
+		_update_health_slot(member, health_slot, health_icon)
 		task_margin.add_child(task_line)
 		row_wrapper.add_child(task_margin)
 		_task_rows.append(task_margin)
 		_command_rows.append({
-			"member": member, "wrapper": row_wrapper, "name_row": row, "house_icon": house_icon_node,
+			"member": member, "wrapper": row_wrapper, "name_row": row, "house_icon": house_icon,
+			"health_slot": health_slot, "health_icon": health_icon,
 			"name_spacer": name_spacer, "task_spacer": task_spacer, "task_label": task_label,
 		})
 
@@ -425,6 +446,27 @@ func refresh_task_texts() -> void:
 		if task_label.text != text:
 			task_label.text = text
 			task_label.tooltip_text = TooltipText.wrap(text)
+		# Icone di salute (2026-10-25) allo stesso giro: compaiono e spariscono senza ricostruire la lista.
+		_update_health_slot(member, row_data["health_slot"], row_data["health_icon"])
+
+
+# Stati delle icone di salute dalle condizioni dell'individuo (HealthConditionIcon.states_for, la stessa della testa),
+# larghezza secondo i distintivi presenti (0 senza condizioni: il task usa tutta la riga); tooltip con i nomi delle
+# condizioni, come accanto a "Salute" nel pannello individuo.
+func _update_health_slot(member: HumanIndividual, health_slot: Control, health_icon: HealthConditionIcon) -> void:
+	if not is_instance_valid(health_slot) or not is_instance_valid(health_icon):
+		return
+	var states := HealthConditionIcon.states_for(member)
+	health_icon.set_states(states[0], states[1])
+	var badge_count := int(states[0] != HealthConditionIcon.State.NONE) + int(states[1] != HealthConditionIcon.State.NONE)
+	var width := 0.0 if badge_count == 0 else HEALTH_BADGE_WIDTH * badge_count + HEALTH_BADGE_GAP * (badge_count - 1)
+	health_slot.custom_minimum_size = Vector2(width, HEALTH_BADGE_WIDTH if badge_count > 0 else 0.0)
+	if health_icon.visible:
+		health_slot.tooltip_text = TooltipText.wrap(HealthConditionService.display_names(member))
+		health_slot.mouse_filter = Control.MOUSE_FILTER_STOP
+	else:
+		health_slot.tooltip_text = ""
+		health_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 # Riga sotto il mouse (2026-10-04): solo lei mostra i pulsanti delle azioni. Controllo per posizione, non con i segnali
@@ -454,6 +496,10 @@ func _set_command_row_buttons(index: int, shown: bool) -> void:
 	_clear_command_overlay()
 	_set_spacer_width(entry["name_spacer"], 0.0)
 	_set_spacer_width(entry["task_spacer"], 0.0)
+	# Icone di salute nascoste mentre la riga mostra i pulsanti (starebbero sotto il loro riquadro).
+	var health_slot: Variant = entry.get("health_slot")
+	if health_slot != null and is_instance_valid(health_slot):
+		(health_slot as Control).visible = not shown
 	if not shown or not command_state_provider.is_valid() or not is_instance_valid(entry["wrapper"]):
 		return
 	var member: HumanIndividual = entry["member"]
@@ -482,7 +528,7 @@ func _command_button_side(entry: Dictionary) -> float:
 	return minf(COMMAND_BUTTON_SIZE, maxf(name_row.size.y, 1.0))
 
 
-# Riquadro a destra, con il bordo destro dove inizia l'icona della casa (o alla fine della riga del nome senza casa),
+# Riquadro a destra, con il bordo destro dove inizia l'icona della casa (posto sempre presente, anche senza casa),
 # centrato in verticale sul blocco nome più task; lo spaziatore della riga del task copre la stessa fascia, così il
 # testo del task si tronca sotto i pulsanti.
 func _place_command_overlay() -> void:

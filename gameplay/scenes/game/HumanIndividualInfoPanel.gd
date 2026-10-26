@@ -619,6 +619,9 @@ func show_individual(
 		health_tooltip += "\n" + "\n".join(HealthConditionService.tooltip_lines(individual))
 	elif individual != null and individual.is_sick():
 		health_tooltip += "\n" + tr("health_condition_low_health_tooltip")
+	# Postumi permanenti (2026-10-26): sempre, anche da guarito.
+	if individual != null and individual.permanent_max_health_loss > 0.0:
+		health_tooltip += "\n" + tr("health_sequela_line").format({"amount": int(individual.permanent_max_health_loss)})
 	health_bar.tooltip_text = TooltipText.wrap(health_tooltip)
 
 	mind_section_label.text = tr("individual_mind_section_label")

@@ -42,16 +42,28 @@ static func get_factor(action_key: String, individual: Variant, skill_override: 
 	if effects == null or not effects.effects_by_action_key.has(action_key):
 		return 1.0
 	var entry: Dictionary = effects.effects_by_action_key[action_key]
+	return 1.0 + float(entry.get("bonus", 0.0)) * get_skill_ratio(action_key, individual, skill_override)
+
+
+# Livello della skill dell'azione `action_key` per `individual`, da 0 a 1 (clamp(skill / skill_max)); 0 se la chiave è
+# vuota, non è in tabella, la skill non esiste sull'individuo o skill_max non è positivo. Usato anche dal rischio di
+# ferirsi (InjuryRollService, 2026-10-25).
+static func get_skill_ratio(action_key: String, individual: Variant, skill_override: String = "") -> float:
+	if action_key == "" or individual == null:
+		return 0.0
+	var effects := _get_effects()
+	if effects == null or not effects.effects_by_action_key.has(action_key):
+		return 0.0
+	var entry: Dictionary = effects.effects_by_action_key[action_key]
 	var skill_name := skill_override if skill_override != "" else String(entry.get("skill", ""))
 	var skill_max := float(entry.get("skill_max", 0.0))
-	var bonus := float(entry.get("bonus", 0.0))
 	if skill_name == "" or skill_max <= 0.0:
-		return 1.0
+		return 0.0
 	var skill_value: Variant = individual.get(skill_name)
 	if skill_value == null:
 		push_warning("SkillEffectService: '%s' non e' una property dell'individuo (chiave '%s')." % [skill_name, action_key])
-		return 1.0
-	return 1.0 + bonus * clampf(float(skill_value) / skill_max, 0.0, 1.0)
+		return 0.0
+	return clampf(float(skill_value) / skill_max, 0.0, 1.0)
 
 
 static func _get_effects() -> SkillActionEffects:

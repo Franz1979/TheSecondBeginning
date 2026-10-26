@@ -333,3 +333,6 @@ extends Resource
 @export var remedy_health_restore: float = 0.0
 # true = nel giorno dell'applicazione la condizione curata non toglie salute.
 @export var remedy_blocks_daily_loss: bool = false
+# true (2026-10-25, richiesta utente — steccatura) = il rimedio si applica una volta sola: resta segnato sulla
+# condizione fino alla guarigione (niente seconda dose) e remedy_blocks_daily_loss vale per tutta la condizione.
+@export var remedy_lasts_whole_condition: bool = false

@@ -174,6 +174,11 @@ ground_pile_used_tools_suffix,(remaining uses of used pieces: {uses})
 ground_pile_disappears_label,Disappears in {days} days
 ground_pile_terrain_header,On the ground here
 building_ground_pile_caption,Pile on the ground here:
+building_shared_microcell,Also present: {name} #{id} — {status}
+building_layer_materials,materials {delivered}/{required}
+building_layer_labor,work {done}/{required}
+building_layer_awaiting_material,awaiting material
+building_shared_microcell_tooltip,Switch to this building (it is on the same microcell)
 microcell_inspection_ground_pile_header,Pile on the ground:
 microcell_inspection_unknown_resource,- Unknown resource
 storage_slot_auto_progress_tooltip,Ready in {days} days
@@ -439,13 +444,32 @@ individual_health_sick_suffix,unwell
 random_event_wound_name,Wound
 random_event_wound_popup,{name} is wounded ({wound}): they must rest until they recover.
 wound_laceration,laceration
+wound_fracture,fracture
+wound_burn,burn
+injury_activity_hunting,hunting
+injury_activity_butchering,butchering
+injury_activity_cutting,cutting wood
+injury_activity_quarrying,quarrying stone
+injury_activity_building,building
+injury_activity_working,working
+injury_activity_gathering,gathering
+notification_injury,{name} {verb} while {activity}.
+notification_injury_generic,{name}: {wound} ({activity}).
+injury_verb_laceration_m,got a deep cut
+injury_verb_laceration_f,got a deep cut
+injury_verb_fracture_m,broke a bone
+injury_verb_fracture_f,broke a bone
+injury_verb_burn_m,got burned
+injury_verb_burn_f,got burned
 health_condition_convalescent,recovering from {condition}
 health_condition_phase_acute,acute phase
 health_condition_phase_convalescence,convalescence
 health_condition_bed_rest,bed rest
+health_sequela_line,after-effects: -{amount} max health permanently
 health_condition_low_health_tooltip,"Health too low: must rest, no work."
 notification_condition_convalescence,{name} is convalescent ({condition}): this lasts until their health recovers.
 notification_condition_recovered,{name} has recovered: {condition}.
+notification_condition_onset,{name} shows symptoms of {condition}: bed rest until recovery.
 debug_random_event_apply,Apply event
 debug_random_event_apply_tooltip,Trigger the chosen event now
 category_name_food,Food
@@ -462,6 +486,8 @@ carried_resource_tooltip_hide_bag,Hide bag
 carried_resource_tooltip_travois,Travois
 carried_resource_tooltip_stone_bowl,Stone bowl
 carried_resource_tooltip_herbal_infusion,Herbal infusion
+carried_resource_tooltip_herbal_ointment,Herbal ointment
+carried_resource_tooltip_splint,Splint
 carried_resource_tooltip_meat,Raw meat
 carried_resource_tooltip_cooked_meat,Cooked meat
 carried_resource_tooltip_dried_meat,Dried meat
@@ -858,6 +884,7 @@ toolkit_tooltip_spare,Spare: {count} ({uses})
 toolkit_tooltip_uses_of,{uses} of {max}
 toolkit_click_to_return_spare,Click: put a spare piece back in storage
 carried_resource_tooltip_dried_hide_bag,Dried hide bag
+carried_resource_tooltip_smoked_hide_bag,Smoked hide bag
 carried_resource_tooltip_stone_spear,Stone-tipped spear
 carried_resource_tooltip_bow,Bow
 carried_resource_tooltip_arrow_bundle,Bundle of arrows
@@ -1020,6 +1047,7 @@ task_assignment_output_cannot_cancel,Nothing to cancel: only the finished produc
 task_deliver_output_name,Deliver finished goods
 pending_material_fuel,fuel
 options_pending_bell_sound,Alert sound (bell)
+options_show_health_icons,Show individuals' health icons
 task_assignment_kind_produce,Production orders
 task_assignment_produce_row,{recipe} ×{quantity} · {building}
 task_assignment_produce_building_busy,Building busy

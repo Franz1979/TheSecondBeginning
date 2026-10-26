@@ -93,7 +93,8 @@ static func release_residents(ctx: GameContext, building: Building, effects: Gam
 	for occupant in ctx.individuals:
 		if occupant.house_id == building.id:
 			occupant.house_id = -1
-	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year)
+	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year, {},
+		"residenti liberati da %s #%d" % [building.get_display_name(), building.id])
 	effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 
 
@@ -139,7 +140,7 @@ static func evict_damaged_house_overflow(ctx: GameContext, effects: GameEffects)
 			NotificationTypes.NotificationPopupType.HOUSE_EVICTION,
 			GameContext.tr_text("notification_house_eviction").format({"building": building.get_display_name(), "count": evicted.size()})
 		)
-	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year)
+	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year, {}, "controllo giornaliero")
 	if evicted_any:
 		effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 		effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
@@ -189,7 +190,8 @@ static func cancel_demolition(ctx: GameContext, building: Building, effects: Gam
 	if building == null or building.is_demolished or not building.is_marked_for_demolition:
 		return
 	building.is_marked_for_demolition = false
-	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year)
+	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year, {},
+		"demolizione annullata: %s #%d" % [building.get_display_name(), building.id])
 	effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
@@ -338,7 +340,8 @@ static func demolish(ctx: GameContext, building: Building, effects: GameEffects,
 		("mucchio a terra #%d, microcella %s" % [pile.id, str(pile.microcell)]) if pile != null else "nulla a terra"
 	])
 	# 7) Ricolloca chi è rimasto senza casa in altri posti liberi, poi scheda popolazione.
-	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year)
+	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year, {},
+		"demolito %s #%d" % [building.get_display_name(), building.id])
 	effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 	return pile
 
@@ -517,10 +520,15 @@ static func settle_site_stump_debris(ctx: GameContext, site: Building, builder: 
 # ogni villaggio con centro, VILLAGE_WASTE_PER_INHABITANT_PER_MONTH × abitanti detriti; entrano direttamente nelle Fosse
 # aperte più vicine al centro, il resto diventa "Rifiuti del villaggio" accanto al centro (put_debris_near, già da
 # sgomberare). Senza centro niente. Dal giro giornaliero (GameSimulation.tick_day).
+# Prima del carico ogni Fossa cala (WasteDisposalService.decay_pits, 2026-10-25), anche senza villaggi: il posto
+# liberato si usa già in questo giro.
 static func produce_village_waste(ctx: GameContext, effects: GameEffects) -> void:
-	if ctx.world == null or ctx.game_data == null or ctx.folk == null:
+	if ctx.world == null or ctx.game_data == null:
 		return
 	if ctx.game_data.get_absolute_day() % WasteDisposalService.VILLAGE_WASTE_PERIOD_DAYS != 0:
+		return
+	WasteDisposalService.decay_pits(ctx.world)
+	if ctx.folk == null:
 		return
 	var first_village_id := -1
 	for village in ctx.folk.villages:
@@ -716,7 +724,8 @@ static func cancel_upgrade(ctx: GameContext, building: Building, effects: GameEf
 		Vector2(float(building.micro_x) + 0.5, float(building.micro_y) + 0.5), surplus, ctx.world
 	)
 	resolve_freed(ctx, freed)
-	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year)
+	AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year, {},
+		"miglioramento annullato: %s #%d" % [building.get_display_name(), building.id])
 	effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 	# Il ridisegno della cella toglie anche i rametti del cantiere (edificio di nuovo completo).
 	_refresh_upgraded_building_views(building, effects)
@@ -852,7 +861,8 @@ static func complete_construction(ctx: GameContext, building: Building, effects:
 	effects.refresh_panel(GameEffects.PanelKind.BUILD_BAR)
 	village_center_completed(ctx, building, effects)
 	if building.rules != null and building.rules.max_residents > 0:
-		AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year, {building.id: previous_residents})
+		AssignHouseService.assign_pending_residents(ctx.world, ctx.individuals, ctx.game_data.year, {building.id: previous_residents},
+			"%s completato: %s #%d" % ["miglioramento" if not previous_residents.is_empty() else "edificio", building.get_display_name(), building.id])
 		effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 	effects.refresh_neighbors(building)
 	effects.refresh_building_cell(building)

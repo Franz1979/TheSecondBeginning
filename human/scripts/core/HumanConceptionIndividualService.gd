@@ -80,6 +80,8 @@ static func run_conception(
 	var excluded_self_not_fertile: Array[HumanIndividual] = []
 	var excluded_partner_not_fertile: Array[HumanIndividual] = []
 	var excluded_partner_missing: Array[HumanIndividual] = []
+	var excluded_self_sick: Array[HumanIndividual] = []
+	var excluded_partner_sick: Array[HumanIndividual] = []
 	var discarded_for_spacing: Array[HumanIndividual] = []
 	var candidates: Array[HumanIndividual] = []
 	var newly_pregnant: Array[HumanIndividual] = []
@@ -93,6 +95,8 @@ static func run_conception(
 		excluded_self_not_fertile.append_array(result["excluded_self_not_fertile"])
 		excluded_partner_not_fertile.append_array(result["excluded_partner_not_fertile"])
 		excluded_partner_missing.append_array(result["excluded_partner_missing"])
+		excluded_self_sick.append_array(result["excluded_self_sick"])
+		excluded_partner_sick.append_array(result["excluded_partner_sick"])
 		discarded_for_spacing.append_array(result["discarded_for_spacing"])
 		candidates.append_array(result["candidates"])
 		newly_pregnant.append_array(result["newly_pregnant"])
@@ -103,6 +107,8 @@ static func run_conception(
 		"excluded_self_not_fertile": excluded_self_not_fertile,
 		"excluded_partner_not_fertile": excluded_partner_not_fertile,
 		"excluded_partner_missing": excluded_partner_missing,
+		"excluded_self_sick": excluded_self_sick,
+		"excluded_partner_sick": excluded_partner_sick,
 		"discarded_for_spacing": discarded_for_spacing,
 		"candidates": candidates,
 		"newly_pregnant": newly_pregnant,
@@ -140,6 +146,8 @@ static func _run_conception_in_group(
 	var excluded_self_not_fertile: Array[HumanIndividual] = []
 	var excluded_partner_not_fertile: Array[HumanIndividual] = []
 	var excluded_partner_missing: Array[HumanIndividual] = []
+	var excluded_self_sick: Array[HumanIndividual] = []
+	var excluded_partner_sick: Array[HumanIndividual] = []
 	for woman in individuals:
 		if woman.sex != HumanTypes.Sex.FEMALE:
 			continue
@@ -164,6 +172,14 @@ static func _run_conception_in_group(
 		var partner_age_band := HumanCalculator.get_age_band(durations_male, durations_female, partner.sex, float(partner_age))
 		if not HumanTypes.FERTILE_AGE_BANDS.has(partner_age_band):
 			excluded_partner_not_fertile.append(woman)
+			continue
+		# Salute (2026-10-26, richiesta utente): coppia esclusa se lei o lui è a letto (is_sick: malattia, ferita o
+		# convalescenza a letto, o salute sotto soglia) il giorno del tiro.
+		if woman.is_sick():
+			excluded_self_sick.append(woman)
+			continue
+		if partner.is_sick():
+			excluded_partner_sick.append(woman)
 			continue
 		eligible_women.append(woman)
 
@@ -207,6 +223,8 @@ static func _run_conception_in_group(
 		"excluded_self_not_fertile": excluded_self_not_fertile,
 		"excluded_partner_not_fertile": excluded_partner_not_fertile,
 		"excluded_partner_missing": excluded_partner_missing,
+		"excluded_self_sick": excluded_self_sick,
+		"excluded_partner_sick": excluded_partner_sick,
 		"discarded_for_spacing": discarded_for_spacing,
 		"candidates": candidates,
 		"newly_pregnant": newly_pregnant,

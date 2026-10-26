@@ -105,7 +105,7 @@ static func _run_births_in_group(
 		# HumanIndividual viene mai istanziato (non solo scartato dopo). Il tiro MADRE resta SOLO
 		# osservato (roll["mother_survived_roll"]), nessun ramo che ne consuma l'esito qui: la
 		# madre prosegue esattamente come se quel tiro non esistesse.
-		var roll := _roll_childbirth_survival(human_rules, era_rules)
+		var roll := _roll_childbirth_survival(woman, human_rules, era_rules)
 		var newborn: HumanIndividual = null
 		if roll["child_survived_roll"]:
 			newborn = _create_newborn(woman, game_data, all_individuals)
@@ -135,10 +135,16 @@ static func _run_births_in_group(
 # fallimento = nato-morto). "mother_survived_roll" resta SOLO per il logging del chiamante, nessun
 # effetto ancora (task futuro separato). Ritorna {"child_survival_probability": float,
 # "child_survived_roll": bool, "mother_survival_probability": float, "mother_survived_roll": bool}.
-static func _roll_childbirth_survival(human_rules: HumanRules, era_rules: EraRules) -> Dictionary:
+# Madre a letto (2026-10-26): entrambe le probabilità calano di human_rules.childbirth_survival_bedridden_penalty.
+static func _roll_childbirth_survival(mother: HumanIndividual, human_rules: HumanRules, era_rules: EraRules) -> Dictionary:
 	var child_survival_probability := human_rules.childbirth_survival_child_base_probability * era_rules.childbirth_survival_child_multiplier
 	var mother_survival_probability := human_rules.childbirth_survival_mother_base_probability * era_rules.childbirth_survival_mother_multiplier
+	var mother_bedridden := mother.is_sick()
+	if mother_bedridden:
+		child_survival_probability = maxf(child_survival_probability - human_rules.childbirth_survival_bedridden_penalty, 0.0)
+		mother_survival_probability = maxf(mother_survival_probability - human_rules.childbirth_survival_bedridden_penalty, 0.0)
 	return {
+		"mother_bedridden": mother_bedridden,
 		"child_survival_probability": child_survival_probability,
 		"child_survived_roll": randf() < child_survival_probability,
 		"mother_survival_probability": mother_survival_probability,

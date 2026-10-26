@@ -497,8 +497,9 @@ static func _interruption_reason(member: HumanIndividual) -> String:
 	return "interrotto da '%s'" % TranslationServer.translate(task.task_name)
 
 
-# H del giocatore su chi coordina (GameScene._stop_member_task, 2026-10-09): il posto si libera subito, con il motivo.
-static func end_shift_by_player(game_data: GameData, member: HumanIndividual) -> void:
+# H del giocatore su chi coordina (TaskCancelService.stop_current_task, 2026-10-09): il posto si libera subito, con il
+# motivo (`reason`: H o chi va a letto, 2026-10-25).
+static func end_shift_by_player(game_data: GameData, member: HumanIndividual, reason: String = "H") -> void:
 	if game_data == null or member == null or not is_coordinate_task(member.current_task):
 		return
 	_update_now()
@@ -507,7 +508,7 @@ static func end_shift_by_player(game_data: GameData, member: HumanIndividual) ->
 	if int(post.get("coordinator_id", -1)) == member.id:
 		post["coordinator_id"] = -1
 		post["serving_id"] = -1
-	log_event(member, "fine del turno: H (%s)." % _shift_summary(member))
+	log_event(member, "fine del turno: %s (%s)." % [reason, _shift_summary(member)])
 	_forget(member.id)
 	# Il prossimo in fila prende il posto (evento: decisione a fine fotogramma).
 	if point_id >= 0 and _is_ready(game_data):

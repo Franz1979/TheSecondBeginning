@@ -68,6 +68,7 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"hide_bag": "_draw_deposit_storage_hide_bag_icon",
 	"travois": "_draw_deposit_storage_travois_icon",
 	"dried_hide_bag": "_draw_deposit_storage_dried_hide_bag_icon",
+	"smoked_hide_bag": "_draw_deposit_storage_smoked_hide_bag_icon",
 	# Vestiario (2026-10-11): pelliccia di base e pelli lavorate (secondo livello).
 	"fur_dress": "_draw_deposit_storage_fur_dress_icon",
 	"fur_cap": "_draw_deposit_storage_fur_cap_icon",
@@ -567,6 +568,11 @@ static func _draw_deposit_storage_arrow_bundle_icon(canvas: CanvasItem, top_left
 # Sacca di pelle essiccata (2026-10-04): stessa geometria dell'icona del pannello (DriedHideBagIcon.draw_into).
 static func _draw_deposit_storage_dried_hide_bag_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	DriedHideBagIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Sacca di pelle affumicata (2026-10-25): stessa geometria dell'icona del pannello (SmokedHideBagIcon.draw_into).
+static func _draw_deposit_storage_smoked_hide_bag_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	SmokedHideBagIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 # Vestiario (2026-10-11): stessa geometria delle icone del pannello.

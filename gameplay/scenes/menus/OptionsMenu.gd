@@ -33,6 +33,9 @@ extends Window
 # Suono degli avvisi della campanella (2026-10-08, UserOptions.pending_bell_sound), sotto i volumi.
 @onready var alert_sound_label: Label = $MarginContainer/VBoxContainer/AlertSoundRow/Label
 @onready var alert_sound_check_box: CheckBox = $MarginContainer/VBoxContainer/AlertSoundRow/CheckBox
+# Icone di salute sopra la testa (2026-10-25, UserOptions.show_health_icons), ultima riga prima di Chiudi.
+@onready var health_icons_label: Label = $MarginContainer/VBoxContainer/HealthIconsRow/Label
+@onready var health_icons_check_box: CheckBox = $MarginContainer/VBoxContainer/HealthIconsRow/CheckBox
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
 
 # Righe volume audio (2026-09-21, richiesta utente): nome del nodo riga, chiave tr() dell'etichetta e campo di
@@ -88,6 +91,7 @@ func _ready() -> void:
 	repeat_check_box.toggled.connect(_on_repeat_toggled)
 	delivery_check_box.toggled.connect(_on_delivery_toggled)
 	alert_sound_check_box.toggled.connect(_on_alert_sound_toggled)
+	health_icons_check_box.toggled.connect(_on_health_icons_toggled)
 	close_button.pressed.connect(hide)
 	# I volumi si applicano in tempo reale (_on_volume_changed) ma si salvano su disco alla chiusura del
 	# menu: visibility_changed copre il CloseButton e qualunque altro hide(), anche per le modifiche da tastiera
@@ -119,6 +123,7 @@ func open_menu(show_language: bool = true) -> void:
 	repeat_check_box.set_pressed_no_signal(UserOptions.repeat_default)
 	delivery_check_box.set_pressed_no_signal(UserOptions.production_delivery_default)
 	alert_sound_check_box.set_pressed_no_signal(UserOptions.pending_bell_sound)
+	health_icons_check_box.set_pressed_no_signal(UserOptions.show_health_icons)
 	for field in _volume_sliders.keys():
 		(_volume_sliders[field] as HSlider).set_value_no_signal(float(UserOptions.get(field)))
 	exclusive = true
@@ -177,6 +182,7 @@ func _refresh_texts() -> void:
 	repeat_label.text = tr("options_repeat_default").format({"count": TaskRepeatRules.MAX_TRIPS})
 	delivery_label.text = tr("options_production_delivery_default")
 	alert_sound_label.text = tr("options_pending_bell_sound")
+	health_icons_label.text = tr("options_show_health_icons")
 	_rebuild_pickup_default_options()
 	# "close_and_save" (non "close_menu", richiesta utente 2026-09-05): stesso identico
 	# comportamento (hide()), solo l'etichetta comunica che le modifiche sono già salvate — coerente
@@ -303,4 +309,10 @@ func _on_delivery_toggled(pressed: bool) -> void:
 # Suono degli avvisi della campanella (2026-10-08): spento = niente "bell" alle righe nuove, il resto invariato.
 func _on_alert_sound_toggled(pressed: bool) -> void:
 	UserOptions.pending_bell_sound = pressed
+	UserOptions.save_to_disk()
+
+
+# Icone di salute sopra la testa (2026-10-25): lette ogni frame da HumanIndividualView, l'effetto è immediato.
+func _on_health_icons_toggled(pressed: bool) -> void:
+	UserOptions.show_health_icons = pressed
 	UserOptions.save_to_disk()

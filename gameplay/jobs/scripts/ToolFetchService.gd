@@ -706,6 +706,78 @@ static func try_return_borrowed_tools(individual: HumanIndividual, age_band: Hum
 	return assigned_any
 
 
+# Munizioni senza arma (2026-10-25, richiesta utente — Runa con due mazzi di frecce e l'arco rotto): chi si libera con in
+# cintura munizioni che nessuna sua arma usa (nessun attrezzo in cintura con required_ammo_category di quella categoria)
+# le ripone nel deposito migliore, un viaggio solo per quelle con la stessa destinazione (le altre alla prossima pausa).
+# Chiamata da HumanIndividualActionService.resolve_idle_individual subito dopo i prestiti (che riportano già le munizioni
+# prese per un lavoro); qui restano quelle sue. Senza destinazione le tiene e si riprova. true = task assegnata.
+static func try_store_orphan_ammo(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+	if world == null or not JobBoardService.is_enabled(GameSettings.active_human_folk):
+		return false
+	var used_ammo: Dictionary = {}
+	for tool_name in individual.equipped_tools:
+		var rules := CaloricCalculator.get_caloric_source_rules(tool_name) if tool_name != "" else null
+		if rules != null and rules.required_ammo_category >= 0:
+			used_ammo[rules.required_ammo_category] = true
+	var trip_destination: Building = null
+	var assigned_any := false
+	for slot in range(individual.equipped_tools.size()):
+		var tool_name := individual.get_equipped_tool(slot)
+		if tool_name == "" or not _is_orphan_ammo(tool_name, used_ammo):
+			continue
+		var destination := _borrowed_tool_destination(world, individual, tool_name, -1)
+		if destination == null or (trip_destination != null and destination != trip_destination):
+			continue
+		var task := TaskBuilderService.build_tool_task(individual, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot)
+		if task == null:
+			continue
+		if not assigned_any:
+			if not individual.assign_task(task, age_band):
+				continue
+			assigned_any = true
+			trip_destination = destination
+		else:
+			TaskQueueService.push_follow_up_task(individual, task)
+		if storage_signal_connector.is_valid():
+			storage_signal_connector.call(task, individual)
+		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+			print("[JOB BOARD] #%d %s: ripone %s in %s #%d (munizioni senza arma)." % [
+				individual.id, individual.name, tool_name, destination.building_type_name, destination.id
+			])
+	return assigned_any
+
+
+# `tool_name` è una munizione (una sua categoria è la required_ammo_category di qualche arma) che nessuna arma in
+# `used_ammo` (categoria -> true) usa.
+static func _is_orphan_ammo(tool_name: String, used_ammo: Dictionary) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+	if rules == null:
+		return false
+	var ammo_categories := _ammo_categories()
+	var is_ammo := false
+	for category in rules.tool_categories:
+		if ammo_categories.has(int(category)):
+			is_ammo = true
+			if used_ammo.has(int(category)):
+				return false
+	return is_ammo
+
+
+# Categorie usate come munizioni da almeno un'arma (required_ammo_category), lette una volta: i .tres non cambiano.
+static var _ammo_categories_cache: Dictionary = {}
+static var _ammo_categories_loaded: bool = false
+
+
+static func _ammo_categories() -> Dictionary:
+	if not _ammo_categories_loaded:
+		_ammo_categories_loaded = true
+		for resource_name in CaloricCalculator.list_secondary_resource_names():
+			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+			if rules != null and rules.required_ammo_category >= 0:
+				_ammo_categories_cache[rules.required_ammo_category] = true
+	return _ammo_categories_cache
+
+
 # Toglie dai prestiti gli attrezzi non più in cintura (rotti, spostati a mano). Una volta al secondo per tutti (GameSimulation,
 # così il pannello resta giusto anche per chi non si libera) e prima di ogni restituzione.
 # Prelievo in corso (2026-10-25, bugfix: il prestito si segna alla partenza, start_fetch, e la pulizia lo toglieva prima
@@ -857,8 +929,14 @@ static func try_take_bag(individual: HumanIndividual, age_band: HumanTypes.AgeBa
 		return false
 	var reserved := _reserved_fetches(individual, BAG_FETCH_KEY)
 	var bag_names := fetchable_tool_names(TaskTypes.ToolCategory.CARRYING)
+	# A pari capacità vince la sacca con più usi (2026-10-25, richiesta utente: affumicata prima dell'essiccata). Vale solo
+	# per chi è senza sacca: nessuno cambia quella che ha, la sostituisce quando si rompe.
 	bag_names.sort_custom(func(a: String, b: String) -> bool:
-		return _carry_bonus_of(a) > _carry_bonus_of(b)
+		var bonus_a := _carry_bonus_of(a)
+		var bonus_b := _carry_bonus_of(b)
+		if not is_equal_approx(bonus_a, bonus_b):
+			return bonus_a > bonus_b
+		return ToolInstance.get_max_uses(a) > ToolInstance.get_max_uses(b)
 	)
 	var reachability := PathfindingService.reachability_for(individual)
 	for bag_name in bag_names:
@@ -1120,7 +1198,8 @@ static func _assign_depot_swap(
 	for task in [fetch, store]:
 		if storage_signal_connector.is_valid():
 			storage_signal_connector.call(task, individual)
-	print("[WARDROBE] #%d %s: cambio di stagione, prende %s %s #%d per sostituire %s." % [
+	if DebugLogging.ENABLED and DebugLogging.SHOW_WARDROBE_LOGS:
+		print("[WARDROBE] #%d %s: cambio di stagione, prende %s %s #%d per sostituire %s." % [
 		individual.id, individual.name, new_name, "dal guardaroba di casa" if source == home else "in %s" % source.building_type_name,
 		source.id, current,
 	])

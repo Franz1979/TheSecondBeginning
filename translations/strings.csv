@@ -285,6 +285,11 @@ ground_pile_used_tools_suffix,(usi residui dei pezzi usati: {uses})
 ground_pile_disappears_label,Sparisce tra {days} giorni
 ground_pile_terrain_header,Sul terreno qui
 building_ground_pile_caption,Mucchio a terra qui:
+building_shared_microcell,Presente anche: {name} #{id} — {status}
+building_layer_materials,materiali {delivered}/{required}
+building_layer_labor,lavoro {done}/{required}
+building_layer_awaiting_material,in attesa di materiale
+building_shared_microcell_tooltip,Passa a questo edificio (sta sulla stessa microcella)
 microcell_inspection_ground_pile_header,Mucchio a terra:
 pickup_choice_source_ground_pile,Dal mucchio a terra
 pickup_choice_source_terrain,Dal terreno
@@ -384,6 +389,8 @@ carried_resource_tooltip_hide_bag,Sacca di pelle
 carried_resource_tooltip_travois,Travois
 carried_resource_tooltip_stone_bowl,Ciotola di pietra
 carried_resource_tooltip_herbal_infusion,Infuso di erbe
+carried_resource_tooltip_herbal_ointment,Unguento di erbe
+carried_resource_tooltip_splint,Steccatura
 carried_resource_tooltip_meat,Carne cruda
 carried_resource_tooltip_cooked_meat,Carne cotta
 carried_resource_tooltip_dried_meat,Carne essiccata
@@ -613,13 +620,32 @@ individual_health_sick_suffix,sta male
 random_event_wound_name,Ferita
 random_event_wound_popup,{name} si ferisce ({wound}): dovrà riposare finché non guarisce.
 wound_laceration,lacerazione
+wound_fracture,frattura
+wound_burn,ustione
+injury_activity_hunting,cacciando
+injury_activity_butchering,macellando
+injury_activity_cutting,tagliando legna
+injury_activity_quarrying,spaccando pietre
+injury_activity_building,costruendo
+injury_activity_working,lavorando
+injury_activity_gathering,raccogliendo
+notification_injury,{name} {verb} {activity}.
+notification_injury_generic,{name}: {wound} ({activity}).
+injury_verb_laceration_m,si è ferito
+injury_verb_laceration_f,si è ferita
+injury_verb_fracture_m,si è rotto un osso
+injury_verb_fracture_f,si è rotta un osso
+injury_verb_burn_m,si è ustionato
+injury_verb_burn_f,si è ustionata
 health_condition_convalescent,convalescente da {condition}
 health_condition_phase_acute,fase acuta
 health_condition_phase_convalescence,convalescenza
 health_condition_bed_rest,a letto
+health_sequela_line,postumi: -{amount} salute massima per sempre
 health_condition_low_health_tooltip,"Salute troppo bassa: deve riposare, niente lavori."
 notification_condition_convalescence,{name} è in convalescenza ({condition}): resterà così finché la salute non risale.
 notification_condition_recovered,Guarigione: {name} ({condition}).
+notification_condition_onset,Sintomi di {condition} per {name}: a letto finché non guarisce.
 debug_random_event_apply,Applica evento
 debug_random_event_apply_tooltip,Scatena subito l'evento scelto nel menu
 building_awaiting_fuel_production_label,"Combustibile mancante: {amount} ({fuels})"
@@ -916,6 +942,7 @@ toolkit_tooltip_spare,Di scorta: {count} ({uses})
 toolkit_tooltip_uses_of,{uses} su {max}
 toolkit_click_to_return_spare,Clic: rimetti nel magazzino un pezzo di scorta
 carried_resource_tooltip_dried_hide_bag,Sacca di pelle essiccata
+carried_resource_tooltip_smoked_hide_bag,Sacca di pelle affumicata
 carried_resource_tooltip_stone_spear,Lancia con punta di pietra
 carried_resource_tooltip_bow,Arco
 carried_resource_tooltip_arrow_bundle,Mazzo di frecce
@@ -1074,6 +1101,7 @@ task_assignment_output_cannot_cancel,Niente da annullare: si svuotano solo i Pro
 task_deliver_output_name,Consegna finiti
 pending_material_fuel,combustibile
 options_pending_bell_sound,Suono degli avvisi (campanella)
+options_show_health_icons,Mostra icone di salute degli individui
 task_assignment_kind_produce,Ordini di produzione
 task_assignment_produce_row,{recipe} ×{quantity} · {building}
 task_assignment_produce_building_busy,Edificio occupato

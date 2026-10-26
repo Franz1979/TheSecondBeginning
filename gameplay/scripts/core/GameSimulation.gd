@@ -166,7 +166,7 @@ func welcome_visitor_party(party: VisitorParty, effects: GameEffects) -> void:
 		if GameContext.age_band_for(newcomer, game_data) >= HumanTypes.AgeBand.FERTILE_ADULT:
 			adult_count += 1
 	VillageInfluenceService.add_accepted_adults(folk, village, adult_count)
-	AssignHouseService.assign_pending_residents(world, individuals, game_data.year)
+	AssignHouseService.assign_pending_residents(world, individuals, game_data.year, {}, "visitatori accolti (%d)" % newcomers.size())
 	# newcomers è nello stesso ordine di party.members (VisitorService.materialize_members): l'indice serve alla dote.
 	for i in range(newcomers.size()):
 		var newcomer := newcomers[i]

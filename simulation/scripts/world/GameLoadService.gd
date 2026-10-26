@@ -1008,6 +1008,20 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 						# Rimedio preso oggi (2026-10-25): assente nei salvataggi precedenti.
 						HealthConditionService.KEY_REMEDY: String(entry.get(HealthConditionService.KEY_REMEDY, "")),
 					})
+			# Postumi permanenti (2026-10-26), assenti nei salvataggi precedenti.
+			individual.permanent_max_health_loss = float(individual_data.get("permanent_max_health_loss", 0.0))
+			# Contagio (2026-10-25): incubazioni e immunità, assenti nei salvataggi precedenti.
+			individual.incubating_conditions.clear()
+			for entry in individual_data.get("incubating_conditions", []):
+				if entry is Dictionary and String(entry.get("id", "")) != "":
+					individual.incubating_conditions.append({
+						"id": String(entry["id"]), "days": int(entry.get("days", 0)),
+						ContagionService.KEY_SOURCE_ID: int(entry.get(ContagionService.KEY_SOURCE_ID, -1)),
+					})
+			individual.immunities.clear()
+			var immunities_data: Dictionary = individual_data.get("immunities", {})
+			for condition_id in immunities_data:
+				individual.immunities[String(condition_id)] = int(immunities_data[condition_id])
 			var old_illness_id := String(individual_data.get("illness_id", ""))
 			if old_illness_id != "" and individual.health_conditions.is_empty():
 				individual.health_conditions.append({

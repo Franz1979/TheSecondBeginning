@@ -50,9 +50,26 @@ enum Severity { LIGHT, SEVERE }
 # comunque.
 @export var convalescence_bed_rest: bool = false
 
+@export_group("Sequela")
+# Postumo permanente (2026-10-26, richiesta utente — frattura mal saldata): salute massima persa per sempre se la fase
+# acuta finisce senza un rimedio che dura tutta la condizione (steccatura). Si somma ogni volta. 0 = nessun postumo.
+@export var untreated_sequela_max_health_loss: float = 0.0
+
 @export_group("Contagion")
-# Contagio (per il futuro): nessun sistema lo legge ancora.
-@export var contagion_probability: float = 0.0
+# Contagio (2026-10-25, ContagionService): solo per le malattie, da contatti concreti; tira il sano esposto. Tutte a 0 =
+# non contagiosa. Contagiosi l'incubazione e la fase acuta, mai la convalescenza.
+# Probabilità al giorno per chi dorme nella stessa casa di un contagioso (un tiro per contagioso).
+@export var contagion_household_per_day: float = 0.0
+# Probabilità a ogni somministrazione di un rimedio per chi cura.
+@export var contagion_caregiver: float = 0.0
+# Probabilità a fine conversazione e a fine rito sociale (lezione, banchetto) per ogni contagioso con cui si è stati.
+@export var contagion_contact: float = 0.0
+# Giorni di incubazione (estratti tra min e max): infetti e contagiosi ma in piedi, invisibili al giocatore. 0 = la
+# malattia parte subito.
+@export var incubation_min_days: int = 0
+@export var incubation_max_days: int = 0
+# Giorni di immunità dopo la guarigione (-1 = per sempre, 0 = nessuna).
+@export var immunity_days: int = 0
 
 @export_group("Infection")
 # Infezione di una ferita (per il futuro): probabilità al giorno di prendere la condizione `infection_condition_id`.

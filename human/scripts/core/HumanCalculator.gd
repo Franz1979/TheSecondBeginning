@@ -81,6 +81,17 @@ static func get_annual_death_probability(
 	return lerpf(rules.mortality_prob_at_mature_start, rules.mortality_prob_at_old_end, t)
 
 
+# Moltiplicatore della probabilità di morte per età dalla salute (2026-10-25, richiesta utente — HumanRules.
+# mortality_health_thresholds/_multipliers): `health_ratio` = salute attuale / salute massima al momento del tiro; la prima
+# soglia raggiunta (dalla più alta) dà il suo moltiplicatore, sotto tutte 1.
+static func get_mortality_health_multiplier(rules: HumanRules, health_ratio: float) -> float:
+	var count := mini(rules.mortality_health_thresholds.size(), rules.mortality_health_multipliers.size())
+	for i in range(count):
+		if health_ratio >= rules.mortality_health_thresholds[i]:
+			return rules.mortality_health_multipliers[i]
+	return 1.0
+
+
 # Moltiplicatore gravidanza (2026-09-06) — HARDCODED, deliberatamente NON in HumanRules/EraRules:
 # scelta esplicita dell'utente, non un dato di configurazione (a differenza di
 # EraRules.dependent_child_stamina_multiplier sotto, che invece vive in un .tres). SOLO display,

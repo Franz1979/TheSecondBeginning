@@ -52,7 +52,9 @@ static func recalculate_vitals(individual: HumanIndividual, game_data: GameData)
 			individual.sex, age
 		)
 		individual.max_thirst = HumanCalculator.get_max_thirst(human_rules, age_band, individual.sex)
-		individual.max_health = HumanCalculator.get_max_health(human_rules, age_band, individual.sex)
+		# Postumi permanenti (2026-10-26): il massimo si rifà qui ogni giorno, quindi la perdita va tolta qui.
+		individual.max_health = maxf(
+			HumanCalculator.get_max_health(human_rules, age_band, individual.sex) - individual.permanent_max_health_loss, 1.0)
 		individual.max_happiness = HumanCalculator.get_max_happiness(human_rules, age_band, individual.sex)
 		individual.max_loyalty = HumanCalculator.get_max_loyalty(human_rules, age_band, individual.sex)
 		individual.max_faith = HumanCalculator.get_max_faith(human_rules, age_band, individual.sex)

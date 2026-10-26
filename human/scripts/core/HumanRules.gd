@@ -113,6 +113,11 @@ extends Resource
 @export var mortality_prob_at_mature_start: float = 0.001
 @export var mortality_prob_at_old_end: float = 0.65
 @export var absolute_max_age: int = 100
+# Salute e mortalità per età (2026-10-25, richiesta utente): al tiro annuale la probabilità della curva si moltiplica per
+# mortality_health_multipliers[i] della prima soglia raggiunta da salute attuale / salute massima (soglie dalla più alta);
+# sotto l'ultima soglia ×1. Stessa lunghezza dei due array. HumanCalculator.get_mortality_health_multiplier.
+@export var mortality_health_thresholds: Array[float] = [0.9, 0.7]
+@export var mortality_health_multipliers: Array[float] = [0.5, 0.75]
 
 @export_group("Reproduction")
 # Probabilità di concepimento annuale di BASE per una coppia idonea (FERTILE_ADULT/FERTILE_ADULT,
@@ -130,6 +135,9 @@ extends Resource
 # PLACEHOLDER (richiesta utente, 2026-09-06): valori plausibili, da affinare in seguito.
 @export var childbirth_survival_child_base_probability: float = 0.9
 @export var childbirth_survival_mother_base_probability: float = 0.92
+# Madre a letto al parto (2026-10-26, richiesta utente): se is_sick() il giorno del parto, entrambe le probabilità di
+# sopravvivenza sopra (già scalate per Era) calano di questo valore assoluto (0.05 = 5 punti percentuali).
+@export var childbirth_survival_bedridden_penalty: float = 0.05
 
 @export_group("Vital Parameters")
 # 6 parametri vitali — stamina (il primo introdotto) + i 5 aggiunti dopo (hunger/thirst/health/

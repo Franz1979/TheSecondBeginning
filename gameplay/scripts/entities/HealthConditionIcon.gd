@@ -32,6 +32,32 @@ const GAP: float = 0.4
 
 var illness_state: State = State.NONE
 var wound_state: State = State.NONE
+# Punta verso la testa sul distintivo singolo; spenta nella lista della popolazione (HumanPopulationInfoPanel).
+var show_tail: bool = true
+
+
+# Stati (malattia, ferita) di un individuo: per categoria ACUTE se una sua condizione è acuta, altrimenti CONVALESCENCE
+# se ce n'è una. Unica fonte per la testa del pipottino (HumanIndividualView) e la lista della popolazione.
+static func states_for(individual: HumanIndividual) -> Array[State]:
+	var illness := State.NONE
+	var wound := State.NONE
+	for entry in individual.health_conditions:
+		var rules := HealthConditionService.get_rules(String(entry.get("id", "")))
+		if rules == null:
+			continue
+		var acute := String(entry.get("phase", HealthConditionService.PHASE_ACUTE)) == HealthConditionService.PHASE_ACUTE
+		if rules.category == HealthConditionRules.Category.WOUND:
+			wound = _merged_state(wound, acute)
+		else:
+			illness = _merged_state(illness, acute)
+	return [illness, wound]
+
+
+# Fase acuta vince sulla convalescenza.
+static func _merged_state(current: State, acute: bool) -> State:
+	if acute or current == State.ACUTE:
+		return State.ACUTE
+	return State.CONVALESCENCE
 
 
 func set_states(new_illness_state: State, new_wound_state: State) -> void:
@@ -48,11 +74,11 @@ func _draw() -> void:
 	var shift := (RADIUS + OUTLINE_WIDTH + GAP / 2.0) if both else 0.0
 	if illness_state != State.NONE:
 		var center := Vector2(-shift, 0.0)
-		_draw_badge(center, illness_state, not both)
+		_draw_badge(center, illness_state, show_tail and not both)
 		_draw_fever_face(center)
 	if wound_state != State.NONE:
 		var center := Vector2(shift, 0.0)
-		_draw_badge(center, wound_state, not both)
+		_draw_badge(center, wound_state, show_tail and not both)
 		_draw_bandage(center)
 
 

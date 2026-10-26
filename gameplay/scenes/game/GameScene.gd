@@ -855,6 +855,10 @@ func _ready() -> void:
 	building_info_panel.cancel_empty_pit_requested.connect(_on_cancel_empty_pit_requested)
 	building_info_panel.waste_closed_toggle_requested.connect(_on_waste_closed_toggle_requested)
 	building_info_panel.gate_toggle_requested.connect(_on_gate_toggle_requested)
+	building_info_panel.shared_building_requested.connect(func(other: Building) -> void:
+		if other != null:
+			_select_building({"building_id": other.id, "macro_coords": Vector2i(other.macro_x, other.macro_y)})
+	)
 	# Icone di influenza (2026-10-02): impronta temporanea del cerchio del tipo cliccato e anteprima fissa al passaggio
 	# del mouse. Il gruppo di icone vive nell'intestazione della scheda, accanto al 🎯.
 	game_info_tabs.header_actions.add_child(building_info_panel.influence_buttons_box)
@@ -1875,55 +1879,13 @@ func _cancel_map_picks() -> void:
 
 
 # Effetto di H su `member` (2026-10-09, estratto da _stop_selected_individual_task per la X delle righe "Diretto" del
-# cassetto): stessa chiusura della task corrente, regola del carico, "salta la lista una volta" e ripresa.
+# cassetto): la chiusura vera è in TaskCancelService.stop_current_task (2026-10-25, la usa anche chi va a letto).
 func _stop_member_task(member: HumanIndividual) -> void:
 	if member == null:
 		return
-	# Ordine di zona del cassetto (2026-10-09, richiesta utente): H su chi lo porta fa come "Rimetti in coda" — carico
-	# riportato con la regola di sempre, ma l'ordine non resta nella coda personale (ripetizioni dei viaggi, consegne,
-	# tagli successivi): torna subito in "In coda" con quello che resta, la stessa scelta e la stessa zona.
-	var zone_order := DrawerOrderService.find(game_data, DrawerOrderService.order_of_task(member.current_task))
-	if DrawerOrderService.is_zone_order_type(String(zone_order.get("type", ""))) and bool(zone_order.get("taken", false)):
-		_release_drawer_zone_order(zone_order)
-		return
-	if HuntService.is_hunt_task(member.current_task):
-		HuntService.log_event(member, "caccia chiusa: annullata a mano (X o tasto H).")
-	# Coordinatore fermato con H (2026-10-09): il posto si libera, con il motivo nel log.
-	CoordinatorService.end_shift_by_player(game_data, member)
-	# Annullo del giocatore con l'assegnazione attiva (2026-10-07): al prossimo momento libero il pipottino salta una
-	# volta la lista dei lavori, altrimenti riprenderebbe subito il lavoro appena annullato.
-	if member.current_task != null and JobBoardService.is_enabled(human_folk):
-		member.skip_job_board_once = true
-	var stopped_produce_building: Building = null
-	if member.current_task != null and member.current_task.task_name == "task_produce_name":
-		for step in member.current_task.steps:
-			if step is ProduceAction:
-				stopped_produce_building = (step as ProduceAction).target_building
-				break
-	# Regola unica del carico (2026-09-29, CargoReturnService.release_cargo): se la Task annullata possiede il carico,
-	# il pipottino lo riporta al magazzino più vicino (a terra solo se nessun magazzino lo accetta); H su una Task di
-	# ritorno la ferma davvero, con il carico a terra. Con un carico di un'altra Task lo zaino resta com'è.
-	# Ritiro di un mucchio della coda (2026-10-09): il ritorno del carico che lo sostituisce non è una riga "Diretto".
-	var stopped_board_pile := member.current_task != null and PileJobProvider.is_board_pile_task(member.current_task)
-	var cargo_outcome := CargoReturnService.release_cargo(member, member.current_task, macro_world)
-	if cargo_outcome != CargoReturnService.Outcome.RETURNING:
-		member.stop(false)
-	elif stopped_board_pile:
-		_mark_board_cargo_return(member.current_task)
-	# Ordine intero (2026-09-26): la produzione annullata non conta più nel fabbisogno dell'edificio.
-	if stopped_produce_building != null:
-		_reconcile_production_units(stopped_produce_building)
-	# Ritorno al magazzino già attivo come Task corrente: niente da risolvere.
-	if cargo_outcome == CargoReturnService.Outcome.RETURNING:
-		return
-	# Bugfix (2026-09-14, richiesta utente) — member.stop() da solo azzera SOLO current_task,
-	# senza mai toccare task_queue né richiamare resolve_idle_individual: un individuo con una o più
-	# Task sospese in coda (es. interrotto prima da un bisogno stamina) restava bloccato per sempre
-	# con current_task null e la coda intatta, perché resolve_idle_individual (bisogno -> riprendi
-	# dalla coda -> fallback perditempo -> stop, vedi HumanIndividualActionService.gd) non era mai
-	# raggiunta da questo comando — solo da completamento naturale/seeding/nascita/load. STESSA
-	# chiamata già usata per quei tre casi (es. riga ~781 sopra).
-	HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	var effects := GameEffects.new()
+	TaskCancelService.stop_current_task(_game_context(), member, effects)
+	_apply_effects(effects)
 
 
 # TEST TEMPORANEO (2026-09-07, richiesta utente) — verifica che una Task a PIÙ step avanzi da sola
@@ -3125,6 +3087,10 @@ func _refresh_building_panel() -> void:
 	_sync_production_queue_mode(building)
 	building_info_panel.show_building(building, _resolve_building_residents_display_data(building), _resolve_names_working_on_building(building, JobWorkScanService.BUILD_TASK_NAMES), _resolve_production_claimant_names(building), _resolve_production_orders(building), _resolve_production_tool_wait_lines(building), _resolve_names_working_on_building(building, JobWorkScanService.demolish_task_names_for(building)), _resolve_names_working_on_building(building, JobWorkScanService.REPAIR_TASK_NAMES))
 	building_info_panel.show_ground_pile(_ground_pile_lines_at(Vector2i(building.macro_x, building.macro_y), Vector2i(building.micro_x, building.micro_y)))
+	var shared_links: Array[Dictionary] = []
+	for other in _find_buildings_sharing_microcells(building):
+		shared_links.append({"building": other, "text": _shared_building_link_text(other)})
+	building_info_panel.show_shared_building_links(shared_links)
 	# Titolo (Step 6, richiesta utente 2026-09-04) — stessa formula già in BuildingInfoPanel. Dal 2026-09-27 (richiesta
 	# utente, riorganizzazione del pannello edificio) sulla riga del titolo c'è anche l'ID, prima in fondo al pannello.
 	var type_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
@@ -9552,6 +9518,51 @@ func _activate_job_entry(entry: Dictionary) -> bool:
 	return true
 
 
+# Edifici sulla stessa microcella (2026-10-25, richiesta utente — nato con la strada sotto il cancello, generico): gli
+# altri edifici che occupano almeno una microcella dell'ingombro di `building`, per le righe "Anche qui:" del pannello
+# (il click sulla mappa ne seleziona uno solo, _find_building_at_microcell).
+func _find_buildings_sharing_microcells(building: Building) -> Array[Building]:
+	var result: Array[Building] = []
+	if macro_world == null or building == null:
+		return result
+	var macro_coords := Vector2i(building.macro_x, building.macro_y)
+	var cells := BuildingFootprint.cells_of(building)
+	for other in macro_world.buildings:
+		if other == building or other.macro_x != building.macro_x or other.macro_y != building.macro_y:
+			continue
+		for microcell in cells:
+			if BuildingFootprint.covers(other, macro_coords, microcell):
+				result.append(other)
+				break
+	return result
+
+
+# Testo della riga "Anche qui:": nome e stato in breve (completo, o cantiere con lavoro o materiali consegnati e
+# l'attesa di materiale).
+func _shared_building_link_text(other: Building) -> String:
+	if other == null or other.rules == null:
+		return ""
+	var status := tr("building_status_complete")
+	if not other.is_complete:
+		var parts: Array[String] = [tr("building_status_under_construction")]
+		var labor := float(other.construction_progress.get("labor_accumulated", 0.0))
+		if labor > 0.0:
+			parts.append(tr("building_layer_labor").format({"done": int(labor), "required": int(other.rules.required_labor)}))
+		elif not other.rules.required_materials.is_empty():
+			var delivered := 0
+			var required := 0
+			for material_name in other.rules.required_materials:
+				required += int(other.rules.required_materials[material_name])
+				var stored: Variant = other.stored_resources.get(material_name, {})
+				if stored is Dictionary:
+					delivered += int((stored as Dictionary).get("quantity", 0))
+			parts.append(tr("building_layer_materials").format({"delivered": delivered, "required": required}))
+		if other.is_awaiting_material:
+			parts.append(tr("building_layer_awaiting_material"))
+		status = ", ".join(parts)
+	return tr("building_shared_microcell").format({"name": tr(other.rules.building_name), "id": other.id, "status": status})
+
+
 func _find_building_by_id(building_id: int) -> Building:
 	if macro_world == null:
 		return null
@@ -10360,11 +10371,33 @@ func _on_individual_started_body_reserve(individual: HumanIndividual) -> void:
 
 # Una condizione di salute è passata in convalescenza o è guarita (2026-10-25): popup di default, stesso gate. Se
 # l'individuo è selezionato si aggiorna anche il suo pannello (riga della salute).
+# Ferita da lavoro (2026-10-25, InjuryRollService): "Pippo si è rotto un osso cacciando". Verbo per ferita e sesso
+# (injury_verb_{id}_m/_f); senza traduzione del verbo, il testo generico con il nome della ferita.
+func _on_injury_occurred(individual: HumanIndividual, condition_id: String, activity_key: String) -> void:
+	if individual == null or not UserOptions.show_notification_popups:
+		return
+	var verb_key := "injury_verb_%s_%s" % [condition_id, "f" if individual.sex == HumanTypes.Sex.FEMALE else "m"]
+	var verb := tr(verb_key)
+	var text := ""
+	if verb != verb_key:
+		text = tr("notification_injury").format({"name": individual.name, "verb": verb, "activity": tr(activity_key)})
+	else:
+		var rules := HealthConditionService.get_rules(condition_id)
+		text = tr("notification_injury_generic").format({
+			"name": individual.name, "wound": tr(rules.display_name) if rules != null else condition_id, "activity": tr(activity_key)
+		})
+	notification_popup.enqueue(NotificationTypes.NotificationPopupType.HEALTH_CONDITION_CHANGED, text)
+
+
 func _on_health_condition_changed(individual: HumanIndividual, condition_id: String, change: String) -> void:
 	if not UserOptions.show_notification_popups:
 		return
 	var rules := HealthConditionService.get_rules(condition_id)
-	var key := "notification_condition_recovered" if change == "recovered" else "notification_condition_convalescence"
+	var key := "notification_condition_convalescence"
+	if change == "recovered":
+		key = "notification_condition_recovered"
+	elif change == "onset":
+		key = "notification_condition_onset"
 	notification_popup.enqueue(
 		NotificationTypes.NotificationPopupType.HEALTH_CONDITION_CHANGED,
 		tr(key).format({"name": individual.name, "condition": tr(rules.display_name) if rules != null else condition_id})
@@ -13174,7 +13207,8 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 
 
 # Pulsante 🤒 della barra di debug (2026-10-24, richiesta utente): l'individuo selezionato, se sano, scende a
-# DEBUG_SICK_HEALTH (malato, coda liberata subito invece che al giorno dopo); se malato torna a salute piena.
+# DEBUG_SICK_HEALTH (malato, a letto subito invece che al giorno dopo — SicknessService.on_bedridden); se malato torna a
+# salute piena.
 const DEBUG_SICK_HEALTH: float = 500.0
 
 
@@ -13185,7 +13219,9 @@ func _debug_toggle_sick() -> void:
 		individual.current_health = individual.max_health
 	else:
 		individual.current_health = DEBUG_SICK_HEALTH
-		SicknessService.release_queued_tasks(individual, human_individuals)
+		var effects := GameEffects.new()
+		SicknessService.on_bedridden(_game_context(), individual, effects)
+		_apply_effects(effects)
 	_refresh_selected_individual_panel()
 
 # Tasto 🛖 nel sottomenu costruzione di BuildBar — per ora SOLO l'anteprima visiva (vedi
@@ -16180,6 +16216,7 @@ func _setup_clock() -> void:
 	individual_action_service.hunt_ended_with_message.connect(_on_hunt_ended_with_message)
 	# Task chiusa con un messaggio per il giocatore (2026-10-04: raccolta da un mucchio senza deposito con posto).
 	individual_action_service.task_message_requested.connect(_on_hunt_ended_with_message)
+	individual_action_service.injury_occurred.connect(_on_injury_occurred)
 	individual_action_service.hunt_zone_series_continue_requested.connect(_on_hunt_zone_series_continue_requested)
 	individual_action_service.hunt_zone_series_ended.connect(_on_hunt_zone_series_ended)
 	individual_action_service.quarry_zone_series_continue_requested.connect(_on_quarry_zone_series_continue_requested)

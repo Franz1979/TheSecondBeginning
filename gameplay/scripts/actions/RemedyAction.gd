@@ -109,6 +109,8 @@ func _give_to_patient(individual: Variant, context: Dictionary, remedy_name: Str
 	var health_before: float = patient.current_health
 	var factor := SkillEffectService.get_factor(SKILL_EFFECT_KEY, individual)
 	HealthConditionService.apply_remedy(patient, remedy_name, factor)
+	# Contagio (2026-10-25, ContagionService): chi cura tira a ogni somministrazione.
+	ContagionService.expose(individual, patient, ContagionService.Channel.CAREGIVER, GameSettings.active_game_data, "letto del malato")
 	_log(individual, remedy_name, "dato a #%d %s (fattore %.2f), salute %.1f -> %.1f" % [
 		patient.id, patient.name, factor, health_before, patient.current_health
 	])

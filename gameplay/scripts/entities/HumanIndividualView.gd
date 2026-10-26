@@ -470,31 +470,17 @@ func _process(delta: float) -> void:
 func _update_health_icon() -> void:
 	if _health_icon == null:
 		return
-	# Uno stato per categoria: ACUTE se una condizione di quella categoria è acuta, altrimenti CONVALESCENCE se ce n'è una.
-	var illness_state := HealthConditionIcon.State.NONE
-	var wound_state := HealthConditionIcon.State.NONE
-	for entry in individual.health_conditions:
-		var rules := HealthConditionService.get_rules(String(entry.get("id", "")))
-		if rules == null:
-			continue
-		var acute := String(entry.get("phase", HealthConditionService.PHASE_ACUTE)) == HealthConditionService.PHASE_ACUTE
-		if rules.category == HealthConditionRules.Category.WOUND:
-			wound_state = _merged_icon_state(wound_state, acute)
-		else:
-			illness_state = _merged_icon_state(illness_state, acute)
-	_health_icon.set_states(illness_state, wound_state)
+	# Opzione spenta (2026-10-25, UserOptions.show_health_icons): stati a NONE, l'icona si nasconde.
+	if not UserOptions.show_health_icons:
+		_health_icon.set_states(HealthConditionIcon.State.NONE, HealthConditionIcon.State.NONE)
+		return
+	var states := HealthConditionIcon.states_for(individual)
+	_health_icon.set_states(states[0], states[1])
 	if not _health_icon.visible or scale.x == 0.0:
 		return
 	_health_icon.rotation = -rotation
 	_health_icon.scale = Vector2.ONE / scale
 	_health_icon.position = (HEALTH_ICON_OFFSET / scale).rotated(-rotation)
-
-
-# Fase acuta vince sulla convalescenza.
-static func _merged_icon_state(current: HealthConditionIcon.State, acute: bool) -> HealthConditionIcon.State:
-	if acute or current == HealthConditionIcon.State.ACUTE:
-		return HealthConditionIcon.State.ACUTE
-	return HealthConditionIcon.State.CONVALESCENCE
 
 
 # Nomi dei capi del corpo e della testa: cambia quando un capo viene tolto, indossato o consumato.

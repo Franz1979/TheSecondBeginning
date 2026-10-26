@@ -426,6 +426,21 @@ static func dump_into_pits(world: World, near: Building, amount: int) -> int:
 	return dumped
 
 
+# --- Rifiuti che marciscono (2026-10-25, richiesta utente) ---
+# Ogni VILLAGE_WASTE_PERIOD_DAYS giorni, prima del carico dei rifiuti del villaggio, ogni Fossa (anche chiusa) perde
+# WASTE_DECAY_PER_PERIOD di rifiuti, mai sotto 0. I detriti di una Fossa in svuotamento non calano: sono in viaggio verso
+# un'altra Fossa.
+const WASTE_DECAY_PER_PERIOD: int = 20
+
+
+static func decay_pits(world: World) -> void:
+	if world == null:
+		return
+	for building in world.buildings:
+		if is_pit(building):
+			building.waste_stored = maxi(building.waste_stored - WASTE_DECAY_PER_PERIOD, 0)
+
+
 static func _find_building(world: World, building_id: int) -> Building:
 	if world == null or building_id < 0:
 		return null

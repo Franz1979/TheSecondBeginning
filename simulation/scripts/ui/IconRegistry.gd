@@ -49,6 +49,9 @@ const RESOURCE_ICONS := {
 	"stone_bowl": "🥣",
 	# Infuso di erbe (2026-10-25, richiesta utente — capanna del guaritore): emoji provvisoria.
 	"herbal_infusion": "🍵",
+	# Unguento di erbe e steccatura (2026-10-25, richiesta utente — rimedi delle ferite): emoji provvisorie.
+	"herbal_ointment": "🫙",
+	"splint": "🩼",
 	# Legna da ardere (2026-10-16, legnaia): ciocchi spaccati da un tronco.
 	"firewood": "🪵",
 	# Detriti (2026-10-18, macerie da portare alla Fossa dei rifiuti): emoji provvisorio.
@@ -110,6 +113,8 @@ const RESOURCE_ICON_NODES := {
 	"travois": preload("res://simulation/scripts/ui/TravoisIcon.gd"),
 	# Sacca di pelle essiccata (2026-10-04): modello migliore di hide_bag, stessa sagoma nel colore della pelle essiccata.
 	"dried_hide_bag": preload("res://simulation/scripts/ui/DriedHideBagIcon.gd"),
+	# Sacca di pelle affumicata (2026-10-25): la più durevole, stessa sagoma nel bruno della pelle affumicata col fumo.
+	"smoked_hide_bag": preload("res://simulation/scripts/ui/SmokedHideBagIcon.gd"),
 	# Vestiario (2026-10-11, richiesta utente): pelliccia di base (pelle col pelo, toni grigi) e, per il secondo livello,
 	# pelli lavorate — vedi FurDressIcon/FurCapIcon/WorkedHideDressIcon/WorkedHideCapIcon. Gli altri capi usano ApparelIcon.
 	"fur_dress": preload("res://simulation/scripts/ui/FurDressIcon.gd"),

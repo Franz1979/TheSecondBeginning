@@ -109,9 +109,11 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 	var loyalty_before := individual.current_loyalty
 
 	var has_home: bool = individual.house_id != -1
-	individual.current_health = _add_clamped(
-		individual.current_health, HOME_HEALTH_DELTA * home_multiplier if has_home else -HOMELESS_HEALTH_PENALTY, individual.max_health
-	)
+	# Salute del giorno sommata senza limiti intermedi e limitata a [0, max] una volta sola, dopo l'ultima voce (2026-10-25,
+	# bugfix "convalescenti fermi a 10"): prima la perdita della condizione si fermava a 0 e la riserva piena ridava +10
+	# prima del controllo della morte, così nessuno moriva mai. Vale anche per vestiario e condizioni (_apply_apparel_bonuses,
+	# HealthConditionService.advance_daily), che qui non limitano più la salute.
+	individual.current_health += HOME_HEALTH_DELTA * home_multiplier if has_home else -HOMELESS_HEALTH_PENALTY
 	var home_happiness: float = HOME_HAPPINESS_DELTA * home_multiplier if has_home else -HOMELESS_HAPPINESS_PENALTY
 	if lives_with_nucleus:
 		home_happiness += NUCLEUS_UNITED_HAPPINESS_DELTA
@@ -126,9 +128,7 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 		illness_log += " -%.1f" % HealthConditionService.advance_daily(individual)
 
 	var body_reserve_full: bool = individual.body_calories >= individual.body_calories_capacity - BODY_RESERVE_FULL_EPSILON
-	individual.current_health = _add_clamped(
-		individual.current_health, BODY_RESERVE_FULL_HEALTH_DELTA if body_reserve_full else -BODY_RESERVE_NOT_FULL_HEALTH_PENALTY, individual.max_health
-	)
+	individual.current_health += BODY_RESERVE_FULL_HEALTH_DELTA if body_reserve_full else -BODY_RESERVE_NOT_FULL_HEALTH_PENALTY
 
 	var human_rules := _resolve_human_rules(individual)
 	var stamina_gain: float = human_rules.stamina_daily_happiness_gain if human_rules != null else FALLBACK_STAMINA_DAILY_HAPPINESS_GAIN
@@ -156,7 +156,9 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 		var discomfort_happiness: float = human_rules.discomfort_coverage_daily_happiness_loss if human_rules != null else FALLBACK_DISCOMFORT_DAILY_HAPPINESS_LOSS
 		var discomfort_health: float = human_rules.discomfort_coverage_daily_health_loss if human_rules != null else FALLBACK_DISCOMFORT_DAILY_HEALTH_LOSS
 		individual.current_happiness = _add_clamped(individual.current_happiness, -discomfort_happiness, individual.max_happiness)
-		individual.current_health = _add_clamped(individual.current_health, -discomfort_health, individual.max_health)
+		individual.current_health -= discomfort_health
+	# Unico limite della salute del giorno (vedi sopra): a 0 il controllo delle morti per malattia la trova a 0.
+	individual.current_health = clampf(individual.current_health, 0.0, individual.max_health)
 
 	var happiness_threshold := individual.max_happiness / 2.0
 	var loyalty_delta: float = 100.0
@@ -191,7 +193,8 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 # in zaino o magazzino non conta) somma il suo SecondaryResourceRules.health_delta_by_season/happiness_delta_by_season
 # della stagione del giorno appena concluso (stesso giorno della regola 5 della fede). Subito dopo la casa e con la
 # stessa logica: le soglie delle regole successive leggono valori già toccati dal vestiario (una pelliccia d'estate
-# abbassa la felicità, e con essa può calare la lealtà). Limite a [0, max] dopo ogni capo.
+# abbassa la felicità, e con essa può calare la lealtà). Felicità limitata a [0, max] dopo ogni capo; la salute no, la
+# limita apply_daily_interaction a fine giornata.
 # Ritorna la variazione effettiva (x = salute, y = felicità, dopo i limiti) per il log.
 static func _apply_apparel_bonuses(individual: HumanIndividual) -> Vector2:
 	var game_data: GameData = GameSettings.active_game_data
@@ -208,7 +211,8 @@ static func _apply_apparel_bonuses(individual: HumanIndividual) -> Vector2:
 		var rules := CaloricCalculator.get_caloric_source_rules(apparel_name)
 		if rules == null:
 			continue
-		individual.current_health = _add_clamped(individual.current_health, _season_value(rules.health_delta_by_season, season), individual.max_health)
+		# Salute senza limite: la limita apply_daily_interaction a fine giornata.
+		individual.current_health += _season_value(rules.health_delta_by_season, season)
 		individual.current_happiness = _add_clamped(
 			individual.current_happiness, _season_value(rules.happiness_delta_by_season, season), individual.max_happiness
 		)
@@ -226,7 +230,7 @@ static func _apply_apparel_bonuses(individual: HumanIndividual) -> Vector2:
 	if individual.get_equipped_apparel(HumanIndividual.ApparelSlot.FEET) == "":
 		missing_delta += _season_value(missing_feet, season)
 	if missing_delta != 0.0:
-		individual.current_health = _add_clamped(individual.current_health, missing_delta, individual.max_health)
+		individual.current_health += missing_delta
 		individual.current_happiness = _add_clamped(individual.current_happiness, missing_delta, individual.max_happiness)
 	return Vector2(individual.current_health - health_start, individual.current_happiness - happiness_start)
 

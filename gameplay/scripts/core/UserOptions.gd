@@ -59,6 +59,9 @@ var production_delivery_default: bool = true
 # sospeso" (AudioEventListener). Spenta: nessun suono, lampeggio della scheda invariato. Chiave in options.cfg:
 # "pending_bell_sound".
 var pending_bell_sound: bool = true
+# Icone di salute sopra la testa dei pipottini (2026-10-25, richiesta utente — HealthConditionIcon): spenta, niente
+# faccina col termometro né cerotto sulla mappa. Chiave in options.cfg con lo stesso nome.
+var show_health_icons: bool = true
 # Minimappa della sidebar chiusa (2026-09-20, richiesta utente): true = nascosta, resta solo il bottone per
 # riaprirla; false (default) = visibile. Salvato a ogni click sul bottone.
 var minimap_collapsed: bool = false
@@ -141,6 +144,7 @@ func load_from_disk() -> void:
 	repeat_default = bool(config.get_value(SECTION, "repeat_default", config.get_value(SECTION, "pickup_repeat_default", false)))
 	production_delivery_default = bool(config.get_value(SECTION, "production_delivery_default", true))
 	pending_bell_sound = bool(config.get_value(SECTION, "pending_bell_sound", true))
+	show_health_icons = bool(config.get_value(SECTION, "show_health_icons", true))
 	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
 	work_area_auto_zone = bool(config.get_value(SECTION, "work_area_auto_zone", true))
 	# Letti così come sono: i dialog li riportano nei valori ammessi (PickupChoiceDialog, anche in modalità caccia).
@@ -170,6 +174,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "repeat_default", repeat_default)
 	config.set_value(SECTION, "production_delivery_default", production_delivery_default)
 	config.set_value(SECTION, "pending_bell_sound", pending_bell_sound)
+	config.set_value(SECTION, "show_health_icons", show_health_icons)
 	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
 	config.set_value(SECTION, "work_area_auto_zone", work_area_auto_zone)
 	config.set_value(SECTION, "work_area_gather_trips", work_area_gather_trips)

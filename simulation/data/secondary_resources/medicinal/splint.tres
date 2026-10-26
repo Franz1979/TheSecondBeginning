@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_splint"]
+
+[resource]
+script = ExtResource("1_splint")
+secondary_resource_name = "splint"
+calories_per_unit = 0.0
+category = 2
+required_idea_id = "herbal_medicine"
+generation_source = 2
+day_durability = 365
+recipe_inputs = {
+"fiber_rope": 2,
+"stick": 2
+}
+recipe_labor = 500.0
+recipe_fuel_required = 0.0
+recipe_workstation_types = Array[String](["healer_hut"])
+recipe_required_tool_categories = Array[int]([1])
+remedy_treats_condition_ids = Array[String](["fracture"])
+remedy_health_restore = 500.0
+remedy_blocks_daily_loss = true
+remedy_lasts_whole_condition = true

@@ -102,7 +102,8 @@ const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
 var _inventory_label: Label = null
 var _inventory_info: Array = []
 var _inventory_interval: int = 24
-const QUANTITY_COLUMN_WIDTH: float = 46.0
+# Stretta (2026-10-25, richiesta utente: più spazio al nome): basta per quattro cifre.
+const QUANTITY_COLUMN_WIDTH: float = 32.0
 const LEVEL_BUTTON_WIDTH: float = 16.0
 const LEVEL_EDIT_WIDTH: float = 38.0
 const LEVEL_MAX: int = 99999
@@ -112,11 +113,13 @@ const ABOVE_MAX_COLOR := Color(0.95, 0.72, 0.25, 1.0)
 const LEVEL_NONE_TEXT := "—"
 # Righe compatte (2026-10-18, richiesta utente): campi Min/Max stretti con + e − piccoli impilati a destra, rotella per
 # cambiarli; massimo vuoto = ∞. Stili propri (margini minimi) perché il tema di base allarga campo e bottoni.
-const LEVEL_COMPACT_EDIT_WIDTH: float = 26.0
-const LEVEL_COMPACT_BUTTON_SIZE := Vector2(11.0, 9.0)
+# Stretti (2026-10-25, richiesta utente: più spazio al nome): 22 px bastano per tre cifre; il LineEdit non si allarga più
+# alla larghezza minima del tema (minimum_character_width a 0 in _style_compact_edit).
+const LEVEL_COMPACT_EDIT_WIDTH: float = 22.0
+const LEVEL_COMPACT_BUTTON_SIZE := Vector2(10.0, 9.0)
 # Larghezza fissa della colonna di un campo compatto (campo + bottoni), uguale nelle righe e nell'intestazione "Min"/"Max"
 # (2026-10-18: prima l'intestazione misurava un campo di prova fuori dalla scena, senza tema, e le etichette scivolavano).
-const LEVEL_COMPACT_COLUMN_WIDTH: float = 40.0
+const LEVEL_COMPACT_COLUMN_WIDTH: float = 33.0
 const LEVEL_COMPACT_FONT_SIZE: int = 10
 const LEVEL_COMPACT_BUTTON_FONT_SIZE: int = 9
 const LEVEL_COMPACT_BG := Color(0.10, 0.11, 0.14, 1.0)
@@ -746,6 +749,7 @@ func _build_level_field(
 # Campo compatto: font piccolo, margini minimi, bordo sottile (più chiaro col fuoco).
 func _style_compact_edit(edit: LineEdit) -> void:
 	edit.add_theme_font_size_override("font_size", LEVEL_COMPACT_FONT_SIZE)
+	edit.add_theme_constant_override("minimum_character_width", 0)
 	for state in ["normal", "focus", "read_only"]:
 		var box := StyleBoxFlat.new()
 		box.bg_color = LEVEL_COMPACT_BG
@@ -1006,6 +1010,15 @@ func _build_row(resource_name: String) -> Control:
 	name_label.clip_text = true
 	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# Nome intero nel tooltip solo quando è troncato coi puntini (2026-10-25, richiesta utente), ricontrollato a ogni
+	# ridimensionamento della riga.
+	name_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	name_label.resized.connect(func() -> void:
+		var full_width := name_label.get_theme_font("font").get_string_size(
+			name_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, name_label.get_theme_font_size("font_size")
+		).x
+		name_label.tooltip_text = TooltipText.wrap(name_label.text) if full_width > name_label.size.x else ""
+	)
 	row.add_child(name_label)
 	var quantity_label := _quantity_column_label()
 	row.add_child(quantity_label)

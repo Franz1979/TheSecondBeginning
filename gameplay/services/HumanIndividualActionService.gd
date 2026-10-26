@@ -73,6 +73,9 @@ const CONTEXT_PENDING_PLAYER_MESSAGE := "pending_player_message"
 # Messaggio per il giocatore da una Task chiusa (2026-10-04, CONTEXT_PENDING_PLAYER_MESSAGE): GameScene lo mostra come i
 # rifiuti dei comandi.
 signal task_message_requested(individual: HumanIndividual, message: String)
+# Ferita da lavoro (2026-10-25, InjuryRollService): `condition_id` appena presa a fine azione, `activity_key` = chiave di
+# traduzione dell'attività ("cacciando"). GameScene mostra il messaggio.
+signal injury_occurred(individual: HumanIndividual, condition_id: String, activity_key: String)
 # Materiali troppo pesanti (2026-10-16, richiesta utente): chi costruisce o ripara `building` non porta nemmeno un'unità
 # di `names` (MaterialSupplyService.get_uncarryable_materials) e non ha altro da portare. GameScene rimette il lavoro in
 # coda (lo prenderà solo chi può portarli) e mostra il messaggio "non ha spazio per trasportare". Una volta per Task
@@ -275,7 +278,30 @@ func _log_action_time(individual: HumanIndividual, task: Task, action: Action) -
 # altra Task questo metodo continua a essere raggiunto SOLO da qui sotto, in apply_action, quando
 # is_complete() è davvero vero — comportamento sul bordo bloccato INVARIATO per loro (nessuna
 # chiamata a questo metodo da _block_border_crossing per una Task non idle, vedi quel file).
+#
+# Ferite da lavoro (2026-10-25, richiesta utente): DOPO tutta la chiusura dello step (effetti di completamento della Task
+# compresi, se era l'ultimo) un tiro sul rischio dell'azione (InjuryRollService). Ferita presa: messaggio
+# (injury_occurred) e a letto (SicknessService.on_bedridden), che chiude come H quello che il pipottino fa adesso. Niente
+# tiro per uno step chiuso da un abbandono (CONTEXT_PENDING_TASK_ABORT: bersaglio sparito, nessun lancio vero).
 func finish_current_step(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> void:
+	var action := task.get_current_action()
+	var aborted := task.context.has(CONTEXT_PENDING_TASK_ABORT)
+	_finish_current_step(individual, task, world, game_data)
+	if aborted:
+		return
+	var injury := InjuryRollService.roll_after_action(individual, action, task.context, game_data)
+	if injury.is_empty():
+		return
+	injury_occurred.emit(individual, String(injury["condition_id"]), String(injury["activity"]))
+	var ctx := GameContext.new()
+	ctx.game_data = game_data
+	ctx.world = world
+	ctx.individuals = GameSettings.active_human_individuals
+	ctx.folk = individual.folk_ref
+	SicknessService.on_bedridden(ctx, individual, GameEffects.new())
+
+
+func _finish_current_step(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> void:
 	var action := task.get_current_action()
 	# on_complete() (2026-09-07, richiesta utente, introdotta con ThinkAction) — SEMPRE PRIMA di
 	# advance_to_next_step()/stop(): quello che uno step lascia sull'individuo al proprio termine
@@ -2412,6 +2438,9 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 			return
 		# Attrezzi in prestito (2026-10-24): riposti appena libero, stesso motivo del travois.
 		if ToolFetchService.try_return_borrowed_tools(individual, age_band, world):
+			return
+		# Munizioni senza arma (2026-10-25): frecce sue rimaste in cintura senza arco, riposte nel deposito migliore.
+		if ToolFetchService.try_store_orphan_ammo(individual, age_band, world):
 			return
 		if ToolFetchService.try_wear_apparel(individual, age_band, world):
 			return

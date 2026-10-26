@@ -290,6 +290,13 @@ var max_health: float = 0.0
 # Condizioni di salute in corso (2026-10-25, HealthConditionService — malattie e ferite): lista di {"id" di
 # HealthConditionRules, "days" che restano} (il giocatore non vede i giorni). Salvate con la partita.
 var health_conditions: Array[Dictionary] = []
+# Postumi permanenti (2026-10-26, HealthConditionService — frattura mal saldata): salute massima persa per sempre, tolta
+# ogni giorno in HumanVitalsIndividualService.recalculate_vitals. Salvata.
+var permanent_max_health_loss: float = 0.0
+# Contagio (2026-10-25, ContagionService): malattie in incubazione {"id", "days", "source_id"} — invisibili al giocatore,
+# fuori da health_conditions — e immunità {id condizione: giorno assoluto di scadenza, -1 = per sempre}. Salvate.
+var incubating_conditions: Array[Dictionary] = []
+var immunities: Dictionary = {}
 var current_happiness: float = 0.0
 var max_happiness: float = 0.0
 var current_loyalty: float = 0.0
@@ -915,7 +922,8 @@ const SICK_ALLOWED_TASK_NAMES: Array[String] = ["task_leisure_rest_name", "task_
 
 
 # Condizione che manda a letto (HealthConditionService) oppure salute sotto HumanRules.sick_health_threshold: solo bisogni (riposo, provviste), nessun lavoro, svago, rito o
-# comando diretto (vedi get_assign_rejection_reason). Il compito già in corso si finisce.
+# comando diretto (vedi get_assign_rejection_reason). Il compito già in corso si chiude subito come con H, se non è un
+# bisogno (SicknessService.on_bedridden, 2026-10-25).
 func is_sick() -> bool:
 	if not health_conditions.is_empty() and HealthConditionService.requires_bed_rest(self):
 		return true
