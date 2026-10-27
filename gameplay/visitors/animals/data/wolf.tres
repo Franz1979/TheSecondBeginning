@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="AnimalVisitorRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/visitors/animals/scripts/AnimalVisitorRules.gd" id="1_wolf_visitors"]
+
+[resource]
+script = ExtResource("1_wolf_visitors")
+wild_species_name = "wolf"
+initial_breeding_pair = true
+initial_extra_adults = 0
+initial_young = 2
+initial_cubs = 2
+adult_aggression_min = 85.0
+adult_aggression_max = 100.0
+young_aggression_min = 70.0
+young_aggression_max = 90.0
+cub_aggression_min = 50.0
+cub_aggression_max = 70.0

@@ -9,7 +9,7 @@ calories_per_unit = 0.0
 category = 2
 required_idea_id = "herbal_medicine"
 generation_source = 2
-day_durability = 120
+day_durability = 180
 recipe_inputs = {
 "bone": 2,
 "medicinal_herbs": 4

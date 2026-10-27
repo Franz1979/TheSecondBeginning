@@ -90,17 +90,28 @@ text = "Partita - · Play -"
 layout_mode = 2
 
 [node name="RandomEventOptionButton" type="OptionButton" parent="MarginContainer/HBoxContainer/ContentGroup"]
-custom_minimum_size = Vector2(140, 32)
+custom_minimum_size = Vector2(110, 32)
 layout_mode = 2
+theme_override_font_sizes/font_size = 11
+clip_text = true
 
 [node name="RandomEventApplyButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
-custom_minimum_size = Vector2(80, 32)
+custom_minimum_size = Vector2(28, 32)
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="VSeparatorDomestication" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
 layout_mode = 2
 
-[node name="VSeparatorVisitors" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
+[node name="WolvesLabel" type="Label" parent="MarginContainer/HBoxContainer/ContentGroup"]
 layout_mode = 2
+mouse_filter = 0
+theme_override_font_sizes/font_size = 11
+vertical_alignment = 1
+text = "🐺-"
 
-[node name="VisitorSpawnButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
-custom_minimum_size = Vector2(44, 32)
+[node name="DomesticationButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
+custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
-text = "👥+"
+theme_override_font_sizes/font_size = 11
+text = "🐕+100"

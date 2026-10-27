@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="DiscoveryHintRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/discoveries/scripts/DiscoveryHintRules.gd" id="1_rules"]
+
+[resource]
+script = ExtResource("1_rules")
+id = "first_domesticated_wolf"
+title_key = "discovery_first_domesticated_wolf_title"
+paragraph_keys = Array[String](["discovery_first_domesticated_wolf_p1", "discovery_first_domesticated_wolf_p2"])
+trigger_type = 2
+close_action = 1
+grant_idea_id = "domestication"
+grant_title_key = "discovery_first_domesticated_wolf_gift_title"
+grant_paragraph_keys = Array[String](["discovery_first_domesticated_wolf_gift_p1", "discovery_first_domesticated_wolf_gift_p2"])
+species = "dog"

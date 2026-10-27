@@ -666,6 +666,15 @@ func get_individual_count() -> int:
 	return _groups.size()
 
 
+# Almeno un individuo fuori dalla nebbia (stesso test del disegno) — specie incontrate, vedi
+# DomesticationEncounterService. Si ferma al primo visibile.
+func has_visible_individual() -> bool:
+	for group in _groups:
+		if _is_visible_now(group.position):
+			return true
+	return false
+
+
 # --- Selezione (AnimalSelectorController / GameScene) ---
 # Gli individui restano posseduti da questo renderer: chi li legge da fuori non li modifica mai.
 

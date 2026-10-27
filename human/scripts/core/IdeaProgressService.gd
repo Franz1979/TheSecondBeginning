@@ -74,7 +74,7 @@ static func grant_idea(folk: Folk, idea_id: String) -> bool:
 # (l'idea attiva stessa resta disponibile: chi distingue "in ricerca" è il chiamante, vedi
 # TechTreePanel._state_of).
 static func is_available(folk: Folk, idea: Idea) -> bool:
-	if folk.completed_ideas.has(idea.id):
+	if folk.completed_ideas.has(idea.id) or idea.discovery_only:
 		return false
 	for prerequisite_id in idea.prerequisites:
 		if not folk.completed_ideas.has(prerequisite_id):
@@ -106,6 +106,9 @@ static func select_idea(folk: Folk, idea_id: String, current_day: int, era_rules
 # prerequisito non è né completato né disponibile (o non esiste). Idee senza prerequisiti sono
 # sempre visibili.
 static func is_hidden(folk: Folk, idea: Idea) -> bool:
+	# Idea solo da scoperta (Idea.discovery_only): coperta finché non arriva in regalo.
+	if idea.discovery_only and not folk.completed_ideas.has(idea.id):
+		return true
 	for prerequisite_id in idea.prerequisites:
 		if folk.completed_ideas.has(prerequisite_id):
 			continue

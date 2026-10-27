@@ -99,7 +99,7 @@ idea_oral_teaching_summary,Gli anziani tramandano ai bambini ciò che sanno fare
 idea_oral_teaching_description,"Racconti e gesti ripetuti passano il sapere da una generazione all'altra."
 idea_tribal_organization,Organizzazione tribale
 idea_tribal_organization_summary,Il villaggio impara a riunirsi e a decidere insieme.
-idea_tribal_organization_description,"Gli anziani e i più esperti siedono in cerchio, e la loro parola guida la tribù."
+idea_tribal_organization_description,"Gli anziani e i più esperti siedono in cerchio, e la loro parola guida la tribù. Le riunioni al Cerchio del consiglio si tengono solo su ordine: con il Capo villaggio si potranno programmare."
 idea_drying,Essiccazione
 idea_drying_summary,Permette di costruire il graticcio per essiccare la carne.
 idea_drying_description,"Stesa al sole e al vento su un graticcio, la carne si conserva molto più a lungo."
@@ -691,7 +691,7 @@ animal_selection_title,Animale
 animal_species_label,Specie: {species}
 animal_age_band_label,Età: {age_band}
 animal_species_rabbit,Coniglio
-animal_species_partridge,Pernice
+animal_species_partridge,Gallo selvatico
 animal_species_deer,Cervo
 animal_species_boar,Cinghiale
 animal_species_mouflon,Muflone
@@ -757,7 +757,6 @@ task_store_tool_step_walk,Andando a riporre l'attrezzo
 building_assigned_worker_label,Lavoratore assegnato: {names}
 building_assigned_worker_missing,Lavoratore assegnato: mancante
 building_cancel_work_tooltip,Annulla il lavoro su questo edificio per chi ci sta lavorando (il lavoro già fatto resta)
-debug_visitor_spawn_tooltip,Lancia l'evento Arrivo di una famiglia (richiede il centro del villaggio)
 visitor_decision_family_title,Arrivo di una famiglia
 visitor_decision_family_text,Una famiglia è arrivata al centro del villaggio e chiede di unirsi a voi:
 visitor_decision_family_question,La accogliete nel villaggio?
@@ -1551,3 +1550,75 @@ pending_stock_toolkit_missing,"Nessun magazzino ha: {tools}"
 warehouse_rule_toolkit_edit,Modifica…
 warehouse_rule_toolkit_edit_tooltip,"Pezzi voluti di ogni attrezzo nelle Attrezzerie, per tipo di edificio"
 warehouse_rule_toolkit_empty,"Nessun edificio con Attrezzeria ancora sbloccato"
+building_council_circle,Cerchio del consiglio
+build_bar_council_circle_tooltip,Cerchio del consiglio
+build_bar_council_circle_description,"Grandi pietre in cerchio, dove il villaggio si riunisce. Può diventare il nuovo centro del villaggio. Le riunioni si tengono solo su ordine: con il Capo villaggio si potranno programmare."
+build_bar_unique_building_disabled_tooltip,Non costruibile: ne esiste già uno
+building_move_village_center_button,Sposta qui il centro del villaggio
+building_command_move_village_center_detail,"Il centro di {village} passa qui, per sempre"
+village_center_move_confirmation_title,Spostare il centro del villaggio?
+village_center_move_confirmation_text,"Spostare qui il centro di {village}? {building} diventa il centro del villaggio. Non si potrà tornare indietro: il vecchio centro resta in piedi, accetta ancora i pensieri ed è ancora un punto di assegnazione."
+village_center_move_confirmation_name,"Dai un nome al villaggio (vuoto = lo darai più avanti dal pannello del centro). La lealtà degli abitanti nasce con il nome. Una volta scelto, non si potrà più cambiare:"
+village_center_move_confirmation_confirm,Sposta il centro
+notification_village_center_movable,"{building} è pronto: dal suo pannello puoi spostarvi il centro di {village}"
+notification_village_center_moved,{building} è ora il centro di {village}
+building_name_village_button,Dai un nome al villaggio
+building_command_name_village_detail,"Una volta sola: poi non si potrà più cambiare"
+village_naming_confirmation_title,Dare un nome al villaggio?
+village_naming_confirmation_text,"Che nome vuoi dare a {village}? Una volta scelto, non si potrà più cambiare."
+village_naming_confirmation_confirm,Dai il nome
+notification_village_named,Il villaggio si chiama ora {village}
+domestic_animal_dog,Cane
+discovery_first_domesticated_wolf_title,Un lupo che non fugge più
+discovery_first_domesticated_wolf_p1,"Per lungo tempo un branco di lupi è tornato a frugare nella fossa dei rifiuti. Ogni volta si avvicinava un po' di più, ogni volta fuggiva un po' più tardi."
+discovery_first_domesticated_wolf_p2,"Questa volta uno dei giovani è rimasto. Non ringhia più: segue gli abitanti a distanza, dorme vicino alle capanne. Non è più un lupo: è un cane."
+discovery_first_domesticated_wolf_gift_title,Una nuova idea: {idea}
+discovery_first_domesticated_wolf_gift_p1,"Se un lupo può vivere con noi, forse anche altri animali possono farlo."
+discovery_first_domesticated_wolf_gift_p2,"Gli abitanti cominciano a guardare in modo diverso le prede che cacciano: alcune, un giorno, potrebbero restare al villaggio invece di finire sul fuoco."
+idea_village_chief,Capo villaggio
+idea_village_chief_summary,Il villaggio riconosce una guida.
+idea_village_chief_description,"Tra chi siede nel cerchio, uno solo parla per tutti: il capo del villaggio."
+idea_role_assignment,Assegnazione dei ruoli
+idea_role_assignment_summary,Ognuno ha un compito fisso nel villaggio.
+idea_role_assignment_description,"Il capo affida a ciascuno il suo ruolo: chi coordina il lavoro, chi custodisce le scorte."
+idea_domestication,Addomesticazione
+idea_domestication_summary,"Animali e piante selvatici possono, col tempo, vivere accanto all'uomo."
+idea_domestication_description,"Dal lupo diventato cane il villaggio ha capito che ciò che è selvatico, avvicinato con pazienza per generazioni, può cambiare e vivere al suo fianco. Apre la strada all'addomesticazione degli animali e delle piante."
+idea_animal_domestication,Addomesticazione degli animali
+idea_animal_domestication_summary,Permette di iniziare ad addomesticare le specie animali incontrate.
+idea_animal_domestication_description,"Il villaggio impara che anche altri animali, non solo il lupo, possono abituarsi all'uomo. Ogni specie va prima trovata nel mondo, poi avvicinata con pazienza: ci vorranno generazioni."
+idea_plant_domestication,Addomesticazione delle piante
+idea_plant_domestication_summary,Permette di iniziare ad addomesticare le specie vegetali incontrate.
+idea_plant_domestication_description,"Il villaggio nota che le piante cresciute vicino alle capanne, dai semi scartati, non sono uguali a quelle del bosco. Scegliendo e ripiantando i semi migliori, col tempo si potranno avere piante più generose. Prepara la strada all'agricoltura."
+domestic_animal_goat,Capra
+domestic_animal_sheep,Pecora
+domestic_animal_pig,Maiale
+domestic_animal_donkey,Asino
+domestic_animal_cattle,Bovino
+domestic_animal_horse,Cavallo
+domestic_animal_domestic_rabbit,Coniglio domestico
+domestication_tooltip,Addomesticazioni
+domestication_panel_title,Addomesticazioni
+domestication_tab_animals,Animali
+domestication_tab_plants,Piante
+domestication_from,da: {species}
+domestication_state_domesticated,Addomesticata
+domestication_state_in_progress,In corso
+domestication_state_locked,Serve l'idea «{idea}»
+domestication_animals_locked_notice,"Studia «{idea}» per iniziare ad addomesticare altre specie animali, oltre al lupo."
+domestication_plants_locked_notice,Studia «{idea}» per iniziare ad addomesticare le piante.
+domestication_plants_empty,Nessuna specie vegetale ancora conosciuta.
+rite_council_of_elders_name,Consiglio degli anziani
+task_council_of_elders_name,Consiglio degli anziani
+political_rite_reject_not_center,Solo quando il Cerchio del consiglio è il centro del villaggio
+political_rite_reject_too_soon,Troppo presto: di nuovo tra {days} giorni
+political_rite_order_only_tooltip,Solo su ordine. Con il Capo villaggio si potrà programmare.
+domestic_animal_chicken,Gallina
+rite_village_assembly_name,Gran consiglio del villaggio
+task_village_assembly_name,Gran consiglio del villaggio
+notification_political_rite_success,{rite}: la riunione è andata bene
+notification_political_rite_quarrel,{rite}: la riunione è finita in lite
+building_selection_village_center,Questo edificio è il centro del villaggio
+individual_loyalty_frozen_tooltip,La lealtà nasce quando il villaggio riceve un nome
+warehouse_rule_fuel_edit_tooltip,"Scorta di combustibile voluta, per tipo di edificio"
+warehouse_rule_fuel_empty,"Nessun edificio che usa combustibile ancora sbloccato"

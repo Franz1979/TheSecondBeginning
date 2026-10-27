@@ -32,6 +32,8 @@ extends Resource
 @export var building_type_name: String = ""
 # Nome di un campo bool di BuildingRules che deve essere true (es. "accepts_thoughts", "is_village_center").
 @export var building_flag: String = ""
+# Specie domestica (DomesticAnimalRules.species_name, es. "dog") per ANIMAL_DOMESTICATED.
+@export var species: String = ""
 
 
 func matches(trigger: DiscoveryTypes.TriggerType, data: Dictionary) -> bool:
@@ -51,4 +53,6 @@ func matches(trigger: DiscoveryTypes.TriggerType, data: Dictionary) -> bool:
 					return false
 				return bool(building.rules.get(building_flag))
 			return true
+		DiscoveryTypes.TriggerType.ANIMAL_DOMESTICATED:
+			return species == "" or String(data.get("species", "")) == species
 	return false

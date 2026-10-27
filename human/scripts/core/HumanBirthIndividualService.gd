@@ -225,6 +225,10 @@ static func _create_newborn(mother: HumanIndividual, game_data: GameData, all_in
 		var mother_skill: float = mother.get(skill_name)
 		var father_skill: float = father.get(skill_name) if father != null else 0.0
 		newborn.set(skill_name, (mother_skill + father_skill) / 10.0)
+	# Lealtà (2026-10-26, richiesta utente): media dei genitori (solo la madre se il padre non c'è più), nei limiti del
+	# neonato. Prima del battesimo i genitori sono a 0 o fermi, e al battesimo tutti tornano a 0.
+	var parents_loyalty: float = (mother.current_loyalty + father.current_loyalty) / 2.0 if father != null else mother.current_loyalty
+	newborn.current_loyalty = clampf(parents_loyalty, 0.0, newborn.max_loyalty)
 
 	# Bugfix (2026-09-13, richiesta utente) — STESSA causa/STESSO principio del fix gemello in
 	# GameScene._ready() (seeding/caricamento): un neonato nasce con current_task == null (mai

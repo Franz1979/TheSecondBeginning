@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="DomesticAnimalRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/domestic_animals/scripts/DomesticAnimalRules.gd" id="1_donkey"]
+
+[resource]
+script = ExtResource("1_donkey")
+species_name = "donkey"
+display_name = "domestic_animal_donkey"
+wild_species_name = "wild_donkey"
+domestication_points_required = 4000
+required_idea_id = "animal_domestication"

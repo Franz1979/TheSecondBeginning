@@ -17,3 +17,6 @@ var auto_clear_checked_enabled: bool = false
 # (id edificio -> giorno), per l'attesa SocialRiteRules.idle_cooldown_days. Dopo un caricamento è vuoto: il primo rito
 # spontaneo può partire subito.
 var last_social_rite_end_day: Dictionary = {}
+# Esito dell'ultima riunione politica finita (2026-10-26, lite del gran consiglio): id edificio -> {"rite_id", "quarrel"}.
+# Scritto da PoliticalRiteService.apply_meeting, consumato una volta da GameScene alla fine del rito (icona e avviso).
+var political_rite_outcomes: Dictionary = {}

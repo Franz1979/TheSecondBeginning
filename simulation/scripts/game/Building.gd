@@ -79,6 +79,9 @@ var repair_auto_excluded: bool = false
 # (RiteRules.id), "" = nessuno. Resta finché il rito non è celebrato davvero (RiteAction.on_complete) o annullato con la X;
 # se chi lo celebra lo abbandona torna "mancante" (e in coda con l'idea dell'assegnazione). Salvato con l'edificio.
 var requested_rite_id: String = ""
+# Giorno assoluto di fine dell'ultimo rito di ciascun tipo qui (2026-10-26, riunioni politiche — attesa
+# PoliticalRiteRules.min_days_between): RiteRules.id -> int. Salvato con l'edificio.
+var last_rite_end_day: Dictionary = {}
 # Soglia di calorie del banchetto di questo spiazzo (2026-10-17, richiesta utente — pannello edificio): -1 = valore di
 # partenza dei dati (BanquetRiteRules.default_calorie_threshold). Letta solo da SocialRiteService.get_calorie_threshold.
 # Salvata con l'edificio.

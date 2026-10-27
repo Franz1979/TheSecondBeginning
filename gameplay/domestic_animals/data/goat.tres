@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="DomesticAnimalRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/domestic_animals/scripts/DomesticAnimalRules.gd" id="1_goat"]
+
+[resource]
+script = ExtResource("1_goat")
+species_name = "goat"
+display_name = "domestic_animal_goat"
+wild_species_name = "bezoar"
+domestication_points_required = 3000
+required_idea_id = "animal_domestication"

@@ -598,9 +598,10 @@ func _init() -> void:
 	var initial_happiness := _resolve_initial_max_happiness()
 	current_happiness = initial_happiness
 	max_happiness = initial_happiness
-	var initial_loyalty := _resolve_initial_max_loyalty()
-	current_loyalty = initial_loyalty
-	max_loyalty = initial_loyalty
+	# Lealtà da 0 (2026-10-26, richiesta utente): si costruisce dal battesimo del villaggio (VillageService.is_loyalty_active);
+	# chi arriva da fuori parte sempre da 0, i neonati dalla media dei genitori (HumanBirthIndividualService).
+	current_loyalty = 0.0
+	max_loyalty = _resolve_initial_max_loyalty()
 	current_faith = 0.0
 	max_faith = _resolve_initial_max_faith()
 

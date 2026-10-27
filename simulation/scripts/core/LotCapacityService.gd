@@ -144,7 +144,8 @@ static func refresh_grass_patch_lot_capacity(macro_state: MacroCellState, resour
 	if rules != null and rules.patch_probability > 0.0 and grass_space > 0:
 		var patch_seed: int = hash(str(macro_state.micro_seed) + "_" + resource_name + "_patch")
 		var capacity_seed: int = hash(str(macro_state.micro_seed) + "_" + resource_name + "_patch_capacity")
-		var density_factor: float = float(grass_space) / float(MacroCellState.TOTAL_SPACE)
+		# Niente più fattore di densità sulla capacità (2026-10-27, richiesta utente: con poca erba ogni lotto dava 1-2
+		# invece di patch_capacity_min-max): la densità conta già nel numero dei lotti, che nascono solo sulle posizioni GRASS.
 		for pos in grass_positions:
 			var lot := Vector2i(pos.x, pos.y)
 			var hash_value: float = float(hash(lot * 3 + Vector2i(patch_seed, 811)) % 100000) / 100000.0
@@ -152,7 +153,7 @@ static func refresh_grass_patch_lot_capacity(macro_state: MacroCellState, resour
 				continue
 			var capacity_hash: float = float(hash(lot * 5 + Vector2i(capacity_seed, 953)) % 100000) / 100000.0
 			var raw_capacity: float = lerp(float(rules.patch_capacity_min), float(rules.patch_capacity_max), capacity_hash)
-			var capacity: int = int(round(raw_capacity * density_factor))
+			var capacity: int = int(round(raw_capacity))
 			if capacity > 0:
 				lots[lot] = capacity
 	macro_state.lot_capacity_cache[resource_name] = lots

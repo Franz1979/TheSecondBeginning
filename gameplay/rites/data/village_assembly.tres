@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="PoliticalRiteRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/rites/scripts/PoliticalRiteRules.gd" id="1_assembly"]
+
+[resource]
+script = ExtResource("1_assembly")
+id = "village_assembly"
+rite_type = 1
+display_name = "rite_village_assembly_name"
+building_types = Array[String](["council_circle"])
+min_skill = 150.0
+allowed_age_bands = Array[int]([3, 4, 5])
+spontaneous = false
+convoked_age_bands = Array[int]([2, 3, 4, 5])
+counted_age_bands = Array[int]([3, 4, 5])
+max_participants = 0
+min_village_adults = 10
+min_participants = 8
+wait_days = 2.5
+feast_days = 1.0
+organizer_stamina_per_day = 150.0
+idle_cooldown_days = 0.0
+happiness_gain = 0.0
+social_gain_participant = 1.0
+social_gain_organizer = 1.0
+cohesion_gain = 0.5
+command_icon_key = "council"
+task_label_key = "task_village_assembly_name"
+requires_village_center = true
+min_days_between = 90
+leadership_gain_organizer = 1.0
+leadership_gain_participant = 0.0
+loyalty_gain = 50.0
+influence_points_base = 2.0
+influence_points_per_participant = 0.2
+village_political_gain = 2.0
+village_political_gain_per_participant = 0.1
+quarrel_base_chance = 0.15
+skip_cohesion_loss = 0.2
+skip_loyalty_loss = 25.0

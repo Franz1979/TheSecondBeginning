@@ -114,6 +114,10 @@ signal cancel_empty_pit_requested(building: Building)
 signal waste_closed_toggle_requested(building: Building)
 # Cancello (2026-10-23): Apri/Chiudi.
 signal gate_toggle_requested(building: Building)
+# Sposta qui il centro del villaggio (2026-10-26, cerchio del consiglio): GameScene apre la conferma (irreversibile, nome).
+signal village_center_move_requested(building: Building)
+# Dai un nome al villaggio (2026-10-26): GameScene apre il dialogo col nome.
+signal village_naming_requested(building: Building)
 # Edifici sulla stessa microcella (2026-10-25, richiesta utente): una riga "Anche qui:" chiede di selezionare quell'edificio
 # (show_shared_building_links).
 signal shared_building_requested(building: Building)
@@ -187,6 +191,9 @@ const STORAGE_SLOT_FILL_BAR_FILL_COLOR := Color(1.0, 1.0, 1.0, 0.85)
 const STORAGE_SLOT_OVER_CAPACITY_MODULATE := Color(1.0, 0.5, 0.5, 0.75)
 
 @onready var status_label: Label = $StatusRow/StatusLabel
+# Centro del villaggio (2026-10-26, richiesta utente): riga a tutta larghezza sopra lo stato, solo sull'edificio che è
+# davvero il centro (Village.center_building_id).
+@onready var village_center_label: Label = $VillageCenterLabel
 # X accanto a "Stato" (2026-09-26, richiesta utente): annulla il lavoro in corso sull'edificio
 # (costruzione o produzione) di TUTTI gli individui che ci lavorano — vedi work_cancel_requested.
 @onready var cancel_work_button: Button = $StatusRow/CancelWorkButton
@@ -281,6 +288,8 @@ var empty_pit_button: Button = null
 var cancel_empty_pit_button: Button = null
 var waste_closed_button: Button = null
 var gate_button: Button = null
+var move_center_button: Button = null
+var name_village_button: Button = null
 var _repair_status_label: Label = null
 # Riparazione ferma per materiale (2026-10-10, passo 4): riga arancione subito sotto _repair_status_label.
 var _repair_wait_label: Label = null
@@ -520,6 +529,8 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 			"to": tr(building.rules.building_name) if building.rules != null else building.building_type_name,
 		})
 	status_label.text = tr("building_status_label").format({"status": status_text})
+	village_center_label.text = tr("building_selection_village_center")
+	village_center_label.visible = VillageService.find_village_by_center(GameSettings.active_human_folk, building.id) != null
 	if demolition_started:
 		status_label.add_theme_color_override("font_color", DEMOLITION_IN_PROGRESS_STATUS_COLOR)
 	else:
@@ -724,12 +735,15 @@ func _refresh_command_icon_row(building: Building, demolition_started: bool) -> 
 	_refresh_repair_button(building)
 	_refresh_waste_pit_buttons(building)
 	_refresh_gate_button(building)
+	_refresh_move_center_button(building)
+	_refresh_name_village_button(building)
 	for button in [upgrade_button, repair_button, clear_rubble_button, empty_all_button, demolish_button, cancel_demolition_button,
-			empty_pit_button, cancel_empty_pit_button, waste_closed_button, gate_button]:
+			empty_pit_button, cancel_empty_pit_button, waste_closed_button, gate_button, move_center_button,
+			name_village_button]:
 		_style_command_icon_button(button)
 	command_icon_row.visible = upgrade_button.visible or repair_button.visible or clear_rubble_button.visible or empty_all_button.visible \
 		or demolish_button.visible or cancel_demolition_button.visible or empty_pit_button.visible or cancel_empty_pit_button.visible \
-		or waste_closed_button.visible or gate_button.visible
+		or waste_closed_button.visible or gate_button.visible or move_center_button.visible or name_village_button.visible
 	_update_command_bar_visibility()
 
 
@@ -812,6 +826,18 @@ func _build_repair_controls() -> void:
 	command_icon_row.add_child(gate_button)
 	command_icon_row.move_child(gate_button, clear_rubble_button.get_index() + 1)
 	gate_button.pressed.connect(func(): gate_toggle_requested.emit(_current_building))
+	# Sposta qui il centro (2026-10-26): a sinistra, dopo Sgombera.
+	move_center_button = Button.new()
+	move_center_button.visible = false
+	command_icon_row.add_child(move_center_button)
+	command_icon_row.move_child(move_center_button, clear_rubble_button.get_index() + 1)
+	move_center_button.pressed.connect(func(): village_center_move_requested.emit(_current_building))
+	# Dai un nome al villaggio (2026-10-26): a sinistra, dopo Sgombera.
+	name_village_button = Button.new()
+	name_village_button.visible = false
+	command_icon_row.add_child(name_village_button)
+	command_icon_row.move_child(name_village_button, clear_rubble_button.get_index() + 1)
+	name_village_button.pressed.connect(func(): village_naming_requested.emit(_current_building))
 	_repair_status_label = Label.new()
 	_repair_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_repair_status_label.custom_minimum_size.x = 0.0
@@ -917,6 +943,8 @@ func _setup_command_icon_buttons() -> void:
 		cancel_empty_pit_button: BuildingCommandIcon.KIND_CANCEL_EMPTY_PIT,
 		waste_closed_button: BuildingCommandIcon.KIND_CLOSE_PIT,
 		gate_button: BuildingCommandIcon.KIND_CLOSE_GATE,
+		move_center_button: BuildingCommandIcon.KIND_MOVE_VILLAGE_CENTER,
+		name_village_button: BuildingCommandIcon.KIND_NAME_VILLAGE,
 		empty_all_button: BuildingCommandIcon.KIND_EMPTY_ALL,
 		demolish_button: BuildingCommandIcon.KIND_DEMOLISH,
 		cancel_demolition_button: BuildingCommandIcon.KIND_CANCEL_DEMOLITION,
@@ -1284,6 +1312,32 @@ func _refresh_gate_button(building: Building) -> void:
 	gate_button.tooltip_text = TooltipText.wrap("%s\n%s" % [
 		tr("building_close_gate_button" if building.gate_open else "building_open_gate_button"),
 		tr("building_command_close_gate_detail" if building.gate_open else "building_command_open_gate_detail"),
+	])
+
+
+# Sposta qui il centro del villaggio (2026-10-26): solo quando VillageService.get_center_move_village lo permette (candidato
+# di livello superiore al centro attuale, o villaggio senza centro) e l'edificio non è "da demolire".
+func _refresh_move_center_button(building: Building) -> void:
+	var village := VillageService.get_center_move_village(GameSettings.active_human_folk, GameSettings.active_world, building)
+	move_center_button.visible = village != null and not building.is_marked_for_demolition
+	if not move_center_button.visible:
+		return
+	move_center_button.tooltip_text = TooltipText.wrap("%s\n%s" % [
+		tr("building_move_village_center_button"),
+		tr("building_command_move_village_center_detail").format({"village": village.get_display_name()}),
+	])
+
+
+# Dai un nome al villaggio (2026-10-26): sul centro di livello sufficiente di un villaggio ancora senza nome
+# (VillageService.get_nameable_village).
+func _refresh_name_village_button(building: Building) -> void:
+	var village := VillageService.get_nameable_village(GameSettings.active_human_folk, GameSettings.active_world, building)
+	name_village_button.visible = village != null and not building.is_marked_for_demolition
+	if not name_village_button.visible:
+		return
+	name_village_button.tooltip_text = TooltipText.wrap("%s
+%s" % [
+		tr("building_name_village_button"), tr("building_command_name_village_detail"),
 	])
 
 
@@ -2840,7 +2894,12 @@ func _refresh_rite_section(building: Building) -> void:
 		button.add_theme_font_size_override("font_size", 10)
 		var rejection_key := RiteService.get_order_rejection_key(building, rules.id, busy)
 		button.disabled = rejection_key != ""
-		button.tooltip_text = TooltipText.wrap(tr(rejection_key) if rejection_key != "" else tr("building_rite_button_tooltip"))
+		var rite_tooltip := tr(rejection_key) if rejection_key != "" else tr("building_rite_button_tooltip")
+		# Riunioni politiche (2026-10-26): mai da sole, a differenza di lezioni e banchetti.
+		if rules is PoliticalRiteRules:
+			rite_tooltip += "
+" + tr("political_rite_order_only_tooltip")
+		button.tooltip_text = TooltipText.wrap(rite_tooltip)
 		var rite_id := rules.id
 		button.pressed.connect(func(): rite_requested.emit(building, rite_id))
 		buttons.add_child(button)

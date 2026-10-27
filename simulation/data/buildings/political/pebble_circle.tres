@@ -15,11 +15,12 @@ required_materials = {
 "pebble": 150
 }
 required_space = 1
-buildable_on_water = true
+buildable_on_water = false
 has_door = false
 visibility_radius = 5
 political_radius = 5
 cultural_radius = 4
-is_village_center = true
+is_unique = true
+village_center_tier = 1
 accepts_thoughts = true
 is_assignment_point = true

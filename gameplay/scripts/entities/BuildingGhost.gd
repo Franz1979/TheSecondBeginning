@@ -343,6 +343,10 @@ func _draw_shape() -> void:
 	if building_type_name == TravoisRackShape.TYPE:
 		TravoisRackShape.draw(self, _footprint_offset, rotation_dir, 0, not is_buildable, COLOR.a)
 		return
+	# Cerchio del consiglio (2026-10-26): lo stesso disegno della mappa sul rettangolo, semitrasparente.
+	if building_type_name == CouncilCircleShape.TYPE:
+		CouncilCircleShape.draw(self, _footprint_offset, _footprint_rect_px, not is_buildable, COLOR.a)
+		return
 	# Spiazzo delle feste (2026-10-17): lo stesso disegno della mappa sul rettangolo, semitrasparente.
 	if building_type_name == FeastGroundShape.TYPE:
 		FeastGroundShape.draw(self, _footprint_offset, _footprint_rect_px, not is_buildable, COLOR.a)

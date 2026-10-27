@@ -59,6 +59,9 @@ var individuals_added: Array[HumanIndividual] = []
 var unload_tasks_to_wire: Array[Dictionary] = []
 # Chiavi dei lavori della bacheca non più in attesa (2026-10-24, 5B.0): la scena toglie le icone lampeggianti.
 var forgotten_job_board_waits: Array[String] = []
+# Specie domestiche appena addomesticate per la prima volta (2026-10-26, DomesticationPointsService): la scena fa
+# scattare le scoperte ANIMAL_DOMESTICATED.
+var animals_domesticated: Array[String] = []
 
 
 func notify(popup_type: NotificationTypes.NotificationPopupType, text: String, requires_ack: bool = false) -> void:
@@ -158,6 +161,11 @@ func job_board_waits_forgotten(job_keys: Array[String]) -> void:
 	forgotten_job_board_waits.append_array(job_keys)
 
 
+# Prima addomesticazione di una specie domestica (2026-10-26).
+func animal_domesticated(species: String) -> void:
+	animals_domesticated.append(species)
+
+
 # Unisce gli effetti di `other` in questo (le notifiche in coda, dopo le proprie).
 func merge(other: GameEffects) -> void:
 	if other == null:
@@ -179,10 +187,11 @@ func merge(other: GameEffects) -> void:
 	individuals_added.append_array(other.individuals_added)
 	unload_tasks_to_wire.append_array(other.unload_tasks_to_wire)
 	forgotten_job_board_waits.append_array(other.forgotten_job_board_waits)
+	animals_domesticated.append_array(other.animals_domesticated)
 
 
 func is_empty() -> bool:
 	return notifications.is_empty() and cells_to_refresh.is_empty() and panels_to_refresh.is_empty() and not pending_refresh 		and neighbor_refresh_buildings.is_empty() and marker_buildings.is_empty() and site_placeholder_buildings.is_empty() 		and vegetation_cells.is_empty() and removed_building_ids.is_empty() and storage_tasks_to_wire.is_empty() \
 		and individual_moves.is_empty() and individuals_added.is_empty() and unload_tasks_to_wire.is_empty() \
 		and tasks_to_wire.is_empty() and command_icons.is_empty() and buildings_completed.is_empty() \
-		and forgotten_job_board_waits.is_empty()
+		and forgotten_job_board_waits.is_empty() and animals_domesticated.is_empty()

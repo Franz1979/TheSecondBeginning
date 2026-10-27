@@ -8,6 +8,6 @@ id = "tribal_organization"
 display_name = "idea_tribal_organization"
 summary = "idea_tribal_organization_summary"
 description = "idea_tribal_organization_description"
-thoughts_cost = 40
+thoughts_cost = 60
 prerequisites = Array[String](["advanced_paleolithic_constructions"])
 era = "paleolithic"

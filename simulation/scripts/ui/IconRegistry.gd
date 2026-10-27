@@ -211,6 +211,8 @@ const BUILDING_ICON_NODES := {
 	"pebble_path": preload("res://simulation/scripts/ui/PebblePathIcon.gd"),
 	# Spiazzo delle feste (2026-10-17): stesso disegno della mappa (FeastGroundShape).
 	"feast_ground": preload("res://simulation/scripts/ui/FeastGroundIcon.gd"),
+	# Cerchio del consiglio (2026-10-26): stesso disegno della mappa (CouncilCircleShape).
+	"council_circle": preload("res://simulation/scripts/ui/CouncilCircleIcon.gd"),
 	# Pietre impilate (2026-10-02, richiesta utente): pila verticale di sassi, stesso disegno della mappa.
 	"stacked_stones": preload("res://simulation/scripts/ui/StackedStonesIcon.gd"),
 	# Capanna di stoccaggio (2026-10-03, richiesta utente): stesso disegno della mappa (StorageHutShape).
@@ -285,6 +287,12 @@ const COMMAND_ICONS := {
 	# come la luna dei riti religiosi). Solo emoji, nessuna icona disegnata: GameScene usa questa quando manca in
 	# COMMAND_ICON_NODES.
 	"banquet": "🍖",
+	# "council" (2026-10-26, consiglio degli anziani al Cerchio del consiglio): sulla mappa l'anello disegnato
+	# (CommandCouncilIcon).
+	"council": "🗣",
+	# Esiti delle riunioni politiche (2026-10-26, lite del gran consiglio): disegnate (CommandCouncilSuccessIcon/QuarrelIcon).
+	"council_success": "✅",
+	"council_quarrel": "⚡",
 	# "bury" (2026-10-07, sepoltura — prima usava la luna del rito): sulla mappa vale l'icona disegnata (CommandSkullIcon).
 	"bury": "💀",
 	# "cut" (2026-10-04, task Cut): sulla mappa vale l'icona disegnata (CommandAxeIcon); questa per le righe del popup.
@@ -393,6 +401,11 @@ const COMMAND_ICON_NODES := {
 	"rite": preload("res://simulation/scripts/ui/CommandMoonIcon.gd"),
 	# "lesson" (2026-10-17): il ceppo dell'insegnamento, vedi CommandLessonIcon.gd.
 	"lesson": preload("res://simulation/scripts/ui/CommandLessonIcon.gd"),
+	# "council" (2026-10-26): anello di pietre con tre teste, vedi CommandCouncilIcon.gd.
+	"council": preload("res://simulation/scripts/ui/CommandCouncilIcon.gd"),
+	# Esiti delle riunioni politiche (2026-10-26): anello con spunta verde / teste scostate e saetta rossa.
+	"council_success": preload("res://simulation/scripts/ui/CommandCouncilSuccessIcon.gd"),
+	"council_quarrel": preload("res://simulation/scripts/ui/CommandCouncilQuarrelIcon.gd"),
 	# "bury" (2026-10-07, sepoltura): teschio, vedi CommandSkullIcon.gd.
 	"bury": preload("res://simulation/scripts/ui/CommandSkullIcon.gd"),
 	# "cut" (2026-10-04, task Cut): accetta, vedi CommandAxeIcon.gd.

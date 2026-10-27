@@ -59,8 +59,14 @@ static func _averages(
 	max_sums.resize(count)
 	percent_sums.resize(count)
 	percent_counts.resize(count)
+	var people_counts: Array[int] = []
+	people_counts.resize(count)
 	for individual in individuals:
 		for i in range(count):
+			# Lealtà ferma prima del battesimo del villaggio (2026-10-26, VillageService.is_loyalty_active): fuori dalla media.
+			if current_fields[i] == &"current_loyalty" and not VillageService.is_loyalty_active(individual):
+				continue
+			people_counts[i] += 1
 			var current_value: float = individual.get(current_fields[i])
 			var max_value: float = individual.get(max_fields[i]) if not max_fields.is_empty() else fixed_max
 			current_sums[i] += current_value
@@ -69,8 +75,8 @@ static func _averages(
 				percent_sums[i] += current_value / max_value
 				percent_counts[i] += 1
 	var result := {}
-	var people := individuals.size()
 	for i in range(count):
+		var people := people_counts[i]
 		result[keys[i]] = {
 			"current": current_sums[i] / people if people > 0 else 0.0,
 			"max": max_sums[i] / people if people > 0 else 0.0,

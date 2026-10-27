@@ -78,6 +78,9 @@ static func get_start_rejection(building: Building, rules: SocialRiteRules, indi
 				break
 		if not any_convocable:
 			return TranslationServer.translate("social_rite_reject_no_convocable")
+	# Riunioni politiche (2026-10-26): solo al centro del villaggio, e non prima dell'attesa dall'ultima.
+	if rules is PoliticalRiteRules:
+		return PoliticalRiteService.get_start_rejection(building, rules as PoliticalRiteRules, game_data)
 	# Cibo e combustibile non bloccano l'ordine (2026-10-16): li porta l'organizzatore in preparazione.
 	return ""
 
@@ -400,7 +403,7 @@ static func _begin(record: Dictionary, building: Building, rules: SocialRiteRule
 static func build_attend_task(member: HumanIndividual, building: Building, is_organizer: bool, label_key: String = "", rite_uid: int = -1) -> Task:
 	var steps: Array[Action] = []
 	var descriptions: Array[String] = []
-	steps.append(WalkAction.new(MaterialSupplyService.building_point(member, building)))
+	steps.append(WalkAction.new(_attend_point(member, building)))
 	descriptions.append("task_social_rite_step_walk")
 	steps.append(SocialRiteAttendAction.new(building, rite_uid))
 	descriptions.append("task_social_rite_step_attend")
@@ -418,6 +421,15 @@ static func build_attend_task(member: HumanIndividual, building: Building, is_or
 		task.context[CONTEXT_ORGANIZER] = true
 		task.context[RiteService.CONTEXT_ORDERED] = true
 	return task
+
+
+# Punto d'arrivo al rito (2026-10-26, bugfix "tutti sulla stessa microcella"): un punto a caso in una microcella a caso
+# di tutto l'edificio, non solo in quella d'angolo (MaterialSupplyService.building_point); per un 1x1 non cambia nulla.
+static func _attend_point(member: HumanIndividual, building: Building) -> Vector2:
+	var cells := BuildingFootprint.cells_of(building)
+	var cell: Vector2i = cells[randi() % cells.size()]
+	var macro_offset: Vector2 = Vector2(Vector2i(building.macro_x, building.macro_y) - member.home_macro_coords) * World.WIDTH
+	return PathfindingService.random_point_in_microcell(Vector2(cell) + macro_offset)
 
 
 # Arrivo di `individual` all'edificio (SocialRiteAttendAction.activate). Ritorna true se con questo arrivo il raduno
@@ -470,6 +482,9 @@ static func advance(building: Building, delta: float, individuals: Array, game_d
 			])
 			_log_missing(record, individuals)
 			cancel(building, individuals, game_data, false)
+			# Riunione politica saltata (2026-10-26): malus di coesione e lealtà.
+			if rules is PoliticalRiteRules:
+				PoliticalRiteService.apply_skip(building, rules as PoliticalRiteRules, _village_of(building), individuals)
 		return
 	if float(record["elapsed"]) >= rules.feast_days:
 		_finish(record, building, rules, individuals, game_data)
@@ -538,15 +553,17 @@ static func _log_missing(record: Dictionary, individuals: Array) -> void:
 # --- fine del rito ---
 
 static func _finish(record: Dictionary, building: Building, rules: SocialRiteRules, individuals: Array, game_data: GameData) -> void:
-	game_data.active_social_rites.erase(record)
 	var participants: Dictionary = record["participants"]
 	var present: Array[HumanIndividual] = []
 	var pot_calories := float(record.get("pot_calories", 0.0))
 	var pot_space := float(record.get("pot_space", 0.0))
+	# Presenti contati PRIMA di togliere il rito (2026-10-26, bugfix "0 presenti"): is_attending vuole il rito ancora attivo
+	# (SocialRiteAttendAction.is_target_valid), quindi dopo la erase nessuno risultava presente.
 	for key in participants.keys():
 		var individual := _find(individuals, int(key))
 		if individual != null and is_attending(individual, building.id):
 			present.append(individual)
+	game_data.active_social_rites.erase(record)
 	# Contagio (2026-10-25, ContagionService): ogni presente tira per ogni contagioso presente.
 	ContagionService.expose_group(present, game_data, "rito '%s' all'edificio #%d" % [rules.id, building.id])
 	var share := float(present.size())
@@ -571,6 +588,18 @@ static func _finish(record: Dictionary, building: Building, rules: SocialRiteRul
 			else:
 				students.append(individual)
 		TeachingRiteService.apply_lesson(record, building, rules as TeachingRiteRules, teacher, students, game_data)
+	# Riunioni politiche (2026-10-26): leadership, Autorità dell'edificio, valore politico del villaggio; il gran consiglio
+	# può finire in lite (niente coesione positiva, ma un calo).
+	var quarrel := false
+	if rules is PoliticalRiteRules:
+		var leader: HumanIndividual = null
+		var members: Array[HumanIndividual] = []
+		for individual in present:
+			if individual.id == int(record["organizer_id"]):
+				leader = individual
+			else:
+				members.append(individual)
+		quarrel = PoliticalRiteService.apply_meeting(building, rules as PoliticalRiteRules, leader, members, game_data)
 	# Fine per l'attesa dei riti spontanei sullo stesso edificio (2026-10-17, ogni rito sociale).
 	game_data.building_runtime.last_social_rite_end_day[building.id] = game_data.get_absolute_day()
 	# Coesione (2026-10-14): fissa per il rito, più — per il banchetto — una quota per le calorie servite (2026-10-17).
@@ -578,6 +607,8 @@ static func _finish(record: Dictionary, building: Building, rules: SocialRiteRul
 	var cohesion_gain := rules.cohesion_gain
 	if banquet != null:
 		cohesion_gain += banquet.cohesion_gain_per_1000_calories * pot_calories / 1000.0
+	if quarrel:
+		cohesion_gain = -(rules as PoliticalRiteRules).quarrel_cohesion_loss
 	var cohesion_before := village.cohesion if village != null else 0.0
 	VillageCohesionService.add(village, cohesion_gain, "rito sociale '%s'" % rules.id)
 	if building.requested_rite_id == rules.id:

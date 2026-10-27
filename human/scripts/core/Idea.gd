@@ -48,3 +48,8 @@ extends Resource
 # consultato da nessuna logica (stesso principio "solo il dato" di thoughts_cost sopra). Stringa
 # libera per lo stesso motivo di GameData.current_era_name, non un enum chiuso.
 @export var era: String = ""
+
+# Idea che non si ricerca (2026-10-26, richiesta utente — addomesticazione): arriva solo in regalo da una scoperta
+# (DiscoveryHintRules.grant_idea_id). Finché non è completata è coperta ("?") e mai disponibile — vedi
+# IdeaProgressService.is_hidden/is_available.
+@export var discovery_only: bool = false

@@ -36,9 +36,12 @@ var _last_fps: int = -1
 # (RandomEventService.list_rules, nome tradotto, id come metadata) e pulsante per scatenare quello scelto.
 @onready var random_event_option_button: OptionButton = $MarginContainer/HBoxContainer/ContentGroup/RandomEventOptionButton
 @onready var random_event_apply_button: Button = $MarginContainer/HBoxContainer/ContentGroup/RandomEventApplyButton
-# Gruppi di visitatori (2026-09-27, gameplay/visitors/): lancia l'evento family_arrival, inoltrato come
-# action_pressed a GameScene._on_debug_action_pressed. L'esito si sceglie nel popup di decisione.
-@onready var visitor_spawn_button: Button = $MarginContainer/HBoxContainer/ContentGroup/VisitorSpawnButton
+# Addomesticazione (2026-10-26, passo 1): +100 punti al cane (dal lupo), inoltrato come action_pressed a
+# GameScene._on_debug_action_pressed; il testo mostra punti/soglia (set_domestication_progress).
+@onready var domestication_button: Button = $MarginContainer/HBoxContainer/ContentGroup/DomesticationButton
+# Branco di lupi che frequenta il villaggio (2026-10-26): numero di lupi, dettaglio per lupo nel tooltip
+# (set_animal_visitors).
+@onready var wolves_label: Label = $MarginContainer/HBoxContainer/ContentGroup/WolvesLabel
 
 signal action_pressed(action_id: StringName)
 # Evento casuale da scatenare subito (id di RandomEventRules), dal menu a tendina degli eventi.
@@ -75,11 +78,11 @@ func _ready() -> void:
 	playtime_label.tooltip_text = TooltipText.wrap("Tempo reale di questa partita: Partita = con la partita aperta, pause comprese; Play = solo con il tempo che scorre")
 	animal_summary_label.tooltip_text = TooltipText.wrap("Animali della macrocella del giocatore: quota della cella / individui istanziati (≠ = discrepanza)")
 	_fill_random_events()
-	random_event_apply_button.text = tr("debug_random_event_apply")
-	random_event_apply_button.tooltip_text = TooltipText.wrap(tr("debug_random_event_apply_tooltip"))
+	# Barra stretta (2026-10-26, richiesta utente): solo "▶", il nome dell'azione nel tooltip.
+	random_event_apply_button.text = "▶"
+	random_event_apply_button.tooltip_text = TooltipText.wrap(tr("debug_random_event_apply") + ": " + tr("debug_random_event_apply_tooltip"))
 	random_event_apply_button.pressed.connect(_on_random_event_apply_pressed)
-	visitor_spawn_button.tooltip_text = TooltipText.wrap(tr("debug_visitor_spawn_tooltip"))
-	visitor_spawn_button.pressed.connect(func() -> void: action_pressed.emit(&"visitor_spawn"))
+	domestication_button.pressed.connect(func() -> void: action_pressed.emit(&"domestication_add_wolf"))
 	_apply_state()
 
 
@@ -146,6 +149,28 @@ func set_playtime(in_game_seconds: float, playing_seconds: float) -> void:
 	if playtime_label.text == text:
 		return
 	playtime_label.text = text
+	reset_size()
+
+
+# Barra stretta (2026-10-26): il pulsante resta "🐕+100", i punti vanno nel tooltip.
+func set_domestication_progress(points: int, required: int) -> void:
+	domestication_button.tooltip_text = TooltipText.wrap(
+		"Debug: +100 punti addomesticazione al cane (%d/%d)" % [points, required]
+	)
+
+
+# Branco di lupi (debug): `count` < 0 = nessun branco ancora (serve un villaggio con centro); `lines` = una riga per lupo.
+func set_animal_visitors(count: int, lines: PackedStringArray) -> void:
+	var text := "🐺-" if count < 0 else "🐺%d" % count
+	wolves_label.tooltip_text = TooltipText.wrap(
+		"Branco di lupi del villaggio: nessuno (serve un villaggio con centro)" if count < 0
+		else "Branco di lupi del villaggio:
+" + "
+".join(lines)
+	)
+	if wolves_label.text == text:
+		return
+	wolves_label.text = text
 	reset_size()
 
 

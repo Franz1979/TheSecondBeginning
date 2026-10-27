@@ -8,7 +8,7 @@ extends RefCounted
 #
 # Ciclo di un gruppo:
 #   ARRIVING           entra da una microcella di bordo non d'acqua (find_border_point) e cammina in linea
-#                      retta verso l'edificio is_village_center; a ARRIVAL_RADIUS si ferma.
+#                      retta verso il centro del villaggio (find_village_center); a ARRIVAL_RADIUS si ferma.
 #   AWAITING_DECISION  fermo: attende l'esito (oggi: comandi di debug).
 #   LEAVING            dopo il rifiuto cammina verso il bordo più vicino e, arrivato, sparisce.
 # Nessun contatto con i servizi del villaggio: niente stamina, cibo, terreno, statistiche o selezione.
@@ -61,13 +61,17 @@ static func get_member_dowry(party: VisitorParty, member_index: int, individual:
 	return {"resource_name": rules.dowry_resource_name, "quantity": maxi(quantity, 0)}
 
 
-# Edificio centro del villaggio: completo, non demolito, rules.is_village_center. null se non esiste.
+# Edificio centro del villaggio: quello del primo villaggio del popolo che ne ha uno (Village.center_building_id, dal
+# 2026-10-26 — col cerchio del consiglio un candidato completo non è per forza il centro), completo e non demolito. null
+# se non esiste.
 static func find_village_center(world: World) -> Building:
-	if world == null:
+	var folk: Folk = GameSettings.active_human_folk
+	if world == null or folk == null:
 		return null
-	for building in world.buildings:
-		if building.is_complete and not building.is_demolished and building.rules != null and building.rules.is_village_center:
-			return building
+	for village in folk.villages:
+		var center := VillageService.find_center_building(world, village)
+		if center != null:
+			return center
 	return null
 
 

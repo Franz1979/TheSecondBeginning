@@ -7,11 +7,19 @@ extends RefCounted
 # ricollega invece di fondarne un altro.
 
 enum CenterOutcome { NONE, FOUNDED, RECONNECTED }
+# Lunghezza massima del nome del villaggio (2026-10-26).
+const VILLAGE_NAME_MAX_LENGTH := 16
+# Livello di centro minimo per battezzare il villaggio (2026-10-26): il Cerchio del consiglio (Organizzazione tribale).
+const NAMING_MIN_CENTER_TIER := 2
+# Battesimo (2026-10-26, richiesta utente): una volta sola, coesione al villaggio; la lealtà di chi ci abita parte da 0.
+const NAMING_COHESION_GAIN := 2.0
 
 
-# Centro `center` completato: lo ricollega al primo villaggio del Folk senza centro, altrimenti fonda un villaggio
-# nuovo. In entrambi i casi i membri del Folk e gli edifici ancora senza villaggio vi entrano. NONE se il centro era
-# già di un villaggio (es. miglioramento di un centro, stesso edificio). Restituisce {"outcome": CenterOutcome, "village"}.
+# Candidato centro `center` (BuildingRules.can_be_village_center) completato: lo ricollega al primo villaggio del Folk
+# senza centro; se il Folk non ha ancora villaggi ne fonda uno. In entrambi i casi i membri del Folk e gli edifici ancora
+# senza villaggio vi entrano. NONE se il centro era già di un villaggio (es. miglioramento, stesso edificio) o se tutti i
+# villaggi hanno già un centro (2026-10-26, cerchio del consiglio: resta un candidato, il centro ce lo sposta il giocatore —
+# move_center; nessun secondo villaggio per ora). Restituisce {"outcome": CenterOutcome, "village"}.
 static func on_village_center_completed(
 	folk: Folk, world: World, center: Building, individuals: Array[HumanIndividual]
 ) -> Dictionary:
@@ -26,6 +34,8 @@ static func on_village_center_completed(
 		if candidate.center_building_id == -1:
 			village = candidate
 			break
+	if village == null and not folk.villages.is_empty():
+		return {"outcome": CenterOutcome.NONE, "village": null}
 	if village == null:
 		outcome = CenterOutcome.FOUNDED
 		village = Village.new()
@@ -55,12 +65,15 @@ static func on_village_center_removed(folk: Folk, center: Building) -> Village:
 
 # Apertura della partita (nuova o caricata): collega in silenzio i centri completi che non hanno ancora un villaggio —
 # partite salvate prima dei villaggi e, in futuro, partite che iniziano con un centro già costruito — e assegna gli
-# edifici rimasti senza villaggio (salvataggi precedenti al campo Building.village_id).
+# edifici rimasti senza villaggio (salvataggi precedenti al campo Building.village_id). Solo se il Folk non ha ancora
+# villaggi (2026-10-26): un candidato non-centro (cerchio di sassi dopo lo spostamento) non ricollega nulla in silenzio.
 static func sync_with_existing_centers(folk: Folk, world: World, individuals: Array[HumanIndividual]) -> void:
 	if folk == null or world == null:
 		return
 	for building in world.buildings:
-		if building.is_complete and not building.is_demolished and building.rules != null and building.rules.is_village_center:
+		if not folk.villages.is_empty():
+			break
+		if building.is_complete and not building.is_demolished and building.rules != null and building.rules.can_be_village_center():
 			on_village_center_completed(folk, world, building, individuals)
 	adopt_orphan_buildings(folk, world)
 
@@ -93,6 +106,81 @@ static func find_village_for_building(folk: Folk, world: World, building: Buildi
 			best_distance = distance
 			best = village
 	return best if best != null else folk.villages[0]
+
+
+# --- Spostamento del centro (2026-10-26, richiesta utente — cerchio del consiglio) ---
+# Irreversibile: il centro va solo verso un candidato di livello superiore (BuildingRules.village_center_tier), mai
+# indietro né tra pari. Villaggio senza centro (demolito o crollato): recupero libero verso qualunque candidato. Il vecchio
+# centro resta in piedi con i suoi raggi, accetta pensieri e resta punto di assegnazione.
+
+# Villaggio di `building` (Building.village_id) a cui può passare il centro; null se lo spostamento non è possibile.
+static func get_center_move_village(folk: Folk, world: World, building: Building) -> Village:
+	if folk == null or building == null or building.rules == null or not building.rules.can_be_village_center():
+		return null
+	if not building.is_complete or building.is_demolished or building.is_out_of_service():
+		return null
+	var village := folk.find_village(building.village_id)
+	if village == null or village.center_building_id == building.id:
+		return null
+	var center := _find_building(world, village.center_building_id)
+	if center == null or center.is_demolished or center.rules == null:
+		return village
+	return village if building.rules.village_center_tier > center.rules.village_center_tier else null
+
+
+# Sposta il centro di `village` su `building` (già verificato con get_center_move_village). `village_name` non vuoto =
+# battesimo del villaggio (solo se non ha ancora un nome).
+static func move_center(village: Village, building: Building, village_name: String) -> void:
+	if village == null or building == null:
+		return
+	village.center_building_id = building.id
+	building.village_id = village.id
+	if building.rules.village_center_tier >= NAMING_MIN_CENTER_TIER:
+		name_village(village, village_name)
+
+
+# --- Nome del villaggio (2026-10-26, richiesta utente) ---
+# Si dà una volta sola, allo spostamento del centro o più avanti dal pannello del centro, e solo con un centro di livello
+# NAMING_MIN_CENTER_TIER. Per ora non si rinomina mai (in futuro forse sì, perdendo lealtà e coesione).
+
+# Villaggio di cui `building` è il centro e che si può battezzare adesso; null altrimenti.
+static func get_nameable_village(folk: Folk, world: World, building: Building) -> Village:
+	if folk == null or building == null or building.rules == null:
+		return null
+	if building.rules.village_center_tier < NAMING_MIN_CENTER_TIER:
+		return null
+	var village := find_village_by_center(folk, building.id)
+	if village == null or village.name != "" or find_center_building(world, village) != building:
+		return null
+	return village
+
+
+# Battesimo: solo se il villaggio non ha ancora un nome e `village_name` non è vuoto. true se il nome è stato dato.
+static func name_village(village: Village, village_name: String) -> bool:
+	var trimmed := village_name.strip_edges().left(VILLAGE_NAME_MAX_LENGTH)
+	if village == null or village.name != "" or trimmed == "":
+		return false
+	village.name = trimmed
+	VillageCohesionService.add(village, NAMING_COHESION_GAIN, "battesimo del villaggio")
+	for individual in GameSettings.active_human_individuals:
+		if individual.village_ref == village:
+			individual.current_loyalty = 0.0
+	return true
+
+
+# Lealtà (2026-10-26, richiesta utente): esiste solo verso un villaggio con un nome. Prima del battesimo è ferma, nessuna
+# regola la tocca (HumanVitalsInteractionService, PoliticalRiteService), il pannello la mostra grigia e le statistiche la
+# saltano.
+static func is_loyalty_active(individual: HumanIndividual) -> bool:
+	return individual != null and individual.village_ref != null and individual.village_ref.name != ""
+
+
+# Edificio centro di `village` (completo e non demolito); null se non c'è.
+static func find_center_building(world: World, village: Village) -> Building:
+	if village == null:
+		return null
+	var center := _find_building(world, village.center_building_id)
+	return center if center != null and center.is_complete and not center.is_demolished else null
 
 
 static func find_village_by_center(folk: Folk, center_building_id: int) -> Village:

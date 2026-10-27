@@ -57,10 +57,18 @@ const HOMELESS_HEALTH_PENALTY: float = 10.0
 const HOMELESS_HAPPINESS_PENALTY: float = 5.0
 
 # Fede -> lealtà (2026-10-02, regole 4 e 4b sopra).
+# Lealtà dalla felicità (2026-10-26, richiesta utente — prima ±100 scritto nel codice, troppo forte): + se la felicità è
+# almeno a metà del massimo, − sotto (dimezzata dalla fede, FAITH_LOYALTY_LOSS_MULTIPLIER).
+const HAPPINESS_LOYALTY_DAILY_DELTA: float = 10.0
+# Fascia neutra (2026-10-26, richiesta utente): la lealtà sale solo con la felicità da questa frazione del massimo in su;
+# tra metà e questa soglia non cambia.
+const HAPPINESS_LOYALTY_GAIN_THRESHOLD: float = 0.75
+# Calo di base (2026-10-26): ogni giorno, a ogni età; la lealtà va mantenuta (raggio politico, fede, consigli).
+const LOYALTY_DAILY_DECAY: float = 2.0
 const FAITH_LOYALTY_CUSHION_THRESHOLD: float = 0.5
 const FAITH_LOYALTY_LOSS_MULTIPLIER: float = 0.5
 const FAITH_LOYALTY_BONUS_THRESHOLD: float = 0.75
-const FAITH_LOYALTY_DAILY_BONUS: float = 20.0
+const FAITH_LOYALTY_DAILY_BONUS: float = 5.0  # 2026-10-26: da 20, metà della felicità (±10)
 
 # Quando esisteranno le specializzazioni: chi ha la specializzazione sacerdote non perde fede con questa regola.
 # Fede (2026-10-02, richiesta utente) — regola 5, dopo le altre e indipendente da esse. Ogni giorno:
@@ -95,7 +103,7 @@ const FALLBACK_STAMINA_DAILY_HAPPINESS_GAIN: float = 30.0
 const FALLBACK_STAMINA_DAILY_HAPPINESS_LOSS: float = 30.0
 const FALLBACK_HEALTH_DAILY_HAPPINESS_GAIN: float = 10.0
 const FALLBACK_HEALTH_DAILY_HAPPINESS_LOSS: float = 20.0
-const FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY: float = 5.0
+const FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY: float = 2.0
 # Senza vestiario, senza HumanRules risolvibile: gli stessi default dei campi di HumanRules.
 const FALLBACK_MISSING_BODY_APPAREL_DELTA: Array[float] = [-4.0, 0.0, 0.0, -2.0]
 const FALLBACK_MISSING_HEAD_APPAREL_DELTA: Array[float] = [-1.0, 0.0, 0.0, 0.0]
@@ -160,20 +168,9 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 	# Unico limite della salute del giorno (vedi sopra): a 0 il controllo delle morti per malattia la trova a 0.
 	individual.current_health = clampf(individual.current_health, 0.0, individual.max_health)
 
-	var happiness_threshold := individual.max_happiness / 2.0
-	var loyalty_delta: float = 100.0
-	if individual.current_happiness < happiness_threshold:
-		loyalty_delta = -100.0
-		if individual.max_faith > 0.0 and individual.current_faith >= individual.max_faith * FAITH_LOYALTY_CUSHION_THRESHOLD:
-			loyalty_delta *= FAITH_LOYALTY_LOSS_MULTIPLIER
-	individual.current_loyalty = _add_clamped(individual.current_loyalty, loyalty_delta, individual.max_loyalty)
-
-	if individual.max_faith > 0.0 and individual.current_faith >= individual.max_faith * FAITH_LOYALTY_BONUS_THRESHOLD:
-		individual.current_loyalty = _add_clamped(individual.current_loyalty, FAITH_LOYALTY_DAILY_BONUS, individual.max_loyalty)
-
-	if has_home and InfluenceService.is_house_covered(individual.house_id, InfluenceService.InfluenceType.POLITICAL):
-		var loyalty_bonus: float = human_rules.political_coverage_daily_loyalty if human_rules != null else FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY
-		individual.current_loyalty = _add_clamped(individual.current_loyalty, loyalty_bonus, individual.max_loyalty)
+	# Lealtà ferma finché il villaggio non ha un nome (2026-10-26, VillageService.is_loyalty_active).
+	if VillageService.is_loyalty_active(individual):
+		_apply_daily_loyalty(individual, has_home, human_rules)
 
 	individual.current_faith = _add_clamped(individual.current_faith, -_daily_faith_loss(individual, has_home), individual.max_faith)
 
@@ -187,6 +184,24 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 		health_before, individual.current_health, health_threshold,
 		happiness_before, individual.current_happiness, loyalty_before, individual.current_loyalty
 	])
+
+
+# Regole 4 e 4b più raggio politico e calo di base (2026-10-26): felicità almeno a HAPPINESS_LOYALTY_GAIN_THRESHOLD del
+# massimo + , sotto metà − (dimezzata dalla fede), in mezzo niente; poi fede alta, casa nel raggio politico, calo.
+static func _apply_daily_loyalty(individual: HumanIndividual, has_home: bool, human_rules: HumanRules) -> void:
+	var loyalty_delta: float = 0.0
+	if individual.current_happiness >= individual.max_happiness * HAPPINESS_LOYALTY_GAIN_THRESHOLD:
+		loyalty_delta = HAPPINESS_LOYALTY_DAILY_DELTA
+	elif individual.current_happiness < individual.max_happiness / 2.0:
+		loyalty_delta = -HAPPINESS_LOYALTY_DAILY_DELTA
+		if individual.max_faith > 0.0 and individual.current_faith >= individual.max_faith * FAITH_LOYALTY_CUSHION_THRESHOLD:
+			loyalty_delta *= FAITH_LOYALTY_LOSS_MULTIPLIER
+	if individual.max_faith > 0.0 and individual.current_faith >= individual.max_faith * FAITH_LOYALTY_BONUS_THRESHOLD:
+		loyalty_delta += FAITH_LOYALTY_DAILY_BONUS
+	if has_home and InfluenceService.is_house_covered(individual.house_id, InfluenceService.InfluenceType.POLITICAL):
+		loyalty_delta += human_rules.political_coverage_daily_loyalty if human_rules != null else FALLBACK_POLITICAL_COVERAGE_DAILY_LOYALTY
+	loyalty_delta -= LOYALTY_DAILY_DECAY
+	individual.current_loyalty = _add_clamped(individual.current_loyalty, loyalty_delta, individual.max_loyalty)
 
 
 # Regola 0b, vestiario (2026-10-11, richiesta utente): per ogni capo INDOSSATO (HumanIndividual.equipped_apparel; riposto

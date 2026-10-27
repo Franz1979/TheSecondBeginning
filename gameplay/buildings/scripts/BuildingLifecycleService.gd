@@ -878,12 +878,20 @@ static func assign_village(ctx: GameContext, building: Building) -> void:
 
 
 # Centro del villaggio completato: fonda un villaggio o ricollega quello rimasto senza centro (VillageService), poi avviso e
-# scheda popolazione. No-op per edifici che non sono centri.
+# scheda popolazione. Un candidato completato in un villaggio che ha già il centro (cerchio del consiglio, 2026-10-26) resta
+# candidato: solo l'avviso che vi si può spostare il centro dal pannello. No-op per edifici che non possono fare da centro.
 static func village_center_completed(ctx: GameContext, building: Building, effects: GameEffects) -> void:
-	if building.rules == null or not building.rules.is_village_center:
+	if building.rules == null or not building.rules.can_be_village_center():
 		return
 	var result := VillageService.on_village_center_completed(ctx.folk, ctx.world, building, ctx.individuals)
 	var village: Village = result["village"]
+	if result["outcome"] == VillageService.CenterOutcome.NONE and village == null:
+		var move_village := VillageService.get_center_move_village(ctx.folk, ctx.world, building)
+		if move_village != null:
+			_notify_village_center_changed(GameContext.tr_text("notification_village_center_movable").format({
+				"village": move_village.get_display_name(), "building": building.get_display_name(),
+			}), effects)
+		return
 	match result["outcome"]:
 		VillageService.CenterOutcome.FOUNDED:
 			# Primo villaggio: la nascita la racconta già la scoperta del Cerchio di sassi (first_thought_building.tres),
@@ -901,13 +909,43 @@ static func village_center_completed(ctx: GameContext, building: Building, effec
 	effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 
 
-# Centro del villaggio demolito o crollato: il villaggio resta in vita senza centro (VillageService).
+# Centro del villaggio demolito o crollato: il villaggio resta in vita senza centro (VillageService). Un candidato che non
+# era il centro (find_village_by_center null) non cambia nulla.
 static func village_center_removed(ctx: GameContext, building: Building, effects: GameEffects) -> void:
-	if building.rules == null or not building.rules.is_village_center:
+	if building.rules == null or not building.rules.can_be_village_center():
 		return
 	var village := VillageService.on_village_center_removed(ctx.folk, building)
 	if village != null:
 		_notify_village_center_changed(GameContext.tr_text("notification_village_center_lost").format({"village": village.get_display_name()}), effects)
+
+
+# Sposta qui il centro del villaggio (2026-10-26, cerchio del consiglio), dopo la conferma della scena: ricontrolla che sia
+# ancora possibile (VillageService.get_center_move_village), sposta e battezza (`village_name`, se il villaggio non ha
+# ancora un nome). true se il centro è stato spostato.
+static func move_village_center(ctx: GameContext, building: Building, village_name: String, effects: GameEffects) -> bool:
+	var village := VillageService.get_center_move_village(ctx.folk, ctx.world, building)
+	if village == null:
+		return false
+	VillageService.move_center(village, building, village_name)
+	_notify_village_center_changed(GameContext.tr_text("notification_village_center_moved").format({
+		"village": village.get_display_name(), "building": building.get_display_name(),
+	}), effects)
+	effects.refresh_panel(GameEffects.PanelKind.POPULATION)
+	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
+	effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
+	return true
+
+
+# Battesimo del villaggio dal pannello del centro (2026-10-26), dopo la conferma della scena. true se il nome è stato dato.
+static func name_village(ctx: GameContext, building: Building, village_name: String, effects: GameEffects) -> bool:
+	var village := VillageService.get_nameable_village(ctx.folk, ctx.world, building)
+	if village == null or not VillageService.name_village(village, village_name):
+		return false
+	_notify_village_center_changed(GameContext.tr_text("notification_village_named").format({"village": village.get_display_name()}), effects)
+	effects.refresh_panel(GameEffects.PanelKind.POPULATION)
+	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
+	effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
+	return true
 
 
 static func _notify_village_center_changed(text: String, effects: GameEffects) -> void:

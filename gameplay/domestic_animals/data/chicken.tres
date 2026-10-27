@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="DomesticAnimalRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/domestic_animals/scripts/DomesticAnimalRules.gd" id="1_chicken"]
+
+[resource]
+script = ExtResource("1_chicken")
+species_name = "chicken"
+display_name = "domestic_animal_chicken"
+wild_species_name = "partridge"
+domestication_points_required = 1500
+required_idea_id = "animal_domestication"

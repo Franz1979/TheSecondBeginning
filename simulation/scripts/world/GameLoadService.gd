@@ -132,6 +132,23 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		DiscoveryHintService.mark_seen(game_data, String(hint_id))
 	if bool(data["game"].get("thought_building_tech_tree_shown", false)):
 		DiscoveryHintService.mark_seen(game_data, DiscoveryHintService.LEGACY_THOUGHT_BUILDING_HINT_ID)
+	# Punti addomesticazione (2026-10-26, vedi GameData) — .get(key, {}) per i save precedenti; JSON li rende float.
+	game_data.domestication_points.clear()
+	var saved_domestication_points: Dictionary = data["game"].get("domestication_points", {})
+	for species in saved_domestication_points:
+		game_data.domestication_points[String(species)] = int(saved_domestication_points[species])
+	game_data.domesticated_species.clear()
+	for species in data["game"].get("domesticated_species", []):
+		game_data.domesticated_species.append(String(species))
+	game_data.encountered_wild_species.clear()
+	for species in data["game"].get("encountered_wild_species", []):
+		game_data.encountered_wild_species.append(String(species))
+	# Gruppi di animali in visita (2026-10-26) — .get() per i save precedenti: nessun gruppo, li ricrea
+	# AnimalVisitorService.ensure_groups al primo giorno.
+	game_data.animal_visitor_groups.clear()
+	for saved_group in data["game"].get("animal_visitor_groups", []):
+		game_data.animal_visitor_groups.append(AnimalVisitorGroup.from_save_data(saved_group))
+	game_data.next_animal_visitor_group_id = int(data["game"].get("next_animal_visitor_group_id", 1))
 	# .get(key, 0) per compatibilità con save precedenti l'introduzione della pulizia
 	# periodica del fog of war (vedi GameData) — 0 è lo stesso default della classe.
 	game_data.fog_of_war_last_prune_absolute_day = int(data["game"].get("fog_of_war_last_prune_absolute_day", 0))
@@ -735,6 +752,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.repair_auto_excluded = bool(building_data.get("repair_auto_excluded", false))
 			# Rito ordinato dal pannello (2026-10-14) — "" per i salvataggi precedenti.
 			building.requested_rite_id = String(building_data.get("requested_rite_id", ""))
+			# Fine dell'ultimo rito per tipo (2026-10-26) — vuoto per i salvataggi precedenti.
+			building.last_rite_end_day = {}
+			var saved_last_rite_end_day: Variant = building_data.get("last_rite_end_day", {})
+			if saved_last_rite_end_day is Dictionary:
+				for rite_key in saved_last_rite_end_day:
+					building.last_rite_end_day[String(rite_key)] = int(saved_last_rite_end_day[rite_key])
 			# Soglia di calorie del banchetto (2026-10-17) — -1 (valore dei dati) per i salvataggi precedenti.
 			building.feast_calorie_threshold = int(building_data.get("feast_calorie_threshold", -1))
 			# Macerie (2026-10-10) — "" per i salvataggi precedenti.

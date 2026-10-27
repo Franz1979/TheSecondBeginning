@@ -20,6 +20,11 @@ corner_radius_bottom_left = 4
 [node name="BuildingInfoPanel" type="VBoxContainer"]
 script = ExtResource("1_bld")
 
+[node name="VillageCenterLabel" type="Label" parent="."]
+visible = false
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
 [node name="StatusRow" type="HBoxContainer" parent="."]
 layout_mode = 2
 

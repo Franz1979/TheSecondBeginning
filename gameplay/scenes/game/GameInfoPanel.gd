@@ -89,6 +89,10 @@ const TASK_ASSIGNMENT_SLOT_INDEX := 0
 const WAREHOUSE_SLOT_INDEX := 1
 # Slot 2: albero delle idee (GameScene._refresh_tech_tree_button lo abilita/disabilita, regola di sempre: resta visibile).
 const TECH_TREE_SLOT_INDEX := 2
+# Slot 3: Addomesticazioni (2026-10-26, richiesta utente — DomesticationPanel). A differenza degli altri resta NASCOSTO
+# (non spento) finché l'idea «Addomesticazione», che è solo da scoperta, non arriva: un tooltip la rivelerebbe prima del
+# tempo. Visibilità decisa da GameScene._refresh_domestication_button.
+const DOMESTICATION_SLOT_INDEX := 3
 # Slot della barra in basso.
 const STATISTICS_SLOT_INDEX := 0
 # Bottone "Layer" (2026-09-27, richiesta utente — menu dei layer della mappa): dal 2026-10-07 nella barra in basso.
@@ -125,6 +129,7 @@ func _ready() -> void:
 	primary_actions_bar.configure_slot(TASK_ASSIGNMENT_SLOT_INDEX, "📋", tr("task_assignment_tooltip"), &"task_assignment")
 	# Gestione scorte (2026-10-10): icona disegnata (WarehouseIcon), visibile e spenta finché l'idea non è completata.
 	primary_actions_bar.configure_slot(WAREHOUSE_SLOT_INDEX, "", tr("warehouse_tooltip"), &"warehouse", "", true, WarehouseIcon.new())
+	primary_actions_bar.configure_slot(DOMESTICATION_SLOT_INDEX, "🐾", tr("domestication_tooltip"), &"domestication")
 	for slot_index in range(primary_actions_bar.slot_count):
 		if slot_index != TECH_TREE_SLOT_INDEX and slot_index != TASK_ASSIGNMENT_SLOT_INDEX and slot_index != WAREHOUSE_SLOT_INDEX:
 			primary_actions_bar.set_slot_visible(slot_index, false)

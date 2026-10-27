@@ -538,6 +538,8 @@ var _task_assignment_panel: TaskAssignmentPanel = null
 # Contenuto del cassetto "Gestione scorte" mentre è aperto (2026-10-10), null altrimenti — vedi _refresh_warehouse_panel.
 var _warehouse_panel: WarehousePanel = null
 @onready var tech_tree_panel: TechTreePanel = $TechTreePanel
+# Pannello delle Addomesticazioni (2026-10-26, passo 3b): istanziato in _ready, bloccante come tech_tree_panel.
+var domestication_panel: DomesticationPanel
 @onready var demolish_confirmation_dialog: DemolishConfirmationDialog = $DemolishConfirmationDialog
 @onready var transport_source_dialog: OptionChoiceDialog = $TransportSourceDialog
 # pickup_choice_dialog (2026-09-17, richiesta utente, "no priorità fissa, scegli sempre se 2+
@@ -832,6 +834,10 @@ func _ready() -> void:
 	options_menu.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(options_menu))
 	statistics_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(statistics_panel))
 	tech_tree_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(tech_tree_panel))
+	domestication_panel = (load("res://gameplay/domestic_animals/scenes/DomesticationPanel.tscn") as PackedScene).instantiate()
+	add_child(domestication_panel)
+	domestication_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(domestication_panel))
+	domestication_panel.debug_add_points_requested.connect(_on_domestication_debug_add_points)
 	demolish_confirmation_dialog.demolish_confirmed.connect(_on_demolish_confirmed)
 	demolish_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(demolish_confirmation_dialog))
 	# NESSUN visibility_changed collegato a _on_blocking_dialog_visibility_changed per questi due
@@ -855,6 +861,8 @@ func _ready() -> void:
 	building_info_panel.cancel_empty_pit_requested.connect(_on_cancel_empty_pit_requested)
 	building_info_panel.waste_closed_toggle_requested.connect(_on_waste_closed_toggle_requested)
 	building_info_panel.gate_toggle_requested.connect(_on_gate_toggle_requested)
+	building_info_panel.village_center_move_requested.connect(_on_village_center_move_requested)
+	building_info_panel.village_naming_requested.connect(_on_village_naming_requested)
 	building_info_panel.shared_building_requested.connect(func(other: Building) -> void:
 		if other != null:
 			_select_building({"building_id": other.id, "macro_coords": Vector2i(other.macro_x, other.macro_y)})
@@ -5888,6 +5896,7 @@ func _track_social_rite_tasks() -> void:
 			if step is SocialRiteAttendAction and not (step as SocialRiteAttendAction).rite_started.is_connected(_spawn_social_rite_started_effect):
 				(step as SocialRiteAttendAction).rite_started.connect(_spawn_social_rite_started_effect)
 				(step as SocialRiteAttendAction).rite_ended.connect(_put_out_feast_fire)
+				(step as SocialRiteAttendAction).rite_ended.connect(_show_political_rite_outcome)
 
 
 # Inizio del raduno: l'icona del comando del rito (RiteRules.command_icon_key — disegnata se c'è, altrimenti l'emoji; dal
@@ -5902,28 +5911,64 @@ func _spawn_social_rite_started_effect(building: Building, rite_id: String) -> v
 		return
 	var cell_container: Node2D = live_cells[macro_coords].container
 	var local_position := BuildingFootprint.center_micro(building) * MicroCellRenderer.CELL_SIZE
-	var icon: Variant = IconRegistry.get_command_icon_node(rules.command_icon_key)
-	if icon != null:
-		(icon as Node2D).position = local_position
-	elif IconRegistry.get_command_icon(rules.command_icon_key) != "":
-		var label := Label.new()
-		label.text = IconRegistry.get_command_icon(rules.command_icon_key)
-		label.add_theme_font_size_override("font_size", 8)
-		label.position = local_position + Vector2(-5, -14)
-		icon = label
-	if icon != null:
-		icon.z_index = 2
-		cell_container.add_child(icon)
-		var tween := create_tween()
-		tween.set_parallel(true)
-		tween.tween_property(icon, "position:y", icon.position.y - 40.0, 0.9)
-		tween.tween_property(icon, "modulate:a", 0.0, 3.0)
-		tween.chain().tween_callback(icon.queue_free)
+	_spawn_rising_building_icon(cell_container, local_position, rules.command_icon_key)
 	if rules.start_sound_id != &"":
 		social_rite_effect_shown.emit(cell_container.to_global(local_position), rules.start_sound_id)
 	# Falò del banchetto (2026-10-17): fiamma accesa nel cerchio di sassi per tutta la festa.
 	if SocialRiteService.has_lit_bonfire(building):
 		FeastFireNode.light(cell_container, building)
+
+
+# Icona che sale e svanisce sopra un edificio (inizio di un rito sociale, esito di una riunione politica): disegnata se c'è,
+# altrimenti l'emoji di IconRegistry.
+func _spawn_rising_building_icon(cell_container: Node2D, local_position: Vector2, icon_key: String) -> void:
+	var icon: Variant = IconRegistry.get_command_icon_node(icon_key)
+	if icon != null:
+		(icon as Node2D).position = local_position
+	elif IconRegistry.get_command_icon(icon_key) != "":
+		var label := Label.new()
+		label.text = IconRegistry.get_command_icon(icon_key)
+		label.add_theme_font_size_override("font_size", 8)
+		label.position = local_position + Vector2(-5, -14)
+		icon = label
+	if icon == null:
+		return
+	icon.z_index = 2
+	cell_container.add_child(icon)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(icon, "position:y", icon.position.y - 40.0, 0.9)
+	tween.tween_property(icon, "modulate:a", 0.0, 3.0)
+	tween.chain().tween_callback(icon.queue_free)
+
+
+# Fine di una riunione politica (2026-10-26, lite del gran consiglio): l'esito scritto da PoliticalRiteService.apply_meeting
+# si consuma una volta (rite_ended arriva da ogni partecipante): icona di esito sopra l'edificio e, per i riti che possono
+# litigare, l'avviso.
+func _show_political_rite_outcome(building: Building) -> void:
+	if building == null or game_data == null:
+		return
+	var outcomes: Dictionary = game_data.building_runtime.political_rite_outcomes
+	if not outcomes.has(building.id):
+		return
+	var outcome: Dictionary = outcomes[building.id]
+	outcomes.erase(building.id)
+	var quarrel := bool(outcome.get("quarrel", false))
+	var macro_coords := Vector2i(building.macro_x, building.macro_y)
+	if live_cells.has(macro_coords):
+		_spawn_rising_building_icon(
+			live_cells[macro_coords].container, BuildingFootprint.center_micro(building) * MicroCellRenderer.CELL_SIZE,
+			PoliticalRiteService.QUARREL_ICON_KEY if quarrel else PoliticalRiteService.SUCCESS_ICON_KEY
+		)
+	var rules := RiteService.get_rules(String(outcome.get("rite_id", ""))) as PoliticalRiteRules
+	if rules == null or rules.quarrel_base_chance <= 0.0 or not UserOptions.show_notification_popups:
+		return
+	notification_popup.enqueue(
+		NotificationTypes.NotificationPopupType.POLITICAL_RITE_OUTCOME,
+		tr("notification_political_rite_quarrel" if quarrel else "notification_political_rite_success").format({
+			"rite": tr(rules.display_name)
+		})
+	)
 
 
 # Fine o annullo di un rito sociale (2026-10-17): spegne il falò del banchetto, se c'era.
@@ -6966,18 +7011,6 @@ func _find_visitor_party_in_phase(phase: VisitorTypes.Phase) -> VisitorParty:
 		if party.phase == phase:
 			return party
 	return null
-
-
-# Comando di debug 👥+ (2026-09-27): lancia subito l'evento family_arrival, stesso percorso del menu degli
-# eventi casuali (nessun vincolo di sorteggio; l'evento stesso rifiuta lo spawn senza centro del villaggio).
-# Nessuna attivazione di cella: la macrocella del centro del villaggio è già viva per il suo edificio
-# (_activate_all_building_cells); se non lo fosse, _sync_visitor_party_views semplicemente non la disegna.
-const _DEBUG_VISITOR_EVENT_ID := "family_arrival"
-
-func _debug_spawn_visitor_party() -> void:
-	if game_time_service == null:
-		return
-	game_time_service.trigger_random_event_now(_DEBUG_VISITOR_EVENT_ID)
 
 
 # Decisione sui visitatori (2026-09-27, richiesta utente): appena un gruppo è in attesa di decisione si apre
@@ -9749,7 +9782,7 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		target.max_thirst, target.current_thirst,
 		target.max_health, target.current_health,
 		target.max_happiness, target.current_happiness,
-		target.max_loyalty, target.current_loyalty,
+		target.max_loyalty, target.current_loyalty, VillageService.is_loyalty_active(target),
 		target.max_faith, target.current_faith,
 		target.skill_leadership, target.skill_builder, target.skill_management,
 		target.skill_transporter, target.skill_gathering, target.skill_cognition,
@@ -11404,6 +11437,20 @@ func _refresh_debug_summaries() -> void:
 	_refresh_debug_live_cells()
 	if game_data != null:
 		debug_bar.set_playtime(game_data.real_seconds_in_game, game_data.real_seconds_playing)
+	_refresh_debug_domestication()
+
+
+# DEBUG — punti addomesticazione del cane sul pulsante della DebugBar (2026-10-26, passo 1).
+func _refresh_debug_domestication() -> void:
+	var rules := DomesticAnimalCalculator.get_rules("dog")
+	if game_data == null or rules == null:
+		return
+	debug_bar.set_domestication_progress(DomesticationPointsService.get_points(game_data, "dog"), rules.domestication_points_required)
+	var wolves := AnimalVisitorService.find_group(game_data, "wolf")
+	debug_bar.set_animal_visitors(
+		wolves.animals.size() if wolves != null else -1,
+		AnimalVisitorService.debug_lines(game_data, wolves) if wolves != null else PackedStringArray()
+	)
 
 
 # Barra riaperta: riepiloghi aggiornati subito invece di mostrare quelli di quando era stata chiusa.
@@ -13171,6 +13218,10 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 		# Scorte (2026-10-10): apre e richiude il cassetto della gestione dei magazzini, per ora vuoto.
 		&"warehouse":
 			_toggle_warehouse_drawer()
+		# 🐾 (2026-10-26): apre il pannello delle Addomesticazioni.
+		&"domestication":
+			if human_folk != null and human_folk.completed_ideas.has(DOMESTICATION_IDEA_ID):
+				domestication_panel.open_dialog(human_folk, game_data)
 
 
 # toggle_animals_visibility/toggle_flora_updates/world_debug/macro_cell_debug — vissuti prima
@@ -13201,9 +13252,12 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 		# Malato (2026-10-24, richiesta utente): fa ammalare o guarire l'individuo selezionato.
 		&"toggle_sick":
 			_debug_toggle_sick()
-		# Gruppi di visitatori (2026-09-27): spawn di prova; l'esito si sceglie nel popup di decisione.
-		&"visitor_spawn":
-			_debug_spawn_visitor_party()
+		# Addomesticazione (2026-10-26, passo 1): +100 punti al cane.
+		&"domestication_add_wolf":
+			var domestication_effects := GameEffects.new()
+			DomesticationPointsService.add_points(game_data, human_folk, "dog", 100, domestication_effects)
+			_apply_effects(domestication_effects)
+			_refresh_debug_domestication()
 
 
 # Pulsante 🤒 della barra di debug (2026-10-24, richiesta utente): l'individuo selezionato, se sano, scende a
@@ -13313,6 +13367,8 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Capanna del guaritore (2026-10-25, richiesta utente) — azione cablata in BuildBar._ready.
 		&"build_healer_hut":
 			return "healer_hut"
+		&"build_council_circle":
+			return "council_circle"
 		# Ceppo dell'insegnamento (2026-10-16, richiesta utente) — azione cablata in BuildBar._ready.
 		&"build_teaching_stump":
 			return "teaching_stump"
@@ -13647,6 +13703,42 @@ func _on_gate_toggle_requested(building: Building) -> void:
 	_refresh_selected_building_panel()
 
 
+# Sposta qui il centro del villaggio (2026-10-26, cerchio del consiglio): conferma irreversibile; se il villaggio non ha
+# ancora un nome, la stessa conferma chiede di battezzarlo (vuoto = resta il nome provvisorio).
+func _on_village_center_move_requested(building: Building) -> void:
+	var village := VillageService.get_center_move_village(human_folk, macro_world, building)
+	if village == null:
+		return
+	var body := tr("village_center_move_confirmation_text").format({
+		"village": village.get_display_name(), "building": _building_display_name(building),
+	})
+	var on_confirm := func(village_name: String) -> void:
+		var effects := GameEffects.new()
+		BuildingLifecycleService.move_village_center(_game_context(), building, village_name, effects)
+		_apply_effects(effects)
+	if village.name != "" or building.rules.village_center_tier < VillageService.NAMING_MIN_CENTER_TIER:
+		demolish_confirmation_dialog.open_confirmation(tr("village_center_move_confirmation_title"), body,
+			tr("village_center_move_confirmation_confirm"), func(): on_confirm.call(""))
+		return
+	demolish_confirmation_dialog.open_confirmation_with_text(tr("village_center_move_confirmation_title"),
+		body + "\n" + tr("village_center_move_confirmation_name"), tr("village_center_move_confirmation_confirm"),
+		village.get_display_name(), "", VillageService.VILLAGE_NAME_MAX_LENGTH, on_confirm)
+
+
+# Dai un nome al villaggio dal pannello del centro (2026-10-26): una volta sola, per ora non si rinomina.
+func _on_village_naming_requested(building: Building) -> void:
+	var village := VillageService.get_nameable_village(human_folk, macro_world, building)
+	if village == null:
+		return
+	demolish_confirmation_dialog.open_confirmation_with_text(tr("village_naming_confirmation_title"),
+		tr("village_naming_confirmation_text").format({"village": village.get_display_name()}),
+		tr("village_naming_confirmation_confirm"), village.get_display_name(), "", VillageService.VILLAGE_NAME_MAX_LENGTH,
+		func(village_name: String) -> void:
+			var effects := GameEffects.new()
+			BuildingLifecycleService.name_village(_game_context(), building, village_name, effects)
+			_apply_effects(effects))
+
+
 # "Chiudi/Riapri ai rifiuti" (2026-10-18): una Fossa chiusa non riceve più nulla. Durante lo svuotamento resta chiusa.
 func _on_waste_closed_toggle_requested(building: Building) -> void:
 	if building == null or building.waste_emptying or not WasteDisposalService.is_pit(building):
@@ -13733,6 +13825,30 @@ func _refresh_tech_tree_button() -> void:
 		GameInfoPanel.TECH_TREE_SLOT_INDEX, not _is_tech_tree_available(), tr("tech_tree_requires_thought_building_tooltip")
 	)
 	_refresh_task_assignment_button()
+	_refresh_domestication_button()
+
+
+# Bottone 🐾 delle Addomesticazioni (2026-10-26, richiesta utente): NASCOSTO finché l'idea «Addomesticazione» (solo da
+# scoperta, regalata dal lupo) non è completata — non spento come Scorte/Assegnazione, il tooltip la rivelerebbe.
+# Ricalcolato insieme al bottone delle idee (caricamento, idee completate o regalate).
+const DOMESTICATION_IDEA_ID := "domestication"
+
+
+func _refresh_domestication_button() -> void:
+	var available := human_folk != null and human_folk.completed_ideas.has(DOMESTICATION_IDEA_ID)
+	game_info_panel.primary_actions_bar.set_slot_visible(GameInfoPanel.DOMESTICATION_SLOT_INDEX, available)
+	game_info_panel.refresh_governance_bar()
+	if not available and domestication_panel != null and domestication_panel.visible:
+		domestication_panel.hide()
+
+
+# "+100" di debug del pannello delle Addomesticazioni: stesso percorso del 🐺 della DebugBar (eventuale scoperta).
+func _on_domestication_debug_add_points(species: String) -> void:
+	var domestication_effects := GameEffects.new()
+	DomesticationPointsService.add_points(game_data, human_folk, species, DomesticationPanel.DEBUG_POINTS, domestication_effects)
+	_apply_effects(domestication_effects)
+	domestication_panel.refresh_content()
+	_refresh_debug_domestication()
 
 
 # Bottone dell'assegnazione delle task (2026-10-07): sempre visibile; spento finché l'idea
@@ -13820,6 +13936,11 @@ func _toggle_warehouse_drawer() -> void:
 		_warehouse_panel.toolkit_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_toolkit_rule_enabled = enabled)
 		_warehouse_panel.toolkit_target_changed.connect(func(type_name: String, tool_name: String, level: int) -> void:
 			ToolkitStockService.set_target(game_data, type_name, tool_name, level)
+		)
+		# Elenchi ricalcolati a ogni apertura (2026-10-27): gli edifici sbloccati da un'idea nuova compaiono subito.
+		_warehouse_panel.rule_rows_refresh_requested.connect(func() -> void:
+			_warehouse_panel.set_fuel_rule(game_data.stock_fuel_rule_enabled, FuelStockService.get_rule_rows(game_data, human_folk.completed_ideas))
+			_warehouse_panel.set_toolkit_rule(game_data.stock_toolkit_rule_enabled, ToolkitStockService.get_rule_rows(game_data, human_folk.completed_ideas))
 		)
 		# Regola dei banchetti spontanei (2026-10-17): dati della partita, letti da SocialRiteService.
 		_warehouse_panel.set_banquet_rule(game_data.stock_banquet_safe_only)
@@ -14482,15 +14603,16 @@ func _cancel_work_area_drag() -> void:
 func _building_type_availability(rules: BuildingRules, building_type_name: String) -> Dictionary:
 	if building_type_name != FIRST_REQUIRED_BUILDING_TYPE and not _world_has_storage_building():
 		return {"is_buildable": false, "disabled_tooltip": tr("build_bar_requires_deposit_site_tooltip")}
-	if rules.is_village_center:
-		var village_center_exists := false
+	# Unicità per tipo (2026-10-26, BuildingRules.is_unique — prima "esiste già un centro villaggio qualunque").
+	if rules.is_unique:
+		var already_exists := false
 		if macro_world != null:
 			for building in macro_world.buildings:
-				if building.rules != null and building.rules.is_village_center:
-					village_center_exists = true
+				if building.building_type_name == building_type_name and not building.is_demolished:
+					already_exists = true
 					break
-		if village_center_exists:
-			return {"is_buildable": false, "disabled_tooltip": tr("build_bar_pebble_circle_disabled_tooltip")}
+		if already_exists:
+			return {"is_buildable": false, "disabled_tooltip": tr("build_bar_unique_building_disabled_tooltip")}
 	if rules.required_idea_id != "" and (human_folk == null or not human_folk.completed_ideas.has(rules.required_idea_id)):
 		var required_idea := IdeaCalculator.get_idea(rules.required_idea_id)
 		# tr() su display_name (2026-09-07, bugfix — vedi Idea.gd/TechTreePanel per gli altri due
@@ -14588,7 +14710,7 @@ func _is_placement_buildable_or_report(world_position: Vector2, rules: BuildingR
 # il service per lo stato attuale dei criteri.
 # Il fantasma di norma NON viene rimosso da qui: resta al chiamante (_unhandled_input) l'aver
 # deciso di continuare il modo piazzamento dopo un piazzamento riuscito — ECCEZIONE per i tipi
-# is_village_center (2026-09-07, richiesta utente, punto 2 del bugfix Pebble Circle): quel fantasma
+# is_unique (2026-09-07, richiesta utente, punto 2 del bugfix Pebble Circle): quel fantasma
 # si chiude DA SOLO subito dopo un piazzamento riuscito, invece di restare aperto come per la
 # capanna — non avrebbe senso invitare a "piazzarne un altro in fila" per un tipo che diventa
 # indisponibile dopo il primo (vedi la chiamata a _clear_building_ghost in fondo alla funzione).
@@ -14685,12 +14807,12 @@ func _place_building_at(world_position: Vector2) -> void:
 	# guadagnare filtrando prima per tipo.
 	_refresh_building_slots_buildable()
 
-	# Chiusura automatica del fantasma per i tipi is_village_center (2026-09-07, richiesta utente,
+	# Chiusura automatica del fantasma per i tipi is_unique (2026-09-07, richiesta utente,
 	# punto 2 del bugfix Pebble Circle — vedi il commento in testa alla funzione) — DOPO il refresh
 	# sopra, non prima: _clear_building_ghost azzera _selected_building_type_name, che
 	# _refresh_building_slots_buildable non usa comunque, ma l'ordine "aggiorna stato, poi chiudi UI"
 	# resta il più naturale dei due.
-	if rules.is_village_center:
+	if rules.is_unique:
 		_clear_building_ghost()
 
 
@@ -14802,7 +14924,7 @@ func _start_building_task_at(world_position: Vector2) -> void:
 	])
 
 	_refresh_building_slots_buildable()
-	if rules.is_village_center:
+	if rules.is_unique:
 		_clear_building_ghost()
 
 
@@ -15888,6 +16010,9 @@ func _apply_effects(effects: GameEffects) -> void:
 				_ensure_step_signals(wire_task)
 	for completed_building in effects.buildings_completed:
 		_on_building_construction_completed(completed_building)
+	# Prima addomesticazione di una specie (2026-10-26): scoperta, ed eventuale idea regalata, nel popup.
+	for domesticated_species in effects.animals_domesticated:
+		_trigger_discoveries(DiscoveryTypes.TriggerType.ANIMAL_DOMESTICATED, {"species": domesticated_species})
 	for job_key in effects.forgotten_job_board_waits:
 		_free_job_board_wait_icon(job_key)
 	for entry in effects.command_icons:
@@ -16251,6 +16376,21 @@ func _update_play_pause_button() -> void:
 		play_pause_button.text = "▶"
 		play_pause_button.tooltip_text = TooltipText.wrap(tr("play"))
 
+# Specie selvatiche incontrate (addomesticazione passo 3a, 2026-10-26): una specie non ancora incontrata lo diventa
+# quando un suo animale è visibile (fuori dalla nebbia) in una cella viva. Solo le specie mancanti, primo visibile.
+func _check_encountered_wild_species() -> void:
+	if game_data == null:
+		return
+	for cell in live_cells.values():
+		for species in cell.animal_renderers:
+			if DomesticationEncounterService.is_encountered(game_data, species):
+				continue
+			# Non tipizzata: un renderer già liberato darebbe errore all'assegnazione (come _refresh_debug_animal_summary).
+			var renderer_node = cell.animal_renderers[species]
+			if is_instance_valid(renderer_node) and renderer_node.has_visible_individual():
+				DomesticationEncounterService.mark_encountered(game_data, species)
+
+
 func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# Giro giornaliero della simulazione: anche riallineamento della produzione e cantieri maturati (blocco 5e).
 	_tick_simulation_day()
@@ -16272,6 +16412,8 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# dopo il caricamento): passato un giorno il "salva e ricarica identico" non ha più senso, una
 	# visita futura genera individui nuovi dalla popolazione come sempre.
 	_pending_saved_animal_individuals.clear()
+	# Specie selvatiche incontrate (addomesticazione, 2026-10-26): anche nei giorni "vuoti".
+	_check_encountered_wild_species()
 	# Refresh giornaliero del pannello individuo selezionato (2026-09-06, richiesta utente) — PRIMA
 	# dell'early-return sotto, stesso motivo di _maybe_prune_fog_of_war_memories sopra: deve girare
 	# anche nei giorni "vuoti" (nessun checkpoint/animali cambiati), non solo quando il resto della

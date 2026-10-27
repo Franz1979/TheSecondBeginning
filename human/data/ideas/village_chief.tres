@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_village_chief"]
+
+[resource]
+script = ExtResource("1_village_chief")
+id = "village_chief"
+display_name = "idea_village_chief"
+summary = "idea_village_chief_summary"
+description = "idea_village_chief_description"
+thoughts_cost = 80
+prerequisites = Array[String](["tribal_organization"])
+era = "paleolithic"

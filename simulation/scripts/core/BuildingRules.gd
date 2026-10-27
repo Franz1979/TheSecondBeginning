@@ -215,16 +215,21 @@ extends Resource
 # riti (InfluenceService). Vale per tutti e tre i tipi.
 @export var influence_level_thresholds: Array[float] = [100.0, 300.0, 600.0, 1000.0, 2000.0]
 
-# Vincolo GLOBALE di unicità (2026-09-07, richiesta utente) — al più UN edificio con questo flag
-# true può esistere in tutta la partita, indipendentemente da dove/quante volte si provi a
-# piazzarlo (oggi solo lo Pebble Circle, il "centro villaggio" paleolitico). Controllato da
-# GameScene._refresh_building_slots_buildable, che disabilita lo slot corrispondente in BuildBar
-# quando un Building con questo flag esiste già — DELIBERATAMENTE non in
-# BuildingVerificationService.is_position_buildable (quella resta legata solo a terreno/spazio/
-# sovrapposizioni di UNA posizione, mai a "quanti edifici di un tipo esistono ovunque nel mondo").
-# BuildingRules stessa resta solo il dato di TIPO. Default false — nessun tipo esistente (hut) è
-# toccato.
-@export var is_village_center: bool = false
+# Unicità (2026-09-07, richiesta utente; dal 2026-10-26 per TIPO, prima "un qualunque centro villaggio") — al più UN
+# edificio di questo tipo (cantiere compreso) in tutta la partita: cerchio di sassi, cerchio del consiglio. Controllato da
+# GameScene._building_type_availability, che spegne lo slot in BuildBar — DELIBERATAMENTE non in
+# BuildingVerificationService.is_position_buildable (quella resta legata a terreno/spazio/sovrapposizioni di UNA posizione).
+@export var is_unique: bool = false
+
+# Livello di centro del villaggio (2026-10-26, richiesta utente — cerchio del consiglio; sostituisce is_village_center):
+# 0 = non può fare da centro; cerchio di sassi 1, cerchio del consiglio 2. Il centro vero è Village.center_building_id:
+# un candidato completato lo diventa da solo solo se il villaggio non ha centro; altrimenti il giocatore ce lo sposta dal
+# pannello, solo verso un livello superiore (niente ping pong) — VillageService.can_move_center.
+@export var village_center_tier: int = 0
+
+
+func can_be_village_center() -> bool:
+	return village_center_tier > 0
 
 # Flag per un futuro service generico "trova l'edificio più vicino che accetta X" (2026-09-10,
 # richiesta utente — SOLO il dato in questo passo, nessuna logica di ricerca qui né altrove:

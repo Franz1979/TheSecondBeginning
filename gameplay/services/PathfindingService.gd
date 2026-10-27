@@ -20,6 +20,11 @@ extends RefCounted
 # Regioni: ogni microcella libera riceve l'id della sua regione connessa (flood fill a 4 vicini: con le diagonali
 # ammesse solo senza ostacoli ai lati, la connettività a 8 coincide con quella a 4). Ricalcolo PIGRO: un cambio di
 # blocco segna le regioni come da rifare, e le si rifà alla prossima get_region/is_reachable.
+# Sacche chiuse (2026-10-27, richiesta utente — pipottini morti di fame chiusi tra le rocce): una regione di al più
+# POCKET_MAX_CELLS microcelle che non tocca il bordo della macrocella. Ci si entrava partendo da una roccia (i ciottoli si
+# raccolgono sopra la roccia, e una partenza bloccata vale per tutte le regioni che tocca), poi la roccia tornava
+# ostacolo e non si usciva più. Ora una sacca non è mai una destinazione per chi non ci sta già dentro (is_reachable), e
+# chi è dentro esce per la via d'uscita: il passaggio più corto attraverso le sole rocce fino a una regione aperta.
 #
 # Aggiornamento: costruzione completa solo all'ingresso nella macrocella (prima chiamata di sync_buildings, da
 # GameScene._refresh_building_visuals, che gira anche all'attivazione della cella); poi, a ogni costruzione/
@@ -48,6 +53,9 @@ const MICROCELL_POINT_MAX: float = 0.85
 # Distanza entro cui chi segue un percorso passa al punto intermedio successivo (2026-09-27, lisciatura): i punti
 # intermedi non vanno raggiunti esattamente; la destinazione finale sì.
 const WAYPOINT_REACH_DISTANCE: float = 0.3
+# Sacca chiusa (vedi in testa): dimensione massima, in microcelle, di una regione senza contatto col bordo.
+const POCKET_MAX_CELLS: int = 40
+const NO_POCKET_EXIT := Vector2i(-1, -1)
 # Tentativi di sorteggio di una destinazione casuale libera e raggiungibile (vedi pick_free_destination).
 const RANDOM_DESTINATION_ATTEMPTS: int = 8
 
@@ -286,7 +294,15 @@ static func is_reachable(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> b
 	var from_regions := _regions_around(cell, from)
 	if from_regions.is_empty():
 		return false
+	# Sacche (2026-10-27): ci entra solo chi ci sta già dentro; chi è dentro vale anche per la regione della via d'uscita.
+	var own_region: int = cell.path_regions[_index(from)]
+	if own_region != -1 and _is_pocket(cell, own_region):
+		var exit := _pocket_exit(cell, own_region, from)
+		if exit != NO_POCKET_EXIT:
+			from_regions.append(cell.path_regions[_index(exit)])
 	for region in _regions_around(cell, to):
+		if _is_pocket(cell, region) and region != own_region:
+			continue
 		if from_regions.has(region):
 			return true
 	return false
@@ -305,6 +321,23 @@ static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> Arra
 		return empty
 	if not is_reachable(cell, from, to):
 		return empty
+	# Via d'uscita (2026-10-27): chi è chiuso in una sacca e va fuori passa prima attraverso le rocce fino alla regione
+	# aperta più vicina, poi prosegue col percorso normale (lisciato solo quello: la via d'uscita attraversa ostacoli).
+	var own_region: int = cell.path_regions[_index(from)]
+	if own_region != -1 and _is_pocket(cell, own_region) and not _regions_around(cell, to).has(own_region):
+		var escape := _escape_route(cell, from)
+		if escape.is_empty():
+			return empty
+		var rest := find_path(cell, escape[escape.size() - 1], to)
+		if rest.is_empty():
+			return empty
+		if DebugLogging.ENABLED and DebugLogging.SHOW_PATHFINDING_LOGS:
+			print("[PATHFINDING] %s: via d'uscita dalla sacca %s -> %s (%d microcelle tra le rocce)." % [
+				Vector2i(cell.macro_x, cell.macro_y), from, escape[escape.size() - 1], escape.size()
+			])
+		escape.resize(escape.size() - 1)
+		escape.append_array(rest)
+		return escape
 	var grid := cell.path_grid
 	var from_was_blocked := cell.path_solid[_index(from)] == 1
 	var to_was_blocked := cell.path_solid[_index(to)] == 1
@@ -486,6 +519,69 @@ static func _regions_around(cell: LiveMacroCell, position: Vector2i) -> Array[in
 	return regions
 
 
+# true se la regione `region` è una sacca chiusa (vedi in testa).
+static func _is_pocket(cell: LiveMacroCell, region: int) -> bool:
+	return region >= 0 and region < cell.path_region_pocket.size() and cell.path_region_pocket[region] == 1
+
+
+# Microcella d'arrivo della via d'uscita dalla sacca `region` (cercata da `from` la prima volta, poi tenuta fino al
+# prossimo ricalcolo delle regioni); NO_POCKET_EXIT se non c'è.
+static func _pocket_exit(cell: LiveMacroCell, region: int, from: Vector2i) -> Vector2i:
+	if not cell.path_pocket_exits.has(region):
+		var route := _escape_route(cell, from)
+		cell.path_pocket_exits[region] = route[route.size() - 1] if not route.is_empty() else NO_POCKET_EXIT
+	return cell.path_pocket_exits[region]
+
+
+# Via d'uscita da `from`: ricerca in ampiezza a 4 vicini che attraversa microcelle libere e rocce (nient'altro: edifici,
+# fiume e acqua restano ostacoli) fino alla prima microcella libera fuori da ogni sacca. Percorso da `from` a quella
+# microcella compresi; vuoto se non c'è.
+static func _escape_route(cell: LiveMacroCell, from: Vector2i) -> Array[Vector2i]:
+	var route: Array[Vector2i] = []
+	if cell.path_obstacles == null:
+		return route
+	var width := World.WIDTH
+	var total := World.WIDTH * World.HEIGHT
+	var parents := PackedInt32Array()
+	parents.resize(total)
+	parents.fill(-2)
+	var queue := PackedInt32Array()
+	queue.resize(total)
+	var head := 0
+	var tail := 0
+	var start := _index(from)
+	parents[start] = -1
+	queue[tail] = start
+	tail += 1
+	var found := -1
+	while head < tail:
+		var index: int = queue[head]
+		head += 1
+		if cell.path_solid[index] == 0 and not _is_pocket(cell, cell.path_regions[index]):
+			found = index
+			break
+		var position := Vector2i(index % width, index / width)
+		for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var neighbor: Vector2i = position + offset
+			if not _in_bounds(neighbor):
+				continue
+			var neighbor_index := _index(neighbor)
+			if parents[neighbor_index] != -2:
+				continue
+			if cell.path_solid[neighbor_index] == 1 and not cell.path_obstacles.stones.has(neighbor):
+				continue
+			parents[neighbor_index] = index
+			queue[tail] = neighbor_index
+			tail += 1
+	if found == -1:
+		return route
+	var current := found
+	while current != -1:
+		route.push_front(Vector2i(current % width, current / width))
+		current = parents[current]
+	return route
+
+
 static func _ensure_regions(cell: LiveMacroCell) -> void:
 	if cell.path_regions_dirty or cell.path_regions.size() != World.WIDTH * World.HEIGHT:
 		_recompute_regions(cell)
@@ -505,7 +601,9 @@ static func _recompute_regions(cell: LiveMacroCell) -> void:
 	queue.resize(total)
 	var region_sizes := PackedInt32Array()
 	var region_samples := PackedInt32Array()
+	var pockets := PackedByteArray()
 	var region_count := 0
+	var height := World.HEIGHT
 	for start_index in range(total):
 		if solid[start_index] == 1 or regions[start_index] != -1:
 			continue
@@ -514,10 +612,13 @@ static func _recompute_regions(cell: LiveMacroCell) -> void:
 		var tail := 0
 		queue[tail] = start_index
 		tail += 1
+		var touches_border := false
 		while head < tail:
 			var index: int = queue[head]
 			head += 1
 			var x := index % width
+			if x == 0 or x == width - 1 or index < width or index >= (height - 1) * width:
+				touches_border = true
 			if x > 0 and solid[index - 1] == 0 and regions[index - 1] == -1:
 				regions[index - 1] = region_count
 				queue[tail] = index - 1
@@ -536,9 +637,12 @@ static func _recompute_regions(cell: LiveMacroCell) -> void:
 				tail += 1
 		region_sizes.append(tail)
 		region_samples.append(start_index)
+		pockets.append(1 if not touches_border and tail <= POCKET_MAX_CELLS else 0)
 		region_count += 1
 	cell.path_regions = regions
 	cell.path_region_count = region_count
+	cell.path_region_pocket = pockets
+	cell.path_pocket_exits.clear()
 	cell.path_regions_dirty = false
 	if DebugLogging.ENABLED and DebugLogging.SHOW_PATHFINDING_LOGS:
 		var order: Array[int] = []

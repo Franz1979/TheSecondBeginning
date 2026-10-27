@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="PoliticalRiteRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/rites/scripts/PoliticalRiteRules.gd" id="1_council"]
+
+[resource]
+script = ExtResource("1_council")
+id = "council_of_elders"
+rite_type = 1
+display_name = "rite_council_of_elders_name"
+building_types = Array[String](["council_circle"])
+min_skill = 100.0
+allowed_age_bands = Array[int]([4, 5])
+spontaneous = false
+convoked_age_bands = Array[int]([4, 5])
+counted_age_bands = Array[int]([4, 5])
+max_participants = 0
+min_village_adults = 0
+min_participants = 3
+wait_days = 2.0
+feast_days = 0.5
+organizer_stamina_per_day = 100.0
+idle_cooldown_days = 0.0
+happiness_gain = 0.0
+social_gain_participant = 1.0
+social_gain_organizer = 1.0
+cohesion_gain = 0.2
+command_icon_key = "council"
+task_label_key = "task_council_of_elders_name"
+requires_village_center = true
+min_days_between = 30
+leadership_gain_organizer = 1.0
+leadership_gain_participant = 1.0
+influence_points_base = 5.0
+influence_points_per_participant = 1.0
+village_political_gain = 1.0
+village_political_gain_per_participant = 0.2
+skip_cohesion_loss = 0.1
+skip_loyalty_loss = 10.0

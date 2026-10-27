@@ -1,0 +1,29 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_council_circle"]
+
+[resource]
+script = ExtResource("1_council_circle")
+building_name = "building_council_circle"
+category = 1
+required_idea_id = "tribal_organization"
+lifespan_years = 80
+max_durability = 400
+defense = 40
+min_construction_days = 10
+required_labor = 10000
+max_builders = 4
+required_materials = {
+"stone": 80,
+"wood": 12
+}
+required_space = 4
+footprint = Vector2i(2, 2)
+has_door = false
+visibility_radius = 8
+political_radius = 7
+cultural_radius = 6
+is_unique = true
+village_center_tier = 2
+accepts_thoughts = true
+is_assignment_point = true

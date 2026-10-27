@@ -8,9 +8,12 @@ class_name DiscoveryTypes
 # DiscoveryHintService.find_unseen per tipo:
 #   IDEA_COMPLETED     -> {"idea_id": String}
 #   BUILDING_COMPLETED -> {"building": Building}
+#   ANIMAL_DOMESTICATED -> {"species": String} (specie domestica, es. "dog" — primo superamento della soglia, vedi
+#                          DomesticationPointsService)
 enum TriggerType {
 	IDEA_COMPLETED,
 	BUILDING_COMPLETED,
+	ANIMAL_DOMESTICATED,
 }
 
 # Azione eseguita da GameScene dopo l'OK del DiscoveryPopup (o subito, se non c'è nulla da mostrare).

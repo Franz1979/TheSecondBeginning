@@ -111,6 +111,20 @@ var camera_position_saved: bool = false
 # Vedi DiscoveryHintService.
 var seen_discovery_hints: Array[String] = []
 
+# Punti addomesticazione per specie domestica (2026-10-26, richiesta utente): species_name (es. "dog") -> int.
+# Specie mai toccata = chiave assente = 0. Scritti solo da DomesticationPointsService.
+var domestication_points: Dictionary = {}
+# Specie domestiche che hanno già superato la soglia almeno una volta: la prima addomesticazione (e la sua scoperta)
+# scatta una sola volta, anche se i punti poi scendono e risalgono.
+var domesticated_species: Array[String] = []
+# Specie selvatiche (AnimalRules.species_name) già viste nel mondo: un'addomesticazione con idea richiesta parte solo
+# per queste. Scritte solo da DomesticationEncounterService.
+var encountered_wild_species: Array[String] = []
+# Gruppi di animali che frequentano il villaggio (2026-10-26, richiesta utente — primo: il branco di lupi). Creati da
+# AnimalVisitorService.ensure_groups appena esiste un villaggio con centro.
+var animal_visitor_groups: Array[AnimalVisitorGroup] = []
+var next_animal_visitor_group_id: int = 1
+
 # Ultimo absolute_day (vedi get_absolute_day sotto) in cui GameScene ha eseguito la pulizia
 # periodica di FogOfWarMemory.last_seen_by_position (vedi FogOfWarMemory.prune_stale/
 # GameScene._maybe_prune_fog_of_war_memories) — deve sopravvivere a save/load, altrimenti ogni

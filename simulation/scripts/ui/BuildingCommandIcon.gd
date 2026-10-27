@@ -26,6 +26,10 @@ const KIND_OPEN_PIT := "open_pit"
 # Cancello (2026-10-23): ante aperte (comando "Apri") e chiuse (comando "Chiudi").
 const KIND_OPEN_GATE := "open_gate"
 const KIND_CLOSE_GATE := "close_gate"
+# Sposta qui il centro del villaggio (2026-10-26, cerchio del consiglio): anello di pietre con una freccia che vi scende.
+const KIND_MOVE_VILLAGE_CENTER := "move_village_center"
+# Dai un nome al villaggio (2026-10-26): pietra ritta con segni incisi.
+const KIND_NAME_VILLAGE := "name_village"
 
 # Il disegno è pensato in un quadrato di DRAWING_SPAN unità, scalato al lato minore del rettangolo.
 const DRAWING_SPAN: float = 20.0
@@ -54,6 +58,7 @@ const SHOVEL_BLADE := Color(0.70, 0.72, 0.76, 1.0)
 const SHOVEL_HANDLE := HAMMER_HANDLE
 const PIT_RIM := Color(0.62, 0.50, 0.36, 1.0)
 const PIT_HOLE := Color(0.20, 0.16, 0.12, 1.0)
+const STONE := Color(0.72, 0.70, 0.66, 1.0)
 
 var kind: String = KIND_UPGRADE:
 	set(value):
@@ -111,6 +116,32 @@ func _draw() -> void:
 			_draw_gate(true)
 		KIND_CLOSE_GATE:
 			_draw_gate(false)
+		KIND_MOVE_VILLAGE_CENTER:
+			_draw_move_village_center()
+		KIND_NAME_VILLAGE:
+			_draw_name_village()
+
+
+# Dai un nome al villaggio (2026-10-26): pietra ritta arrotondata in cima, con tre righe di segni incisi.
+func _draw_name_village() -> void:
+	_shape([
+		Vector2(4.5, 19.0), Vector2(4.0, 7.0), Vector2(6.0, 2.8), Vector2(10.0, 1.2), Vector2(14.0, 2.8), Vector2(16.0, 7.0),
+		Vector2(15.5, 19.0),
+	], STONE)
+	for row_y in [7.0, 10.5, 14.0]:
+		draw_line(_p(Vector2(7.0, row_y)), _p(Vector2(13.0, row_y)), OUTLINE, OUTLINE_WIDTH * 1.4 * _scale, true)
+
+
+# Sposta il centro (2026-10-26): anello di sei pietre nella metà bassa, freccia verde che scende al suo centro.
+func _draw_move_village_center() -> void:
+	var ring_center := Vector2(10.0, 13.5)
+	for index in 6:
+		var stone_center: Vector2 = ring_center + Vector2.from_angle(TAU * float(index) / 6.0) * Vector2(7.0, 4.6)
+		_shape([
+			stone_center + Vector2(-1.6, -1.1), stone_center + Vector2(1.6, -1.1),
+			stone_center + Vector2(1.6, 1.1), stone_center + Vector2(-1.6, 1.1),
+		], STONE)
+	_down_arrow(10.0, 12.5, 0.6, 2.8, 1.1)
 
 
 # Cancello (2026-10-23): due pali ai lati e due ante, aperte (girate verso il basso) o chiuse (che si toccano al centro).

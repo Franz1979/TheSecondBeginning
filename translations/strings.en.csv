@@ -65,7 +65,7 @@ idea_oral_teaching_summary,Elders pass on to children what they do best.
 idea_oral_teaching_description,"Stories and repeated gestures carry knowledge from one generation to the next."
 idea_tribal_organization,Tribal organization
 idea_tribal_organization_summary,The village learns to gather and decide together.
-idea_tribal_organization_description,"Elders and the most skilled sit in a circle, and their word guides the tribe."
+idea_tribal_organization_description,"Elders and the most skilled sit in a circle, and their word guides the tribe. Meetings at the Council circle are held only on order: with the Village chief they can be scheduled."
 idea_drying,Drying
 idea_drying_summary,Allows building the drying rack to dry meat.
 idea_drying_description,"Laid out in sun and wind on a rack, meat keeps much longer."
@@ -575,7 +575,7 @@ animal_selection_title,Animal
 animal_species_label,Species: {species}
 animal_age_band_label,Age: {age_band}
 animal_species_rabbit,Rabbit
-animal_species_partridge,Partridge
+animal_species_partridge,Wild fowl
 animal_species_deer,Deer
 animal_species_boar,Boar
 animal_species_mouflon,Mouflon
@@ -643,7 +643,6 @@ building_assigned_builder_missing,Assigned builder: missing
 building_assigned_worker_label,Assigned worker: {names}
 building_assigned_worker_missing,Assigned worker: missing
 building_cancel_work_tooltip,Cancel the work on this building for everyone working on it (progress is kept)
-debug_visitor_spawn_tooltip,Trigger the A family arrives event (requires the village center)
 visitor_decision_family_title,A family arrives
 visitor_decision_family_text,A family has reached the village center and asks to join you:
 visitor_decision_family_question,Do you welcome them into the village?
@@ -1497,3 +1496,75 @@ pending_stock_toolkit_missing,"No warehouse has: {tools}"
 warehouse_rule_toolkit_edit,Edit…
 warehouse_rule_toolkit_edit_tooltip,"Wanted pieces of each tool in the toolkits, per building type"
 warehouse_rule_toolkit_empty,"No building with a toolkit unlocked yet"
+building_council_circle,Council circle
+build_bar_council_circle_tooltip,Council circle
+build_bar_council_circle_description,"Large stones in a ring, where the village gathers. It can become the new village center. Meetings are held only on order: with the Village chief they can be scheduled."
+build_bar_unique_building_disabled_tooltip,Not buildable: one already exists
+building_move_village_center_button,Move the village center here
+building_command_move_village_center_detail,"The center of {village} moves here, for good"
+village_center_move_confirmation_title,Move the village center?
+village_center_move_confirmation_text,"Move the center of {village} here? {building} becomes the village center. This cannot be undone: the old center stays standing, still accepts thoughts and is still an assignment point."
+village_center_move_confirmation_name,"Name the village (empty = name it later from the center's panel). The inhabitants' loyalty is born with the name. Once chosen, it can no longer be changed:"
+village_center_move_confirmation_confirm,Move the center
+notification_village_center_movable,"{building} is ready: from its panel you can move the center of {village} there"
+notification_village_center_moved,{building} is now the center of {village}
+building_name_village_button,Name the village
+building_command_name_village_detail,"Only once: it can no longer be changed afterwards"
+village_naming_confirmation_title,Name the village?
+village_naming_confirmation_text,"What name do you want to give {village}? Once chosen, it can no longer be changed."
+village_naming_confirmation_confirm,Name it
+notification_village_named,The village is now called {village}
+domestic_animal_dog,Dog
+discovery_first_domesticated_wolf_title,A wolf that no longer runs
+discovery_first_domesticated_wolf_p1,"For a long time a wolf pack kept coming back to scavenge in the waste pit. Each time it came a little closer, each time it fled a little later."
+discovery_first_domesticated_wolf_p2,"This time one of the young ones stayed. It no longer growls: it follows the villagers at a distance and sleeps near the huts. It is no longer a wolf: it is a dog."
+discovery_first_domesticated_wolf_gift_title,A new idea: {idea}
+discovery_first_domesticated_wolf_gift_p1,"If a wolf can live with us, perhaps other animals can too."
+discovery_first_domesticated_wolf_gift_p2,"The villagers begin to look differently at the animals they hunt: some of them, one day, might stay in the village instead of ending up on the fire."
+idea_village_chief,Village chief
+idea_village_chief_summary,The village recognizes a leader.
+idea_village_chief_description,"Among those who sit in the circle, one alone speaks for all: the village chief."
+idea_role_assignment,Role assignment
+idea_role_assignment_summary,Everyone has a fixed task in the village.
+idea_role_assignment_description,"The chief entrusts each person with a role: who coordinates the work, who keeps the stores."
+idea_domestication,Domestication
+idea_domestication_summary,"Wild animals and plants can, over time, live alongside people."
+idea_domestication_description,"From the wolf that became a dog, the village has learned that what is wild, approached patiently over generations, can change and live at its side. It opens the way to domesticating animals and plants."
+idea_animal_domestication,Animal Domestication
+idea_animal_domestication_summary,Allows starting to domesticate the animal species you have encountered.
+idea_animal_domestication_description,"The village learns that other animals, not just the wolf, can grow used to people. Each species must first be found in the world, then approached patiently: it will take generations."
+idea_plant_domestication,Plant Domestication
+idea_plant_domestication_summary,Allows starting to domesticate the plant species you have encountered.
+idea_plant_domestication_description,"The village notices that plants grown near the huts, from discarded seeds, are not like those in the woods. By choosing and replanting the best seeds, over time plants will become more generous. It paves the way for agriculture."
+domestic_animal_goat,Goat
+domestic_animal_sheep,Sheep
+domestic_animal_pig,Pig
+domestic_animal_donkey,Donkey
+domestic_animal_cattle,Cattle
+domestic_animal_horse,Horse
+domestic_animal_domestic_rabbit,Domestic rabbit
+domestication_tooltip,Domestication
+domestication_panel_title,Domestication
+domestication_tab_animals,Animals
+domestication_tab_plants,Plants
+domestication_from,from: {species}
+domestication_state_domesticated,Domesticated
+domestication_state_in_progress,In progress
+domestication_state_locked,Requires the idea «{idea}»
+domestication_animals_locked_notice,"Study «{idea}» to start domesticating other animal species besides the wolf."
+domestication_plants_locked_notice,Study «{idea}» to start domesticating plants.
+domestication_plants_empty,No plant species known yet.
+rite_council_of_elders_name,Council of elders
+task_council_of_elders_name,Council of elders
+political_rite_reject_not_center,Only when the Council circle is the village center
+political_rite_reject_too_soon,Too soon: again in {days} days
+political_rite_order_only_tooltip,Only on order. With the Village chief it can be scheduled.
+domestic_animal_chicken,Chicken
+rite_village_assembly_name,Village grand council
+task_village_assembly_name,Village grand council
+notification_political_rite_success,{rite}: the meeting went well
+notification_political_rite_quarrel,{rite}: the meeting ended in a quarrel
+building_selection_village_center,This building is the village center
+individual_loyalty_frozen_tooltip,Loyalty is born when the village receives a name
+warehouse_rule_fuel_edit_tooltip,"Wanted fuel stock, per building type"
+warehouse_rule_fuel_empty,"No fuel-burning building unlocked yet"

@@ -80,6 +80,10 @@ signal fuel_min_changed(type_name: String, level: int)
 # Regola "Rifornisci le Attrezzerie" (2026-10-18, ToolkitStockService): accesa/spenta e pezzi voluti per tipo e attrezzo.
 signal toolkit_rule_toggled(enabled: bool)
 signal toolkit_target_changed(type_name: String, tool_name: String, level: int)
+# Elenchi per tipo di edificio da ricalcolare (2026-10-27, bugfix: calcolati una volta sola, mancavano gli edifici sbloccati
+# dopo): emesso all'apertura dei popup "Modifica…" del combustibile e delle Attrezzerie. Chi è collegato risponde subito con set_fuel_rule
+# e set_toolkit_rule.
+signal rule_rows_refresh_requested
 var _fuel_rule_enabled: bool = false
 var _fuel_rows: Array[Dictionary] = []
 var _toolkit_rule_enabled: bool = false
@@ -336,14 +340,18 @@ func _build_toolkit_rule_rows() -> Control:
 	edit_button.tooltip_text = TooltipText.wrap(tr("warehouse_rule_toolkit_edit_tooltip"))
 	edit_button.focus_mode = Control.FOCUS_NONE
 	edit_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-	edit_button.pressed.connect(func() -> void: _open_toolkit_popup(edit_button))
+	edit_button.pressed.connect(func() -> void:
+		_open_rule_popup(edit_button, "warehouse_rule_toolkit", "warehouse_rule_toolkit_empty", func() -> Array: return _toolkit_rows, _fill_toolkit_popup)
+	)
 	row.add_child(edit_button)
 	return row
 
 
-# Popup del dettaglio Attrezzerie, rifatto a ogni apertura dalle righe di adesso; largo quanto il cassetto, alto quanto
-# le voci (al massimo lo schermo, poi scorrono), con il fondo appena sopra il pulsante. Si chiude con un clic fuori o Esc.
-func _open_toolkit_popup(anchor: Control) -> void:
+# Popup "Modifica…" delle regole (2026-10-18 Attrezzerie, 2026-10-27 anche combustibile): le righe si ricalcolano a ogni
+# apertura (rule_rows_refresh_requested) e il popup si rifà da capo; largo quanto il cassetto, alto quanto le voci (al
+# massimo lo schermo, poi scorrono), con il fondo appena sopra il pulsante. Si chiude con un clic fuori o Esc.
+func _open_rule_popup(anchor: Control, title_key: String, empty_key: String, rows: Callable, fill: Callable) -> void:
+	rule_rows_refresh_requested.emit()
 	if _toolkit_popup != null:
 		_toolkit_popup.queue_free()
 	_toolkit_popup = PopupPanel.new()
@@ -357,15 +365,28 @@ func _open_toolkit_popup(anchor: Control) -> void:
 	box.add_theme_constant_override("separation", 2)
 	scroll.add_child(box)
 	var title := Label.new()
-	title.text = tr("warehouse_rule_toolkit")
+	title.text = tr(title_key)
 	title.add_theme_font_size_override("font_size", SECTION_FONT_SIZE)
 	box.add_child(title)
-	if _toolkit_rows.is_empty():
+	if (rows.call() as Array).is_empty():
 		var empty := Label.new()
-		empty.text = tr("warehouse_rule_toolkit_empty")
+		empty.text = tr(empty_key)
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 		box.add_child(empty)
+	fill.call(box)
+	var style := _toolkit_popup.get_theme_stylebox("panel")
+	var margins := style.get_minimum_size() if style != null else Vector2.ZERO
+	var screen_height := int(get_viewport().get_visible_rect().size.y)
+	var width := int(get_global_rect().size.x) - 2 * TOOLKIT_POPUP_INSET
+	var height := mini(int(ceilf(box.get_combined_minimum_size().y + margins.y)), screen_height - 2 * TOOLKIT_POPUP_INSET)
+	var x := int(get_global_rect().position.x) + TOOLKIT_POPUP_INSET
+	var y := clampi(int(anchor.get_global_rect().position.y) - height - 4, 0, maxi(screen_height - height, 0))
+	_toolkit_popup.popup(Rect2i(Vector2i(x, y), Vector2i(width, height)))
+
+
+# Righe del popup delle Attrezzerie: per ogni tipo icona e nome, sotto, rientrati, gli attrezzi con i pezzi voluti.
+func _fill_toolkit_popup(box: VBoxContainer) -> void:
 	for entry in _toolkit_rows:
 		var type_name := String(entry.get("type", ""))
 		var header := HBoxContainer.new()
@@ -391,14 +412,25 @@ func _open_toolkit_popup(anchor: Control) -> void:
 				toolkit_target_changed.emit(type_name, tool_name, clamped)
 			, "warehouse_rule_toolkit_tool_tooltip", 1, 0, true))
 			box.add_child(row)
-	var style := _toolkit_popup.get_theme_stylebox("panel")
-	var margins := style.get_minimum_size() if style != null else Vector2.ZERO
-	var screen_height := int(get_viewport().get_visible_rect().size.y)
-	var width := int(get_global_rect().size.x) - 2 * TOOLKIT_POPUP_INSET
-	var height := mini(int(ceilf(box.get_combined_minimum_size().y + margins.y)), screen_height - 2 * TOOLKIT_POPUP_INSET)
-	var x := int(get_global_rect().position.x) + TOOLKIT_POPUP_INSET
-	var y := clampi(int(anchor.get_global_rect().position.y) - height - 4, 0, maxi(screen_height - height, 0))
-	_toolkit_popup.popup(Rect2i(Vector2i(x, y), Vector2i(width, height)))
+
+
+# Righe del popup del combustibile: per ogni tipo icona, nome e campo della scorta.
+func _fill_fuel_popup(box: VBoxContainer) -> void:
+	for entry in _fuel_rows:
+		var type_name := String(entry.get("type", ""))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_fuel_type_tooltip"))
+		row.add_child(IconRegistry.build_building_icon_box(type_name, LIST_ICON_SIDE))
+		var label := _toolkit_popup_label(tr(String(entry.get("name", type_name))))
+		label.tooltip_text = TooltipText.wrap(row.tooltip_text)
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_child(label)
+		row.add_child(_build_level_field(int(entry.get("level", 0)), func(level: int) -> void:
+			entry["level"] = level
+			fuel_min_changed.emit(type_name, level)
+		, "warehouse_rule_fuel_type_tooltip"))
+		box.add_child(row)
 
 
 # Etichetta del popup che si accorcia con "…" invece di allargarlo.
@@ -427,46 +459,34 @@ func _make_toolkit_popup_style() -> StyleBoxFlat:
 	return style
 
 
-# Regola del combustibile: casella accesa/spenta, poi per ogni tipo icona, nome e campo − [N] + (spenti con la regola).
+# Regola del combustibile: casella accesa/spenta e accanto "Modifica…" (2026-10-27, richiesta utente: l'elenco dei tipi
+# si allungava), che apre il popup con, per ogni tipo, icona, nome e campo della scorta.
 func _build_fuel_rule_rows() -> Control:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 2)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
 	var toggle := CheckBox.new()
 	toggle.text = tr("warehouse_rule_fuel")
 	toggle.tooltip_text = TooltipText.wrap(tr("warehouse_rule_fuel_tooltip"))
 	toggle.button_pressed = _fuel_rule_enabled
 	toggle.focus_mode = Control.FOCUS_NONE
 	toggle.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-	box.add_child(toggle)
-	var types_box := VBoxContainer.new()
-	types_box.add_theme_constant_override("separation", 2)
-	types_box.visible = _fuel_rule_enabled
-	box.add_child(types_box)
+	toggle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	toggle.clip_text = true
 	toggle.toggled.connect(func(pressed: bool) -> void:
 		_fuel_rule_enabled = pressed
-		types_box.visible = pressed
 		fuel_rule_toggled.emit(pressed)
 	)
-	for entry in _fuel_rows:
-		var type_name := String(entry.get("type", ""))
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_fuel_type_tooltip"))
-		row.add_child(IconRegistry.build_building_icon_box(type_name, LIST_ICON_SIDE))
-		var label := Label.new()
-		label.text = tr(String(entry.get("name", type_name)))
-		label.tooltip_text = TooltipText.wrap(row.tooltip_text)
-		label.mouse_filter = Control.MOUSE_FILTER_PASS
-		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		row.add_child(label)
-		row.add_child(_build_level_field(int(entry.get("level", 0)), func(level: int) -> void:
-			entry["level"] = level
-			fuel_min_changed.emit(type_name, level)
-		, "warehouse_rule_fuel_type_tooltip"))
-		types_box.add_child(row)
-	return box
+	row.add_child(toggle)
+	var edit_button := Button.new()
+	edit_button.text = tr("warehouse_rule_toolkit_edit")
+	edit_button.tooltip_text = TooltipText.wrap(tr("warehouse_rule_fuel_edit_tooltip"))
+	edit_button.focus_mode = Control.FOCUS_NONE
+	edit_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	edit_button.pressed.connect(func() -> void:
+		_open_rule_popup(edit_button, "warehouse_rule_fuel", "warehouse_rule_fuel_empty", func() -> Array: return _fuel_rows, _fill_fuel_popup)
+	)
+	row.add_child(edit_button)
+	return row
 
 
 # Stato del pulsante della regola "Carne e pelli in eccesso" (stessi argomenti di ButcherDestinationButton.set_destination).

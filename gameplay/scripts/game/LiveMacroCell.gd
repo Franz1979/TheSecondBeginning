@@ -60,6 +60,11 @@ var path_grid_version: int = 0
 # lo confrontano per ricalcolare il percorso.
 var path_solid: PackedByteArray = PackedByteArray()
 var path_regions_dirty: bool = true
+# Sacche chiuse (2026-10-27, PathfindingService): 1 = la regione (per id) è una sacca, piccola e senza contatto col bordo
+# della macrocella. path_pocket_exits: id della sacca -> microcella libera fuori dalla sacca dove porta la via d'uscita
+# (Vector2i(-1, -1) = nessuna), calcolata alla prima richiesta. Entrambe rifatte con le regioni, mai salvate.
+var path_region_pocket: PackedByteArray = PackedByteArray()
+var path_pocket_exits: Dictionary = {}
 var path_block_version: int = 0
 
 # Cache del risultato di VegetationPositionService.generate_positions (diagnostica lentezza,

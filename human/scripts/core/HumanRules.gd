@@ -264,7 +264,7 @@ extends Resource
 @export var home_lost_happiness_loss: float = 200.0
 # Crollo di un edificio che lascia macerie (BuildingLifecycleService.collapse): a tutto il villaggio.
 @export var collapse_village_happiness_loss: float = 100.0
-@export var political_coverage_daily_loyalty: float = 5.0
+@export var political_coverage_daily_loyalty: float = 2.0
 # Rito spontaneo tra le idle (2026-10-04, richiesta utente — RiteService.find_spontaneous_rite_target): distanza massima in
 # microcelle, in linea d'aria dal pipottino, entro cui l'edificio del rito si sceglie A CASO tra quelli ammessi; se
 # entro questa distanza non ce n'è nessuno, il più vicino tra i raggiungibili.

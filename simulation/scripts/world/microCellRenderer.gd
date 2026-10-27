@@ -1428,6 +1428,10 @@ func _draw_buildings() -> void:
 		if building_type_name == TravoisRackShape.TYPE:
 			TravoisRackShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), int(entry.get("travois_count", 0)))
 			continue
+		# Cerchio del consiglio (2026-10-26, 2x2): anello di grandi pietre sul rettangolo intero, fondo dai tile di terra.
+		if building_type_name == CouncilCircleShape.TYPE:
+			CouncilCircleShape.draw(self, ground, Vector2(entry.get("size", Vector2i(1, 1))) * CELL_SIZE, false, 1.0, false)
+			continue
 		# Spiazzo delle feste (2026-10-17, 2x2): terra battuta e cerchio di sassi, sul rettangolo intero.
 		if building_type_name == FeastGroundShape.TYPE:
 			# Il fondo è quello dei tile di terra battuta (_rebuild_dirt_ground_mesh): qui solo il cerchio di sassi.
@@ -1780,6 +1784,8 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"teaching_stump",
 	# Spiazzo delle feste (2026-10-17): un tile per microcella del rettangolo ("dirt_cells"), sotto il cerchio di sassi.
 	"feast_ground",
+	# Cerchio del consiglio (2026-10-26, 2x2).
+	"council_circle",
 ]
 
 

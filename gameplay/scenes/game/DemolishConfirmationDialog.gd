@@ -38,6 +38,9 @@ var _pending_on_confirm: Callable = Callable()
 var _content: VBoxContainer = null
 var _question_label: Label = null
 var _paragraphs: VBoxContainer = null
+# Campo di testo sotto i paragrafi (2026-10-26, nome del villaggio allo spostamento del centro): visibile solo con
+# open_confirmation_with_text; alla conferma il testo va a on_confirm.
+var _text_edit: LineEdit = null
 
 
 func _ready() -> void:
@@ -62,6 +65,9 @@ func _build_content() -> void:
 	_paragraphs = VBoxContainer.new()
 	_paragraphs.add_theme_constant_override("separation", PARAGRAPH_SEPARATION)
 	_content.add_child(_paragraphs)
+	_text_edit = LineEdit.new()
+	_text_edit.visible = false
+	_content.add_child(_text_edit)
 
 
 # Il contenitore nativo dei pulsanti alterna spaziatori espandibili ([sp] OK [sp] Annulla [sp]): con un popup largo i
@@ -101,6 +107,7 @@ func open_dialog(building: Variant, display_name: String, building_id: int, is_s
 # a terra."), il seguito diventa il primo paragrafo.
 func open_confirmation(title_text: String, body_text: String, confirm_text: String, on_confirm: Callable) -> void:
 	_pending_on_confirm = on_confirm
+	_text_edit.visible = false
 	title = title_text
 	dialog_text = ""
 	ok_button_text = confirm_text
@@ -136,6 +143,21 @@ func open_confirmation(title_text: String, body_text: String, confirm_text: Stri
 	size = Vector2i.ZERO
 	popup_centered()
 	_refit_after_layout()
+
+
+# Come open_confirmation, con un campo di testo sotto i paragrafi (precompilato con `initial_text`, al più `max_length`
+# caratteri): alla conferma on_confirm riceve il testo scritto.
+func open_confirmation_with_text(
+	title_text: String, body_text: String, confirm_text: String, placeholder: String, initial_text: String, max_length: int,
+	on_confirm: Callable
+) -> void:
+	open_confirmation(title_text, body_text, confirm_text, func(): on_confirm.call(_text_edit.text))
+	_text_edit.placeholder_text = placeholder
+	_text_edit.max_length = max_length
+	_text_edit.text = initial_text
+	_text_edit.custom_minimum_size.x = _question_label.custom_minimum_size.x
+	_text_edit.visible = true
+	_text_edit.grab_focus()
 
 
 # Larghezza naturale (senza a capo) della riga più lunga, +2 px perché una riga che entra di misura non vada a capo.

@@ -1,0 +1,80 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://gameplay/domestic_animals/scenes/DomesticationPanel.gd" id="1_domestication"]
+
+[node name="DomesticationPanel" type="CanvasLayer"]
+layer = 10
+visible = false
+script = ExtResource("1_domestication")
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Background" type="ColorRect" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.06, 0.07, 0.09, 0.95)
+
+[node name="MarginContainer" type="MarginContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="Root/MarginContainer"]
+layout_mode = 2
+
+[node name="HeaderRow" type="HBoxContainer" parent="Root/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="TitleLabel" type="Label" parent="Root/MarginContainer/VBoxContainer/HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 22
+
+[node name="CloseButton" type="Button" parent="Root/MarginContainer/VBoxContainer/HeaderRow"]
+layout_mode = 2
+
+[node name="HSeparator" type="HSeparator" parent="Root/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="TabContainer" type="TabContainer" parent="Root/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+current_tab = 0
+
+[node name="AnimalsScroll" type="ScrollContainer" parent="Root/MarginContainer/VBoxContainer/TabContainer"]
+layout_mode = 2
+horizontal_scroll_mode = 0
+metadata/_tab_index = 0
+
+[node name="AnimalsBox" type="VBoxContainer" parent="Root/MarginContainer/VBoxContainer/TabContainer/AnimalsScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12
+
+[node name="PlantsScroll" type="ScrollContainer" parent="Root/MarginContainer/VBoxContainer/TabContainer"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+metadata/_tab_index = 1
+
+[node name="PlantsBox" type="VBoxContainer" parent="Root/MarginContainer/VBoxContainer/TabContainer/PlantsScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 12

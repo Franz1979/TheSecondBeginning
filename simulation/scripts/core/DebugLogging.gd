@@ -449,11 +449,11 @@ const SHOW_COORDINATOR_LOGS := false
 # Scelta del vestito (2026-10-25, richiesta utente — ToolFetchService): una riga [APPAREL CHOICE] per slot quando un
 # pipottino libero sceglie un capo per uno slot vuoto (candidati col punteggio di stagione, dove lo prende o perché
 # niente) e, nel cambio di stagione della Hut, quando esiste un capo migliore (scelto o perché no). Solo log.
-const SHOW_APPAREL_CHOICE_LOGS := false
+const SHOW_APPAREL_CHOICE_LOGS := true
 
 # Guardaroba (2026-10-22, Hut — ToolFetchService/UnloadAction): una riga [WARDROBE] al cambio di stagione (capo preso e
 # capo riposto, o tenuto perché il nuovo non è nello zaino). Solo log; spento su richiesta il 2026-10-25.
-const SHOW_WARDROBE_LOGS := false
+const SHOW_WARDROBE_LOGS := true
 
 # Talk (2026-10-13, socialità — TalkService/TalkAction): una riga [TALK] per chiamata (partner, raggio, punti
 # d'incontro), nessun partner, inizio e fine della conversazione, chiusura senza effetti con il motivo. Acceso su
@@ -462,8 +462,8 @@ const SHOW_TALK_LOGS := false
 
 # Coesione (2026-10-14, VillageCohesionService): una riga [COESIONE] a ogni variazione — talk, idea, nuovi arrivati,
 # calo annuale — con valore prima e dopo. Acceso per le prime prove.
-const SHOW_COHESION_LOGS := false
+const SHOW_COHESION_LOGS := true
 
 # Riti sociali (2026-10-14, SocialRiteService — es. il banchetto): una riga [RITO SOCIALE] per organizzazione, arrivi,
 # inizio, cottura, fine o annullo. Acceso per le prime prove.
-const SHOW_SOCIAL_RITE_LOGS := false
+const SHOW_SOCIAL_RITE_LOGS := true

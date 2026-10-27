@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_plant_domestication"]
+
+[resource]
+script = ExtResource("1_plant_domestication")
+id = "plant_domestication"
+display_name = "idea_plant_domestication"
+summary = "idea_plant_domestication_summary"
+description = "idea_plant_domestication_description"
+thoughts_cost = 80
+prerequisites = Array[String](["domestication"])
+era = "paleolithic"

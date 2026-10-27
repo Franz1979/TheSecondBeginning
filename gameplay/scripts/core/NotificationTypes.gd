@@ -63,4 +63,6 @@ enum NotificationPopupType {
 	# Condizione di salute passata in convalescenza o guarita (2026-10-25, HealthConditionService). Stile di default.
 	# Aggiunto IN CODA.
 	HEALTH_CONDITION_CHANGED,
+	# Esito di una riunione politica (2026-10-26, gran consiglio riuscito o finito in lite). Stile di default. Aggiunto IN CODA.
+	POLITICAL_RITE_OUTCOME,
 }

@@ -147,6 +147,8 @@ var _food_bar_fill_body_reserve: StyleBoxFlat = null
 @onready var happiness_bar: ProgressBar = $MindBox/MindBoxMargin/MindBoxContent/HappinessBarMargin/HappinessBar
 @onready var loyalty_label: Label = $MindBox/MindBoxMargin/MindBoxContent/LoyaltyLabel
 @onready var loyalty_bar: ProgressBar = $MindBox/MindBoxMargin/MindBoxContent/LoyaltyBarMargin/LoyaltyBar
+# Barra della lealtà ferma (villaggio senza nome, 2026-10-26).
+const LOYALTY_FROZEN_MODULATE := Color(0.55, 0.55, 0.55, 0.8)
 @onready var faith_label: Label = $MindBox/MindBoxMargin/MindBoxContent/FaithLabel
 @onready var faith_bar: ProgressBar = $MindBox/MindBoxMargin/MindBoxContent/FaithBarMargin/FaithBar
 # Sezione Skills (2026-09-13, richiesta utente) — 7 barre VERTICALI (fill_mode = FILL_BOTTOM_TO_TOP
@@ -520,7 +522,7 @@ func show_individual(
 	max_thirst: float, current_thirst: float,
 	max_health: float, current_health: float,
 	max_happiness: float, current_happiness: float,
-	max_loyalty: float, current_loyalty: float,
+	max_loyalty: float, current_loyalty: float, loyalty_active: bool,
 	max_faith: float, current_faith: float,
 	skill_leadership: float, skill_builder: float, skill_management: float,
 	skill_transporter: float, skill_gathering: float, skill_cognition: float,
@@ -632,9 +634,13 @@ func show_individual(
 	happiness_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_happiness), int(max_happiness)])
 
 	loyalty_label.text = tr("individual_loyalty_label")
+	# Lealtà ferma finché il villaggio non ha un nome (2026-10-26, VillageService.is_loyalty_active): barra vuota e grigia.
 	loyalty_bar.max_value = max_loyalty
-	loyalty_bar.value = current_loyalty
-	loyalty_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_loyalty), int(max_loyalty)])
+	loyalty_bar.value = current_loyalty if loyalty_active else 0.0
+	loyalty_bar.modulate = Color.WHITE if loyalty_active else LOYALTY_FROZEN_MODULATE
+	loyalty_bar.tooltip_text = TooltipText.wrap(
+		"%d/%d" % [int(current_loyalty), int(max_loyalty)] if loyalty_active else tr("individual_loyalty_frozen_tooltip")
+	)
 
 	faith_label.text = tr("individual_faith_label")
 	faith_bar.max_value = max_faith

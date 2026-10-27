@@ -66,6 +66,15 @@ func save_game_to_json(
 			"camera_position_saved": game_data.camera_position_saved,
 			# Scoperte già mostrate (vedi GameData, DiscoveryHintService).
 			"seen_discovery_hints": game_data.seen_discovery_hints,
+			# Punti addomesticazione per specie domestica (vedi GameData, DomesticationPointsService).
+			"domestication_points": game_data.domestication_points,
+			"domesticated_species": game_data.domesticated_species,
+			"encountered_wild_species": game_data.encountered_wild_species,
+			# Gruppi di animali che frequentano il villaggio (vedi GameData, AnimalVisitorGroup.to_save_data).
+			"animal_visitor_groups": game_data.animal_visitor_groups.map(
+				func(group: AnimalVisitorGroup) -> Dictionary: return group.to_save_data()
+			),
+			"next_animal_visitor_group_id": game_data.next_animal_visitor_group_id,
 			# Ultimo giorno di pulizia periodica del fog of war (vedi GameData) — deve
 			# sopravvivere a save/load per non sfasare la cadenza reale.
 			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day,
@@ -464,6 +473,8 @@ func save_game_to_json(
 			"repair_auto_excluded": building.repair_auto_excluded,
 			# Rito ordinato dal pannello (2026-10-14), vedi Building.requested_rite_id.
 			"requested_rite_id": building.requested_rite_id,
+			# Fine dell'ultimo rito per tipo (2026-10-26), vedi Building.last_rite_end_day.
+			"last_rite_end_day": building.last_rite_end_day,
 			# Soglia di calorie del banchetto (2026-10-17), vedi Building.feast_calorie_threshold.
 			"feast_calorie_threshold": building.feast_calorie_threshold,
 			# Macerie (2026-10-10): tipo dell'edificio crollato.
