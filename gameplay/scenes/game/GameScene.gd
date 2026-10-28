@@ -35,6 +35,9 @@ signal talk_sound_requested(global_pos: Vector2, event: StringName)
 # Inizio di un rito sociale (2026-10-14, es. il banchetto): icona salita sopra l'edificio, con il suono della ricetta
 # (SocialRiteRules.start_sound_id). Ascoltato da AudioEventListener.
 signal social_rite_effect_shown(global_pos: Vector2, sound_id: StringName)
+# Chiamata della Veglia delle stelle (2026-10-29, StarVigilService): richiamo della guida alla sua posizione
+# (AudioEventListener).
+signal star_vigil_called(global_pos: Vector2)
 # Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
 # per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
 # riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
@@ -210,6 +213,8 @@ const PENDING_REFRESH_INTERVAL_SEC: float = 1.0
 const PENDING_JOB_WAIT_DAYS: float = 1.0
 var pending_panel: PendingPanel = null
 var _pending_refresh_timer: float = 0.0
+# Soglia della riga [VEG REFRESH TIMING] a flag spento (2026-10-28, misura del taglio da ~28 ms).
+const SLOW_REFRESH_LOG_MSEC := 20.0
 var _pending_clock: float = 0.0
 var _pending_unassigned_since: Dictionary = {}
 var _pending_previous_keys: Dictionary = {}
@@ -830,6 +835,9 @@ func _ready() -> void:
 	CoordinatorService.scene_ready_checker = _is_coordinator_scene_ready
 	# Richiamo (2026-10-09): suono alla posizione del coordinatore e conteggio dei lavori prendibili.
 	CoordinatorService.call_sound_emitter = _emit_coordinator_called
+	# Veglia delle stelle (2026-10-29): richiamo della guida alla chiamata, icona e coro all'inizio.
+	StarVigilService.call_sound_emitter = _emit_star_vigil_called
+	StarVigilService.start_effect_emitter = _spawn_social_rite_started_effect.bind(StarVigilService.RITE_ID)
 	JobBoardService.open_jobs_counter = _job_board_open_job_count
 	options_menu.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(options_menu))
 	statistics_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(statistics_panel))
@@ -8265,6 +8273,14 @@ func _emit_coordinator_called(member: HumanIndividual) -> void:
 	coordinator_called.emit(cell_container.to_global(member.position * MicroCellRenderer.CELL_SIZE))
 
 
+# Richiamo della guida della Veglia delle stelle alla sua posizione (solo se la sua macrocella è attiva).
+func _emit_star_vigil_called(member: HumanIndividual) -> void:
+	if member == null or not live_cells.has(member.home_macro_coords):
+		return
+	var cell_container: Node2D = live_cells[member.home_macro_coords].container
+	star_vigil_called.emit(cell_container.to_global(member.position * MicroCellRenderer.CELL_SIZE))
+
+
 # La coda ha almeno un lavoro senza nessuno, non bloccato (2026-10-09, CoordinatorService: fine del turno).
 func _job_board_has_open_jobs() -> bool:
 	if game_data == null or macro_world == null or not JobBoardService.is_enabled(human_folk):
@@ -11446,10 +11462,10 @@ func _refresh_debug_domestication() -> void:
 	if game_data == null or rules == null:
 		return
 	debug_bar.set_domestication_progress(DomesticationPointsService.get_points(game_data, "dog"), rules.domestication_points_required)
-	var wolves := AnimalVisitorService.find_group(game_data, "wolf")
-	debug_bar.set_animal_visitors(
+	var wolves := WildAnimalGroupService.find_group(game_data, "wolf")
+	debug_bar.set_wolf_pack(
 		wolves.animals.size() if wolves != null else -1,
-		AnimalVisitorService.debug_lines(game_data, wolves) if wolves != null else PackedStringArray()
+		WildAnimalGroupService.debug_lines(game_data, wolves) if wolves != null else PackedStringArray()
 	)
 
 
@@ -11957,7 +11973,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 		# Non al taglio (2026-10-18, scatti: ~10.000 alberi ricalcolati per uno solo) né alla pulizia di un cantiere
 		# (2026-10-23, stesso motivo): la geometria è per individuo e validata dalla firma (sottotipo, anno di nascita,
 		# lotto) e da anno/parametri d'età; le piante tolte spariscono, le altre restano uguali.
-		if cell.renderer != null and reason != "taglio" and reason != "cantiere ripulito":
+		# Né a un edificio nuovo (2026-10-28, maceria dei ceppi: ~600 ms), stesso motivo.
+		if cell.renderer != null and reason != "taglio" and reason != "cantiere ripulito" and reason != "edificio":
 			cell.renderer.clear_vegetation_geometry_cache()
 		# Progetto B fase 1 (2026-10-24): il generatore solo quando i numeri della vegetazione possono essere cambiati
 		# (prima attivazione, checkpoint) o la disposizione non c'è ancora; altrimenti la disposizione tenuta.
@@ -12213,8 +12230,12 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 	# Verifica della selezione e pannello (2026-10-03, passo 2: fase prima non misurata).
 	_veg_timings_ms["7_selection_panel"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
-	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
-		var total_ms: float = (Time.get_ticks_usec() - _refresh_total_start_usec) / 1000.0
+	# Ridisegni lenti (2026-10-28, scatto da 55 ms senza motivo nel log): con SHOW_SIM_FRAME_TIMING_LOGS la riga esce anche
+	# a flag spento, solo sopra SLOW_REFRESH_LOG_MSEC.
+	var refresh_total_ms: float = (Time.get_ticks_usec() - _refresh_total_start_usec) / 1000.0
+	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS \
+			or (DebugLogging.SHOW_SIM_FRAME_TIMING_LOGS and refresh_total_ms >= SLOW_REFRESH_LOG_MSEC):
+		var total_ms: float = refresh_total_ms
 		var labels: Array = _veg_timings_ms.keys()
 		labels.sort()
 		var parts: Array = []
@@ -13367,8 +13388,8 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Capanna del guaritore (2026-10-25, richiesta utente) — azione cablata in BuildBar._ready.
 		&"build_healer_hut":
 			return "healer_hut"
-		&"build_council_circle":
-			return "council_circle"
+		&"build_star_circle":
+			return "star_circle"
 		# Ceppo dell'insegnamento (2026-10-16, richiesta utente) — azione cablata in BuildBar._ready.
 		&"build_teaching_stump":
 			return "teaching_stump"
@@ -14603,12 +14624,14 @@ func _cancel_work_area_drag() -> void:
 func _building_type_availability(rules: BuildingRules, building_type_name: String) -> Dictionary:
 	if building_type_name != FIRST_REQUIRED_BUILDING_TYPE and not _world_has_storage_building():
 		return {"is_buildable": false, "disabled_tooltip": tr("build_bar_requires_deposit_site_tooltip")}
-	# Unicità per tipo (2026-10-26, BuildingRules.is_unique — prima "esiste già un centro villaggio qualunque").
+	# Unicità per tipo (2026-10-26, BuildingRules.is_unique — prima "esiste già un centro villaggio qualunque"). Conta anche
+	# ogni tipo a cui questo si migliora (2026-10-27: migliorato il Cerchio delle stelle in Cerchio sacro, non se ne fa un altro).
 	if rules.is_unique:
+		var chain_types := BuildingUpgradeService.get_upgrade_chain(building_type_name)
 		var already_exists := false
 		if macro_world != null:
 			for building in macro_world.buildings:
-				if building.building_type_name == building_type_name and not building.is_demolished:
+				if chain_types.has(building.building_type_name) and not building.is_demolished:
 					already_exists = true
 					break
 		if already_exists:
@@ -15369,15 +15392,89 @@ func _on_site_cleared(building: Building) -> void:
 	var builders := JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.BUILD_TASK_NAMES)
 	var effects := GameEffects.new()
 	BuildingLifecycleService.settle_site_stump_debris(_game_context(), building, builders[0] if not builders.is_empty() else null, effects)
+	HumanIndividualActionService.timing_step("pulizia: maceria dei ceppi")
 	_apply_effects(effects)
+	HumanIndividualActionService.timing_step("pulizia: effetti della maceria")
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if not live_cells.has(macro_coords):
 		return
 	var cell: LiveMacroCell = live_cells[macro_coords]
-	cell.needs_full_vegetation_recompute = true
-	_refresh_resource_visuals(cell, "cantiere ripulito")
+	if not _refresh_site_cleared_visuals(cell, building):
+		cell.needs_full_vegetation_recompute = true
+		_refresh_resource_visuals(cell, "cantiere ripulito")
+	HumanIndividualActionService.timing_step("pulizia: ridisegno")
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD] Cantiere edificio #%d ripulito — vegetazione rimossa, spazio riservato per l'edificio." % building.id)
+
+
+# Ridisegno leggero dopo la pulizia di un cantiere (2026-10-28, scatti da 230–900 ms: prima si rifaceva tutta la
+# vegetazione della macrocella). La pulizia (ClearAction, BuildingSiteClearingService.clear_ground) non toglie piante
+# vive e i lotti dell'edificio erano già fuori dall'elenco delle piante e dell'erba (VegetationLayoutService.read salta i
+# lotti con un edificio): cambiano solo ceppi e piante morte e i bastoni di quei lotti. false = ridisegno completo come
+# prima (ricalcolo già in sospeso, disposizione non pronta, niente memoria dei bastoni).
+func _refresh_site_cleared_visuals(cell: LiveMacroCell, building: Building) -> bool:
+	if cell.renderer == null or cell.macro_state == null or cell.needs_full_vegetation_recompute \
+			or cell.needs_vegetation_layout_rebuild or not cell.macro_state.vegetation_layout_ready:
+		return false
+	cell.renderer.set_cut_dead_positions(_get_cut_positions(cell.macro_state), _get_dead_positions(cell.macro_state))
+	var stick_apply := func(availability: Dictionary) -> void: cell.renderer.set_stick_availability(availability)
+	for lot in BuildingFootprint.cells_of(building):
+		if _patch_scattered_lot(cell, "stick", "stick", "stick", cell.macro_state.tree_claimed_lots, lot, cell.last_visible_positions, stick_apply) == "":
+			_apply_scattered_availability(cell, "stick", _visible_lot_availability(cell, "stick", cell.macro_state.tree_claimed_lots.keys(), cell.last_visible_positions), false, stick_apply)
+			break
+	_invalidate_selected_vegetation_if_missing(cell)
+	if cell.macro_x == center_macro_coords.x and cell.macro_y == center_macro_coords.y:
+		_update_info_panel()
+	return true
+
+
+# Ridisegno leggero per macerie nuove (2026-10-28, scatti da ~360 ms: prima si rifaceva tutta la vegetazione della
+# macrocella). Una maceria nasce solo su microcelle senza alberi, arbusti, ceppi o piante morte
+# (GroundPileService.find_rubble_microcell): sotto può esserci solo erba, coi suoi nidi e lotti d'erba, e si tolgono
+# solo quelli. L'erba tolta non ricompare altrove e la vegetazione sfocata della nebbia resta quella di prima fino al
+# prossimo ricalcolo completo. false = ridisegno completo come prima (ricalcolo già in sospeso, disposizione non pronta).
+func _refresh_rubble_visuals(cell: LiveMacroCell, lots: Array) -> bool:
+	if cell.renderer == null or cell.macro_state == null or cell.needs_full_vegetation_recompute \
+			or cell.needs_vegetation_layout_rebuild or not cell.macro_state.vegetation_layout_ready \
+			or cell.cached_vegetation_positions.is_empty() or not (cell.last_render_vegetation_positions is Dictionary):
+		return false
+	var removed: Dictionary = {}
+	for lot in lots:
+		removed[Vector2i(lot.x, lot.y)] = true
+	var grass_type := GameTypes.WorldObjectType.GRASS
+	cell.cached_vegetation_positions[grass_type] = _grass_without_lots(cell.cached_vegetation_positions.get(grass_type, []), removed)
+	var render_positions: Dictionary = cell.last_render_vegetation_positions
+	if not is_same(render_positions, cell.cached_vegetation_positions):
+		render_positions[grass_type] = _grass_without_lots(render_positions.get(grass_type, []), removed)
+	cell.renderer.set_grass_positions(render_positions.get(grass_type, []))
+	var nests_changed := false
+	for lot in removed:
+		if cell.macro_state.egg_nest_positions.erase(lot):
+			nests_changed = true
+	if nests_changed:
+		_apply_scattered_availability(cell, "eggs", _visible_lot_availability(cell, "eggs", cell.macro_state.egg_nest_positions.keys(), cell.last_visible_positions), false, func(availability: Dictionary) -> void: cell.renderer.set_egg_nest_availability(availability))
+	for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.GRASS_PATCH):
+		var patch_lots: Dictionary = cell.macro_state.lot_capacity_cache.get(resource_name, {})
+		var patch_apply := func(availability: Dictionary) -> void: cell.renderer.set_grass_patch_availability(resource_name, availability)
+		for lot in removed:
+			if not patch_lots.erase(lot):
+				continue
+			if _patch_scattered_lot(cell, "grass_patch:" + resource_name, resource_name, "grass_patch", patch_lots, lot, cell.last_visible_positions, patch_apply) == "":
+				_apply_scattered_availability(cell, "grass_patch:" + resource_name, _visible_lot_availability(cell, resource_name, patch_lots.keys(), cell.last_visible_positions), false, patch_apply)
+				break
+	_invalidate_selected_vegetation_if_missing(cell)
+	if cell.macro_x == center_macro_coords.x and cell.macro_y == center_macro_coords.y:
+		_update_info_panel()
+	return true
+
+
+# Elenco nuovo delle posizioni d'erba senza quelle su `removed` (lotto -> true).
+func _grass_without_lots(positions: Array, removed: Dictionary) -> Array:
+	var kept: Array = []
+	for pos in positions:
+		if not removed.has(Vector2i(pos.x, pos.y)):
+			kept.append(pos)
+	return kept
 
 
 # Reazione a UnloadAction.resource_deposited (2026-09-12, richiesta utente — bugfix "il mucchietto
@@ -16031,6 +16128,12 @@ func _apply_effects(effects: GameEffects) -> void:
 			var vegetation_cell: LiveMacroCell = live_cells[macro_coords]
 			vegetation_cell.needs_full_vegetation_recompute = true
 			_refresh_resource_visuals(vegetation_cell, "edificio")
+	for macro_coords in effects.rubble_lots.keys():
+		if live_cells.has(macro_coords) and not effects.vegetation_cells.has(macro_coords):
+			var rubble_cell: LiveMacroCell = live_cells[macro_coords]
+			if not _refresh_rubble_visuals(rubble_cell, effects.rubble_lots[macro_coords]):
+				rubble_cell.needs_full_vegetation_recompute = true
+				_refresh_resource_visuals(rubble_cell, "edificio")
 	for building in effects.site_placeholder_buildings.values():
 		_spawn_build_site_placeholders(building)
 	if not selected_building.is_empty() and effects.removed_building_ids.has(int(selected_building.get("building_id", -1))):
@@ -16055,8 +16158,11 @@ func _apply_effects(effects: GameEffects) -> void:
 	if UserOptions.show_notification_popups:
 		for entry in effects.notifications:
 			notification_popup.enqueue(entry["type"], entry["text"], entry["requires_ack"])
+	# A tappe (2026-10-28, scatto dell'inventario: il ricalcolo intero in un fotogramma costava ~30 ms): un giro già
+	# avviato prima del cambiamento si rifà da capo.
 	if effects.pending_refresh:
-		_refresh_pending_entries()
+		_job_board_round.cancel()
+		_start_job_board_round()
 
 
 # Riconcilia i rametti del cantiere di questa cella con lo STATO degli edifici (2026-09-19,

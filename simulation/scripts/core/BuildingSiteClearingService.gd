@@ -24,11 +24,10 @@ static func has_woody_vegetation(macro_state: MacroCellState, pos: Vector2i) -> 
 		var claimed_lots: Dictionary = macro_state.tree_claimed_lots if object_type == GameTypes.WorldObjectType.TREE else macro_state.shrub_claimed_lots
 		if not claimed_lots.has(pos):
 			continue
-		var subtype_store: Dictionary = macro_state.tree_individual_subtype if object_type == GameTypes.WorldObjectType.TREE else macro_state.shrub_individual_subtype
-		for key in subtype_store.keys():
-			if key.x == pos.x and key.y == pos.y:
-				return true
+		if VegetationLotIndex.has_lot(macro_state, object_type, pos):
+			return true
 	return false
+
 
 
 # Resti di piante sulla microcella `pos` (2026-10-18, macerie nuove): ceppi o piante morte, di qualunque età.
@@ -162,12 +161,11 @@ static func _clear_type(macro_state: MacroCellState, object_type: GameTypes.Worl
 	# Un individuo già tagliato/morto non compare più qui (cut_individual/kill_individual cancellano
 	# già subtype_store alla rimozione), quindi non viene mai ri-rimosso per errore.
 	var removed_by_subtype: Dictionary = {}
-	var keys_to_erase: Array = []
-	for key in subtype_store.keys():
-		if key.x == pos.x and key.y == pos.y:
-			var subtype_name: String = subtype_store[key]
-			removed_by_subtype[subtype_name] = int(removed_by_subtype.get(subtype_name, 0)) + 1
-			keys_to_erase.append(key)
+	# Dall'indice per lotto (2026-10-28) invece di un giro su tutte le piante della macrocella.
+	var keys_to_erase: Array = VegetationLotIndex.keys_in_lot(macro_state, object_type, pos).duplicate()
+	for key in keys_to_erase:
+		var subtype_name: String = subtype_store[key]
+		removed_by_subtype[subtype_name] = int(removed_by_subtype.get(subtype_name, 0)) + 1
 
 	if keys_to_erase.is_empty():
 		return
@@ -175,6 +173,8 @@ static func _clear_type(macro_state: MacroCellState, object_type: GameTypes.Worl
 	for key in keys_to_erase:
 		birth_year_store.erase(key)
 		subtype_store.erase(key)
+	macro_state.vegetation_revision += 1
+	VegetationLotIndex.note_removed(macro_state, object_type, keys_to_erase)
 
 	macro_state.add_resource_quantity(object_type, -keys_to_erase.size())
 

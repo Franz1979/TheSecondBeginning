@@ -151,6 +151,12 @@ extends Resource
 # più grande nasce solo da una costruzione: BuildingUpgradeService.warn_space_mismatches avvisa all'avvio). Costo e
 # materiale recuperato: BuildingUpgradeService.get_upgrade_cost.
 @export var upgrades_to: String = ""
+# Miglioramento per aggiunta (2026-10-27, richiesta utente — Cerchio delle stelle -> Cerchio sacro), sul tipo di
+# DESTINAZIONE: non vuoto = chi si migliora in questo tipo resta com'è e porta solo questi materiali (nome -> quantità),
+# senza sconto né materiale recuperato a terra. upgrade_labor: lavoro di quel miglioramento (0 = required_labor).
+# required_materials/required_labor restano il costo totale vero (informazioni, macerie).
+@export var upgrade_materials: Dictionary = {}
+@export var upgrade_labor: int = 0
 
 # Spazio occupato in microcelle (stessa unità di MacroCellState.TOTAL_SPACE/dedicated_space per la
 # vegetazione) — quanto della macrocella ospitante viene sottratto al budget condiviso quando

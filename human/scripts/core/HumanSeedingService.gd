@@ -119,9 +119,11 @@ const SPAWN_GRID_SPACING: float = 1.2
 # futura entra automaticamente in questa distribuzione senza toccare questo codice.
 const SEED_SKILL_POINTS_TOTAL: float = 1000.0
 const RANDOM_WEIGHT_MIN: float = 0.01
-# Skill escluse dalla distribuzione casuale (2026-10-02, richiesta utente): partono a 0 e non entrano nella divisione
-# del budget SEED_SKILL_POINTS_TOTAL. La nascita (HumanBirthIndividualService) resta invariata.
-const SEED_EXCLUDED_SKILLS: Array[String] = ["skill_ritual"]
+# Skill escluse dalla distribuzione casuale: partono a 0 e non entrano nella divisione del budget
+# SEED_SKILL_POINTS_TOTAL. La nascita (HumanBirthIndividualService) resta invariata. Vuota dal 2026-10-29 (richiesta
+# utente): anche skill_ritual (esclusa dal 2026-10-02) si distribuisce all'inizio come le altre, così fin dalla prima
+# generazione può esserci chi guida i riti religiosi e la Veglia delle stelle.
+const SEED_EXCLUDED_SKILLS: Array[String] = []
 
 
 # Semina Folk + HumanIndividual (nessun Village: nasce col village center) per il popolo del player, in UNA cella gia'

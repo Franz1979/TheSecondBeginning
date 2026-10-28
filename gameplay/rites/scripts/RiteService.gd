@@ -60,9 +60,15 @@ static func get_rites_for_building(building: Building) -> Array[RiteRules]:
 	for rules in list_rules():
 		# min_buried (2026-10-04): il ricordo dei defunti richiede almeno un sepolto.
 		if rules.building_types.has(building.building_type_name) and not rules.bury_task_only \
-				and building.buried.size() >= rules.min_buried:
+				and building.buried.size() >= rules.min_buried and not is_scheduled_only(rules):
 			rites.append(rules)
 	return rites
+
+
+# true per i riti a calendario (2026-10-29, Veglia delle stelle — StarVigilService): mai da task Rito, popup, riti spontanei
+# né pulsante "ordina subito"; il pannello li mostra a parte.
+static func is_scheduled_only(rules: RiteRules) -> bool:
+	return rules is StarVigilRiteRules
 
 
 # Riti che il TIPO di `building` ammette per il comando manuale (2026-10-04): in building_types e non riservati alla task
@@ -82,7 +88,7 @@ static func get_type_rites(building: Building) -> Array[RiteRules]:
 # tr(); "" = si può. `busy_building_ids` = get_active_rite_buildings dei vivi.
 static func get_order_rejection_key(building: Building, rite_id: String, busy_building_ids: Dictionary) -> String:
 	var rules := get_rules(rite_id)
-	if rules == null or not is_building_usable(building) or not rules.building_types.has(building.building_type_name) 			or rules.bury_task_only:
+	if rules == null or not is_building_usable(building) or not rules.building_types.has(building.building_type_name) 			or rules.bury_task_only or is_scheduled_only(rules):
 		return "rite_reject_none_available_panel"
 	if building.buried.size() < rules.min_buried:
 		return "rite_reject_no_buried"

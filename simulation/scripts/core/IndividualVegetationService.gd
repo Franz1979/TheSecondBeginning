@@ -277,6 +277,7 @@ static func _freeze_new_individual(
 	else:
 		subtype_name = _resolve_new_subtype(macro_state, object_type, lot_pos, index)
 		subtype_store[key] = subtype_name
+		macro_state.vegetation_revision += 1
 
 	if birth_year_store.has(key):
 		return
@@ -372,6 +373,7 @@ static func _claimed_lots_store(macro_state: MacroCellState, object_type: GameTy
 static func forget_known_individuals(macro_state: MacroCellState, object_type: GameTypes.WorldObjectType) -> void:
 	_birth_year_store(macro_state, object_type).clear()
 	_subtype_store(macro_state, object_type).clear()
+	macro_state.vegetation_revision += 1
 	_claimed_lots_store(macro_state, object_type).clear()
 
 

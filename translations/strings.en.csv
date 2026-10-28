@@ -65,7 +65,7 @@ idea_oral_teaching_summary,Elders pass on to children what they do best.
 idea_oral_teaching_description,"Stories and repeated gestures carry knowledge from one generation to the next."
 idea_tribal_organization,Tribal organization
 idea_tribal_organization_summary,The village learns to gather and decide together.
-idea_tribal_organization_description,"Elders and the most skilled sit in a circle, and their word guides the tribe. Meetings at the Council circle are held only on order: with the Village chief they can be scheduled."
+idea_tribal_organization_description,"Elders and the most skilled sit in a circle, and their word guides the tribe. The Star circle can be upgraded into a Sacred council circle: with the elders' seats it also becomes the place of councils and can become the village center. Meetings are held only on order: with the Village chief they can be scheduled."
 idea_drying,Drying
 idea_drying_summary,Allows building the drying rack to dry meat.
 idea_drying_description,"Laid out in sun and wind on a rack, meat keeps much longer."
@@ -1496,9 +1496,9 @@ pending_stock_toolkit_missing,"No warehouse has: {tools}"
 warehouse_rule_toolkit_edit,Edit…
 warehouse_rule_toolkit_edit_tooltip,"Wanted pieces of each tool in the toolkits, per building type"
 warehouse_rule_toolkit_empty,"No building with a toolkit unlocked yet"
-building_council_circle,Council circle
-build_bar_council_circle_tooltip,Council circle
-build_bar_council_circle_description,"Large stones in a ring, where the village gathers. It can become the new village center. Meetings are held only on order: with the Village chief they can be scheduled."
+building_council_circle,Sacred council circle
+build_bar_council_circle_tooltip,Sacred council circle
+build_bar_council_circle_description,"The Star circle with the elders' seats: it stays a sacred place and becomes the place of councils, with a political radius. It can become the new village center, to be given a name. Meetings are held only on order: with the Village chief they can be scheduled."
 build_bar_unique_building_disabled_tooltip,Not buildable: one already exists
 building_move_village_center_button,Move the village center here
 building_command_move_village_center_detail,"The center of {village} moves here, for good"
@@ -1568,3 +1568,28 @@ building_selection_village_center,This building is the village center
 individual_loyalty_frozen_tooltip,Loyalty is born when the village receives a name
 warehouse_rule_fuel_edit_tooltip,"Wanted fuel stock, per building type"
 warehouse_rule_fuel_empty,"No fuel-burning building unlocked yet"
+idea_star_knowledge,Star knowledge
+idea_star_knowledge_summary,"The elders read the sky: the return of the stars heralds the seasons."
+idea_star_knowledge_description,"Watched night after night and told from generation to generation, the stars become a calendar and a mystery to honour."
+building_star_circle,Star circle
+build_bar_star_circle_tooltip,Star circle
+build_bar_star_circle_description,"Large stones in a ring, where the sky is watched and the stars are honoured. One per village. With Tribal organization it is upgraded into a Sacred council circle by adding the elders' seats."
+discovery_tribal_organization_sacred_circle_title,The Sacred council circle
+discovery_tribal_organization_sacred_circle_p1,"The Star circle can now be upgraded into a Sacred council circle: select it and press «Upgrade». It needs stones for the elders' seats."
+discovery_tribal_organization_sacred_circle_p2,"The Sacred council circle hosts councils and can become the village center. If you have no Star circle yet, build it first: it is among the religious buildings."
+building_upgrade_additive_line,"By adding the listed materials, {building} becomes {target}: nothing is torn down, nothing goes back to the ground."
+rite_star_vigil_name,Star vigil
+task_star_vigil_name,Star vigil
+star_vigil_next_label,Star vigil in {days} days
+star_vigil_today_label,Star vigil today
+star_vigil_state_announced,"announced, led by {guide}"
+star_vigil_all_seasons,Vigil: all seasons
+star_vigil_seasons_tooltip,"The Star vigil takes place by itself on the last day of every checked season. In an unchecked season the vigil is skipped: the village loses some faith and cohesion."
+star_vigil_state_planned,planned
+star_vigil_state_skipped,season unchecked: it will be skipped
+star_vigil_state_called,"called: the village is walking to the circle, led by {guide}"
+star_vigil_state_running,"under way, led by {guide}"
+season_winter,Winter
+season_spring,Spring
+season_summer,Summer
+season_autumn,Autumn

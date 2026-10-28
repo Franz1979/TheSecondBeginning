@@ -59,14 +59,17 @@ static func cut_individual(
 	# chiavi con lo STESSO lotto (x,y), indice diverso, ancora presenti in subtype_store (quindi
 	# ancora vive: un individuo già tagliato/morto è già stato cancellato da qui in precedenza).
 	var lot_pos := Vector2i(individual_key.x, individual_key.y)
+	# Dall'indice per lotto (2026-10-28) invece di un giro su tutte le piante della macrocella.
 	var other_individuals_remain: bool = false
-	for key in subtype_store.keys():
-		if key != individual_key and key.x == lot_pos.x and key.y == lot_pos.y:
+	for key in VegetationLotIndex.keys_in_lot(macro_state, object_type, lot_pos):
+		if key != individual_key:
 			other_individuals_remain = true
 			break
 
 	birth_year_store.erase(individual_key)
 	subtype_store.erase(individual_key)
+	macro_state.vegetation_revision += 1
+	VegetationLotIndex.note_removed(macro_state, object_type, [individual_key])
 
 	var quantity_before: int = macro_state.get_resource_quantity(object_type)
 	macro_state.add_resource_quantity(object_type, -1)

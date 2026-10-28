@@ -574,8 +574,22 @@ func _refresh_resource_visuals() -> void:
 	# ricostruivano TREE/SHRUB/GRASS più volte ciascuno sugli stessi individui.
 	renderer.begin_vegetation_batch()
 
+	# Edifici esclusi (2026-10-28, alberi nati nascosti sotto gli edifici a ogni apertura di questa vista): stessa regola di
+	# GameScene._building_positions_for_cell, in `occupied` (GRASS, lotti nuovi) e in building_positions (lotti già noti).
+	var building_positions: Dictionary = {}
+	if macro_world != null and macro_cell != null:
+		for building in macro_world.buildings:
+			if building.macro_x != macro_cell.x or building.macro_y != macro_cell.y:
+				continue
+			var uncleared_site := not building.is_complete and not bool(building.construction_progress.get("ground_cleared", false))
+			for site_cell in BuildingFootprint.cells_of(building):
+				if uncleared_site and BuildingSiteClearingService.has_woody_vegetation(macro_state, site_cell):
+					continue
+				occupied[site_cell] = true
+				building_positions[site_cell] = true
+
 	var vegetation_service := VegetationPositionService.new()
-	renderer.set_vegetation_positions(vegetation_service.generate_positions(macro_state, occupied, game_data.year, game_data.current_day))
+	renderer.set_vegetation_positions(vegetation_service.generate_positions(macro_state, occupied, game_data.year, game_data.current_day, building_positions))
 	# PRIMA di set_*_subtypes/set_*_age_params sotto — vedi commento gemello in
 	# GameScene._refresh_resource_visuals sul perché l'ordine conta qui.
 	renderer.set_cut_positions(_get_cut_positions())

@@ -997,6 +997,11 @@ func _upgrade_tooltip(_for_text: String) -> Control:
 		return null
 	var cost := BuildingUpgradeService.get_upgrade_cost(building.rules, target)
 	var extra_lines: Array[String] = []
+	# Per aggiunta (2026-10-27): l'edificio resta, con i soli materiali elencati diventa la destinazione.
+	if BuildingUpgradeService.is_additive(target):
+		extra_lines.append(tr("building_upgrade_additive_line").format({
+			"building": building.get_display_name(), "target": tr(target.building_name)
+		}))
 	var missing_idea_line := _get_upgrade_missing_idea_line(target)
 	if missing_idea_line != "":
 		extra_lines.append(missing_idea_line)
@@ -2866,6 +2871,89 @@ func _add_feast_threshold_row(building: Building, rules: BanquetRiteRules) -> vo
 	_rite_section.add_child(row)
 
 
+# Veglia delle stelle (2026-10-29, StarVigilService): albero delle stagioni come i filtri delle aree di lavoro
+# (WorkAreaInfoPanel) — "Tutte le stagioni" con [+]/[−] e spunta parziale, sotto una spunta per stagione — e lo stato della
+# prossima veglia. Una stagione senza spunta salta la sua veglia.
+const STAR_VIGIL_SEASON_KEYS: Array[String] = ["season_winter", "season_spring", "season_summer", "season_autumn"]
+var _star_vigil_seasons_expanded: bool = false
+
+
+func _add_star_vigil_rows(building: Building, rules: StarVigilRiteRules) -> void:
+	var game_data := GameSettings.active_game_data
+	if rules == null or game_data == null:
+		return
+	var enabled_count := building.star_vigil_seasons.size()
+	var all_row := HBoxContainer.new()
+	all_row.add_theme_constant_override("separation", 2)
+	var expand_button := Button.new()
+	expand_button.text = "−" if _star_vigil_seasons_expanded else "+"
+	expand_button.custom_minimum_size = Vector2(WorkAreaInfoPanel.EXPAND_BUTTON_WIDTH, 0.0)
+	expand_button.focus_mode = Control.FOCUS_NONE
+	expand_button.add_theme_font_size_override("font_size", 10)
+	expand_button.pressed.connect(func():
+		_star_vigil_seasons_expanded = not _star_vigil_seasons_expanded
+		_refresh_rite_section(building)
+	)
+	all_row.add_child(expand_button)
+	var all_check := _star_vigil_check_box(tr("star_vigil_all_seasons"), enabled_count == STAR_VIGIL_SEASON_KEYS.size())
+	all_check.tooltip_text = TooltipText.wrap(tr("star_vigil_seasons_tooltip"))
+	if enabled_count > 0 and enabled_count < STAR_VIGIL_SEASON_KEYS.size():
+		all_check.add_theme_icon_override("unchecked", WorkAreaInfoPanel.partial_check_icon(self))
+	all_check.toggled.connect(func(pressed: bool):
+		for season in range(STAR_VIGIL_SEASON_KEYS.size()):
+			StarVigilService.set_season_enabled(building, season, pressed)
+		_refresh_rite_section(building)
+	)
+	all_row.add_child(all_check)
+	_rite_section.add_child(all_row)
+	if _star_vigil_seasons_expanded:
+		for season in range(STAR_VIGIL_SEASON_KEYS.size()):
+			var season_row := HBoxContainer.new()
+			season_row.add_theme_constant_override("separation", 2)
+			var indent := Control.new()
+			indent.custom_minimum_size = Vector2(WorkAreaInfoPanel.TREE_INDENT + WorkAreaInfoPanel.EXPAND_BUTTON_WIDTH, 0.0)
+			season_row.add_child(indent)
+			var season_check := _star_vigil_check_box(tr(STAR_VIGIL_SEASON_KEYS[season]), StarVigilService.is_season_enabled(building, season))
+			season_check.toggled.connect(func(pressed: bool):
+				StarVigilService.set_season_enabled(building, season, pressed)
+				_refresh_rite_section(building)
+			)
+			season_row.add_child(season_check)
+			_rite_section.add_child(season_row)
+	var next_day := StarVigilService.get_next_vigil_day(game_data)
+	var state_key := "star_vigil_state_skipped"
+	var guide_name := ""
+	var vigil_phase := StarVigilService.get_active_phase(building, game_data)
+	if building.star_vigil_announced_day == next_day or vigil_phase != "":
+		state_key = "star_vigil_state_announced"
+		# Chiamata fatta (2026-10-29, passo 2b): il villaggio va al cerchio, poi la veglia in corso.
+		if vigil_phase == SocialRiteService.PHASE_WAITING:
+			state_key = "star_vigil_state_called"
+		elif vigil_phase == SocialRiteService.PHASE_FEASTING:
+			state_key = "star_vigil_state_running"
+		for member in GameSettings.active_human_individuals:
+			if (member as HumanIndividual).id == building.star_vigil_guide_id:
+				guide_name = (member as HumanIndividual).name
+	elif StarVigilService.is_season_enabled(building, StarVigilService.get_current_season(game_data)):
+		state_key = "star_vigil_state_planned"
+	var state_label := Label.new()
+	var days_until := StarVigilService.get_days_until_vigil(game_data)
+	state_label.text = (tr("star_vigil_today_label") if days_until == 0 else tr("star_vigil_next_label").format({"days": days_until})) 		+ " — " + tr(state_key).format({"guide": guide_name})
+	state_label.add_theme_font_size_override("font_size", 10)
+	state_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	state_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rite_section.add_child(state_label)
+
+
+func _star_vigil_check_box(text: String, pressed: bool) -> CheckBox:
+	var check_box := CheckBox.new()
+	check_box.text = text
+	check_box.button_pressed = pressed
+	check_box.focus_mode = Control.FOCUS_NONE
+	check_box.add_theme_font_size_override("font_size", 10)
+	return check_box
+
+
 func _refresh_rite_section(building: Building) -> void:
 	if _rite_section == null:
 		_rite_section = VBoxContainer.new()
@@ -2888,6 +2976,10 @@ func _refresh_rite_section(building: Building) -> void:
 	_rite_section.add_child(buttons)
 	var busy := RiteService.get_active_rite_buildings(GameSettings.active_human_individuals)
 	for rules in type_rites:
+		# Riti a calendario (2026-10-29, Veglia delle stelle): righe proprie invece del pulsante "ordina subito".
+		if RiteService.is_scheduled_only(rules):
+			_add_star_vigil_rows(building, rules as StarVigilRiteRules)
+			continue
 		var button := Button.new()
 		button.text = tr(rules.display_name)
 		button.focus_mode = Control.FOCUS_NONE

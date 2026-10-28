@@ -18,19 +18,32 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 	var jobs: Array[Dictionary] = []
 	if ctx.world == null:
 		return jobs
+	# Tempi (2026-10-28): "taglio cantiere: attrezzi", ": celle con piante", ": chi taglia".
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var tool_blocked := ToolFetchService.blocked_reason(ctx, SiteCutService.TOOL_CATEGORIES, SiteCutService.AGE_KIND)
+	if timing:
+		JobBoardTimingService.add("taglio cantiere: attrezzi", started)
+	started = JobBoardTimingService.now() if timing else 0
+	var claimers_by_cell := SiteCutService.all_cell_claimers(ctx.individuals)
+	if timing:
+		JobBoardTimingService.add("taglio cantiere: chi taglia", started)
 	for site in ctx.world.buildings:
 		if site.is_complete or site.is_demolished or site.rules == null:
 			continue
 		var macro := Vector2i(site.macro_x, site.macro_y)
 		if not ctx.live_cells.has(macro):
 			continue
+		started = JobBoardTimingService.now() if timing else 0
 		var cells := SiteCutService.cells_with_plants(ctx.world, site)
+		if timing:
+			JobBoardTimingService.add("taglio cantiere: celle con piante", started)
 		var total := BuildingFootprint.cells_of(site).size()
 		var site_name := GameContext.tr_text(site.rules.building_name)
 		for i in range(cells.size()):
 			var cell := cells[i]
-			var claimers := SiteCutService.cell_claimers(ctx.individuals, macro, cell)
+			var claimers: Array[HumanIndividual] = []
+			claimers.assign(claimers_by_cell.get(Vector4i(macro.x, macro.y, cell.x, cell.y), []))
 			var name := GameContext.tr_text("job_site_cut").format({"building": site_name})
 			if total > 1:
 				name = GameContext.tr_text("job_site_cut_cell").format({"building": site_name, "index": i + 1, "count": cells.size()})

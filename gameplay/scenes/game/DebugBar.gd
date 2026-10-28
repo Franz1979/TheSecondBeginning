@@ -40,7 +40,7 @@ var _last_fps: int = -1
 # GameScene._on_debug_action_pressed; il testo mostra punti/soglia (set_domestication_progress).
 @onready var domestication_button: Button = $MarginContainer/HBoxContainer/ContentGroup/DomesticationButton
 # Branco di lupi che frequenta il villaggio (2026-10-26): numero di lupi, dettaglio per lupo nel tooltip
-# (set_animal_visitors).
+# (set_wolf_pack).
 @onready var wolves_label: Label = $MarginContainer/HBoxContainer/ContentGroup/WolvesLabel
 
 signal action_pressed(action_id: StringName)
@@ -160,7 +160,7 @@ func set_domestication_progress(points: int, required: int) -> void:
 
 
 # Branco di lupi (debug): `count` < 0 = nessun branco ancora (serve un villaggio con centro); `lines` = una riga per lupo.
-func set_animal_visitors(count: int, lines: PackedStringArray) -> void:
+func set_wolf_pack(count: int, lines: PackedStringArray) -> void:
 	var text := "🐺-" if count < 0 else "🐺%d" % count
 	wolves_label.tooltip_text = TooltipText.wrap(
 		"Branco di lupi del villaggio: nessuno (serve un villaggio con centro)" if count < 0

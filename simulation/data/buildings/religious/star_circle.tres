@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_star_circle"]
+
+[resource]
+script = ExtResource("1_star_circle")
+building_name = "building_star_circle"
+category = 6
+required_idea_id = "star_knowledge"
+lifespan_years = 80
+max_durability = 400
+defense = 40
+min_construction_days = 10
+required_labor = 10000
+max_builders = 4
+required_materials = {
+"stone": 80,
+"wood": 12
+}
+required_space = 4
+footprint = Vector2i(2, 2)
+has_door = false
+visibility_radius = 8
+religious_radius = 7
+is_unique = true
+accepts_thoughts = true
+upgrades_to = "council_circle"

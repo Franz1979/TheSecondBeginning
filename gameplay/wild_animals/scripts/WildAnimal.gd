@@ -1,8 +1,8 @@
-class_name AnimalVisitor
+class_name WildAnimal
 extends RefCounted
 
-# Un animale di un gruppo che frequenta il villaggio (2026-10-26, richiesta utente — primo uso: il branco di lupi della
-# fossa, vedi AnimalVisitorGroup). Dati simulati ma coerenti, non un individuo della fauna selvatica (PopulationGroup).
+# Un animale selvatico seguito per individuo, membro di un WildAnimalGroup (2026-10-26, richiesta utente — primo uso: il branco di lupi della
+# fossa, vedi WildAnimalGroup). Dati simulati ma coerenti, non un individuo della fauna selvatica (PopulationGroup).
 # L'età non si salva: si calcola da birth_day (giorno assoluto, GameData.get_absolute_day), come per gli umani.
 
 var id: int = 0
@@ -30,10 +30,10 @@ func to_save_data() -> Dictionary:
 	return {"id": id, "is_male": is_male, "birth_day": birth_day, "aggression": aggression}
 
 
-static func from_save_data(data: Dictionary) -> AnimalVisitor:
-	var visitor := AnimalVisitor.new()
-	visitor.id = int(data.get("id", 0))
-	visitor.is_male = bool(data.get("is_male", true))
-	visitor.birth_day = int(data.get("birth_day", 0))
-	visitor.aggression = float(data.get("aggression", 100.0))
-	return visitor
+static func from_save_data(data: Dictionary) -> WildAnimal:
+	var animal := WildAnimal.new()
+	animal.id = int(data.get("id", 0))
+	animal.is_male = bool(data.get("is_male", true))
+	animal.birth_day = int(data.get("birth_day", 0))
+	animal.aggression = float(data.get("aggression", 100.0))
+	return animal

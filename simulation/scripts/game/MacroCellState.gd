@@ -137,6 +137,9 @@ var shrub_virtual_birth_year: Dictionary = {}
 # (vedi MicroCellRenderer.set_tree_subtypes/set_shrub_subtypes).
 var tree_individual_subtype: Dictionary = {}
 var shrub_individual_subtype: Dictionary = {}
+# Sale di 1 a ogni individuo aggiunto o tolto da tree_individual_subtype/shrub_individual_subtype (2026-10-28,
+# VegetationLotIndex: l'indice per lotto si rifà solo quando cambia). Non salvato.
+var vegetation_revision: int = 0
 # Lotti (Vector2i, spazio microcella 0..99) già "rivendicati per sempre" da questo tipo, una volta
 # scelti dal motore procedurale — mai rimossi in questo step (la mortalità/lo sgretolamento del
 # territorio noto restano fuori scope, vedi IndividualVegetationService). Garantisce che un lotto

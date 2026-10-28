@@ -144,11 +144,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for species in data["game"].get("encountered_wild_species", []):
 		game_data.encountered_wild_species.append(String(species))
 	# Gruppi di animali in visita (2026-10-26) — .get() per i save precedenti: nessun gruppo, li ricrea
-	# AnimalVisitorService.ensure_groups al primo giorno.
-	game_data.animal_visitor_groups.clear()
-	for saved_group in data["game"].get("animal_visitor_groups", []):
-		game_data.animal_visitor_groups.append(AnimalVisitorGroup.from_save_data(saved_group))
-	game_data.next_animal_visitor_group_id = int(data["game"].get("next_animal_visitor_group_id", 1))
+	# WildAnimalGroupService.ensure_groups al primo giorno.
+	game_data.wild_animal_groups.clear()
+	for saved_group in data["game"].get("wild_animal_groups", []):
+		game_data.wild_animal_groups.append(WildAnimalGroup.from_save_data(saved_group))
+	game_data.next_wild_animal_group_id = int(data["game"].get("next_wild_animal_group_id", 1))
 	# .get(key, 0) per compatibilità con save precedenti l'introduzione della pulizia
 	# periodica del fog of war (vedi GameData) — 0 è lo stesso default della classe.
 	game_data.fog_of_war_last_prune_absolute_day = int(data["game"].get("fog_of_war_last_prune_absolute_day", 0))
@@ -760,6 +760,14 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					building.last_rite_end_day[String(rite_key)] = int(saved_last_rite_end_day[rite_key])
 			# Soglia di calorie del banchetto (2026-10-17) — -1 (valore dei dati) per i salvataggi precedenti.
 			building.feast_calorie_threshold = int(building_data.get("feast_calorie_threshold", -1))
+			# Veglia delle stelle (2026-10-29) — tutte le stagioni e niente annunciato per i salvataggi precedenti.
+			var saved_vigil_seasons = building_data.get("star_vigil_seasons", [0, 1, 2, 3])
+			building.star_vigil_seasons.clear()
+			if saved_vigil_seasons is Array:
+				for season in saved_vigil_seasons:
+					building.star_vigil_seasons.append(int(season))
+			building.star_vigil_announced_day = int(building_data.get("star_vigil_announced_day", -1))
+			building.star_vigil_guide_id = int(building_data.get("star_vigil_guide_id", -1))
 			# Macerie (2026-10-10) — "" per i salvataggi precedenti.
 			building.rubble_source_name = String(building_data.get("rubble_source_name", ""))
 			# Origine delle macerie (2026-10-18): nei salvataggi precedenti crollo se c'è l'edificio d'origine, altrimenti detriti.
@@ -920,6 +928,17 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		human_folk.thoughts_invested = human_data["folk"].get("thoughts_invested", {})
 		var completed_ideas: Array = human_data["folk"].get("completed_ideas", [])
 		human_folk.completed_ideas.assign(completed_ideas)
+		# Prerequisiti aggiunti dopo (2026-10-27, Conoscenza delle stelle prima di Organizzazione tribale): un'idea completata
+		# rende completati anche i prerequisiti che il salvataggio non aveva, risalendo l'albero.
+		var pending_ideas: Array = human_folk.completed_ideas.duplicate()
+		while not pending_ideas.is_empty():
+			var completed_idea := IdeaCalculator.get_idea(String(pending_ideas.pop_back()))
+			if completed_idea == null:
+				continue
+			for prerequisite_id in completed_idea.prerequisites:
+				if not human_folk.completed_ideas.has(prerequisite_id) and IdeaCalculator.get_idea(prerequisite_id) != null:
+					human_folk.completed_ideas.append(prerequisite_id)
+					pending_ideas.append(prerequisite_id)
 		# Default {} per i salvataggi precedenti al decadimento dei pensieri (IdeaDecayService inizializza
 		# da sé le scadenze mancanti). JSON legge i numeri come float: convertiti a int per-valore.
 		var decay_due_day: Dictionary = human_data["folk"].get("idea_decay_due_day", {})

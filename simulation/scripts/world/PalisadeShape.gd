@@ -58,7 +58,19 @@ static func _draw_stakes(
 	var stakes: Array = []  # [base (Vector2, unità), direzione di inclinazione (Vector2)]
 	var index := 0
 	var first_lean := Vector2.ZERO
+	# Angolo (2026-10-27, richiesta utente): l'argine è un tratto diagonale tra i punti medi dei due lati (LinearShape), quindi
+	# i pali seguono quella diagonale, dalla stessa parte, invece dei due bracci a L.
+	if LinearShape.is_corner_mask(neighbor_mask):
+		var ends := _corner_ends(neighbor_mask)
+		var lean := _lean(_corner_across(neighbor_mask), outward, 0)
+		var count := roundi(ends[0].distance_to(ends[1]) / STAKE_POSITIONS[0])
+		for i in range(count + 1):
+			if outward == Vector2.ZERO:
+				lean = _lean(_corner_across(neighbor_mask), outward, i)
+			stakes.append([ends[0].lerp(ends[1], float(i) / float(count)), lean])
 	for side in range(4):
+		if LinearShape.is_corner_mask(neighbor_mask):
+			break
 		if (neighbor_mask & (1 << side)) == 0:
 			continue
 		var direction: Vector2 = LinearShape.SIDE_DIRECTIONS[side]
@@ -73,7 +85,7 @@ static func _draw_stakes(
 		for i in range(3):
 			var direction := Vector2.RIGHT.rotated(TAU * float(i) / 3.0 + PI / 2.0)
 			stakes.append([direction * 1.2, direction if outward == Vector2.ZERO else outward.normalized()])
-	else:
+	elif first_lean != Vector2.ZERO:
 		stakes.append([Vector2.ZERO, first_lean])
 	for stake in stakes:
 		var base: Vector2 = center + (stake[0] as Vector2) * scale
@@ -87,6 +99,9 @@ static func _draw_stakes(
 # disegnano uguali (LinearShapes.side_signature).
 static func lean_signature(neighbor_mask: int, outward: Vector2) -> Array[Vector2]:
 	var leans: Array[Vector2] = []
+	if LinearShape.is_corner_mask(neighbor_mask):
+		leans.append(_lean(_corner_across(neighbor_mask), outward, 0))
+		return leans
 	for side in range(4):
 		if (neighbor_mask & (1 << side)) == 0:
 			continue
@@ -95,6 +110,22 @@ static func lean_signature(neighbor_mask: int, outward: Vector2) -> Array[Vector
 	if leans.is_empty():
 		leans.append(outward)
 	return leans
+
+
+# Pezzo ad angolo: i punti medi dei due lati collegati (estremi del tratto diagonale, in unità di disegno).
+static func _corner_ends(neighbor_mask: int) -> Array[Vector2]:
+	var ends: Array[Vector2] = []
+	for side in range(4):
+		if (neighbor_mask & (1 << side)) != 0:
+			ends.append(LinearShape.SIDE_DIRECTIONS[side] * LinearShape.HALF_CELL)
+	return ends
+
+
+# Pezzo ad angolo: perpendicolare al tratto diagonale.
+static func _corner_across(neighbor_mask: int) -> Vector2:
+	var ends := _corner_ends(neighbor_mask)
+	var direction := (ends[1] - ends[0]).normalized()
+	return Vector2(-direction.y, direction.x)
 
 
 # Direzione verso cui sporgono i pali per la direzione dell'edificio `direction` (Building.rotation).

@@ -99,7 +99,7 @@ idea_oral_teaching_summary,Gli anziani tramandano ai bambini ciò che sanno fare
 idea_oral_teaching_description,"Racconti e gesti ripetuti passano il sapere da una generazione all'altra."
 idea_tribal_organization,Organizzazione tribale
 idea_tribal_organization_summary,Il villaggio impara a riunirsi e a decidere insieme.
-idea_tribal_organization_description,"Gli anziani e i più esperti siedono in cerchio, e la loro parola guida la tribù. Le riunioni al Cerchio del consiglio si tengono solo su ordine: con il Capo villaggio si potranno programmare."
+idea_tribal_organization_description,"Gli anziani e i più esperti siedono in cerchio, e la loro parola guida la tribù. Il Cerchio delle stelle si può migliorare in Cerchio sacro del consiglio: con le sedute degli anziani diventa anche il luogo dei consigli e può diventare il centro del villaggio. Le riunioni si tengono solo su ordine: con il Capo villaggio si potranno programmare."
 idea_drying,Essiccazione
 idea_drying_summary,Permette di costruire il graticcio per essiccare la carne.
 idea_drying_description,"Stesa al sole e al vento su un graticcio, la carne si conserva molto più a lungo."
@@ -1550,9 +1550,9 @@ pending_stock_toolkit_missing,"Nessun magazzino ha: {tools}"
 warehouse_rule_toolkit_edit,Modifica…
 warehouse_rule_toolkit_edit_tooltip,"Pezzi voluti di ogni attrezzo nelle Attrezzerie, per tipo di edificio"
 warehouse_rule_toolkit_empty,"Nessun edificio con Attrezzeria ancora sbloccato"
-building_council_circle,Cerchio del consiglio
-build_bar_council_circle_tooltip,Cerchio del consiglio
-build_bar_council_circle_description,"Grandi pietre in cerchio, dove il villaggio si riunisce. Può diventare il nuovo centro del villaggio. Le riunioni si tengono solo su ordine: con il Capo villaggio si potranno programmare."
+building_council_circle,Cerchio sacro del consiglio
+build_bar_council_circle_tooltip,Cerchio sacro del consiglio
+build_bar_council_circle_description,"Il Cerchio delle stelle con le sedute degli anziani: resta luogo sacro e diventa luogo dei consigli, con un raggio politico. Può diventare il nuovo centro del villaggio, a cui dare un nome. Le riunioni si tengono solo su ordine: con il Capo villaggio si potranno programmare."
 build_bar_unique_building_disabled_tooltip,Non costruibile: ne esiste già uno
 building_move_village_center_button,Sposta qui il centro del villaggio
 building_command_move_village_center_detail,"Il centro di {village} passa qui, per sempre"
@@ -1622,3 +1622,28 @@ building_selection_village_center,Questo edificio è il centro del villaggio
 individual_loyalty_frozen_tooltip,La lealtà nasce quando il villaggio riceve un nome
 warehouse_rule_fuel_edit_tooltip,"Scorta di combustibile voluta, per tipo di edificio"
 warehouse_rule_fuel_empty,"Nessun edificio che usa combustibile ancora sbloccato"
+idea_star_knowledge,Conoscenza delle stelle
+idea_star_knowledge_summary,"Gli anziani leggono il cielo: il ritorno delle stelle annuncia le stagioni."
+idea_star_knowledge_description,"Osservate notte dopo notte e raccontate di generazione in generazione, le stelle diventano un calendario e un mistero da onorare."
+building_star_circle,Cerchio delle stelle
+build_bar_star_circle_tooltip,Cerchio delle stelle
+build_bar_star_circle_description,"Grandi pietre in cerchio, dove si osserva il cielo e si onorano le stelle. Uno solo per villaggio. Con l'Organizzazione tribale si migliora in Cerchio sacro del consiglio aggiungendo le sedute degli anziani."
+discovery_tribal_organization_sacred_circle_title,Il Cerchio sacro del consiglio
+discovery_tribal_organization_sacred_circle_p1,"Il Cerchio delle stelle si può ora migliorare in Cerchio sacro del consiglio: selezionalo e premi «Migliora». Servono le pietre per le sedute degli anziani."
+discovery_tribal_organization_sacred_circle_p2,"Il Cerchio sacro del consiglio ospita i consigli e può diventare il centro del villaggio. Se non hai ancora un Cerchio delle stelle, costruiscilo prima: è tra gli edifici religiosi."
+building_upgrade_additive_line,"Aggiungendo i materiali indicati, {building} diventa {target}: niente va demolito, niente torna a terra."
+rite_star_vigil_name,Veglia delle stelle
+task_star_vigil_name,Veglia delle stelle
+star_vigil_next_label,Veglia delle stelle tra {days} giorni
+star_vigil_today_label,Veglia delle stelle oggi
+star_vigil_state_announced,"annunciata, guida {guide}"
+star_vigil_all_seasons,Veglia: tutte le stagioni
+star_vigil_seasons_tooltip,"La Veglia delle stelle si fa da sola l'ultimo giorno di ogni stagione spuntata. In una stagione senza spunta la veglia salta: il villaggio perde un po' di fede e coesione."
+star_vigil_state_planned,in programma
+star_vigil_state_skipped,stagione non spuntata: salterà
+star_vigil_state_called,"chiamata: il villaggio va al cerchio, guida {guide}"
+star_vigil_state_running,"in corso, guida {guide}"
+season_winter,Inverno
+season_spring,Primavera
+season_summer,Estate
+season_autumn,Autunno

@@ -431,7 +431,13 @@ const SHOW_JOB_BOARD_LOGS := false
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per
 # voce) e un riepilogo al secondo (chiamanti, liste rifatte, picco del fotogramma). Acceso per la misura; solo log.
-const SHOW_JOB_BOARD_TIMING_LOGS := false
+const SHOW_JOB_BOARD_TIMING_LOGS := true
+
+# Fotogrammi lenti del giro per fotogramma (2026-10-28, scatto da 900 ms dentro GameSimulation): [SIM FRAME] quando
+# GameSimulation.tick_frame supera SIM_FRAME_SLOW_MSEC, con il tempo di ogni passo e il pipottino/azione più lento.
+# Acceso per la misura; solo log.
+const SHOW_SIM_FRAME_TIMING_LOGS := true
+const SIM_FRAME_SLOW_MSEC := 40
 
 # "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
 # quando la sua riga compare o cambia (task attiva, testo, coda o diretto e perché, chiavi del context). Solo log.

@@ -487,10 +487,15 @@ func _set_checked(checked: Dictionary, item_name: String, pressed: bool) -> void
 # Spunta parziale: l'icona "unchecked" del tema con una barra orizzontale al centro (CheckBox non ha uno stato
 # intermedio). Generata una volta; se l'icona del tema non è leggibile, un quadratino disegnato da zero.
 func _partial_check_icon() -> Texture2D:
+	return partial_check_icon(self)
+
+
+# Stessa icona per altri pannelli (2026-10-29, stagioni della Veglia delle stelle in BuildingInfoPanel): `control` dà il tema.
+static func partial_check_icon(control: Control) -> Texture2D:
 	if _partial_icon != null:
 		return _partial_icon
 	var image: Image = null
-	var base := get_theme_icon("unchecked", "CheckBox")
+	var base := control.get_theme_icon("unchecked", "CheckBox")
 	if base != null:
 		image = base.get_image()
 	if image == null or image.is_empty():

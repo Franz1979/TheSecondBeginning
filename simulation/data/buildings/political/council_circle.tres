@@ -10,19 +10,25 @@ required_idea_id = "tribal_organization"
 lifespan_years = 80
 max_durability = 400
 defense = 40
-min_construction_days = 10
-required_labor = 10000
+min_construction_days = 3
+required_labor = 13000
 max_builders = 4
 required_materials = {
-"stone": 80,
+"smoked_hide": 12,
+"stone": 110,
 "wood": 12
 }
+upgrade_materials = {
+"smoked_hide": 12,
+"stone": 30
+}
+upgrade_labor = 3000
 required_space = 4
 footprint = Vector2i(2, 2)
 has_door = false
 visibility_radius = 8
 political_radius = 7
-cultural_radius = 6
+religious_radius = 7
 is_unique = true
 village_center_tier = 2
 accepts_thoughts = true

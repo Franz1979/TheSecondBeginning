@@ -637,6 +637,13 @@ func set_vegetation_positions(positions: Dictionary) -> void:
 	queue_redraw()
 
 
+# Solo l'erba (2026-10-28, macerie nuove: GameScene._refresh_rubble_visuals), senza rifare alberi e arbusti.
+func set_grass_positions(grass_positions: Array) -> void:
+	vegetation_positions[GameTypes.WorldObjectType.GRASS] = grass_positions
+	_defer_or_rebuild_grass()
+	queue_redraw()
+
+
 # ============================================================================================
 # Click-detection su un singolo individuo (TREE/SHRUB) — vedi VegetationSelectorController, che
 # interroga queste due query per ogni candidato vicino al click. Entrambe riusano ESATTAMENTE le
@@ -1429,8 +1436,11 @@ func _draw_buildings() -> void:
 			TravoisRackShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), int(entry.get("travois_count", 0)))
 			continue
 		# Cerchio del consiglio (2026-10-26, 2x2): anello di grandi pietre sul rettangolo intero, fondo dai tile di terra.
-		if building_type_name == CouncilCircleShape.TYPE:
-			CouncilCircleShape.draw(self, ground, Vector2(entry.get("size", Vector2i(1, 1))) * CELL_SIZE, false, 1.0, false)
+		if building_type_name == CouncilCircleShape.TYPE or building_type_name == CouncilCircleShape.STAR_TYPE:
+			CouncilCircleShape.draw(
+				self, ground, Vector2(entry.get("size", Vector2i(1, 1))) * CELL_SIZE, false, 1.0, false,
+				building_type_name == CouncilCircleShape.TYPE
+			)
 			continue
 		# Spiazzo delle feste (2026-10-17, 2x2): terra battuta e cerchio di sassi, sul rettangolo intero.
 		if building_type_name == FeastGroundShape.TYPE:
@@ -1784,8 +1794,9 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"teaching_stump",
 	# Spiazzo delle feste (2026-10-17): un tile per microcella del rettangolo ("dirt_cells"), sotto il cerchio di sassi.
 	"feast_ground",
-	# Cerchio del consiglio (2026-10-26, 2x2).
+	# Cerchio sacro (2026-10-26, 2x2) e Cerchio delle stelle (2026-10-27).
 	"council_circle",
+	"star_circle",
 ]
 
 

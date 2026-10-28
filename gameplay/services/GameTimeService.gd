@@ -182,6 +182,8 @@ func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
 	GroundPileService.advance_daily(_game_data)
 	# Punti di influenza degli edifici (2026-10-03, punti e soglie): perdita annua senza riti.
 	InfluenceService.advance_daily_neglected_rites(_world, _game_data)
+	# Veglia delle stelle (2026-10-29): annuncio e calendario.
+	StarVigilService.on_day_advanced(_world, _game_data, _human_individuals)
 	# Decadimento giornaliero dei pensieri nelle idee non attive (2026-09-21, richiesta utente) —
 	# INCONDIZIONATO come gli altri _advance_daily_* sopra; IdeaDecayService agisce solo sulle voci
 	# scadute di Folk.idea_decay_due_day. Nessun refresh UI: il TechTreePanel ricalcola tutto ad ogni

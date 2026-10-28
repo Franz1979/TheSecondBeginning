@@ -369,6 +369,15 @@ static func _convoke(
 		if rules.max_participants > 0 and called.size() - 1 >= rules.max_participants:
 			break
 		var skip := _skip_reason(member, game_data)
+		# Veglia delle stelle (2026-10-29, richiesta utente): chi ha un bisogno urgente è convocato lo stesso, con la task
+		# in coda dietro il bisogno; finito il bisogno va al cerchio, se non arriva entro l'alba è assente.
+		if skip == SKIP_URGENT_NEED and rules is StarVigilRiteRules:
+			TaskQueueService.push_follow_up_task(
+				member, build_attend_task(member, building, false, rules.task_label_key, int(record.get("uid", -1)))
+			)
+			called.append(member.name + " (dopo il bisogno)")
+			(record["convoked"] as Array).append(member.id)
+			continue
 		if skip != "":
 			log_event("  #%d %s non convocato: %s." % [member.id, member.name, skip])
 			continue
@@ -383,8 +392,9 @@ static func _convoke(
 	log_event("'%s' di #%d %s all'edificio #%d: convocati %d (%s)." % [
 		rules.id, organizer.id, organizer.name, building.id, called.size(), ", ".join(called)
 	])
-	# Chi era già arrivato (l'organizzatore) può bastare a far cominciare un rito con pochi partecipanti.
-	if _count_counting(record) >= rules.min_participants:
+	# Chi era già arrivato (l'organizzatore) può bastare a far cominciare un rito con pochi partecipanti. Non la Veglia
+	# delle stelle (2026-10-29), che comincia a un'ora fissa (StarVigilService.tick).
+	if not (rules is StarVigilRiteRules) and _count_counting(record) >= rules.min_participants:
 		_begin(record, building, rules)
 
 
@@ -397,6 +407,22 @@ static func _begin(record: Dictionary, building: Building, rules: SocialRiteRule
 		_banquet_light_bonfire(building, rules as BanquetRiteRules)
 		_banquet_serve_food(record, building)
 	log_event("all'edificio #%d comincia '%s' (%d partecipanti che contano)." % [building.id, rules.id, _count_counting(record)])
+
+
+# Inizio e fine a ore fisse (2026-10-29, Veglia delle stelle — StarVigilService.tick), senza aspettare gli arrivi né la
+# durata contata dalle SocialRiteAttendAction.
+static func begin_scheduled(building: Building) -> void:
+	var record := find_rite(GameSettings.active_game_data, building.id)
+	var rules := RiteService.get_rules(String(record.get("rite_id", ""))) as SocialRiteRules
+	if not record.is_empty() and rules != null and String(record["phase"]) == PHASE_WAITING:
+		_begin(record, building, rules)
+
+
+static func finish_scheduled(building: Building, individuals: Array, game_data: GameData) -> void:
+	var record := find_rite(game_data, building.id)
+	var rules := RiteService.get_rules(String(record.get("rite_id", ""))) as SocialRiteRules
+	if not record.is_empty() and rules != null and String(record["phase"]) == PHASE_FEASTING:
+		_finish(record, building, rules, individuals, game_data)
 
 
 # Task del rito per `member`: [cammina all'edificio, al rito]. `rite_uid`: numero del rito (record "uid"), -1 = qualunque.
@@ -451,6 +477,9 @@ static func on_arrival(building: Building, individual: HumanIndividual, game_dat
 		counts = rules.counted_age_bands.has(age_band) if not rules.counted_age_bands.is_empty() else age_band != HumanTypes.AgeBand.CHILD
 	participants[key] = {"counts": counts}
 	log_event("#%d %s arriva all'edificio #%d%s." % [individual.id, individual.name, building.id, "" if counts else " (non conta)"])
+	# Veglia delle stelle (2026-10-29): non comincia con gli arrivi ma all'alba del suo giorno (StarVigilService.tick).
+	if rules is StarVigilRiteRules:
+		return false
 	if String(record["phase"]) != PHASE_WAITING or _count_counting(record) < rules.min_participants:
 		return false
 	# Senza l'organizzatore non si comincia (2026-10-17, bugfix: la lezione partiva con due bambini e l'insegnante per strada).
@@ -471,6 +500,9 @@ static func advance(building: Building, delta: float, individuals: Array, game_d
 	if int(record.get("_frame", -1)) == frame:
 		return
 	record["_frame"] = frame
+	# Veglia delle stelle (2026-10-29): inizio, presenti e fine a ore fisse in StarVigilService.tick, niente attesa che scade.
+	if rules is StarVigilRiteRules:
+		return
 	# In preparazione nessuna scadenza (2026-10-16): l'organizzatore porta il materiale, si annulla con la X.
 	if String(record["phase"]) == PHASE_PREPARING:
 		return
@@ -513,6 +545,9 @@ static func cancel(building: Building, individuals: Array, game_data: GameData, 
 			freed.append(individual)
 	if building.requested_rite_id == String(record.get("rite_id", "")):
 		building.requested_rite_id = ""
+	# Veglia delle stelle annullata o saltata (2026-10-29): l'annuncio si chiude, così la chiamata non riparte.
+	if String(record.get("rite_id", "")) == StarVigilService.RITE_ID:
+		StarVigilService.clear_announcement(building)
 	log_event("rito all'edificio #%d annullato." % building.id)
 	return freed
 
@@ -566,6 +601,11 @@ static func _finish(record: Dictionary, building: Building, rules: SocialRiteRul
 	game_data.active_social_rites.erase(record)
 	# Contagio (2026-10-25, ContagionService): ogni presente tira per ogni contagioso presente.
 	ContagionService.expose_group(present, game_data, "rito '%s' all'edificio #%d" % [rules.id, building.id])
+	# Veglia delle stelle (2026-10-29): effetti tutti suoi (StarVigilService.on_finished), niente di quelli generici.
+	if rules is StarVigilRiteRules:
+		game_data.building_runtime.last_social_rite_end_day[building.id] = game_data.get_absolute_day()
+		StarVigilService.on_finished(record, building, rules as StarVigilRiteRules, present, individuals, game_data)
+		return
 	var share := float(present.size())
 	var banquet := rules as BanquetRiteRules
 	for individual in present:
@@ -677,6 +717,10 @@ static func _village_of(building: Building) -> Village:
 	return folk.find_village(building.village_id) if folk != null else null
 
 
+# Motivo di _skip_reason per un bisogno di sopravvivenza in corso (la Veglia delle stelle convoca lo stesso, in coda).
+const SKIP_URGENT_NEED := "bisogno urgente"
+
+
 # Come il corteo funebre (ProcessionService._skip_reason): esclusi neonati, chi porta un corpo e i bisogni di
 # sopravvivenza in corso.
 static func _skip_reason(individual: HumanIndividual, game_data: GameData) -> String:
@@ -689,7 +733,7 @@ static func _skip_reason(individual: HumanIndividual, game_data: GameData) -> St
 		return "malato"
 	var task := individual.current_task
 	if task != null and not task.is_finished() and task.interrupt_priority != -1:
-		return "bisogno urgente"
+		return SKIP_URGENT_NEED
 	# Già chiamato a un altro rito sociale ancora in corso (2026-10-17, bugfix: la seconda lezione rubava i bambini alla
 	# prima). Una task di un rito già sparito non conta: verrà scartata.
 	var tasks: Array[Task] = []

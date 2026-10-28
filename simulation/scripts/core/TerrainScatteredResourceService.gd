@@ -296,6 +296,7 @@ static func _get_fruit_stock_weights(resource_name: String, macro_state: MacroCe
 	var weights := _compute_fruit_stock_weights(resource_name, macro_state, GameSettings.active_game_data.year)
 	weights["checkpoint_day"] = checkpoint_absolute_day
 	weights["primary_resource_quantity"] = primary_resource_quantity
+	weights["revision"] = int(cache.get("revision", 0)) + 1
 	macro_state.berry_weight_cache[resource_name] = weights
 	return weights
 
@@ -319,12 +320,14 @@ static func get_fruit_stock_weight_lots(resource_name: String, macro_state: Macr
 # (cambia a ogni raccolta/azzeramento stagionale — vedi MacroCellState). Confrontare questo Array a
 # un valore salvato dal chiamante (GameScene.LiveMacroCell) costa 4 confronti scalari, contro il
 # costo di ricostruire l'intero ratio_by_lot ad ogni singolo refresh anche quando nulla è cambiato.
+# Pesi: la loro revisione (2026-10-28, scatto del taglio), non la quantità della pianta — tagliare una pianta senza
+# frutto cambia la quantità ma non i pesi, e non deve far ricalcolare i rapporti di tutti i lotti (~7 ms).
 static func get_fruit_stock_recompute_signature(resource_name: String, macro_state: MacroCellState) -> Array:
 	var weights := _get_fruit_stock_weights(resource_name, macro_state)
 	return [
 		macro_state.get_secondary_resource_stock(resource_name),
 		int(weights.get("checkpoint_day", -1)),
-		int(weights.get("primary_resource_quantity", -1)),
+		int(weights.get("revision", -1)),
 		int(macro_state.berry_harvested_revision.get(resource_name, 0)),
 	]
 
@@ -464,6 +467,7 @@ static func apply_cut_fruit_weights(macro_state: MacroCellState, object_type: Ga
 			else:
 				by_lot[lot] = lot_weight
 			cache["total"] = maxf(float(cache["total"]) - weight, 0.0)
+			cache["revision"] = int(cache.get("revision", 0)) + 1
 		cache["primary_resource_quantity"] = quantity
 
 

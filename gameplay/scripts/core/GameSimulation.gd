@@ -116,17 +116,46 @@ func publish_to_settings() -> void:
 #   5. cortei funebri.
 # I collegamenti dei segnali degli step li fa la scena prima di chiamare (GameScene._ensure_step_signals).
 func tick_frame(real_delta: float, game_delta: float, is_playing: bool, focus: HumanIndividual, effects: GameEffects) -> void:
+	# Tempi per passo (DebugLogging.SHOW_SIM_FRAME_TIMING_LOGS): solo log, stampato sopra SIM_FRAME_SLOW_MSEC.
+	var timing := DebugLogging.SHOW_SIM_FRAME_TIMING_LOGS
+	var frame_started := Time.get_ticks_usec() if timing else 0
+	var parts: Dictionary = {}
+	var worst_usec := 0
+	var worst_label := ""
+	var step_started := frame_started
 	if is_playing and game_data != null:
 		JobBoardService.advance_clock(game_data, real_delta)
+	if timing:
+		parts["orologio lista"] = Time.get_ticks_usec() - step_started
 	var active_individuals: Array[HumanIndividual] = []
 	for member in individuals:
 		if member.current_task != null and not member.current_task.is_finished():
 			active_individuals.append(member)
 	for member in active_individuals:
+		var member_started := Time.get_ticks_usec() if timing else 0
+		var action_label := ""
+		if timing:
+			var action := member.current_task.get_current_action()
+			action_label = "%s / %s" % [member.current_task.task_name, action.get_script().get_global_name() if action != null and action.get_script() != null else "-"]
 		movement_service.advance_movement(member, game_delta, live_cells)
+		var part_started := Time.get_ticks_usec() if timing else 0
+		if timing:
+			parts["movimento"] = int(parts.get("movimento", 0)) + part_started - member_started
 		action_service.apply_action(member, game_delta, world, game_data)
+		if timing:
+			var now_usec := Time.get_ticks_usec()
+			parts["azioni"] = int(parts.get("azioni", 0)) + now_usec - part_started
+			part_started = now_usec
 		IndividualBorderService.check_crossing(member, world, game_data, action_service, focus, effects)
 		IndividualBorderService.sync_dependent_child(member, individuals, game_data, effects)
+		if timing:
+			var now_usec := Time.get_ticks_usec()
+			parts["confini e figli"] = int(parts.get("confini e figli", 0)) + now_usec - part_started
+			if now_usec - member_started > worst_usec:
+				worst_usec = now_usec - member_started
+				worst_label = "#%d %s (%s)" % [member.id, member.name, action_label]
+	if timing:
+		step_started = Time.get_ticks_usec()
 	if game_data != null and not game_data.visitor_parties.is_empty():
 		var departed: Array[VisitorParty] = []
 		for party in game_data.visitor_parties:
@@ -134,10 +163,26 @@ func tick_frame(real_delta: float, game_delta: float, is_playing: bool, focus: H
 				departed.append(party)
 		for party in departed:
 			game_data.visitor_parties.erase(party)
+	if timing:
+		parts["visitatori"] = Time.get_ticks_usec() - step_started
+		step_started = Time.get_ticks_usec()
 	for member in individuals:
 		if member.carried_body_id != -1:
 			BodyBurialService.enforce_carrier(member)
+	if timing:
+		parts["corpi in spalla"] = Time.get_ticks_usec() - step_started
+		step_started = Time.get_ticks_usec()
 	ProcessionService.tick(game_delta)
+	if timing:
+		parts["cortei"] = Time.get_ticks_usec() - step_started
+		var total_usec := Time.get_ticks_usec() - frame_started
+		if total_usec >= DebugLogging.SIM_FRAME_SLOW_MSEC * 1000:
+			var texts: Array[String] = []
+			for part_name in parts:
+				if int(parts[part_name]) >= 500:
+					texts.append("%s %.1f" % [part_name, int(parts[part_name]) / 1000.0])
+			print("[SIM FRAME] %.1f ms (%d in azione) — %s; il più lento: %s %.1f ms" % [
+				total_usec / 1000.0, active_individuals.size(), ", ".join(texts), worst_label, worst_usec / 1000.0])
 
 
 # Accoglienza di un gruppo di visitatori (2026-10-18, blocco 5c — prima GameScene._welcome_visitor_party): i membri
@@ -273,6 +318,8 @@ static func tick_second(ctx: GameContext, now: float, effects: GameEffects) -> v
 	# Attrezzi presi in deposito per un lavoro (2026-10-11): la restituzione avviene appena libero (2026-10-24,
 	# ToolFetchService.try_return_borrowed_tools in resolve_idle_individual); qui solo la pulizia dei prestiti.
 	ToolFetchService.prune_borrowed_tools(ctx)
+	# Veglia delle stelle (2026-10-29): chiamata 3 giorni prima, inizio all'alba, fine dopo un giorno.
+	StarVigilService.tick(ctx.world, ctx.game_data, ctx.individuals, now)
 	# Fumo degli affumicatoi (2026-10-23): ridisegno solo delle celle il cui affumicatoio ha iniziato o smesso di lavorare.
 	for building in ProductionService.refresh_smoking(ctx.world, ctx.individuals):
 		effects.refresh_building_cell(building)
@@ -294,7 +341,9 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 	# Rifiuti del villaggio (2026-10-18): ogni 30 giorni, nelle Fosse o accanto al centro del villaggio.
 	BuildingLifecycleService.produce_village_waste(ctx, effects)
 	# Gruppi di animali che frequentano il villaggio (2026-10-26): creati appena esiste un villaggio con centro.
-	AnimalVisitorService.ensure_groups(ctx)
+	WildAnimalGroupService.ensure_groups(ctx)
+	# Nascite, morti e partenze del gruppo (2026-10-27).
+	WildAnimalGroupService.tick_day(ctx)
 	# Crollo a Integrità zero (2026-10-10).
 	BuildingLifecycleService.collapse_ruined_buildings(ctx, effects)
 	# Case danneggiate (2026-10-10, effetti passo 5): sfratto di chi è in più, poi riassegnazione.

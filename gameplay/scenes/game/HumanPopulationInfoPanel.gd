@@ -297,17 +297,27 @@ func show_population(
 		" — non bastano per tutti!" if total_count > housing_capacity else ""
 	])
 
+	var sorted_members := _sorted_individuals(individuals)
+	# Righe riusate (2026-10-28, scatti: ~43 ms al giorno a scheda aperta per rifare tutti i nodi): stessi abitanti nello
+	# stesso ordine -> si aggiornano solo le scritte, la casa e la salute. Nascite, morti o ordine cambiato: lista rifatta.
+	if _rows_match(sorted_members):
+		for i in range(sorted_members.size()):
+			var entry: Dictionary = _command_rows[i]
+			var member: HumanIndividual = sorted_members[i]
+			var name_label: Label = entry["name_label"]
+			var name_text := _row_name_text(member, current_year, era_effective_age_band_durations_male, era_effective_age_band_durations_female)
+			if name_label.text != name_text:
+				name_label.text = name_text
+			_apply_house_icon(entry["house_icon"], member)
+		refresh_task_texts()
+		return
 	for child in list_container.get_children():
 		child.queue_free()
 	_task_rows.clear()
 	_command_rows.clear()
 	_hovered_command_row = -1
 	_clear_command_overlay()
-	for member in _sorted_individuals(individuals):
-		var age: int = current_year - member.birth_year_virtual
-		var age_band := HumanCalculator.get_age_band(
-			era_effective_age_band_durations_male, era_effective_age_band_durations_female, member.sex, float(age)
-		)
+	for member in sorted_members:
 		# Riga = HBoxContainer (era un Label nudo) — richiesta utente 2026-09-04: bottone
 		# "centra e seleziona" per riga, vedi individual_center_requested sopra. label.
 		# size_flags_horizontal EXPAND_FILL così il bottone/simbolo casa restano compatti invece di
@@ -337,12 +347,7 @@ func show_population(
 		# andare a capo, così la riga non cambia altezza.
 		label.clip_text = true
 		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		label.text = "%s — %s, %d (%s)" % [
-			member.name,
-			"F" if member.sex == HumanTypes.Sex.FEMALE else "M",
-			age,
-			HumanTypes.AgeBand.keys()[age_band].capitalize(),
-		]
+		label.text = _row_name_text(member, current_year, era_effective_age_band_durations_male, era_effective_age_band_durations_female)
 		row.add_child(label)
 
 		# Spaziatore largo quanto i pulsanti delle azioni quando la riga è sotto il mouse, a sinistra della casa.
@@ -355,13 +360,7 @@ func show_population(
 		var house_icon := Label.new()
 		house_icon.text = HOUSE_ICON_TEXT
 		house_icon.add_theme_font_size_override("font_size", 10)
-		if member.house_id != -1:
-			house_icon.tooltip_text = TooltipText.wrap("ID Casa: %d" % member.house_id)
-			# Tiene il suo clic (2026-10-07): un clic sulla casa non seleziona la riga.
-			house_icon.mouse_filter = Control.MOUSE_FILTER_STOP
-		else:
-			house_icon.modulate = Color(1, 1, 1, 0)
-			house_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_apply_house_icon(house_icon, member)
 		row.add_child(house_icon)
 
 		# Riga task indentata, SOTTO la riga dell'individuo (2026-09-18, richiesta utente) —
@@ -418,7 +417,7 @@ func show_population(
 		row_wrapper.add_child(task_margin)
 		_task_rows.append(task_margin)
 		_command_rows.append({
-			"member": member, "wrapper": row_wrapper, "name_row": row, "house_icon": house_icon,
+			"member": member, "wrapper": row_wrapper, "name_row": row, "name_label": label, "house_icon": house_icon,
 			"health_slot": health_slot, "health_icon": health_icon,
 			"name_spacer": name_spacer, "task_spacer": task_spacer, "task_label": task_label,
 		})
@@ -430,6 +429,45 @@ func show_population(
 		_widest_row = maxf(_widest_row, TASK_ROW_INDENT + task_label.get_combined_minimum_size().x)
 
 	custom_minimum_size.x = maxf(custom_minimum_size.x, _widest_row)
+
+
+# true se le righe in lista sono degli stessi abitanti, nello stesso ordine, ancora valide.
+func _rows_match(sorted_members: Array[HumanIndividual]) -> bool:
+	if _command_rows.size() != sorted_members.size() or _command_rows.is_empty():
+		return false
+	for i in range(sorted_members.size()):
+		var entry: Dictionary = _command_rows[i]
+		if entry["member"] != sorted_members[i] or not is_instance_valid(entry["wrapper"]) or entry["wrapper"].is_queued_for_deletion():
+			return false
+	return true
+
+
+# "Nome — F, 34 (Adult)": nome, sesso, età e fascia d'età.
+func _row_name_text(
+	member: HumanIndividual, current_year: int, durations_male: Array[float], durations_female: Array[float]
+) -> String:
+	var age: int = current_year - member.birth_year_virtual
+	var age_band := HumanCalculator.get_age_band(durations_male, durations_female, member.sex, float(age))
+	return "%s — %s, %d (%s)" % [
+		member.name,
+		"F" if member.sex == HumanTypes.Sex.FEMALE else "M",
+		age,
+		HumanTypes.AgeBand.keys()[age_band].capitalize(),
+	]
+
+
+# Simbolo casa della riga: visibile con tooltip e clic propri se l'abitante ha una casa, trasparente altrimenti (il posto
+# resta, così le case restano in colonna).
+func _apply_house_icon(house_icon: Label, member: HumanIndividual) -> void:
+	if member.house_id != -1:
+		house_icon.modulate = Color(1, 1, 1, 1)
+		house_icon.tooltip_text = TooltipText.wrap("ID Casa: %d" % member.house_id)
+		# Tiene il suo clic (2026-10-07): un clic sulla casa non seleziona la riga.
+		house_icon.mouse_filter = Control.MOUSE_FILTER_STOP
+	else:
+		house_icon.modulate = Color(1, 1, 1, 0)
+		house_icon.tooltip_text = ""
+		house_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
 # Testo dell'attività di ogni riga riallineato alla task attiva (2026-10-09, bugfix "la lista mostra un'attività

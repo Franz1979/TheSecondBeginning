@@ -1,6 +1,70 @@
 class_name WarehouseSelectionService
 extends RefCounted
 
+# true se almeno un edificio accetterebbe un'unità di `resource_name` da find_best (2026-10-28, scatti dei mucchi: ~4,5 ms
+# a domanda). Le quattro categorie di find_best insieme coprono ogni edificio con capienza, quindi la risposta è la stessa
+# di find_best(...) != null senza esclusioni né raggiungibilità, ma con un solo giro che si ferma al primo.
+# Memoria per edificio (2026-10-28, mucchi: con un deposito qualunque si rifacevano tutti i ~100 controlli): con
+# `signatures` (id edificio -> firma, building_signature) e `answers` (tenuto dal chiamante: id -> {"signature", "msec",
+# "answers": risorsa -> bool}) la risposta di un edificio si riusa finché la sua firma non cambia, al più ANSWER_MSEC
+# (rete di sicurezza per ciò che la firma non vede: quote dei riti, domanda di produzione, case di nucleo).
+# Scadenza diversa per edificio (2026-10-28): ANSWER_MSEC ± ANSWER_SPREAD_MSEC secondo l'id, così le ~100 risposte non
+# scadono tutte nello stesso giro (~13 ms ogni 10 s).
+const ANSWER_MSEC := 10000
+const ANSWER_SPREAD_MSEC := 2000
+
+
+static func any_accepts(world: World, resource_name: String, signatures: Dictionary = {}, answers: Variant = null) -> bool:
+	if world == null:
+		return false
+	# Misura (2026-10-28, ~10 ms a giro dei mucchi): una voce per risorsa, con quanti edifici arrivano ai controlli di
+	# deposito (can_accept / get_max_depositable) e quanti risposte dalla memoria.
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
+	var checked := 0
+	var remembered := 0
+	var accepted := false
+	var now_msec := Time.get_ticks_msec()
+	for building in world.buildings:
+		if building.rules == null or not building.is_complete or building.is_out_of_service() or building.rules.is_workstation \
+				or HouseWardrobeService.is_wardrobe_house(building):
+			continue
+		var entry: Variant = null
+		if answers is Dictionary and signatures.has(building.id):
+			entry = (answers as Dictionary).get(building.id)
+			var expiry_msec: int = ANSWER_MSEC - ANSWER_SPREAD_MSEC + absi(hash(building.id)) % (2 * ANSWER_SPREAD_MSEC + 1)
+			if entry == null or int(entry["signature"]) != int(signatures[building.id]) or now_msec - int(entry["msec"]) >= expiry_msec:
+				entry = {"signature": signatures[building.id], "msec": now_msec, "answers": {}}
+				(answers as Dictionary)[building.id] = entry
+			if (entry["answers"] as Dictionary).has(resource_name):
+				remembered += 1
+				if bool(entry["answers"][resource_name]):
+					accepted = true
+					break
+				continue
+		checked += 1
+		var building_accepts := BuildingStorageService.can_accept(building, resource_name) \
+				and BuildingStorageService.get_max_depositable(building, resource_name) >= 1
+		if entry != null:
+			entry["answers"][resource_name] = building_accepts
+		if building_accepts:
+			accepted = true
+			break
+	if timing:
+		JobBoardTimingService.add("magazzino %s: %s, %d edifici controllati, %d dalla memoria, su %d" % [
+			resource_name, "sì" if accepted else "no", checked, remembered, world.buildings.size()], started)
+	return accepted
+
+
+# Firma di ciò che decide se un edificio accetta una risorsa (vedi ANSWER_MSEC): cambia a ogni suo deposito o prelievo,
+# completamento, messa fuori servizio, categorie o capienza cambiate.
+static func building_signature(building: Building) -> int:
+	return [
+		building.is_complete, building.is_out_of_service(), building.restricts_categories, building.enabled_categories.hash(),
+		BuildingStorageService.get_slot_count(building), building.stored_resources.hash(),
+	].hash()
+
+
 # Sceglie il magazzino più vicino con posto per quantity_needed unità di resource_name (2026-09-09,
 # richiesta utente — re-routing UnloadAction quando il magazzino bersaglio risulta pieno). Stateless,
 # stesso pattern "fabbrica statica"/service già in uso da TerrainScatteredResourceService/

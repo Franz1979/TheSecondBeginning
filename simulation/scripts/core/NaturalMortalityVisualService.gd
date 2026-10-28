@@ -100,3 +100,5 @@ static func kill_individual(
 	var subtype_store: Dictionary = macro_state.tree_individual_subtype if object_type == GameTypes.WorldObjectType.TREE else macro_state.shrub_individual_subtype
 	birth_year_store.erase(individual_key)
 	subtype_store.erase(individual_key)
+	macro_state.vegetation_revision += 1
+	VegetationLotIndex.note_removed(macro_state, object_type, [individual_key])

@@ -11,6 +11,8 @@ extends RefCounted
 #   - da portare = materiali di costruzione della destinazione meno lo sconto, mai sotto zero (voci a 0 omesse);
 #   - recuperato = la parte di sconto che la destinazione non usa (materiale non richiesto o in eccesso);
 #   - lavoro = quello pieno della destinazione (required_labor), senza lavoro di demolizione.
+#   - PER AGGIUNTA (2026-10-27, BuildingRules.upgrade_materials della destinazione non vuoto): l'edificio resta com'è, da
+#     portare = upgrade_materials, niente sconto né recuperato, lavoro = upgrade_labor (0 = required_labor).
 
 
 # MIGLIORAMENTO IN CORSO (2026-10-03, passo 2): l'edificio diventa un cantiere del tipo di destinazione (stesso id e
@@ -93,9 +95,38 @@ static func get_upgrade_rules(building: Building) -> BuildingRules:
 #   {"to_bring": {materiale: unità}, "credited": {materiale: unità dello sconto usate dalla destinazione},
 #    "recovered": {materiale: unità dello sconto avanzate}, "labor": int}.
 # "credited" è quanto il passo 2 segnerà come già consegnato al cantiere.
+# Il tipo e tutti quelli a cui si migliora, in ordine (2026-10-27, unicità sulla catena: GameScene._building_type_availability).
+static func get_upgrade_chain(building_type_name: String) -> Array[String]:
+	var chain: Array[String] = []
+	var current := building_type_name
+	while current != "" and not chain.has(current):
+		chain.append(current)
+		var rules := BuildingCalculator.get_building_rules(current)
+		current = rules.upgrades_to if rules != null else ""
+	return chain
+
+
+# true se il miglioramento verso `to_rules` è per aggiunta (vedi COSTO in testa).
+static func is_additive(to_rules: BuildingRules) -> bool:
+	return to_rules != null and not to_rules.upgrade_materials.is_empty()
+
+
 static func get_upgrade_cost(from_rules: BuildingRules, to_rules: BuildingRules) -> Dictionary:
 	var result := {"to_bring": {}, "credited": {}, "recovered": {}, "labor": 0}
 	if from_rules == null or to_rules == null:
+		return result
+	if is_additive(to_rules):
+		for material_name in to_rules.upgrade_materials.keys():
+			var amount: int = int(to_rules.upgrade_materials[material_name])
+			if amount > 0:
+				result["to_bring"][String(material_name)] = amount
+		# Il resto del costo totale c'è già (2026-10-28, bugfix: il cantiere chiedeva tutto required_materials): segnato
+		# come consegnato, così il cantiere aspetta solo upgrade_materials.
+		for material_name in to_rules.required_materials.keys():
+			var present: int = int(to_rules.required_materials[material_name]) - int(to_rules.upgrade_materials.get(material_name, 0))
+			if present > 0:
+				result["credited"][String(material_name)] = present
+		result["labor"] = to_rules.upgrade_labor if to_rules.upgrade_labor > 0 else to_rules.required_labor
 		return result
 	var discount: Dictionary = {}
 	for material_name in from_rules.required_materials.keys():

@@ -268,6 +268,8 @@ static func spawn_rubble_on_cells(
 	origin: String = Building.RUBBLE_ORIGIN_COLLAPSE
 ) -> Array[Building]:
 	var result: Array[Building] = []
+	# Ricalcolo completo come prima (2026-10-28): le celle dell'edificio sparito senza maceria tornano libere per l'erba.
+	effects.refresh_vegetation(macro_coords)
 	var debris_split := split_debris(total_debris, cells.size())
 	var overflow := 0
 	for i in range(cells.size()):
@@ -608,7 +610,9 @@ static func spawn_rubble(
 	ctx.world.buildings.append(rubble)
 	state.set_dedicated_space(GameTypes.WorldObjectType.BUILDING, state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING) + rules.required_space)
 	effects.refresh_cell(macro_coords)
-	effects.refresh_vegetation(macro_coords)
+	# Solo l'erba di questa microcella (2026-10-28, scatti): piante legnose qui non ce ne sono (find_rubble_microcell, o
+	# celle di un edificio). Crollo e demolizione chiedono anche il ricalcolo completo (spawn_rubble_on_cells).
+	effects.rubble_placed(macro_coords, microcell)
 	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
 	effects.refresh_panel(GameEffects.PanelKind.BUILD_BAR)
 	return rubble
@@ -657,6 +661,9 @@ static func start_upgrade(ctx: GameContext, building: Building, chosen_rotation:
 		BuildingUpgradeService.UPGRADE_FROM_ROTATION_KEY: int(building.rotation),
 		BuildingUpgradeService.UPGRADE_CREDITED_KEY: (cost["credited"] as Dictionary).duplicate(),
 	}
+	# Per aggiunta (2026-10-28, bugfix): il lavoro dell'edificio di partenza è già fatto, resta solo quello del costo.
+	if BuildingUpgradeService.is_additive(target):
+		building.construction_progress["labor_accumulated"] = float(maxi(0, target.required_labor - int(cost["labor"])))
 	if chosen_rotation >= 0:
 		building.rotation = chosen_rotation as GameTypes.Direction
 	building.building_type_name = from_type if building.rules == null else building.rules.upgrades_to

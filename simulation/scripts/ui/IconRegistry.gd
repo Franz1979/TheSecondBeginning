@@ -213,6 +213,8 @@ const BUILDING_ICON_NODES := {
 	"feast_ground": preload("res://simulation/scripts/ui/FeastGroundIcon.gd"),
 	# Cerchio del consiglio (2026-10-26): stesso disegno della mappa (CouncilCircleShape).
 	"council_circle": preload("res://simulation/scripts/ui/CouncilCircleIcon.gd"),
+	# Cerchio delle stelle (2026-10-27): lo stesso senza sedute.
+	"star_circle": preload("res://simulation/scripts/ui/StarCircleIcon.gd"),
 	# Pietre impilate (2026-10-02, richiesta utente): pila verticale di sassi, stesso disegno della mappa.
 	"stacked_stones": preload("res://simulation/scripts/ui/StackedStonesIcon.gd"),
 	# Capanna di stoccaggio (2026-10-03, richiesta utente): stesso disegno della mappa (StorageHutShape).
@@ -281,6 +283,8 @@ const COMMAND_ICONS := {
 	# "rite" (2026-10-02, task Rite): sulla mappa vale l'icona disegnata (COMMAND_ICON_NODES, CommandMoonIcon); questa
 	# emoji resta solo per le righe del popup di scelta del rito (interfaccia, non mappa).
 	"rite": "🌙",
+	# "star_vigil" (2026-10-29, Veglia delle stelle): sulla mappa le tre stelle disegnate (CommandStarsIcon).
+	"star_vigil": "✨",
 	# "lesson" (2026-10-17, lezione al Ceppo dell'insegnamento): sulla mappa il ceppo disegnato (CommandLessonIcon).
 	"lesson": "📜",
 	# "banquet" (2026-10-17, banchetto sullo Spiazzo delle feste): un cosciotto, al comando e a inizio festa (la stessa icona,
@@ -399,6 +403,8 @@ const COMMAND_ICON_NODES := {
 	"clear_rubble": preload("res://simulation/scripts/ui/CommandShovelIcon.gd"),
 	# "rite" (2026-10-02, task Rite): falce di luna, vedi CommandMoonIcon.gd.
 	"rite": preload("res://simulation/scripts/ui/CommandMoonIcon.gd"),
+	# "star_vigil" (2026-10-29): tre stelle, vedi CommandStarsIcon.gd.
+	"star_vigil": preload("res://simulation/scripts/ui/CommandStarsIcon.gd"),
 	# "lesson" (2026-10-17): il ceppo dell'insegnamento, vedi CommandLessonIcon.gd.
 	"lesson": preload("res://simulation/scripts/ui/CommandLessonIcon.gd"),
 	# "council" (2026-10-26): anello di pietre con tre teste, vedi CommandCouncilIcon.gd.

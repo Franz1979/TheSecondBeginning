@@ -26,6 +26,8 @@ func _ready() -> void:
 		game_scene.coordinator_called.connect(_on_coordinator_called)
 	if game_scene.has_signal(&"social_rite_effect_shown"):
 		game_scene.social_rite_effect_shown.connect(_on_social_rite_effect_shown)
+	if game_scene.has_signal(&"star_vigil_called"):
+		game_scene.star_vigil_called.connect(_on_star_vigil_called)
 	if game_scene.has_signal(&"talk_sound_requested"):
 		game_scene.talk_sound_requested.connect(_on_talk_sound_requested)
 	if game_scene.has_signal(&"world_object_selected"):
@@ -55,6 +57,11 @@ func _on_coordinator_called(global_pos: Vector2) -> void:
 # "social_rite_started:<id>" di SoundEventMap.
 func _on_social_rite_effect_shown(global_pos: Vector2, sound_id: StringName) -> void:
 	AudioManager.play_event(StringName("social_rite_started:" + String(sound_id)), global_pos)
+
+
+# Chiamata della Veglia delle stelle (2026-10-29): richiamo posizionale della guida.
+func _on_star_vigil_called(global_pos: Vector2) -> void:
+	AudioManager.play_event(&"star_vigil_call", global_pos)
 
 
 # Talk (2026-10-13): chiamata, risposta e inizio della conversazione, posizionali sul pipottino.

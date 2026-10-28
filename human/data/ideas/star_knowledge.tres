@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_star_knowledge"]
+
+[resource]
+script = ExtResource("1_star_knowledge")
+id = "star_knowledge"
+display_name = "idea_star_knowledge"
+summary = "idea_star_knowledge_summary"
+description = "idea_star_knowledge_description"
+thoughts_cost = 40
+prerequisites = Array[String](["oral_teaching"])
+era = "paleolithic"

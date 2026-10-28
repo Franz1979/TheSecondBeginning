@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="StarVigilRiteRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/rites/scripts/StarVigilRiteRules.gd" id="1_vigil"]
+
+[resource]
+script = ExtResource("1_vigil")
+id = "star_vigil"
+rite_type = 0
+display_name = "rite_star_vigil_name"
+building_types = Array[String](["star_circle", "council_circle"])
+min_skill = 100.0
+allowed_age_bands = Array[int]([4, 5])
+spontaneous = false
+convoked_age_bands = Array[int]([0, 1, 2, 3, 4, 5])
+counted_age_bands = Array[int]([3, 4, 5])
+max_participants = 0
+min_village_adults = 5
+min_participants = 0
+wait_days = 3.0
+feast_days = 1.0
+organizer_stamina_per_day = 100.0
+idle_cooldown_days = 0.0
+happiness_gain = 10.0
+social_gain_participant = 0.5
+social_gain_organizer = 1.0
+cohesion_gain = 0.3
+start_sound_id = &"star_vigil"
+command_icon_key = "star_vigil"
+task_label_key = "task_star_vigil_name"
+convocation_days_before = 3
+call_days_before_start = 3.0
+start_window_days = 0.5
+min_present_ratio = 0.5
+clear_sky_chance_by_season = Array[float]([0.4, 0.6, 0.8, 0.5])
+max_cloud_break_chance = 0.5
+faith_celebrant = 300.0
+faith_present = 100.0
+faith_population = 20.0
+influence_gain = 5.0
+village_religion_gain = 2.0
+cloudy_faith_loss_present = 10.0
+cloudy_cohesion_loss = 0.1
+skip_faith_loss_population = 30.0
+skip_cohesion_loss = 0.3
+ritual_gain_organizer = 1.0

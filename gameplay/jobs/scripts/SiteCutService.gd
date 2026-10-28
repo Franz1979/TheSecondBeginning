@@ -48,6 +48,30 @@ static func cell_claimers(individuals: Array[HumanIndividual], macro: Vector2i, 
 	return claimers
 
 
+# Tutte le celle in taglio in un giro solo (2026-10-28, SiteCutJobProvider.collect: cell_claimers per ogni cella costava
+# 3–10 ms): Vector4i(macro, cella) -> Array[HumanIndividual], stessi criteri e stesso ordine di cell_claimers.
+static func all_cell_claimers(individuals: Array[HumanIndividual]) -> Dictionary:
+	var result: Dictionary = {}
+	for member in individuals:
+		var seen: Dictionary = {}
+		for task in JobWorkScanService.open_tasks(member):
+			var series := CutZoneService.get_series(task.context)
+			if series.is_empty():
+				series = CutZoneService.get_delivery_series(task)
+			if not CutZoneService.is_cell_series(series):
+				continue
+			var macro := CutZoneService.get_cell_series_macro_coords(series)
+			var lot := CutZoneService.get_cell_series_lot(series)
+			var key := Vector4i(macro.x, macro.y, lot.x, lot.y)
+			if seen.has(key):
+				continue
+			seen[key] = true
+			if not result.has(key):
+				result[key] = [] as Array[HumanIndividual]
+			(result[key] as Array).append(member)
+	return result
+
+
 # Pianta da tagliare per `worker` sulla microcella `cell` del cantiere ({} se nessuna viva, libera e raggiungibile).
 static func pick_plant(ctx: GameContext, worker: HumanIndividual, site: Building, cell: Vector2i) -> Dictionary:
 	return CutZoneService.choose_plant_in_lot(

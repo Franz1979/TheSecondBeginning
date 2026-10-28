@@ -70,11 +70,11 @@ func save_game_to_json(
 			"domestication_points": game_data.domestication_points,
 			"domesticated_species": game_data.domesticated_species,
 			"encountered_wild_species": game_data.encountered_wild_species,
-			# Gruppi di animali che frequentano il villaggio (vedi GameData, AnimalVisitorGroup.to_save_data).
-			"animal_visitor_groups": game_data.animal_visitor_groups.map(
-				func(group: AnimalVisitorGroup) -> Dictionary: return group.to_save_data()
+			# Gruppi di animali che frequentano il villaggio (vedi GameData, WildAnimalGroup.to_save_data).
+			"wild_animal_groups": game_data.wild_animal_groups.map(
+				func(group: WildAnimalGroup) -> Dictionary: return group.to_save_data()
 			),
-			"next_animal_visitor_group_id": game_data.next_animal_visitor_group_id,
+			"next_wild_animal_group_id": game_data.next_wild_animal_group_id,
 			# Ultimo giorno di pulizia periodica del fog of war (vedi GameData) — deve
 			# sopravvivere a save/load per non sfasare la cadenza reale.
 			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day,
@@ -477,6 +477,10 @@ func save_game_to_json(
 			"last_rite_end_day": building.last_rite_end_day,
 			# Soglia di calorie del banchetto (2026-10-17), vedi Building.feast_calorie_threshold.
 			"feast_calorie_threshold": building.feast_calorie_threshold,
+			# Veglia delle stelle (2026-10-29), vedi Building.star_vigil_*.
+			"star_vigil_seasons": building.star_vigil_seasons,
+			"star_vigil_announced_day": building.star_vigil_announced_day,
+			"star_vigil_guide_id": building.star_vigil_guide_id,
 			# Macerie (2026-10-10): tipo dell'edificio crollato.
 			"rubble_source_name": building.rubble_source_name,
 			"rubble_origin": building.rubble_origin,

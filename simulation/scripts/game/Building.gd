@@ -86,6 +86,12 @@ var last_rite_end_day: Dictionary = {}
 # partenza dei dati (BanquetRiteRules.default_calorie_threshold). Letta solo da SocialRiteService.get_calorie_threshold.
 # Salvata con l'edificio.
 var feast_calorie_threshold: int = -1
+# Veglia delle stelle (2026-10-29, StarVigilService): stagioni (GameTypes.Season) in cui la veglia si fa, spunte del
+# pannello, tutte di default; giorno assoluto della veglia annunciata (-1 = nessuna) e id di chi la guida (-1). Salvati
+# con l'edificio.
+var star_vigil_seasons: Array[int] = [0, 1, 2, 3]
+var star_vigil_announced_day: int = -1
+var star_vigil_guide_id: int = -1
 # Macerie (2026-10-10, crollo): building_type_name dell'edificio crollato da cui sono nate ("" per ogni altro edificio).
 # Salvato con l'edificio.
 var rubble_source_name: String = ""

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="WildAnimalGroupRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/wild_animals/scripts/WildAnimalGroupRules.gd" id="1_wolf_group"]
+
+[resource]
+script = ExtResource("1_wolf_group")
+wild_species_name = "wolf"
+initial_breeding_pair = true
+initial_extra_adults = 0
+initial_young = 2
+initial_cubs = 2
+initial_aggression = 100.0
+litter_min = 1
+litter_max = 3
+max_group_size = 12

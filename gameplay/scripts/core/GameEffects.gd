@@ -38,6 +38,10 @@ var marker_buildings: Dictionary = {}
 var site_placeholder_buildings: Dictionary = {}
 # Macrocelle (Vector2i) la cui vegetazione va ricalcolata da capo (spazio occupato cambiato) -> true.
 var vegetation_cells: Dictionary = {}
+# Macerie nuove su microcelle senza piante legnose (2026-10-28, BuildingLifecycleService.spawn_rubble): macrocella
+# (Vector2i) -> Array di microcelle. La scena toglie solo l'erba di quelle microcelle; se la macrocella è anche in
+# vegetation_cells vince il ricalcolo completo.
+var rubble_lots: Dictionary = {}
 # Edifici spariti dal mondo (id -> true): se uno è selezionato, la selezione si chiude.
 var removed_building_ids: Dictionary = {}
 # Task create da un servizio i cui step vanno collegati come quelli del trasporto (griglia del magazzino):
@@ -98,6 +102,12 @@ func spawn_site_placeholders(building: Building) -> void:
 
 func refresh_vegetation(macro_coords: Vector2i) -> void:
 	vegetation_cells[macro_coords] = true
+
+
+func rubble_placed(macro_coords: Vector2i, microcell: Vector2i) -> void:
+	if not rubble_lots.has(macro_coords):
+		rubble_lots[macro_coords] = []
+	(rubble_lots[macro_coords] as Array).append(microcell)
 
 
 func building_removed(building_id: int) -> void:
@@ -178,6 +188,9 @@ func merge(other: GameEffects) -> void:
 	marker_buildings.merge(other.marker_buildings)
 	site_placeholder_buildings.merge(other.site_placeholder_buildings)
 	vegetation_cells.merge(other.vegetation_cells)
+	for macro_coords in other.rubble_lots.keys():
+		for microcell in other.rubble_lots[macro_coords]:
+			rubble_placed(macro_coords, microcell)
 	removed_building_ids.merge(other.removed_building_ids)
 	storage_tasks_to_wire.append_array(other.storage_tasks_to_wire)
 	tasks_to_wire.append_array(other.tasks_to_wire)
@@ -191,7 +204,9 @@ func merge(other: GameEffects) -> void:
 
 
 func is_empty() -> bool:
-	return notifications.is_empty() and cells_to_refresh.is_empty() and panels_to_refresh.is_empty() and not pending_refresh 		and neighbor_refresh_buildings.is_empty() and marker_buildings.is_empty() and site_placeholder_buildings.is_empty() 		and vegetation_cells.is_empty() and removed_building_ids.is_empty() and storage_tasks_to_wire.is_empty() \
+	return notifications.is_empty() and cells_to_refresh.is_empty() and panels_to_refresh.is_empty() and not pending_refresh \
+		and neighbor_refresh_buildings.is_empty() and marker_buildings.is_empty() and site_placeholder_buildings.is_empty() \
+		and vegetation_cells.is_empty() and rubble_lots.is_empty() and removed_building_ids.is_empty() and storage_tasks_to_wire.is_empty() \
 		and individual_moves.is_empty() and individuals_added.is_empty() and unload_tasks_to_wire.is_empty() \
 		and tasks_to_wire.is_empty() and command_icons.is_empty() and buildings_completed.is_empty() \
 		and forgotten_job_board_waits.is_empty() and animals_domesticated.is_empty()

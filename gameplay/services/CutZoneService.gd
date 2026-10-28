@@ -107,11 +107,10 @@ static func list_available_plants_in_lot(
 		return plants
 	if individual != null and not HaulZoneService.is_cell_reachable(individual, macro_coords, lot):
 		return plants
+	# Individui del lotto dall'indice condiviso (VegetationLotIndex, 2026-10-28), non più un giro su tutte le piante.
 	for object_type in PLANT_OBJECT_TYPES:
-		for key in cell.cached_vegetation_positions.get(object_type, []):
+		for key in VegetationLotIndex.keys_in_lot(cell.macro_state, object_type, lot):
 			var individual_key: Vector3i = key
-			if Vector2i(individual_key.x, individual_key.y) != lot:
-				continue
 			if reserved.has(_plant_reservation_key(macro_coords, object_type, individual_key)):
 				continue
 			if not PlantCutService.is_individual_alive(cell.macro_state, object_type, individual_key):

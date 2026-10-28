@@ -15,6 +15,8 @@ extends RefCounted
 # di terra battuta del renderer (il cerchio calpestato si disegna comunque, è parte dell'edificio).
 
 const TYPE := "council_circle"
+# Cerchio delle stelle (2026-10-27): stesso disegno senza le sedute, che arrivano col miglioramento in Cerchio sacro.
+const STAR_TYPE := "star_circle"
 const GROUND_INSET: float = 0.03
 # Terreno calpestato dentro l'anello, un po' più scuro della terra battuta.
 const TRAMPLED_RADIUS: float = 0.34
@@ -49,7 +51,8 @@ const INVALID_TINT := Color(1.0, 0.45, 0.4, 1.0)
 
 
 static func draw(
-	canvas: CanvasItem, center: Vector2, rect_px: Vector2, invalid: bool, alpha: float = 1.0, with_ground: bool = true
+	canvas: CanvasItem, center: Vector2, rect_px: Vector2, invalid: bool, alpha: float = 1.0, with_ground: bool = true,
+	with_seats: bool = true
 ) -> void:
 	var side: float = minf(rect_px.x, rect_px.y)
 	var tint := func(color: Color) -> Color:
@@ -68,7 +71,7 @@ static func draw(
 		_stone(canvas, center, angle, RING_RADIUS * side, RING_STONE_LENGTH * side, RING_STONE_DEPTH * side, 7200 + i,
 			RING_STONE_COLORS[i % RING_STONE_COLORS.size()], RING_SHADOW_OFFSET * side, tint, line_width)
 	# Sedili sfalsati di mezzo passo rispetto ai punti cardinali, come attorno a un fuoco.
-	for i in range(SEAT_COUNT):
+	for i in range(SEAT_COUNT if with_seats else 0):
 		var angle: float = TAU * (float(i) + 0.5) / float(SEAT_COUNT)
 		_stone(canvas, center, angle, SEAT_RADIUS * side, SEAT_LENGTH * side, SEAT_DEPTH * side, 7300 + i,
 			SEAT_COLOR, SEAT_SHADOW_OFFSET * side, tint, line_width)

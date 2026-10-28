@@ -11,16 +11,34 @@ extends RefCounted
 
 # Mucchi dopo corpi ed edifici nelle righe del cassetto.
 const SORT_OFFSET: float = 1000000.0
+# Risposte dei magazzini per edificio e risorsa (2026-10-28: con i magazzini pieni ~3–4 ms per risorsa, 99 edifici
+# guardati a ogni giro): WarehouseSelectionService.any_accepts le riusa finché la firma di quell'edificio non cambia, al
+# più WarehouseSelectionService.ANSWER_MSEC. id edificio -> {"signature", "msec", "answers"}.
+static var _storage_answers_by_building: Dictionary = {}
 
 
 static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	if not UserOptions.job_board_collect_piles:
 		return jobs
+	# Tempi (2026-10-28): "mucchi: chi li ha", ": consegne", ": righe", ": svuotati".
+	var timing := JobBoardTimingService.is_enabled()
+	var started := JobBoardTimingService.now() if timing else 0
 	var claims := collect_claims(ctx.individuals, ctx.game_data)
+	if timing:
+		JobBoardTimingService.add("mucchi: chi li ha", started)
+	started = JobBoardTimingService.now() if timing else 0
 	var job_delivery_keys := collect_job_delivery_keys(ctx.individuals, ctx.game_data)
+	if timing:
+		JobBoardTimingService.add("mucchi: consegne", started)
+	started = JobBoardTimingService.now() if timing else 0
 	var memory := ctx.game_data.job_board_runtime.pile_job_memory
 	var listed_keys: Dictionary = {}
+	var building_signatures := _building_signatures(ctx.world)
+	for building_id in _storage_answers_by_building.keys():
+		if not building_signatures.has(building_id):
+			_storage_answers_by_building.erase(building_id)
+	var storage_by_resource: Dictionary = {}
 	for pile in ctx.game_data.ground_piles:
 		if pile.resources.is_empty() or not pile.carcasses.is_empty():
 			continue
@@ -32,7 +50,14 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 		if job_delivery_keys.has(key):
 			continue
 		var is_assigned := claims.has(key)
+		var part_started := JobBoardTimingService.now() if timing else 0
 		var pile_name := job_name(pile)
+		if timing:
+			JobBoardTimingService.add("mucchi: righe, nome", part_started)
+			part_started = JobBoardTimingService.now()
+		var blocked_reason := "" if is_assigned or has_storage(ctx.world, pile, storage_by_resource, building_signatures) else GameContext.tr_text("task_assignment_pile_no_storage")
+		if timing:
+			JobBoardTimingService.add("mucchi: righe, magazzino", part_started)
 		listed_keys[key] = true
 		memory[key] = {"id": pile.id, "name": pile_name, "macro": pile.macro_coords, "microcell": pile.microcell}
 		jobs.append({
@@ -43,10 +68,15 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 			},
 			"entry_kind": "ground_pile", "id": pile.id, "sort": float(pile.id) + SORT_OFFSET,
 			"assigned": is_assigned, "hidden": false,
-			"blocked_reason": "" if is_assigned or has_storage(ctx.world, pile) else GameContext.tr_text("task_assignment_pile_no_storage"),
+			"blocked_reason": blocked_reason,
 			"target": pile, "provider": provider, "claimers": claims.get(key, []),
 		})
+	if timing:
+		JobBoardTimingService.add("mucchi: righe (%d mucchi)" % ctx.game_data.ground_piles.size(), started)
+	started = JobBoardTimingService.now() if timing else 0
 	jobs.append_array(_emptied_pile_jobs(ctx, provider, listed_keys))
+	if timing:
+		JobBoardTimingService.add("mucchi: svuotati", started)
 	return jobs
 
 
@@ -245,13 +275,30 @@ static func task_claim_keys(task: Task, game_data: GameData) -> Array[String]:
 	return keys
 
 
+# id edificio -> WarehouseSelectionService.building_signature, una volta per giro dei mucchi.
+static func _building_signatures(world: World) -> Dictionary:
+	var signatures: Dictionary = {}
+	if world == null:
+		return signatures
+	for building in world.buildings:
+		signatures[building.id] = WarehouseSelectionService.building_signature(building)
+	return signatures
+
+
 # Almeno una risorsa del mucchio ha un magazzino che la accetta, cercato dalla posizione del mucchio (nessun pipottino,
 # nessun controllo di raggiungibilità: quello si rifà alla presa, rejection).
-static func has_storage(world: World, pile: GroundPile) -> bool:
-	var origin := Vector2(pile.microcell) + Vector2(0.5, 0.5)
+# by_resource (2026-10-28, 40–70 ms con tanti mucchi): risposte per nome della risorsa, condivise tra i mucchi di un giro.
+# Senza raggiungibilità né limite di distanza la risposta non dipende dalla posizione del mucchio: basta
+# WarehouseSelectionService.any_accepts (stessa risposta di find_best != null, un giro solo).
+# building_signatures (2026-10-28): con le firme degli edifici, le risposte per edificio dalla memoria del fornitore.
+static func has_storage(world: World, pile: GroundPile, by_resource: Dictionary = {}, building_signatures: Dictionary = {}) -> bool:
 	for resource_name in pile.get_resource_names():
-		if pile.get_quantity(resource_name) > 0 and WarehouseSelectionService.find_best(
-			world, origin, pile.macro_coords, resource_name, 1, []
-		) != null:
+		if pile.get_quantity(resource_name) <= 0:
+			continue
+		if not by_resource.has(resource_name):
+			by_resource[resource_name] = WarehouseSelectionService.any_accepts(
+				world, resource_name, building_signatures, _storage_answers_by_building if not building_signatures.is_empty() else null
+			)
+		if bool(by_resource[resource_name]):
 			return true
 	return false

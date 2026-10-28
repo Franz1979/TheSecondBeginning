@@ -276,6 +276,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		for i in range(_cells.size()):
 			BuildingSiteClearingService.clear_ground(_macro_state, _cells[i], i < _grass_cells)
 		target_building.construction_progress["ground_cleared"] = true
+	HumanIndividualActionService.timing_step("pulizia: ceppi e terreno")
 
 	# Spazio riservato (2026-09-11, richiesta utente, punto 2) — STESSA formula di GameScene.
 	# _place_building_at, spostata QUI così la microcella non risulta mai libera per la crescita
@@ -303,6 +304,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			_macro_state.get_empty_space(), _macro_state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING)
 		])
 
+	HumanIndividualActionService.timing_step("pulizia: spazio riservato")
 	site_cleared.emit(target_building)
 
 

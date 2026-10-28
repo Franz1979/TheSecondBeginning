@@ -120,10 +120,10 @@ var domesticated_species: Array[String] = []
 # Specie selvatiche (AnimalRules.species_name) già viste nel mondo: un'addomesticazione con idea richiesta parte solo
 # per queste. Scritte solo da DomesticationEncounterService.
 var encountered_wild_species: Array[String] = []
-# Gruppi di animali che frequentano il villaggio (2026-10-26, richiesta utente — primo: il branco di lupi). Creati da
-# AnimalVisitorService.ensure_groups appena esiste un villaggio con centro.
-var animal_visitor_groups: Array[AnimalVisitorGroup] = []
-var next_animal_visitor_group_id: int = 1
+# Gruppi di animali selvatici seguiti uno per uno (2026-10-26, richiesta utente — primo: il branco di lupi). Creati da
+# WildAnimalGroupService.ensure_groups appena esiste un villaggio con centro.
+var wild_animal_groups: Array[WildAnimalGroup] = []
+var next_wild_animal_group_id: int = 1
 
 # Ultimo absolute_day (vedi get_absolute_day sotto) in cui GameScene ha eseguito la pulizia
 # periodica di FogOfWarMemory.last_seen_by_position (vedi FogOfWarMemory.prune_stale/
