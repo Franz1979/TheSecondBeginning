@@ -497,6 +497,8 @@ static func settle_site_stump_debris(ctx: GameContext, site: Building, builder: 
 	var placed := put_debris_near(
 		ctx, macro, Vector2i(site.micro_x, site.micro_y), debris, effects, null, site.building_type_name, Building.RUBBLE_ORIGIN_STUMPS
 	)
+	# Misura temporanea (2026-10-28, scatto della pulizia del cantiere): no-op fuori da un'azione lenta.
+	HumanIndividualActionService.timing_step("maceria: posto e creazione")
 	var leftover := int(placed["leftover"])
 	# Nessuna cella libera vicina (2026-10-18, richiesta utente — cantiere in mezzo al bosco): i detriti restano nel
 	# cantiere e la costruzione aspetta che vengano portati alla Fossa (BuildAction, lavoro "Sgombero · detriti del
@@ -514,6 +516,7 @@ static func settle_site_stump_debris(ctx: GameContext, site: Building, builder: 
 		if clearing != null:
 			TaskQueueService.push_suspended_task(builder, clearing)
 			effects.wire_storage_task(clearing, builder)
+	HumanIndividualActionService.timing_step("maceria: lavoro di sgombero")
 	BuildingMaintenanceService.request_rubble_check(ctx.game_data)
 	effects.refresh_pending()
 

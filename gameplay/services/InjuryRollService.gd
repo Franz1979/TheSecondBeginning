@@ -38,6 +38,15 @@ static func roll_after_action(individual: HumanIndividual, action: Action, conte
 		cumulative += float(wounds[condition_id]) * risk_factor
 		if roll >= cumulative:
 			continue
+		# Villaggio piccolo (2026-10-30): contati solo quando il tiro colpisce, mai a ogni azione.
+		if risks.min_adults_for_injuries > 0:
+			var adults := _adult_count(individual, game_data)
+			if adults < risks.min_adults_for_injuries:
+				if DebugLogging.ENABLED:
+					print("[INJURY] #%d %s: %s evitata (azione '%s'): %d adulti < %d." % [
+						individual.id, individual.name, String(condition_id), action_key, adults, risks.min_adults_for_injuries
+					])
+				return {}
 		if not HealthConditionService.add_condition(individual, String(condition_id), game_data):
 			return {}
 		if DebugLogging.ENABLED:
@@ -56,6 +65,16 @@ static func _skill_override(action: Action) -> String:
 	if produce == null or produce.target_building == null or produce.target_building.rules == null:
 		return ""
 	return produce.target_building.rules.production_skill
+
+
+# Adulti vivi (FERTILE_ADULT in su) dello stesso popolo di `individual`: stesso criterio dei visitatori accolti
+# (GameSimulation). I morti escono da GameSettings.active_human_individuals.
+static func _adult_count(individual: HumanIndividual, game_data: GameData) -> int:
+	var count := 0
+	for member in GameSettings.active_human_individuals:
+		if member.folk_ref == individual.folk_ref and GameContext.age_band_for(member, game_data) >= HumanTypes.AgeBand.FERTILE_ADULT:
+			count += 1
+	return count
 
 
 static func _total_risk(wounds: Dictionary) -> float:

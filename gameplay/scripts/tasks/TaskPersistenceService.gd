@@ -269,6 +269,9 @@ static func _action_type_for_step(step: Action) -> int:
 	# WAIT_AT_POINT (2026-10-09, WaitAtPointAction, seek_job.tres), aggiunta insieme al proprio case in _build_step.
 	if step is WaitAtPointAction:
 		return TaskTypes.ActionType.WAIT_AT_POINT
+	# WAIT_FOR_SAFETY (2026-10-30, WaitForSafetyAction, flee.tres), aggiunta insieme al proprio case in _build_step.
+	if step is WaitForSafetyAction:
+		return TaskTypes.ActionType.WAIT_FOR_SAFETY
 	# REPAIR (2026-10-10, RepairAction, repair.tres), aggiunta insieme al proprio case in _build_step.
 	if step is RepairAction:
 		return TaskTypes.ActionType.REPAIR
@@ -552,6 +555,10 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.WAIT_AT_POINT:
 			# Tetto dell'attesa; il tempo trascorso arriva da load_save_data (solo per lo step corrente).
 			step = WaitAtPointAction.new(float(step_data.get("max_wait_days", -1.0)))
+		TaskTypes.ActionType.WAIT_FOR_SAFETY:
+			# Tetto dell'attesa; il tempo trascorso da load_save_data. Dopo un caricamento il pericolo non c'è più (le visite
+			# non si salvano): l'attesa finisce al tetto.
+			step = WaitForSafetyAction.new(float(step_data.get("max_wait_days", DangerFleeService.DEFAULT_MAX_WAIT_DAYS)))
 		TaskTypes.ActionType.TALK:
 			# Nessun argomento: il partner è nel context della Task, attesa e conversazione da load_save_data.
 			step = TalkAction.new()

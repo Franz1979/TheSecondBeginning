@@ -16,6 +16,9 @@ var breeding_male_id: int = -1
 var breeding_female_id: int = -1
 # Anno (GameData.year) dell'ultima cucciolata, per non ripeterla nella stessa stagione dopo un caricamento.
 var last_litter_year: int = -1
+# Punti addomesticazione non ancora interi (lupi L3, 2026-10-30): le visite danno anche mezzi punti per animale, i punti
+# della specie domestica sono interi — la parte decimale aspetta qui la visita successiva (WildAnimalVisitService).
+var pending_domestication_points: float = 0.0
 
 
 func find_animal(animal_id: int) -> WildAnimal:
@@ -31,7 +34,7 @@ func to_save_data() -> Dictionary:
 		saved_animals.append(animal.to_save_data())
 	return {"id": id, "species": species, "animals": saved_animals, "next_animal_id": next_animal_id,
 		"breeding_male_id": breeding_male_id, "breeding_female_id": breeding_female_id,
-		"last_litter_year": last_litter_year}
+		"last_litter_year": last_litter_year, "pending_domestication_points": pending_domestication_points}
 
 
 static func from_save_data(data: Dictionary) -> WildAnimalGroup:
@@ -42,6 +45,7 @@ static func from_save_data(data: Dictionary) -> WildAnimalGroup:
 	group.breeding_male_id = int(data.get("breeding_male_id", -1))
 	group.breeding_female_id = int(data.get("breeding_female_id", -1))
 	group.last_litter_year = int(data.get("last_litter_year", -1))
+	group.pending_domestication_points = float(data.get("pending_domestication_points", 0.0))
 	for saved_animal in data.get("animals", []):
 		group.animals.append(WildAnimal.from_save_data(saved_animal))
 	return group

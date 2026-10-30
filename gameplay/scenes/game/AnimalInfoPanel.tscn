@@ -2,6 +2,20 @@
 
 [ext_resource type="Script" path="res://gameplay/scenes/game/AnimalInfoPanel.gd" id="1_animal"]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_aggression_bg"]
+bg_color = Color(0.35, 0.35, 0.35, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_aggression_fill"]
+bg_color = Color(0.8, 0.2, 0.15, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [node name="AnimalInfoPanel" type="VBoxContainer"]
 script = ExtResource("1_animal")
 
@@ -14,3 +28,35 @@ autowrap_mode = 2
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 autowrap_mode = 2
+
+[node name="WildDetails" type="VBoxContainer" parent="."]
+visible = false
+layout_mode = 2
+
+[node name="SexLabel" type="Label" parent="WildDetails"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="AgeYearsLabel" type="Label" parent="WildDetails"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="BreederLabel" type="Label" parent="WildDetails"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="AggressionRow" type="HBoxContainer" parent="WildDetails"]
+layout_mode = 2
+
+[node name="AggressionLabel" type="Label" parent="WildDetails/AggressionRow"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+
+[node name="AggressionBar" type="ProgressBar" parent="WildDetails/AggressionRow"]
+custom_minimum_size = Vector2(80, 10)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_styles/background = SubResource("StyleBoxFlat_aggression_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_aggression_fill")
+show_percentage = false

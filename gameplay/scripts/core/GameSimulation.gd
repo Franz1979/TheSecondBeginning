@@ -98,6 +98,82 @@ func initialize_population() -> void:
 			HumanIndividualActionService.resolve_idle_individual(member, GameContext.age_band_for(member, game_data), world)
 
 
+# Zona libera per il gruppo appena seminato (2026-10-30, richiesta utente — un pipottino nato chiuso tra le rocce non si
+# muoveva più): la semina (HumanSeedingService) mette la griglia al centro della macrocella prima che le rocce esistano.
+# Chiamata una volta sola da GameScene._ready per una partita nuova, con la cella di partenza già viva (rocce e griglia di
+# pathfinding pronte) e prima di qualunque frame (nessun percorso ancora calcolato). La griglia si sposta tutta insieme
+# sulla microcella libera più vicina in una regione di almeno START_REGION_MIN_CELLS; chi cade su un ostacolo o fuori da
+# quella regione va sulla sua microcella libera più vicina dentro la regione.
+# Risorse vicine (2026-10-30, richiesta utente — regola semplice): tra i punti validi vince il più vicino al centro che ha
+# rocce e alberi a circa START_RESOURCE_RADIUS microcelle; nessuno = il più vicino senza questa condizione. Il "vicino" è
+# misurato a blocchi di START_RESOURCE_BLOCK microcelle (il blocco del punto e quelli attorno), per non scorrere tutte le
+# rocce e gli alberi per ogni candidato.
+const START_REGION_MIN_CELLS: int = 400
+const START_RESOURCE_BLOCK: int = 5
+const START_RESOURCE_RADIUS: int = 10
+
+
+func relocate_start_group(cell: LiveMacroCell) -> void:
+	if cell == null or individuals.is_empty():
+		return
+	var centroid := Vector2.ZERO
+	for member in individuals:
+		centroid += member.position
+	centroid /= float(individuals.size())
+	var near := Vector2i(floori(centroid.x), floori(centroid.y))
+	var stone_blocks := _resource_blocks(cell.path_obstacles.stones.keys() if cell.path_obstacles != null else [])
+	var tree_cells: Array = []
+	for key in cell.cached_vegetation_positions.get(GameTypes.WorldObjectType.TREE, []):
+		var plant: Vector3i = key
+		tree_cells.append(Vector2i(plant.x, plant.y))
+	var tree_blocks := _resource_blocks(tree_cells)
+	var has_resources_near := func(microcell: Vector2i) -> bool:
+		return _blocks_near(stone_blocks, microcell) and _blocks_near(tree_blocks, microcell)
+	var anchor := PathfindingService.find_open_microcell(cell, near, START_REGION_MIN_CELLS, -1, has_resources_near)
+	if anchor == PathfindingService.NO_POCKET_EXIT:
+		anchor = PathfindingService.find_open_microcell(cell, near, START_REGION_MIN_CELLS)
+	if anchor == PathfindingService.NO_POCKET_EXIT:
+		return
+	var region := PathfindingService.get_region(cell, anchor)
+	var offset := Vector2(anchor) + Vector2(0.5, 0.5) - centroid
+	for member in individuals:
+		var target: Vector2 = member.position + offset
+		var microcell := Vector2i(floori(target.x), floori(target.y))
+		if PathfindingService.get_region(cell, microcell) != region:
+			var free := PathfindingService.find_open_microcell(cell, microcell, 0, region)
+			if free != PathfindingService.NO_POCKET_EXIT:
+				target = Vector2(free) + Vector2(0.5, 0.5)
+		if DebugLogging.ENABLED and target.distance_to(member.position) > 0.01:
+			print("[SPAWN] #%d %s: da %s a %s (zona libera della partenza)." % [member.id, member.name, member.position, target])
+		member.position = target
+
+
+# Blocchi di START_RESOURCE_BLOCK microcelle che contengono almeno una delle `microcells` (1 = sì).
+static func _resource_blocks(microcells: Array) -> PackedByteArray:
+	var side: int = ceili(float(World.WIDTH) / float(START_RESOURCE_BLOCK))
+	var blocks := PackedByteArray()
+	blocks.resize(side * side)
+	for microcell in microcells:
+		var position: Vector2i = microcell
+		var bx := clampi(position.x / START_RESOURCE_BLOCK, 0, side - 1)
+		var by := clampi(position.y / START_RESOURCE_BLOCK, 0, side - 1)
+		blocks[by * side + bx] = 1
+	return blocks
+
+
+# true se un blocco entro START_RESOURCE_RADIUS da `microcell` (in blocchi, per eccesso) ha la risorsa.
+static func _blocks_near(blocks: PackedByteArray, microcell: Vector2i) -> bool:
+	var side: int = ceili(float(World.WIDTH) / float(START_RESOURCE_BLOCK))
+	var reach: int = ceili(float(START_RESOURCE_RADIUS) / float(START_RESOURCE_BLOCK))
+	var bx := microcell.x / START_RESOURCE_BLOCK
+	var by := microcell.y / START_RESOURCE_BLOCK
+	for y in range(maxi(by - reach, 0), mini(by + reach, side - 1) + 1):
+		for x in range(maxi(bx - reach, 0), mini(bx + reach, side - 1) + 1):
+			if blocks[y * side + x] == 1:
+				return true
+	return false
+
+
 # Pubblica popolo e individui in GameSettings, dove li leggono i servizi statici e le altre scene (stessi oggetti).
 func publish_to_settings() -> void:
 	GameSettings.active_human_folk = folk
@@ -163,6 +239,8 @@ func tick_frame(real_delta: float, game_delta: float, is_playing: bool, focus: H
 				departed.append(party)
 		for party in departed:
 			game_data.visitor_parties.erase(party)
+	# Visite dei gruppi di animali selvatici (2026-10-28, lupi passo L1).
+	WildAnimalVisitService.advance_all(game_data, world, game_delta, folk, individuals, effects)
 	if timing:
 		parts["visitatori"] = Time.get_ticks_usec() - step_started
 		step_started = Time.get_ticks_usec()

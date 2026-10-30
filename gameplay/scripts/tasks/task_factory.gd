@@ -288,6 +288,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				# Nessun argomento (2026-10-13, talk.tres): il partner resta nel context (TalkService.CONTEXT_PARTNER_ID).
 				steps.append(TalkAction.new())
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.WAIT_FOR_SAFETY:
+				# Attesa al riparo (2026-10-30, flee.tres): context_keys[0] facoltativo, tetto di sicurezza in giorni.
+				var flee_max_wait_days := DangerFleeService.DEFAULT_MAX_WAIT_DAYS
+				if not step_definition.context_keys.is_empty() and context.has(step_definition.context_keys[0]):
+					flee_max_wait_days = float(context[step_definition.context_keys[0]])
+				steps.append(WaitForSafetyAction.new(flee_max_wait_days))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.PATROL_AREA:
 				# 1 argomento (id della WorkArea, 2026-10-01): chiave consumata dalla factory — chi crea la Task scrive
 				# anche HuntZoneService.CONTEXT_WORK_AREA_ID, che resta nel context.

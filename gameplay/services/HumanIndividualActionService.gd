@@ -127,6 +127,9 @@ const INTERRUPT_PRIORITY_REST: int = 30
 # interrupt_priority -1, come wander e leisure_rest. Letta da _resolve_active_food_need_priority, da HumanIndividual.can_assign_task e dagli agganci
 # automatici (_handle_food_interrupt, resolve_idle_individual) che assegnano emergency_restock.
 const INTERRUPT_PRIORITY_EMERGENCY_RESTOCK: int = 20
+# Fuga dal pericolo (2026-10-30, lupi L5a — flee.tres, DangerFleeService): più urgente di ogni bisogno, quindi nessun
+# bisogno la interrompe, e ammessa anche sotto la soglia di stamina e da malati (HumanIndividual.get_assign_rejection_reason).
+const INTERRUPT_PRIORITY_FLEE: int = 5
 
 # Soglia di autonomia delle provviste, in giorni (food_calories_held / consumo calorico giornaliero):
 # fino a questa (compresa) e' emergenza.

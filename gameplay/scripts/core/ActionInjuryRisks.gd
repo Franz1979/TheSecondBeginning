@@ -14,3 +14,6 @@ extends Resource
 #
 # Una chiave assente = nessun rischio.
 @export var risks_by_action_key: Dictionary = {}
+# Villaggio piccolo (2026-10-30, richiesta utente): con meno di tanti adulti (FERTILE_ADULT in su) nel popolo del pipottino
+# le ferite da lavoro non arrivano. 0 = sempre attive.
+@export var min_adults_for_injuries: int = 0

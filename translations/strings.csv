@@ -690,6 +690,12 @@ task_hunt_zone_activity_series,{task} ({zone}) {delivered}/{target} carne
 animal_selection_title,Animale
 animal_species_label,Specie: {species}
 animal_age_band_label,Età: {age_band}
+animal_sex_label,Sesso: {sex}
+animal_sex_male,maschio
+animal_sex_female,femmina
+animal_age_years_label,Anni: {years}
+animal_breeder_label,★ Riproduttore del branco
+animal_aggression_label,Aggressività
 animal_species_rabbit,Coniglio
 animal_species_partridge,Gallo selvatico
 animal_species_deer,Cervo
@@ -1647,3 +1653,8 @@ season_winter,Inverno
 season_spring,Primavera
 season_summer,Estate
 season_autumn,Autunno
+notification_wild_animal_attack,{species}: attacco a {name}!
+task_flee_name,Fuga dal pericolo
+task_flee_step_run,Corre al riparo
+task_flee_step_wait,Aspetta al riparo
+danger_predator,Predatore

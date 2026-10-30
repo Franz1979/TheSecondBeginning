@@ -99,6 +99,32 @@ static func blocked_test_for(macro_coords: Vector2i) -> Callable:
 		return is_blocked(cell, microcell)
 
 
+# Spostamento di un animale con la collisione di `blocked_test` (vedi blocked_test_for; non valido = nessuna collisione):
+# si entra solo in una microcella non bloccata, o si resta nella propria; se lo spostamento pieno è bloccato si prova
+# solo l'asse X, poi solo l'asse Y; bloccato su tutti e due = fermo (ritorna `from_position`). Unica regola per la fauna
+# (AnimalGroupRenderer) e gli animali in visita (WildAnimalVisitService), unificata il 2026-10-28. Fuori dalla macrocella
+# niente blocchi: i bordi li gestisce il chiamante.
+static func move_with_collision(blocked_test: Callable, from_position: Vector2, displacement: Vector2) -> Vector2:
+	var next_position := from_position + displacement
+	if not blocked_test.is_valid():
+		return next_position
+	var from_cell := Vector2i(from_position.floor())
+	if _can_enter(blocked_test, from_cell, next_position):
+		return next_position
+	var x_only := from_position + Vector2(displacement.x, 0.0)
+	if displacement.x != 0.0 and _can_enter(blocked_test, from_cell, x_only):
+		return x_only
+	var y_only := from_position + Vector2(0.0, displacement.y)
+	if displacement.y != 0.0 and _can_enter(blocked_test, from_cell, y_only):
+		return y_only
+	return from_position
+
+
+static func _can_enter(blocked_test: Callable, from_cell: Vector2i, target_position: Vector2) -> bool:
+	var to_cell := Vector2i(target_position.floor())
+	return to_cell == from_cell or not _in_bounds(to_cell) or not bool(blocked_test.call(to_cell))
+
+
 # Callable(candidato) -> bool "raggiungibile da `individual`?" per le ricerche di bersagli (2026-09-27, step 2b —
 # SpatialSelectionService.find_nearest, WarehouseSelectionService, ThoughtTargetSelectionService). Il candidato
 # espone macro_x/macro_y/micro_x/micro_y (es. Building). Valutato al momento della chiamata, dalla posizione attuale
@@ -658,6 +684,45 @@ static func _recompute_regions(cell: LiveMacroCell) -> void:
 			(" — " + "; ".join(parts)) if not parts.is_empty() else "",
 			(" (+%d più piccole)" % (region_count - MAX_LOGGED_REGIONS)) if region_count > MAX_LOGGED_REGIONS else ""
 		])
+
+
+# Microcella libera più vicina a `near` (distanza in linea d'aria) in una regione di almeno `min_region_cells` microcelle
+# e non chiusa in una sacca; con `required_region` >= 0 solo in quella regione. Se nessuna regione arriva a
+# `min_region_cells`, vale la più grande. NO_POCKET_EXIT se la griglia manca o non c'è nessuna microcella libera. Una
+# passata sulle 10000 microcelle: pensata per usi una tantum (nascita del gruppo, GameSimulation.relocate_start_group).
+# `accept` (Callable(Vector2i) -> bool, facoltativa): condizione in più sulla microcella, chiesta solo a chi sarebbe la
+# migliore fin lì.
+static func find_open_microcell(
+	cell: LiveMacroCell, near: Vector2i, min_region_cells: int = 0, required_region: int = -1, accept: Callable = Callable()
+) -> Vector2i:
+	if cell == null or cell.path_grid == null:
+		return NO_POCKET_EXIT
+	_ensure_regions(cell)
+	var sizes := PackedInt32Array()
+	sizes.resize(cell.path_region_count)
+	for region in cell.path_regions:
+		if region >= 0:
+			sizes[region] += 1
+	var min_cells := min_region_cells
+	var largest := 0
+	for size in sizes:
+		largest = maxi(largest, size)
+	if largest < min_cells:
+		min_cells = largest
+	var best := NO_POCKET_EXIT
+	var best_distance := INF
+	for index in range(cell.path_regions.size()):
+		var region: int = cell.path_regions[index]
+		if region < 0 or sizes[region] < min_cells or _is_pocket(cell, region):
+			continue
+		if required_region >= 0 and region != required_region:
+			continue
+		var microcell := Vector2i(index % World.WIDTH, index / World.WIDTH)
+		var distance := Vector2(microcell - near).length_squared()
+		if distance < best_distance and (not accept.is_valid() or bool(accept.call(microcell))):
+			best_distance = distance
+			best = microcell
+	return best
 
 
 static func _index(position: Vector2i) -> int:

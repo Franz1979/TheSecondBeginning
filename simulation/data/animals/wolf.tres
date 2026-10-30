@@ -29,6 +29,13 @@ discomfort_radius = 5.0
 flee_radius = 2.0
 building_avoidance_radius = 5.0
 avoidance_strength = 0.2
+building_reactions = {
+"campfire": 15.0,
+"covered_depot": -10.0,
+"deposit_site": -10.0,
+"storage_hut": -10.0,
+"waste_pit": -20.0
+}
 max_individuals_per_cluster = 12
 hop_duration_min = 0.04375
 hop_duration_max = 0.08125

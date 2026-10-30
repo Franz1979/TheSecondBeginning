@@ -38,6 +38,9 @@ signal social_rite_effect_shown(global_pos: Vector2, sound_id: StringName)
 # Chiamata della Veglia delle stelle (2026-10-29, StarVigilService): richiamo della guida alla sua posizione
 # (AudioEventListener).
 signal star_vigil_called(global_pos: Vector2)
+# Arrivo di un gruppo di animali selvatici in visita (2026-10-28, lupi L1), alla meta della visita: suono della specie
+# (AudioEventListener, il lupo ulula). Una volta per visita (WildAnimalVisit.arrival_announced).
+signal wild_animal_arrived(global_pos: Vector2, species: String)
 # Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
 # per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
 # riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
@@ -376,6 +379,8 @@ var _ground_pile_views: Dictionary = {}  # pile id -> GroundPileView
 # Gruppi di visitatori (2026-09-27, gameplay/visitors/): id del gruppo -> VisitorPartyView. Allineato ogni
 # frame da _sync_visitor_party_views, sullo schema di _ground_pile_views.
 var _visitor_party_views: Dictionary = {}
+# Visite degli animali selvatici (2026-10-28): id del gruppo -> WildAnimalVisitView (_sync_wild_animal_visit_views).
+var _wild_animal_visit_views: Dictionary = {}
 # Overlay di debug del pathfinding col tasto N TOLTO il 2026-10-04 (richiesta utente, tasto N liberato): lo stesso
 # disegno (PathfindingDebugOverlay) resta nel layer della mappa "Percorribilità" (MapLayerRegistry, "walkability").
 # Layer della mappa (2026-09-27, richiesta utente — menu "Layer" della barra in alto, MapLayerRegistry): id del layer
@@ -986,7 +991,8 @@ func _ready() -> void:
 	# WorldScene/MacroCellScene) — GameSimulation.setup_population. human_rules a path fisso: un solo Folk per ora.
 	var human_rules := load(PLAYER_HUMAN_RULES_PATH) as HumanRules
 	var start_macro_coords := Vector2i(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
-	if sim.setup_population(human_rules, start_macro_coords):
+	var restored_population := sim.setup_population(human_rules, start_macro_coords)
+	if restored_population:
 		# Bersaglio ripristinato sullo stesso individuo di prima (game_data.player_individual_id).
 		individual = sim.find_focus_individual()
 		# Segnali delle Task ricollegati solo per un salvataggio appena caricato (istanze fresche, mai collegate): al
@@ -1018,7 +1024,10 @@ func _ready() -> void:
 	# Prima cella viva: il centro. center_macro_coords va fissato PRIMA di attivarla, perché
 	# _activate_live_cell non decide da sé "sono il centro" — è solo orchestrazione qui.
 	center_macro_coords = Vector2i(game_data.player_macro_cell_x, game_data.player_macro_cell_y)
-	_activate_live_cell(center_macro_coords.x, center_macro_coords.y, "_ready (centro iniziale)")
+	var start_cell := _activate_live_cell(center_macro_coords.x, center_macro_coords.y, "_ready (centro iniziale)")
+	# Partita nuova (2026-10-30): il gruppo seminato al centro va in una zona libera, ora che rocce e griglia esistono.
+	if not restored_population:
+		sim.relocate_start_group(start_cell)
 
 	# Una HumanIndividualView a testa, TUTTE parentate sotto il container della LiveMacroCell in
 	# cui l'individuo si trova fisicamente (member.home_macro_coords, valorizzato sopra) — bugfix
@@ -1240,6 +1249,7 @@ func _process(delta: float) -> void:
 	sim.tick_frame(delta, game_delta, clock != null and clock.is_playing, individual, frame_effects)
 	_apply_effects(frame_effects)
 	_sync_visitor_party_views()
+	_sync_wild_animal_visit_views()
 	if _active_map_layer_id != MapLayerRegistry.NONE_ID or _map_layer_overlay != null:
 		_sync_map_layer_overlay()
 	_sync_command_bar()
@@ -1429,7 +1439,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Animale (2026-09-25, richiesta utente) — stessa unità (PIXEL locali della cella) e stesso
 	# confronto alla pari di vegetazione/edifici/pietre; solo animali visibili (vedi
 	# AnimalSelectorController), con tolleranza ampia come per gli umani.
-	var animal_hit := animal_selector_controller.try_select(event, live_cells)
+	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_LEFT, _wild_animal_visit_views)
 	_select_timing_mark("ricerca animali")
 	# stick_lot_hit (click SINISTRO) RIMOSSO (2026-09-16, richiesta utente — "va tolto il click
 	# singolo sulla cella"): calcolava il lotto sotto il click SOLO per il ciclo click-ripetuto e il
@@ -2759,12 +2769,12 @@ func _center_camera_on_selection(animated: bool = true) -> void:
 		SelectionKind.ANIMAL:
 			# Stessa traduzione cross-macrocella dei rami sopra (2026-09-25): posizione corrente
 			# dell'individuo (si muove, quindi letta al momento del centramento).
-			var animal := _find_selected_animal()
-			if animal == null:
+			var animal_position: Variant = _selected_animal_position()
+			if animal_position == null:
 				return
 			var animal_macro_coords: Vector2i = selected_animal["macro_coords"]
 			var animal_macro_offset := Vector2(animal_macro_coords - center_macro_coords) * MACRO_CELL_PIXELS
-			_animate_camera_to(animal.position * MicroCellRenderer.CELL_SIZE + animal_macro_offset, animated)
+			_animate_camera_to(Vector2(animal_position) * MicroCellRenderer.CELL_SIZE + animal_macro_offset, animated)
 		SelectionKind.STICK_LOT:
 			# Nessun get_*_screen_position dedicato (2026-09-08, richiesta utente): il bersaglio è il
 			# CENTRO del lotto stesso, non un oggetto puntiforme — stessa conversione lotto*CELL_SIZE
@@ -3473,9 +3483,18 @@ func _select_animal(hit: Dictionary) -> void:
 		var cell: LiveMacroCell = live_cells[coords]
 		for renderer_node in cell.animal_renderers.values():
 			renderer_node.clear_selected_individual()
-	var hit_cell: LiveMacroCell = live_cells.get(hit["macro_coords"])
-	if hit_cell != null and hit_cell.animal_renderers.has(hit["species"]):
-		hit_cell.animal_renderers[hit["species"]].set_selected_individual(int(hit["individual_id"]))
+	for view in _wild_animal_visit_views.values():
+		if is_instance_valid(view):
+			view.clear_selected_animal()
+	if hit.has("wild_group_id"):
+		# Animale selvatico seguito per individuo, in visita (2026-10-28, lupi L1b): l'anello lo disegna la sua vista.
+		var visit_view = _wild_animal_visit_views.get(int(hit["wild_group_id"]))
+		if is_instance_valid(visit_view):
+			visit_view.set_selected_animal(int(hit["individual_id"]))
+	else:
+		var hit_cell: LiveMacroCell = live_cells.get(hit["macro_coords"])
+		if hit_cell != null and hit_cell.animal_renderers.has(hit["species"]):
+			hit_cell.animal_renderers[hit["species"]].set_selected_individual(int(hit["individual_id"]))
 
 	_deselect_all_human_individuals()
 	human_individual_info_panel.clear()
@@ -3497,9 +3516,14 @@ func _select_animal(hit: Dictionary) -> void:
 func _clear_animal_selection() -> void:
 	if selected_animal.is_empty():
 		return
-	var cell: LiveMacroCell = live_cells.get(selected_animal["macro_coords"])
-	if cell != null and cell.animal_renderers.has(selected_animal["species"]):
-		cell.animal_renderers[selected_animal["species"]].clear_selected_individual()
+	if selected_animal.has("wild_group_id"):
+		var visit_view = _wild_animal_visit_views.get(int(selected_animal["wild_group_id"]))
+		if is_instance_valid(visit_view):
+			visit_view.clear_selected_animal()
+	else:
+		var cell: LiveMacroCell = live_cells.get(selected_animal["macro_coords"])
+		if cell != null and cell.animal_renderers.has(selected_animal["species"]):
+			cell.animal_renderers[selected_animal["species"]].clear_selected_individual()
 	selected_animal = {}
 	_selection_kind = SelectionKind.NONE
 	animal_info_panel.clear()
@@ -3509,7 +3533,7 @@ func _clear_animal_selection() -> void:
 # L'individuo selezionato, ritrovato per id nel renderer della sua specie — null se non esiste più
 # (rimosso dalla riconciliazione con la popolazione, o cella non più viva).
 func _find_selected_animal() -> AnimalVisualGroup:
-	if selected_animal.is_empty():
+	if selected_animal.is_empty() or selected_animal.has("wild_group_id"):
 		return null
 	var cell: LiveMacroCell = live_cells.get(selected_animal["macro_coords"])
 	if cell == null or not cell.animal_renderers.has(selected_animal["species"]):
@@ -3521,6 +3545,9 @@ func _find_selected_animal() -> AnimalVisualGroup:
 # riconciliazione per età ne toglie e ne aggiunge). Se l'individuo non esiste più la selezione si
 # chiude — vedi anche _validate_selected_animal, chiamata dal timer di debug in _process.
 func _refresh_animal_panel() -> void:
+	if selected_animal.has("wild_group_id"):
+		_refresh_wild_animal_panel()
+		return
 	var individual := _find_selected_animal()
 	if individual == null:
 		_clear_animal_selection()
@@ -3535,8 +3562,66 @@ func _refresh_animal_panel() -> void:
 # rimosso dalla riconciliazione con la popolazione) — altrimenti pannello e anello resterebbero
 # appesi a un animale che non c'è più.
 func _validate_selected_animal() -> void:
-	if not selected_animal.is_empty() and _find_selected_animal() == null:
+	if selected_animal.is_empty():
+		return
+	if selected_animal.has("wild_group_id"):
+		if _find_selected_wild_animal() == null:
+			_clear_animal_selection()
+		return
+	if _find_selected_animal() == null:
 		_clear_animal_selection()
+
+
+# --- Animali selvatici seguiti per individuo (2026-10-28, lupi passo L1b) ---
+# Selezione con "wild_group_id": l'animale è un WildAnimal del gruppo, selezionabile finché è in una visita in corso.
+
+# Il WildAnimal selezionato, null se il gruppo non c'è più o l'animale non è (più) in visita.
+func _find_selected_wild_animal() -> WildAnimal:
+	if game_data == null or not selected_animal.has("wild_group_id"):
+		return null
+	var group_id := int(selected_animal["wild_group_id"])
+	var animal_id := int(selected_animal["individual_id"])
+	var visit := WildAnimalVisitService.find_visit(game_data, group_id)
+	if visit == null or not visit.animal_ids.has(animal_id):
+		return null
+	for group in game_data.wild_animal_groups:
+		if group.id == group_id:
+			return group.find_animal(animal_id)
+	return null
+
+
+# Posizione corrente (microcelle) dell'animale selezionato, di qualunque sorgente; null se non c'è.
+func _selected_animal_position() -> Variant:
+	if selected_animal.has("wild_group_id"):
+		var visit := WildAnimalVisitService.find_visit(game_data, int(selected_animal["wild_group_id"]))
+		var index := visit.animal_ids.find(int(selected_animal["individual_id"])) if visit != null else -1
+		return WildAnimalVisitService.get_animal_position(visit, index) if index >= 0 else null
+	var animal := _find_selected_animal()
+	return animal.position if animal != null else null
+
+
+func _refresh_wild_animal_panel() -> void:
+	var animal := _find_selected_wild_animal()
+	if animal == null:
+		_clear_animal_selection()
+		return
+	var group_id := int(selected_animal["wild_group_id"])
+	var group: WildAnimalGroup = null
+	for candidate in game_data.wild_animal_groups:
+		if candidate.id == group_id:
+			group = candidate
+	var group_rules := WildAnimalGroupService.get_rules(group.species)
+	var wild_species := group_rules.wild_species_name if group_rules != null else group.species
+	var today := game_data.get_absolute_day()
+	var band := animal.get_age_band(today, AnimalCalculator.get_animal_rules(wild_species))
+	animal_info_panel.show_animal(
+		tr("animal_species_" + wild_species), tr("animal_age_band_" + String(GameTypes.AgeBand.keys()[band]).to_lower())
+	)
+	animal_info_panel.show_wild_details(
+		animal.is_male, animal.get_age_years(today),
+		animal.id == group.breeding_male_id or animal.id == group.breeding_female_id, animal.aggression
+	)
+	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("animal_selection_title")}))
 
 
 # Raccolta su una microcella (2026-10-24, 5B.6 — TransportCommandService.assign_pickup). quantity_requested -1 = nessun
@@ -6896,6 +6981,54 @@ func _sync_visitor_party_views() -> void:
 		_visitor_party_views.erase(party_id)
 
 
+# Visite degli animali selvatici (2026-10-28, lupi passo L1): una WildAnimalVisitView per visita, stesso schema di
+# _sync_visitor_party_views. Chiave: id del gruppo (un gruppo ha al massimo una visita in corso).
+func _sync_wild_animal_visit_views() -> void:
+	var alive: Dictionary = {}
+	if game_data != null:
+		for visit in game_data.wild_animal_visits:
+			var cell: LiveMacroCell = live_cells.get(visit.macro_coords)
+			if cell == null:
+				continue
+			alive[visit.group_id] = true
+			var view = _wild_animal_visit_views.get(visit.group_id)
+			if view != null and (not is_instance_valid(view) or view.get_parent() != cell.container or view.visit != visit):
+				if is_instance_valid(view):
+					view.queue_free()
+				view = null
+			if view == null:
+				view = WildAnimalVisitView.new()
+				# Nebbia (2026-10-28, L1b): stesso test del renderer della fauna.
+				if cell.fog_of_war_renderer != null:
+					view.visibility_test = cell.fog_of_war_renderer.is_animal_visible_at
+				cell.container.add_child(view)
+				# Allo stesso livello della fauna (2026-10-30, richiesta utente: sopra alberi ed edifici sembravano volare):
+				# subito dopo l'ultimo renderer degli animali della cella, non in cima al container.
+				var after_index := -1
+				for renderer in cell.animal_renderers.values():
+					if is_instance_valid(renderer) and renderer.get_parent() == cell.container:
+						after_index = maxi(after_index, renderer.get_index())
+				if after_index >= 0:
+					cell.container.move_child(view, after_index + 1)
+				view.setup(visit, game_data)
+				if selected_animal.get("wild_group_id", -1) == visit.group_id:
+					view.set_selected_animal(int(selected_animal["individual_id"]))
+				_wild_animal_visit_views[visit.group_id] = view
+			# Ululato all'arrivo alla meta (2026-10-29, richiesta utente), non all'ingresso dal bordo.
+			if not visit.arrival_announced and visit.phase == WildAnimalVisit.Phase.STAYING:
+				visit.arrival_announced = true
+				var group_rules := WildAnimalGroupService.get_rules(visit.species)
+				wild_animal_arrived.emit(cell.container.to_global(visit.position * MicroCellRenderer.CELL_SIZE),
+					group_rules.wild_species_name if group_rules != null else visit.species)
+	for group_id in _wild_animal_visit_views.keys():
+		if alive.has(group_id):
+			continue
+		var stale = _wild_animal_visit_views[group_id]
+		if is_instance_valid(stale):
+			stale.queue_free()
+		_wild_animal_visit_views.erase(group_id)
+
+
 # --- Layer della mappa (2026-09-27, richiesta utente — menu "Layer") ---
 # Menu a tendina sotto il bottone "Layer" (MapLayersMenu: un PanelContainer nel CanvasLayer dell'interfaccia, accanto
 # al pannello laterale — non più un PopupMenu, che come finestra separata usava tema e misure di default ed era enorme
@@ -9978,6 +10111,10 @@ func _compute_housing_capacity() -> int:
 # sicurezza periodica — STESSO schema di _refresh_population_panel, riusato per coerenza invece di
 # inventare un meccanismo diverso.
 func _refresh_buildings_panel() -> void:
+	# Solo a scheda aperta (2026-10-28, scatti: ~27 ms per rifare tutte le righe a ogni maceria o edificio nuovo); aprendo
+	# la scheda si ricostruisce (_on_game_info_tab_changed), come la lista della popolazione.
+	if game_info_tabs.current_tab != GameInfoTabs.TAB_BUILDINGS:
+		return
 	# Esclusi gli edifici di categoria MOVEMENT (2026-09-24, richiesta utente — es. terra battuta):
 	# sono superfici posate a tappeto, spesso a decine, e affollavano l'elenco senza informazione utile.
 	var buildings: Array[Building] = []
@@ -10000,6 +10137,8 @@ func _on_game_info_tab_changed(tab: int) -> void:
 	# Lista della popolazione (2026-10-09): non si aggiorna a scheda nascosta, quindi tornandoci si ricostruisce.
 	elif tab == GameInfoTabs.TAB_POPULATION:
 		_refresh_population_panel()
+	elif tab == GameInfoTabs.TAB_BUILDINGS:
+		_refresh_buildings_panel()
 
 
 # Ripopola la scheda selezione SOLO se un individuo è davvero selezionato ora (_selection_kind ==
@@ -11456,17 +11595,21 @@ func _refresh_debug_summaries() -> void:
 	_refresh_debug_domestication()
 
 
-# DEBUG — punti addomesticazione del cane sul pulsante della DebugBar (2026-10-26, passo 1).
+# DEBUG — branco di lupi sul pulsante 🐺 della DebugBar, con i punti del cane in cima al tooltip (dal 2026-10-30, lupi
+# L3, i punti arrivano solo dalle visite: tolto il pulsante 🐕+100).
 func _refresh_debug_domestication() -> void:
 	var rules := DomesticAnimalCalculator.get_rules("dog")
 	if game_data == null or rules == null:
 		return
-	debug_bar.set_domestication_progress(DomesticationPointsService.get_points(game_data, "dog"), rules.domestication_points_required)
 	var wolves := WildAnimalGroupService.find_group(game_data, "wolf")
-	debug_bar.set_wolf_pack(
-		wolves.animals.size() if wolves != null else -1,
-		WildAnimalGroupService.debug_lines(game_data, wolves) if wolves != null else PackedStringArray()
-	)
+	var wolf_lines := WildAnimalGroupService.debug_lines(game_data, wolves) if wolves != null else PackedStringArray()
+	if wolves != null:
+		wolf_lines.insert(0, "Punti cane: %d/%d (resto %.1f)" % [DomesticationPointsService.get_points(game_data, "dog"),
+			rules.domestication_points_required, wolves.pending_domestication_points])
+	var wolf_visit := WildAnimalVisitService.find_visit(game_data, wolves.id) if wolves != null else null
+	if wolf_visit != null:
+		wolf_lines.append(WildAnimalVisitService.debug_line(wolf_visit))
+	debug_bar.set_wolf_pack(wolves.animals.size() if wolves != null else -1, wolf_lines)
 
 
 # Barra riaperta: riepiloghi aggiornati subito invece di mostrare quelli di quando era stata chiusa.
@@ -12887,7 +13030,8 @@ func _setup_animal_renderer(cell: LiveMacroCell, r: AnimalGroupRenderer) -> void
 func _remove_animal_renderer(cell: LiveMacroCell, species: String) -> void:
 	if not cell.animal_renderers.has(species):
 		return
-	if not selected_animal.is_empty() and selected_animal["macro_coords"] == cell.coords() and selected_animal["species"] == species:
+	if not selected_animal.is_empty() and not selected_animal.has("wild_group_id") \
+			and selected_animal["macro_coords"] == cell.coords() and selected_animal["species"] == species:
 		_clear_animal_selection()
 	var r: AnimalGroupRenderer = cell.animal_renderers[species]
 	cell.animal_renderers.erase(species)
@@ -12916,11 +13060,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": rabbit_rules.hop_pause_min if rabbit_rules != null else 0.0125,
 		"hop_pause_max": rabbit_rules.hop_pause_max if rabbit_rules != null else 0.0375,
 		"size_multiplier_by_age": rabbit_rules.size_multiplier_by_age if rabbit_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_rabbit_mesh(
-			AnimalGroupRenderer.RABBIT_BODY_LENGTH, AnimalGroupRenderer.RABBIT_BODY_WIDTH,
-			AnimalGroupRenderer.RABBIT_EAR_LENGTH, AnimalGroupRenderer.RABBIT_EAR_WIDTH,
-			AnimalGroupRenderer.RABBIT_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("rabbit"),
 	}
 
 	var deer_rules := AnimalCalculator.get_animal_rules("deer")
@@ -12941,11 +13081,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": deer_rules.hop_pause_min if deer_rules != null else 0.0125,
 		"hop_pause_max": deer_rules.hop_pause_max if deer_rules != null else 0.0375,
 		"size_multiplier_by_age": deer_rules.size_multiplier_by_age if deer_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_deer_mesh(
-			AnimalGroupRenderer.DEER_BODY_LENGTH, AnimalGroupRenderer.DEER_BODY_WIDTH,
-			AnimalGroupRenderer.DEER_EAR_LENGTH, AnimalGroupRenderer.DEER_EAR_WIDTH,
-			AnimalGroupRenderer.DEER_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("deer"),
 	}
 
 	var boar_rules := AnimalCalculator.get_animal_rules("boar")
@@ -12966,11 +13102,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": boar_rules.hop_pause_min if boar_rules != null else 0.0125,
 		"hop_pause_max": boar_rules.hop_pause_max if boar_rules != null else 0.0375,
 		"size_multiplier_by_age": boar_rules.size_multiplier_by_age if boar_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_boar_mesh(
-			AnimalGroupRenderer.BOAR_BODY_LENGTH, AnimalGroupRenderer.BOAR_BODY_WIDTH,
-			AnimalGroupRenderer.BOAR_EAR_LENGTH, AnimalGroupRenderer.BOAR_EAR_WIDTH,
-			AnimalGroupRenderer.BOAR_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("boar"),
 	}
 
 	var tarpan_rules := AnimalCalculator.get_animal_rules("tarpan")
@@ -12991,11 +13123,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": tarpan_rules.hop_pause_min if tarpan_rules != null else 0.0125,
 		"hop_pause_max": tarpan_rules.hop_pause_max if tarpan_rules != null else 0.0375,
 		"size_multiplier_by_age": tarpan_rules.size_multiplier_by_age if tarpan_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_tarpan_mesh(
-			AnimalGroupRenderer.TARPAN_BODY_LENGTH, AnimalGroupRenderer.TARPAN_BODY_WIDTH,
-			AnimalGroupRenderer.TARPAN_EAR_LENGTH, AnimalGroupRenderer.TARPAN_EAR_WIDTH,
-			AnimalGroupRenderer.TARPAN_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("tarpan"),
 	}
 
 	var aurochs_rules := AnimalCalculator.get_animal_rules("aurochs")
@@ -13016,11 +13144,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": aurochs_rules.hop_pause_min if aurochs_rules != null else 0.0125,
 		"hop_pause_max": aurochs_rules.hop_pause_max if aurochs_rules != null else 0.0375,
 		"size_multiplier_by_age": aurochs_rules.size_multiplier_by_age if aurochs_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_aurochs_mesh(
-			AnimalGroupRenderer.AUROCHS_BODY_LENGTH, AnimalGroupRenderer.AUROCHS_BODY_WIDTH,
-			AnimalGroupRenderer.AUROCHS_EAR_LENGTH, AnimalGroupRenderer.AUROCHS_EAR_WIDTH,
-			AnimalGroupRenderer.AUROCHS_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("aurochs"),
 	}
 
 	var wild_donkey_rules := AnimalCalculator.get_animal_rules("wild_donkey")
@@ -13041,11 +13165,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": wild_donkey_rules.hop_pause_min if wild_donkey_rules != null else 0.0125,
 		"hop_pause_max": wild_donkey_rules.hop_pause_max if wild_donkey_rules != null else 0.0375,
 		"size_multiplier_by_age": wild_donkey_rules.size_multiplier_by_age if wild_donkey_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_wild_donkey_mesh(
-			AnimalGroupRenderer.WILD_DONKEY_BODY_LENGTH, AnimalGroupRenderer.WILD_DONKEY_BODY_WIDTH,
-			AnimalGroupRenderer.WILD_DONKEY_EAR_LENGTH, AnimalGroupRenderer.WILD_DONKEY_EAR_WIDTH,
-			AnimalGroupRenderer.WILD_DONKEY_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("wild_donkey"),
 	}
 
 	var mouflon_rules := AnimalCalculator.get_animal_rules("mouflon")
@@ -13066,11 +13186,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": mouflon_rules.hop_pause_min if mouflon_rules != null else 0.0125,
 		"hop_pause_max": mouflon_rules.hop_pause_max if mouflon_rules != null else 0.0375,
 		"size_multiplier_by_age": mouflon_rules.size_multiplier_by_age if mouflon_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_mouflon_mesh(
-			AnimalGroupRenderer.MOUFLON_BODY_LENGTH, AnimalGroupRenderer.MOUFLON_BODY_WIDTH,
-			AnimalGroupRenderer.MOUFLON_EAR_LENGTH, AnimalGroupRenderer.MOUFLON_EAR_WIDTH,
-			AnimalGroupRenderer.MOUFLON_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("mouflon"),
 	}
 
 	var bezoar_rules := AnimalCalculator.get_animal_rules("bezoar")
@@ -13091,11 +13207,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": bezoar_rules.hop_pause_min if bezoar_rules != null else 0.0125,
 		"hop_pause_max": bezoar_rules.hop_pause_max if bezoar_rules != null else 0.0375,
 		"size_multiplier_by_age": bezoar_rules.size_multiplier_by_age if bezoar_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_bezoar_mesh(
-			AnimalGroupRenderer.BEZOAR_BODY_LENGTH, AnimalGroupRenderer.BEZOAR_BODY_WIDTH,
-			AnimalGroupRenderer.BEZOAR_EAR_LENGTH, AnimalGroupRenderer.BEZOAR_EAR_WIDTH,
-			AnimalGroupRenderer.BEZOAR_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("bezoar"),
 	}
 
 	var partridge_rules := AnimalCalculator.get_animal_rules("partridge")
@@ -13116,11 +13228,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": partridge_rules.hop_pause_min if partridge_rules != null else 0.0125,
 		"hop_pause_max": partridge_rules.hop_pause_max if partridge_rules != null else 0.0375,
 		"size_multiplier_by_age": partridge_rules.size_multiplier_by_age if partridge_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_partridge_mesh(
-			AnimalGroupRenderer.PARTRIDGE_BODY_LENGTH, AnimalGroupRenderer.PARTRIDGE_BODY_WIDTH,
-			AnimalGroupRenderer.PARTRIDGE_EAR_LENGTH, AnimalGroupRenderer.PARTRIDGE_EAR_WIDTH,
-			AnimalGroupRenderer.PARTRIDGE_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("partridge"),
 	}
 
 	var wolf_rules := AnimalCalculator.get_animal_rules("wolf")
@@ -13141,11 +13249,7 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"hop_pause_min": wolf_rules.hop_pause_min if wolf_rules != null else 0.0125,
 		"hop_pause_max": wolf_rules.hop_pause_max if wolf_rules != null else 0.0375,
 		"size_multiplier_by_age": wolf_rules.size_multiplier_by_age if wolf_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_wolf_mesh(
-			AnimalGroupRenderer.WOLF_BODY_LENGTH, AnimalGroupRenderer.WOLF_BODY_WIDTH,
-			AnimalGroupRenderer.WOLF_EAR_LENGTH, AnimalGroupRenderer.WOLF_EAR_WIDTH,
-			AnimalGroupRenderer.WOLF_COLOR
-		),
+		"mesh": AnimalGroupRenderer.build_species_mesh("wolf"),
 	}
 
 	return configs
@@ -13273,11 +13377,13 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 		# Malato (2026-10-24, richiesta utente): fa ammalare o guarire l'individuo selezionato.
 		&"toggle_sick":
 			_debug_toggle_sick()
-		# Addomesticazione (2026-10-26, passo 1): +100 punti al cane.
-		&"domestication_add_wolf":
-			var domestication_effects := GameEffects.new()
-			DomesticationPointsService.add_points(game_data, human_folk, "dog", 100, domestication_effects)
-			_apply_effects(domestication_effects)
+		# Lupi passo L1 (2026-10-28): visita del branco a comando.
+		&"wolf_visit":
+			var wolf_group := WildAnimalGroupService.find_group(game_data, "wolf")
+			if wolf_group == null:
+				print("[WILD ANIMAL VISITS] nessun branco di lupi (serve un magazzino)")
+			else:
+				WildAnimalVisitService.start_visit(game_data, macro_world, wolf_group)
 			_refresh_debug_domestication()
 
 
@@ -15551,7 +15657,7 @@ func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, pre
 	if cell != null and cell.animal_renderers.has(prey_species):
 		cell.animal_renderers[prey_species].remove_individual(prey_id)
 	HuntService.apply_prey_kill(macro_world, prey_species, prey_age_band, prey_macro_coords)
-	if not selected_animal.is_empty() and int(selected_animal["individual_id"]) == prey_id:
+	if not selected_animal.is_empty() and not selected_animal.has("wild_group_id") and int(selected_animal["individual_id"]) == prey_id:
 		_clear_animal_selection()
 
 
@@ -16105,6 +16211,8 @@ func _apply_effects(effects: GameEffects) -> void:
 				_connect_material_supply_step_appended(wire_task, entry["owner"])
 			GameEffects.WireKind.STEP_SIGNALS:
 				_ensure_step_signals(wire_task)
+	# Misura temporanea (2026-10-28, scatto della pulizia del cantiere): no-op fuori da un'azione lenta.
+	HumanIndividualActionService.timing_step("effetti: mosse e lavori collegati")
 	for completed_building in effects.buildings_completed:
 		_on_building_construction_completed(completed_building)
 	# Prima addomesticazione di una specie (2026-10-26): scoperta, ed eventuale idea regalata, nel popup.
@@ -16116,13 +16224,16 @@ func _apply_effects(effects: GameEffects) -> void:
 		var icon_cell: LiveMacroCell = live_cells.get(entry["macro"])
 		if icon_cell != null:
 			_spawn_command_icon(icon_cell, entry["point"], String(entry["key"]))
+	HumanIndividualActionService.timing_step("effetti: completamenti e icone")
 	for macro_coords in effects.cells_to_refresh.keys():
 		if live_cells.has(macro_coords):
 			_refresh_building_visuals(live_cells[macro_coords])
+	HumanIndividualActionService.timing_step("effetti: edifici della cella")
 	for building in effects.neighbor_refresh_buildings.values():
 		_refresh_dirt_ground_neighbor_cells(building)
 	for building in effects.marker_buildings.values():
 		_refresh_building_marker(building)
+	HumanIndividualActionService.timing_step("effetti: vicini e segni")
 	for macro_coords in effects.vegetation_cells.keys():
 		if live_cells.has(macro_coords):
 			var vegetation_cell: LiveMacroCell = live_cells[macro_coords]
@@ -16134,6 +16245,7 @@ func _apply_effects(effects: GameEffects) -> void:
 			if not _refresh_rubble_visuals(rubble_cell, effects.rubble_lots[macro_coords]):
 				rubble_cell.needs_full_vegetation_recompute = true
 				_refresh_resource_visuals(rubble_cell, "edificio")
+	HumanIndividualActionService.timing_step("effetti: vegetazione e macerie")
 	for building in effects.site_placeholder_buildings.values():
 		_spawn_build_site_placeholders(building)
 	if not selected_building.is_empty() and effects.removed_building_ids.has(int(selected_building.get("building_id", -1))):
@@ -16155,6 +16267,7 @@ func _apply_effects(effects: GameEffects) -> void:
 			GameEffects.PanelKind.DEAD_BODY:
 				if selected_dead_body_individual_id != -1:
 					_refresh_dead_body_panel()
+		HumanIndividualActionService.timing_step("effetti: pannello %s" % str(GameEffects.PanelKind.find_key(panel)))
 	if UserOptions.show_notification_popups:
 		for entry in effects.notifications:
 			notification_popup.enqueue(entry["type"], entry["text"], entry["requires_ack"])
@@ -16163,6 +16276,7 @@ func _apply_effects(effects: GameEffects) -> void:
 	if effects.pending_refresh:
 		_job_board_round.cancel()
 		_start_job_board_round()
+	HumanIndividualActionService.timing_step("effetti: avvisi e In sospeso")
 
 
 # Riconcilia i rametti del cantiere di questa cella con lo STATO degli edifici (2026-09-19,

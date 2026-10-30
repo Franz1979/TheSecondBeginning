@@ -952,6 +952,7 @@ func get_assign_rejection_reason(task: Task, age_band: HumanTypes.AgeBand) -> St
 			HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_REST,
 			HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_RESTOCK,
 			HumanIndividualActionService.INTERRUPT_PRIORITY_REST,
+			HumanIndividualActionService.INTERRUPT_PRIORITY_FLEE,
 		].has(task.interrupt_priority):
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 				print("[TASK GUARD] Individuo #%d %s: stamina %.1f/%.1f sotto la soglia Emergency Rest — solo Task-bisogno (Rest/Emergency Rest, Emergency Restock) ammesse, '%s' rifiutata." % [
@@ -963,6 +964,7 @@ func get_assign_rejection_reason(task: Task, age_band: HumanTypes.AgeBand) -> St
 		HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_REST,
 		HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_RESTOCK,
 		HumanIndividualActionService.INTERRUPT_PRIORITY_REST,
+		HumanIndividualActionService.INTERRUPT_PRIORITY_FLEE,
 	].has(task.interrupt_priority) and not SICK_ALLOWED_TASK_NAMES.has(task.task_name):
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[TASK GUARD] Individuo #%d %s: malato (salute %.1f) — solo Task-bisogno ammesse, '%s' rifiutata." % [

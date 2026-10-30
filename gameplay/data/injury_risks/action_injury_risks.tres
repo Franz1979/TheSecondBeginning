@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1_air")
+min_adults_for_injuries = 4
 risks_by_action_key = {
 "hunt_throw": {
 "activity": "injury_activity_hunting",

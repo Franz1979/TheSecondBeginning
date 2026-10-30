@@ -32,6 +32,8 @@ const EVENTS: Dictionary = {
 	# Veglia delle stelle (2026-10-29): coro all'inizio, richiamo della guida alla chiamata (StarVigilService).
 	&"social_rite_started:star_vigil": &"chorus_for_stars_fest",
 	&"star_vigil_call": &"call_for_stars_fest",
+	# Arrivo di un gruppo di animali selvatici in visita (2026-10-28, lupi L1): evento "wild_animal_arrived:<specie>".
+	&"wild_animal_arrived:wolf": &"wolf_howl",
 	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per
 	# usi futuri): quello di una ricetta con RiteRules.completion_sound_id vuoto.
 	&"rite_completed": &"rite_paleolithic",

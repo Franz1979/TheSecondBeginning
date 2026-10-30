@@ -1370,36 +1370,14 @@ func _record_process_timing(usec: int) -> void:
 # (angolo) resta fermo per questo frame. La direzione non viene mai invertita dall'ostacolo (prima rimbalzava,
 # rimandando gli animali verso l'insediamento e annullando il disagio). Chi è già su una microcella bloccata
 # (seminato su una roccia, edificio costruito sopra) può uscirne liberamente: conta solo l'ingresso. Senza
-# blocked_test, o fuori dalla macrocella: come prima.
+# blocked_test, o fuori dalla macrocella: come prima. La regola è PathfindingService.move_with_collision (2026-10-28),
+# condivisa con gli animali in visita.
 func _move_with_collision(group: AnimalVisualGroup, displacement: Vector2) -> void:
-	var next_position: Vector2 = group.position + displacement
-	if blocked_test.is_valid():
-		var from_cell := Vector2i(group.position.floor())
-		if not _can_enter(from_cell, next_position):
-			var x_only: Vector2 = group.position + Vector2(displacement.x, 0.0)
-			var y_only: Vector2 = group.position + Vector2(0.0, displacement.y)
-			if displacement.x != 0.0 and _can_enter(from_cell, x_only):
-				next_position = x_only
-			elif displacement.y != 0.0 and _can_enter(from_cell, y_only):
-				next_position = y_only
-			else:
-				return
+	var next_position := PathfindingService.move_with_collision(blocked_test, group.position, displacement)
+	if next_position == group.position:
+		return
 	group.position = next_position
 	_bounce_at_bounds(group)
-
-
-# true se da `from_cell` si può arrivare in `target_position`: stessa microcella, oppure una microcella non bloccata.
-func _can_enter(from_cell: Vector2i, target_position: Vector2) -> bool:
-	var to_cell := Vector2i(target_position.floor())
-	return to_cell == from_cell or not _is_cell_blocked(to_cell)
-
-
-# true se `microcell` (dentro la macrocella) è bloccata secondo blocked_test; fuori dalla macrocella decide
-# _bounce_at_bounds, non la griglia.
-func _is_cell_blocked(microcell: Vector2i) -> bool:
-	if microcell.x < 0 or microcell.y < 0 or microcell.x >= World.WIDTH or microcell.y >= World.HEIGHT:
-		return false
-	return bool(blocked_test.call(microcell))
 
 
 func _bounce_at_bounds(group: AnimalVisualGroup) -> void:
@@ -1459,6 +1437,34 @@ func _is_visible_now(position: Vector2) -> bool:
 # (get_rabbit_silhouette_geometry sotto) sono condivisi con AnimalSilhouetteIcon (icona del
 # filtro Fauna in WorldInfoPanel) — un solo posto definisce "che forma ha un coniglio", non
 # due copie della stessa formula che potrebbero disallinearsi in futuro.
+# Sagoma di una specie con le sue proporzioni e il suo colore (2026-10-28, richiesta utente): unico punto che sceglie
+# la mesh per specie, usato dalla configurazione dei renderer della fauna (GameScene) e dalle visite degli animali seguiti
+# per individuo (WildAnimalVisitView). null per una specie senza sagoma.
+static func build_species_mesh(species: String) -> ArrayMesh:
+	match species:
+		"rabbit":
+			return build_rabbit_mesh(RABBIT_BODY_LENGTH, RABBIT_BODY_WIDTH, RABBIT_EAR_LENGTH, RABBIT_EAR_WIDTH, RABBIT_COLOR)
+		"deer":
+			return build_deer_mesh(DEER_BODY_LENGTH, DEER_BODY_WIDTH, DEER_EAR_LENGTH, DEER_EAR_WIDTH, DEER_COLOR)
+		"boar":
+			return build_boar_mesh(BOAR_BODY_LENGTH, BOAR_BODY_WIDTH, BOAR_EAR_LENGTH, BOAR_EAR_WIDTH, BOAR_COLOR)
+		"tarpan":
+			return build_tarpan_mesh(TARPAN_BODY_LENGTH, TARPAN_BODY_WIDTH, TARPAN_EAR_LENGTH, TARPAN_EAR_WIDTH, TARPAN_COLOR)
+		"wild_donkey":
+			return build_wild_donkey_mesh(WILD_DONKEY_BODY_LENGTH, WILD_DONKEY_BODY_WIDTH, WILD_DONKEY_EAR_LENGTH, WILD_DONKEY_EAR_WIDTH, WILD_DONKEY_COLOR)
+		"aurochs":
+			return build_aurochs_mesh(AUROCHS_BODY_LENGTH, AUROCHS_BODY_WIDTH, AUROCHS_EAR_LENGTH, AUROCHS_EAR_WIDTH, AUROCHS_COLOR)
+		"mouflon":
+			return build_mouflon_mesh(MOUFLON_BODY_LENGTH, MOUFLON_BODY_WIDTH, MOUFLON_EAR_LENGTH, MOUFLON_EAR_WIDTH, MOUFLON_COLOR)
+		"bezoar":
+			return build_bezoar_mesh(BEZOAR_BODY_LENGTH, BEZOAR_BODY_WIDTH, BEZOAR_EAR_LENGTH, BEZOAR_EAR_WIDTH, BEZOAR_COLOR)
+		"wolf":
+			return build_wolf_mesh(WOLF_BODY_LENGTH, WOLF_BODY_WIDTH, WOLF_EAR_LENGTH, WOLF_EAR_WIDTH, WOLF_COLOR)
+		"partridge":
+			return build_partridge_mesh(PARTRIDGE_BODY_LENGTH, PARTRIDGE_BODY_WIDTH, PARTRIDGE_EAR_LENGTH, PARTRIDGE_EAR_WIDTH, PARTRIDGE_COLOR)
+	return null
+
+
 static func build_rabbit_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:
@@ -1750,7 +1756,8 @@ const RABBIT_FIELD_BODY_LENGTH_PX: float = 2.0
 const BEZOAR_FIELD_BODY_LENGTH_PX: float = 3.5
 const MOUFLON_FIELD_BODY_LENGTH_PX: float = 3.5
 const BOAR_FIELD_BODY_LENGTH_PX: float = 4.5
-const WOLF_FIELD_BODY_LENGTH_PX: float = 4.5
+# Lupo 4.5 -> 3.0 (2026-10-30, richiesta utente: troppo grande accanto agli umani).
+const WOLF_FIELD_BODY_LENGTH_PX: float = 3.0
 const DEER_FIELD_BODY_LENGTH_PX: float = 5.0
 const WILD_DONKEY_FIELD_BODY_LENGTH_PX: float = 6.0
 const TARPAN_FIELD_BODY_LENGTH_PX: float = 6.0

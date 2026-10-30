@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="DangerProfile" format=3]
+
+[ext_resource type="Script" path="res://gameplay/dangers/scripts/DangerProfile.gd" id="1_danger"]
+
+[resource]
+script = ExtResource("1_danger")
+danger_name = "danger_predator"
+flee_to_own_house = true
+flee_to_safe_points = true
+safe_point_stop_distance = 1.5
+run_away_when_no_shelter = true
+run_away_distance = 8.0
+max_wait_days = 1.0

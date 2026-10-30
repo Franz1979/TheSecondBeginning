@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_wait_safety"]
+
+[resource]
+script = ExtResource("1_wait_safety")
+action_type = 36
+context_keys = Array[String](["flee_max_wait_days"])
+step_description = "task_flee_step_wait"

@@ -379,7 +379,7 @@ const SHOW_PATHFINDING_LOGS := false
 # tempo medio per frame speso nel _process di TUTTI gli AnimalGroupRenderer, e di cui nel controllo
 # periodico di disagio (AnimalGroupRenderer._run_disturbance_check), con numero di renderer e individui.
 # Solo misura, nessun effetto sul comportamento.
-const SHOW_ANIMAL_PROCESS_TIMING := false
+const SHOW_ANIMAL_PROCESS_TIMING := true
 
 
 # SAFETY — [ZOMBIE GUARD] (TaskQueueService/HumanIndividualActionService/HumanIndividual),
@@ -431,12 +431,12 @@ const SHOW_JOB_BOARD_LOGS := false
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per
 # voce) e un riepilogo al secondo (chiamanti, liste rifatte, picco del fotogramma). Acceso per la misura; solo log.
-const SHOW_JOB_BOARD_TIMING_LOGS := true
+const SHOW_JOB_BOARD_TIMING_LOGS := false
 
 # Fotogrammi lenti del giro per fotogramma (2026-10-28, scatto da 900 ms dentro GameSimulation): [SIM FRAME] quando
 # GameSimulation.tick_frame supera SIM_FRAME_SLOW_MSEC, con il tempo di ogni passo e il pipottino/azione più lento.
 # Acceso per la misura; solo log.
-const SHOW_SIM_FRAME_TIMING_LOGS := true
+const SHOW_SIM_FRAME_TIMING_LOGS := false
 const SIM_FRAME_SLOW_MSEC := 40
 
 # "In corso" del cassetto (2026-10-09, richiesta utente — righe "Diretto" non attese): una riga [IN CORSO] per individuo
@@ -455,7 +455,7 @@ const SHOW_COORDINATOR_LOGS := false
 # Scelta del vestito (2026-10-25, richiesta utente — ToolFetchService): una riga [APPAREL CHOICE] per slot quando un
 # pipottino libero sceglie un capo per uno slot vuoto (candidati col punteggio di stagione, dove lo prende o perché
 # niente) e, nel cambio di stagione della Hut, quando esiste un capo migliore (scelto o perché no). Solo log.
-const SHOW_APPAREL_CHOICE_LOGS := true
+const SHOW_APPAREL_CHOICE_LOGS := false
 
 # Guardaroba (2026-10-22, Hut — ToolFetchService/UnloadAction): una riga [WARDROBE] al cambio di stagione (capo preso e
 # capo riposto, o tenuto perché il nuovo non è nello zaino). Solo log; spento su richiesta il 2026-10-25.

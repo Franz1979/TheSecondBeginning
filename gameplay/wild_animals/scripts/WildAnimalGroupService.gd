@@ -2,7 +2,7 @@ class_name WildAnimalGroupService
 extends RefCounted
 
 # Gruppi di animali selvatici seguiti uno per uno (2026-10-26, richiesta utente) — stateless, come VisitorService per i
-# gruppi umani. Crea i gruppi (uno per ogni WildAnimalGroupRules in DATA_DIR) appena esiste un villaggio con centro,
+# gruppi umani. Crea i gruppi (uno per ogni WildAnimalGroupRules in DATA_DIR) appena esiste un magazzino,
 # e li trova; ogni giorno li fa evolvere (tick_day: nascite, morti, partenze). Unico punto che aggiunge o toglie
 # gruppi e animali in GameData.wild_animal_groups. Dati simulati ma coerenti, niente realismo pieno.
 
@@ -47,12 +47,13 @@ static func find_group(game_data: GameData, species: String) -> WildAnimalGroup:
 	return null
 
 
-# Giornaliero (GameSimulation.tick_day): appena esiste un villaggio con centro, crea i gruppi mancanti. Copre sia la
-# fondazione del villaggio sia le partite in corso caricate (entro un giorno).
+# Giornaliero (GameSimulation.tick_day): appena esiste un magazzino (find_anchor_storage; dal 2026-10-28, richiesta
+# utente — prima serviva un villaggio con centro), crea i gruppi mancanti. Copre sia il primo magazzino sia le partite in
+# corso caricate (entro un giorno).
 static func ensure_groups(ctx: GameContext) -> void:
-	if ctx.game_data == null or ctx.folk == null:
+	if ctx.game_data == null or ctx.world == null:
 		return
-	if not ctx.folk.villages.any(func(village: Village) -> bool: return village.center_building_id != -1):
+	if find_anchor_storage(ctx.world) == null:
 		return
 	for species in list_species():
 		if find_group(ctx.game_data, species) == null:
@@ -60,6 +61,16 @@ static func ensure_groups(ctx: GameContext) -> void:
 			if group != null:
 				ctx.game_data.wild_animal_groups.append(group)
 				print("[WILD ANIMAL GROUPS] gruppo #%d di %s creato: %d animali" % [group.id, species, group.animals.size()])
+
+
+# Il magazzino che attira gli animali (2026-10-28, richiesta utente: basta un magazzino): il primo edificio di deposito
+# completo e in servizio (WarehouseManagerService.is_storage_building), esclusa la Fossa dei rifiuti. null se nessuno.
+# Le probabilità di visita dipenderanno da altri fattori (fosse, abitanti): questo è solo il requisito.
+static func find_anchor_storage(world: World) -> Building:
+	for building in world.buildings:
+		if WarehouseManagerService.is_storage_building(building) and not WasteDisposalService.is_pit(building):
+			return building
+	return null
 
 
 static func create_group(game_data: GameData, species: String) -> WildAnimalGroup:

@@ -69,6 +69,11 @@ extends Resource
 # 0..1 della rotazione, usata da AnimalGroupRenderer._apply_avoidance_on_hop. Negativo (default) = la
 # specie non la dichiara e vale AnimalGroupRenderer.AVOID_BIAS_PER_HOP.
 @export var avoidance_strength: float = -1.0
+# Reazioni a edifici precisi (2026-10-29, richiesta utente): chiave = nome del file dell'edificio
+# (Building.building_type_name, es. "campfire"), valore = raggio in microcelle col segno: positivo respinge (come
+# building_avoidance_radius), negativo attira, 0 ignora. Gli edifici non elencati valgono building_avoidance_radius.
+# Letto per ora solo dalle visite (WildAnimalVisitService.building_push), non dalla fauna del mondo.
+@export var building_reactions: Dictionary = {}
 
 @export_group("Visualization")
 # Quanti individui rappresenta una singola icona/gruppo nella resa visiva animata (vedi

@@ -36,12 +36,9 @@ var _last_fps: int = -1
 # (RandomEventService.list_rules, nome tradotto, id come metadata) e pulsante per scatenare quello scelto.
 @onready var random_event_option_button: OptionButton = $MarginContainer/HBoxContainer/ContentGroup/RandomEventOptionButton
 @onready var random_event_apply_button: Button = $MarginContainer/HBoxContainer/ContentGroup/RandomEventApplyButton
-# Addomesticazione (2026-10-26, passo 1): +100 punti al cane (dal lupo), inoltrato come action_pressed a
-# GameScene._on_debug_action_pressed; il testo mostra punti/soglia (set_domestication_progress).
-@onready var domestication_button: Button = $MarginContainer/HBoxContainer/ContentGroup/DomesticationButton
-# Branco di lupi che frequenta il villaggio (2026-10-26): numero di lupi, dettaglio per lupo nel tooltip
-# (set_wolf_pack).
-@onready var wolves_label: Label = $MarginContainer/HBoxContainer/ContentGroup/WolvesLabel
+# Branco di lupi del villaggio (2026-10-26): numero di lupi, dettaglio per lupo nel tooltip (set_wolf_pack). Dal
+# 2026-10-28 (lupi passo L1) è un pulsante: fa partire una visita del branco (action_pressed &"wolf_visit").
+@onready var wolves_button: Button = $MarginContainer/HBoxContainer/ContentGroup/WolvesButton
 
 signal action_pressed(action_id: StringName)
 # Evento casuale da scatenare subito (id di RandomEventRules), dal menu a tendina degli eventi.
@@ -82,7 +79,7 @@ func _ready() -> void:
 	random_event_apply_button.text = "▶"
 	random_event_apply_button.tooltip_text = TooltipText.wrap(tr("debug_random_event_apply") + ": " + tr("debug_random_event_apply_tooltip"))
 	random_event_apply_button.pressed.connect(_on_random_event_apply_pressed)
-	domestication_button.pressed.connect(func() -> void: action_pressed.emit(&"domestication_add_wolf"))
+	wolves_button.pressed.connect(func() -> void: action_pressed.emit(&"wolf_visit"))
 	_apply_state()
 
 
@@ -152,25 +149,19 @@ func set_playtime(in_game_seconds: float, playing_seconds: float) -> void:
 	reset_size()
 
 
-# Barra stretta (2026-10-26): il pulsante resta "🐕+100", i punti vanno nel tooltip.
-func set_domestication_progress(points: int, required: int) -> void:
-	domestication_button.tooltip_text = TooltipText.wrap(
-		"Debug: +100 punti addomesticazione al cane (%d/%d)" % [points, required]
-	)
-
-
-# Branco di lupi (debug): `count` < 0 = nessun branco ancora (serve un villaggio con centro); `lines` = una riga per lupo.
+# Branco di lupi (debug): `count` < 0 = nessun branco ancora (serve un magazzino); `lines` = una riga per lupo.
 func set_wolf_pack(count: int, lines: PackedStringArray) -> void:
 	var text := "🐺-" if count < 0 else "🐺%d" % count
-	wolves_label.tooltip_text = TooltipText.wrap(
-		"Branco di lupi del villaggio: nessuno (serve un villaggio con centro)" if count < 0
-		else "Branco di lupi del villaggio:
+	wolves_button.tooltip_text = TooltipText.wrap(
+		"Branco di lupi del villaggio: nessuno (serve un magazzino)" if count < 0
+		else "Clic: visita del branco al villaggio.
+Branco di lupi del villaggio:
 " + "
 ".join(lines)
 	)
-	if wolves_label.text == text:
+	if wolves_button.text == text:
 		return
-	wolves_label.text = text
+	wolves_button.text = text
 	reset_size()
 
 

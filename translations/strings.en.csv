@@ -574,6 +574,12 @@ transport_dialog_group_delivered,Delivered materials
 animal_selection_title,Animal
 animal_species_label,Species: {species}
 animal_age_band_label,Age: {age_band}
+animal_sex_label,Sex: {sex}
+animal_sex_male,male
+animal_sex_female,female
+animal_age_years_label,Years: {years}
+animal_breeder_label,★ Pack breeder
+animal_aggression_label,Aggression
 animal_species_rabbit,Rabbit
 animal_species_partridge,Wild fowl
 animal_species_deer,Deer
@@ -1593,3 +1599,8 @@ season_winter,Winter
 season_spring,Spring
 season_summer,Summer
 season_autumn,Autumn
+notification_wild_animal_attack,{species}: {name} was attacked!
+task_flee_name,Fleeing danger
+task_flee_step_run,Running to shelter
+task_flee_step_wait,Waiting in shelter
+danger_predator,Predator

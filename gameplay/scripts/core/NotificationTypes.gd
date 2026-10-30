@@ -65,4 +65,6 @@ enum NotificationPopupType {
 	HEALTH_CONDITION_CHANGED,
 	# Esito di una riunione politica (2026-10-26, gran consiglio riuscito o finito in lite). Stile di default. Aggiunto IN CODA.
 	POLITICAL_RITE_OUTCOME,
+	# Animali selvatici in visita che attaccano una persona (2026-10-30, lupi L4). Stile "alert" giallo. Aggiunto IN CODA.
+	WILD_ANIMAL_ATTACK,
 }
