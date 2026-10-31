@@ -51,5 +51,7 @@ max_density_per_cell = 100
 herd_region_side = 1
 herd_size_min = 50
 herd_size_max = 100
+herd_stay_days_min = 1
+herd_stay_days_max = 3
 suitable_biomes = Array[int]([1, 2, 5])
 suitable_terrains = Array[int]([1, 2])

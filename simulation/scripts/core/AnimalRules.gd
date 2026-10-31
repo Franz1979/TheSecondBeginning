@@ -245,6 +245,10 @@ extends Resource
 # alle nascite. Rada/densa scalano entrambi con lo stesso fattore (WildFaunaService.herd_size_scale).
 @export var herd_size_min: int = 1
 @export var herd_size_max: int = 1
+# Giorni in cui la mandria resta in una cella del riquadro prima di passare a un'altra (passo 1b). Ignorati con
+# herd_region_side 1: la mandria non si sposta.
+@export var herd_stay_days_min: int = 1
+@export var herd_stay_days_max: int = 3
 
 @export_group("Suitability")
 # Stessa forma e stessa semantica di SubtypeRules.suitable_biomes/suitable_terrains (vedi

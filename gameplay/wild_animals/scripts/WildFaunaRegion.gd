@@ -20,6 +20,10 @@ var status: Status = Status.NEVER
 var age_counts: Dictionary = {}
 # Macrocella del riquadro in cui sta la mandria, (-1, -1) se è altrove.
 var current_cell: Vector2i = Vector2i(-1, -1)
+# Giorni che restano alla mandria in current_cell, e ultimo giorno (assoluto) in cui il conto è stato fatto: più vecchio
+# di ieri = nessuno guardava il riquadro, la mandria si rimette in una cella a caso (WildFaunaService).
+var stay_remaining: int = 0
+var last_move_day: int = 0
 var last_update_day: int = 0
 # Giorno (assoluto) da cui la specie manca dal riquadro, -1 se presente o mai.
 var extinct_since_day: int = -1

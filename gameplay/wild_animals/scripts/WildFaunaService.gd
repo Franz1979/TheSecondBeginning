@@ -3,11 +3,13 @@ extends RefCounted
 
 # Fauna selvatica "ad hoc" (2026-10-31, richiesta utente — piano fauna, passo 1a; acceso da
 # SimulationSettings.WILD_FAUNA_AD_HOC): niente popolazioni simulate in tutto il mondo. Ogni specie divide la mappa in
-# riquadri fissi di lato AnimalRules.herd_region_side macrocelle (coniglio 1×1, cervo 2×2, uro 3×3); ogni riquadro
+# riquadri fissi di lato AnimalRules.herd_region_side macrocelle (coniglio 1×1, cinghiale 2×2, uro 5×5); ogni riquadro
 # ha al più una mandria, sempre tutta insieme in una sola macrocella. Un riquadro si crea la prima volta che una sua
 # cella diventa viva (ensure_cell) e poi si riprende soltanto: habitat sbagliato -> "mai", altrimenti un tiro con la
 # densità del menu (PRESENCE_CHANCE) -> mandria o "assente". Il lupo resta fuori: esiste solo come branco del villaggio
-# (WildAnimalGroup). Per ora solo semina e log: spostamenti (1b), conti col tempo e salvataggio arrivano nei passi dopo.
+# (WildAnimalGroup). Spostamenti (1b, tick_day): la mandria resta in una cella per herd_stay_days_min..max giorni, poi
+# passa a un'altra cella adatta del riquadro; con lato 1 non si sposta mai. Conti col tempo e salvataggio arrivano nei
+# passi dopo.
 
 # Probabilità che un riquadro adatto abbia la mandria, per densità del menu (GameData.starting_animal_density).
 const PRESENCE_CHANCE := {
@@ -19,6 +21,18 @@ const DEFAULT_PRESENCE_CHANCE := 0.5
 # Un riquadro senza mandria la perde "da un giorno nel passato" estratto fino a tanti anni fa: gli arrivi futuri
 # (ritorno della specie, passi successivi) non scattano tutti insieme.
 const ABSENT_SINCE_MAX_YEARS := 3
+
+# Specie con mandria (tutte tranne i predatori), lette una volta: AnimalCalculator.list_species_names apre la cartella.
+static var _herd_species: Array[String] = []
+
+
+static func herd_species() -> Array[String]:
+	if _herd_species.is_empty():
+		for species in AnimalCalculator.list_species_names():
+			var rules := AnimalCalculator.get_animal_rules(species)
+			if rules != null and not rules is PredatorRules:
+				_herd_species.append(species)
+	return _herd_species
 
 
 static func region_side(rules: AnimalRules) -> int:
@@ -46,15 +60,17 @@ static func ensure_cell(world: World, game_data: GameData, coords: Vector2i, for
 	var today := game_data.get_absolute_day()
 	var created := 0
 	var known := 0
-	for species in AnimalCalculator.list_species_names():
+	for species in herd_species():
 		var rules := AnimalCalculator.get_animal_rules(species)
-		if rules == null or rules is PredatorRules:
-			continue
 		var side := region_side(rules)
 		var region := Vector2i(coords.x / side, coords.y / side)
 		var key := region_key(species, region)
 		if game_data.wild_fauna.has(key):
 			known += 1
+			# Nessuno guardava il riquadro da più di un giorno: la mandria si rimette in una cella a caso.
+			var known_entry: WildFaunaRegion = game_data.wild_fauna[key]
+			if _moves(known_entry) and known_entry.last_move_day < today - 1:
+				_place(world, rules, known_entry, today, "rientro: ")
 			continue
 		var entry := _create_region(world, game_data, rules, species, region, side, today, forced_species.has(species))
 		game_data.wild_fauna[key] = entry
@@ -93,7 +109,58 @@ static func _create_region(world: World, game_data: GameData, rules: AnimalRules
 	for age_band in [GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD]:
 		entry.age_counts[age_band] = int(split.get(age_band, 0))
 	entry.current_cell = suitable.pick_random()
+	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
+	entry.last_move_day = today
 	return entry
+
+
+# Giro giornaliero (1b, GameSimulation.tick_day): solo le mandrie dei riquadri che contengono una cella viva, una volta
+# ciascuna. Finito il soggiorno, la mandria passa a un'altra cella adatta del riquadro.
+static func tick_day(ctx: GameContext) -> void:
+	if not SimulationSettings.WILD_FAUNA_AD_HOC or ctx.game_data == null or ctx.world == null:
+		return
+	var today := ctx.game_data.get_absolute_day()
+	var done: Dictionary = {}
+	for coords in ctx.live_cells.keys():
+		for species in herd_species():
+			var rules := AnimalCalculator.get_animal_rules(species)
+			var side := region_side(rules)
+			var key := region_key(species, Vector2i(coords.x / side, coords.y / side))
+			if done.has(key):
+				continue
+			done[key] = true
+			var entry: WildFaunaRegion = ctx.game_data.wild_fauna.get(key)
+			if entry == null or not _moves(entry) or entry.last_move_day >= today:
+				continue
+			if entry.last_move_day < today - 1:
+				_place(ctx.world, rules, entry, today, "rientro: ")
+				continue
+			entry.last_move_day = today
+			entry.stay_remaining -= 1
+			if entry.stay_remaining <= 0:
+				_place(ctx.world, rules, entry, today, "")
+
+
+# Mandria che si sposta: presente, in un riquadro più grande di una cella.
+static func _moves(entry: WildFaunaRegion) -> bool:
+	return entry.status == WildFaunaRegion.Status.PRESENT and entry.side > 1
+
+
+# Mette la mandria in una cella adatta del riquadro diversa da quella di adesso (se ce n'è più di una) e tira un nuovo
+# soggiorno.
+static func _place(world: World, rules: AnimalRules, entry: WildFaunaRegion, today: int, log_prefix: String) -> void:
+	var suitable := _suitable_cells(world, rules, entry.region, entry.side)
+	if suitable.is_empty():
+		return
+	if suitable.size() > 1:
+		suitable.erase(entry.current_cell)
+	var from := entry.current_cell
+	entry.current_cell = suitable.pick_random()
+	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
+	entry.last_move_day = today
+	if DebugLogging.ENABLED:
+		print("[WILD FAUNA] giorno %d %s (%d,%d): %sda (%d, %d) a (%d, %d), resta %d giorni" % [today, entry.species,
+			entry.region.x, entry.region.y, log_prefix, from.x, from.y, entry.current_cell.x, entry.current_cell.y, entry.stay_remaining])
 
 
 # Macrocelle del riquadro (dentro la mappa) adatte alla specie: niente acqua, bioma e terreno ammessi.
