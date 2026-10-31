@@ -9,8 +9,11 @@ extends RefCounted
 # densità del menu (PRESENCE_CHANCE) -> mandria o "assente". Il lupo resta fuori: esiste solo come branco del villaggio
 # (WildAnimalGroup). Spostamenti (1b, tick_day): la mandria resta in una cella per herd_stay_days_min..max giorni, poi
 # passa a un'altra cella adatta del riquadro; con lato 1 non si sposta mai. Passo 2: la scena disegna le mandrie che
-# stanno in una cella (get_herds_in_cell) e la caccia toglie un capo (remove_one). Conti col tempo e salvataggio
-# arrivano nei passi dopo.
+# stanno in una cella (get_herds_in_cell) e la caccia toglie un capo (remove_one). Passo 3a: tre momenti dell'anno
+# uguali per tutte le specie (BIRTH_DAY, SPLIT_DAY, OLD_AGE_DEATH_DAY), applicati a ogni mandria quando la si guarda
+# (tick_day) o quando ci si torna (ensure_cell), recuperando in ordine quelli passati (_catch_up). Passo 3b: una mandria
+# sparita (caccia, vecchiaia) torna dopo AnimalRules.recolonization_years con un gruppetto (RECOLONIZE_START_RATIO);
+# i riquadri vuoti fin dall'inizio restano vuoti. Salvataggio al passo 4.
 
 # Probabilità che un riquadro adatto abbia la mandria, per densità del menu (GameData.starting_animal_density).
 const PRESENCE_CHANCE := {
@@ -22,6 +25,25 @@ const DEFAULT_PRESENCE_CHANCE := 0.5
 # Un riquadro senza mandria la perde "da un giorno nel passato" estratto fino a tanti anni fa: gli arrivi futuri
 # (ritorno della specie, passi successivi) non scattano tutti insieme.
 const ABSENT_SINCE_MAX_YEARS := 3
+
+# Momenti dell'anno delle mandrie (giorno 0..DAYS_PER_YEAR-1, lontani dai cambi di stagione e dal giorno 10):
+# inizio primavera invecchiamento poi nascite, fine estate split, fine autunno morti per vecchiaia.
+const SPLIT_DAY := 265
+const BIRTH_DAY := 96
+const OLD_AGE_DEATH_DAY := 359
+# Dopo lo split la mandria torna tra queste quote del suo massimo (herd_size_max).
+const SPLIT_TARGET_MIN_RATIO := 0.75
+const SPLIT_TARGET_MAX_RATIO := 0.9
+# Oltre tanti anni senza nessuno a guardarla la mandria non recupera i momenti persi: si rifà nuova (_catch_up).
+const RECREATE_AFTER_YEARS := 5
+# Partenza di una mandria per taglia del menu, come quota di herd_size_max (coniglio max 100 -> 50/70/90).
+const START_RATIO_BY_SIZE := {
+	GameTypes.PopulationSize.SPARSE: 0.5,
+	GameTypes.PopulationSize.NORMAL: 0.7,
+	GameTypes.PopulationSize.DENSE: 0.9,
+}
+# Gruppetto che ricolonizza un riquadro, come quota di herd_size_max (coniglio 30, uro 8).
+const RECOLONIZE_START_RATIO := 0.3
 
 # Specie con mandria (tutte tranne i predatori), lette una volta: AnimalCalculator.list_species_names apre la cartella.
 static var _herd_species: Array[String] = []
@@ -40,12 +62,11 @@ static func region_side(rules: AnimalRules) -> int:
 	return maxi(1, rules.herd_region_side)
 
 
-# Fattore della taglia del menu sulla mandria (min, max e tetto insieme): normale 1, rada ~0.67, densa ~1.8 — gli
-# stessi rapporti dei divisori della semina vecchia (AnimalSeedingService.POPULATION_SIZE_DIVISOR).
-static func herd_size_scale(game_data: GameData) -> float:
+# Taglia del menu: solo con quanti animali parte una mandria, come quota del suo massimo fisso (herd_size_max). Il
+# massimo non cambia mai: lo split lo fa sempre rispettare.
+static func herd_start_ratio(game_data: GameData) -> float:
 	var size := AnimalSeedingService.population_size_from_string(game_data.starting_population_size)
-	return AnimalSeedingService.POPULATION_SIZE_DIVISOR[GameTypes.PopulationSize.NORMAL] \
-		/ AnimalSeedingService.POPULATION_SIZE_DIVISOR[size]
+	return START_RATIO_BY_SIZE.get(size, START_RATIO_BY_SIZE[GameTypes.PopulationSize.NORMAL])
 
 
 static func region_key(species: String, region: Vector2i) -> String:
@@ -70,6 +91,7 @@ static func ensure_cell(world: World, game_data: GameData, coords: Vector2i, for
 			known += 1
 			# Nessuno guardava il riquadro da più di un giorno: la mandria si rimette in una cella a caso.
 			var known_entry: WildFaunaRegion = game_data.wild_fauna[key]
+			_catch_up(world, game_data, rules, known_entry, today)
 			if _moves(known_entry) and known_entry.last_move_day < today - 1:
 				_place(world, rules, known_entry, today, "rientro: ")
 			continue
@@ -100,19 +122,25 @@ static func _create_region(world: World, game_data: GameData, rules: AnimalRules
 		entry.extinct_since_day = today - randi_range(0, ABSENT_SINCE_MAX_YEARS * GameData.DAYS_PER_YEAR)
 		return entry
 	entry.status = WildFaunaRegion.Status.PRESENT
-	# Mandria tra herd_size_min e herd_size_max della specie, scalata dalla taglia del menu; età dalla specie.
-	var scale := herd_size_scale(game_data)
-	var total := maxi(1, roundi(randi_range(rules.herd_size_min, maxi(rules.herd_size_min, rules.herd_size_max)) * scale))
+	_roll_herd(game_data, rules, entry)
+	entry.current_cell = suitable.pick_random()
+	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
+	entry.last_move_day = today
+	return entry
+
+
+# Mandria a herd_start_ratio del massimo della specie (taglia del menu); età dalla specie. Usata alla creazione e quando
+# la mandria si rifà dopo RECREATE_AFTER_YEARS senza nessuno a guardarla; `ratio` diverso per la ricolonizzazione.
+static func _roll_herd(game_data: GameData, rules: AnimalRules, entry: WildFaunaRegion, ratio: float = -1.0) -> void:
+	if ratio < 0.0:
+		ratio = herd_start_ratio(game_data)
+	var total := maxi(1, roundi(rules.herd_size_max * ratio))
 	var weights := rules.initial_age_ratio
 	if weights.is_empty():
 		weights = {GameTypes.AgeBand.YOUNG: 1.0, GameTypes.AgeBand.ADULT: 1.0, GameTypes.AgeBand.OLD: 1.0}
 	var split := MacroCellState._split_by_weight(weights, total)
 	for age_band in [GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD]:
 		entry.age_counts[age_band] = int(split.get(age_band, 0))
-	entry.current_cell = suitable.pick_random()
-	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
-	entry.last_move_day = today
-	return entry
 
 
 # Mandrie che in questo momento stanno in `coords`: specie -> conteggi per fascia d'età (GameTypes.AgeBand -> int).
@@ -148,12 +176,25 @@ static func remove_one(game_data: GameData, species: String, age_band: int, coor
 	entry.age_counts[band] = int(entry.age_counts[band]) - 1
 	var total := entry.get_total()
 	if total <= 0:
-		entry.status = WildFaunaRegion.Status.ABSENT
-		entry.extinct_since_day = game_data.get_absolute_day()
-		entry.current_cell = Vector2i(-1, -1)
+		_empty_region(entry, game_data.get_absolute_day())
 	if DebugLogging.ENABLED:
 		print("[WILD FAUNA] %s (%d,%d): preda uccisa in (%d, %d), restano %d%s" % [species, entry.region.x, entry.region.y,
 			coords.x, coords.y, total, " — mandria sterminata" if total <= 0 else ""])
+
+
+# Debug (pulsante ☠ della DebugBar): toglie tutte le mandrie che ora stanno in `coords`, come se fossero state cacciate
+# fino all'ultimo capo (torneranno dopo recolonization_years).
+static func exterminate_in_cell(game_data: GameData, coords: Vector2i) -> void:
+	for species in get_herds_in_cell(game_data, coords):
+		var entry := _region_at(game_data, species, coords)
+		var total := entry.get_total()
+		for age_band in entry.age_counts:
+			entry.age_counts[age_band] = 0
+		_empty_region(entry, game_data.get_absolute_day())
+		game_data.wild_fauna_moved = true
+		if DebugLogging.ENABLED:
+			print("[WILD FAUNA] %s (%d,%d): sterminata in (%d, %d) dal debug, %d capi" % [species, entry.region.x,
+				entry.region.y, coords.x, coords.y, total])
 
 
 static func _region_at(game_data: GameData, species: String, coords: Vector2i) -> WildFaunaRegion:
@@ -180,7 +221,11 @@ static func tick_day(ctx: GameContext) -> void:
 				continue
 			done[key] = true
 			var entry: WildFaunaRegion = ctx.game_data.wild_fauna.get(key)
-			if entry == null or not _moves(entry) or entry.last_move_day >= today:
+			if entry == null:
+				continue
+			if _catch_up(ctx.world, ctx.game_data, rules, entry, today):
+				ctx.game_data.wild_fauna_moved = true
+			if not _moves(entry) or entry.last_move_day >= today:
 				continue
 			if entry.last_move_day < today - 1:
 				_place(ctx.world, rules, entry, today, "rientro: ")
@@ -191,6 +236,152 @@ static func tick_day(ctx: GameContext) -> void:
 			if entry.stay_remaining <= 0:
 				_place(ctx.world, rules, entry, today, "")
 				ctx.game_data.wild_fauna_moved = true
+
+
+# Applica in ordine i momenti dell'anno caduti tra l'ultimo aggiornamento (escluso) e oggi (incluso): uno solo se la
+# mandria era guardata ieri, tutti quelli persi se ci si torna dopo tempo. True se la mandria è cambiata.
+static func _catch_up(world: World, game_data: GameData, rules: AnimalRules, entry: WildFaunaRegion, today: int) -> bool:
+	var from_day := entry.last_update_day
+	entry.last_update_day = today
+	if today <= from_day:
+		return false
+	var recolonized := false
+	if entry.status == WildFaunaRegion.Status.ABSENT and entry.returns:
+		var arrival_day := entry.extinct_since_day + maxi(0, rules.recolonization_years) * GameData.DAYS_PER_YEAR
+		if arrival_day > today or not _recolonize(world, game_data, rules, entry, arrival_day, today):
+			return false
+		recolonized = true
+		from_day = maxi(from_day, arrival_day)
+	if entry.status != WildFaunaRegion.Status.PRESENT or today <= from_day:
+		return recolonized
+	# Assente da troppo tempo: niente recupero anno per anno, la mandria si rifà nuova (resta "presente": l'esito del
+	# riquadro non si ritira).
+	if today - from_day > RECREATE_AFTER_YEARS * GameData.DAYS_PER_YEAR:
+		_roll_herd(game_data, rules, entry)
+		if DebugLogging.ENABLED:
+			print("[WILD FAUNA] giorno %d %s (%d,%d): nessuno la guardava da %d anni, mandria rifatta %d/%d/%d (giovani/adulti/vecchi)" % [
+				today, entry.species, entry.region.x, entry.region.y, (today - from_day) / GameData.DAYS_PER_YEAR,
+				_count(entry, GameTypes.AgeBand.YOUNG), _count(entry, GameTypes.AgeBand.ADULT), _count(entry, GameTypes.AgeBand.OLD)])
+		return true
+	var recovering := today - from_day > 1
+	var changed := recolonized
+	for year in range(from_day / GameData.DAYS_PER_YEAR, today / GameData.DAYS_PER_YEAR + 1):
+		for moment in [BIRTH_DAY, SPLIT_DAY, OLD_AGE_DEATH_DAY]:
+			var day: int = year * GameData.DAYS_PER_YEAR + moment
+			if day <= from_day or day > today:
+				continue
+			if entry.status != WildFaunaRegion.Status.PRESENT:
+				return true
+			var note := ""
+			match moment:
+				SPLIT_DAY:
+					note = _apply_split(rules, entry)
+				BIRTH_DAY:
+					note = _apply_aging_and_births(rules, entry)
+				OLD_AGE_DEATH_DAY:
+					note = _apply_old_age_deaths(rules, entry, day)
+			if note == "":
+				continue
+			changed = true
+			if DebugLogging.ENABLED:
+				print("[WILD FAUNA] giorno %d %s%s (%d,%d): %s -> %d/%d/%d (giovani/adulti/vecchi)" % [day,
+					"recupero " if recovering else "", entry.species, entry.region.x, entry.region.y, note,
+					_count(entry, GameTypes.AgeBand.YOUNG), _count(entry, GameTypes.AgeBand.ADULT),
+					_count(entry, GameTypes.AgeBand.OLD)])
+	return changed
+
+
+# Mandria a zero (caccia, vecchiaia): riquadro "assente" da `day`, e la specie ci tornerà (returns).
+static func _empty_region(entry: WildFaunaRegion, day: int) -> void:
+	entry.status = WildFaunaRegion.Status.ABSENT
+	entry.extinct_since_day = day
+	entry.current_cell = Vector2i(-1, -1)
+	entry.returns = true
+
+
+# Passo 3b: arriva un gruppetto nel riquadro il giorno `arrival_day`, in una cella adatta a caso. False se il riquadro
+# non ha celle adatte.
+static func _recolonize(world: World, game_data: GameData, rules: AnimalRules, entry: WildFaunaRegion, arrival_day: int,
+		today: int) -> bool:
+	var suitable := _suitable_cells(world, rules, entry.region, entry.side)
+	if suitable.is_empty():
+		return false
+	entry.status = WildFaunaRegion.Status.PRESENT
+	entry.extinct_since_day = -1
+	entry.returns = false
+	_roll_herd(game_data, rules, entry, RECOLONIZE_START_RATIO)
+	entry.current_cell = suitable.pick_random()
+	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
+	entry.last_move_day = today
+	if DebugLogging.ENABLED:
+		print("[WILD FAUNA] giorno %d %s (%d,%d): ricolonizzato, arrivati %d/%d/%d (giovani/adulti/vecchi) in (%d, %d)" % [
+			arrival_day, entry.species, entry.region.x, entry.region.y, _count(entry, GameTypes.AgeBand.YOUNG),
+			_count(entry, GameTypes.AgeBand.ADULT), _count(entry, GameTypes.AgeBand.OLD), entry.current_cell.x,
+			entry.current_cell.y])
+	return true
+
+
+# Fine estate: sopra il massimo una parte se ne va (per età: dispersal_share_by_age × capi della fascia)
+# e la mandria torna tra SPLIT_TARGET_MIN_RATIO e SPLIT_TARGET_MAX_RATIO del massimo.
+static func _apply_split(rules: AnimalRules, entry: WildFaunaRegion) -> String:
+	var cap := maxi(1, rules.herd_size_max)
+	var total := entry.get_total()
+	if total <= cap:
+		return ""
+	var target := maxi(1, randi_range(roundi(cap * SPLIT_TARGET_MIN_RATIO), roundi(cap * SPLIT_TARGET_MAX_RATIO)))
+	# Peso di ogni fascia = voglia di partire (dispersal_share_by_age) × quanti ce ne sono: partono soprattutto i giovani,
+	# ma una fascia piccola non si svuota da sola.
+	var weights: Dictionary = {}
+	for age_band in [GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD]:
+		var share := maxf(0.0001, rules.dispersal_share_by_age[age_band]) \
+			if age_band < rules.dispersal_share_by_age.size() else 1.0
+		weights[age_band] = share * _count(entry, age_band)
+	var leaving := MacroCellState._split_by_weight_capped(weights, entry.age_counts.duplicate(), total - target)
+	for age_band in leaving:
+		entry.age_counts[age_band] = _count(entry, age_band) - int(leaving[age_band])
+	return "split, partiti %d/%d/%d" % [int(leaving.get(GameTypes.AgeBand.YOUNG, 0)),
+		int(leaving.get(GameTypes.AgeBand.ADULT, 0)), int(leaving.get(GameTypes.AgeBand.OLD, 0))]
+
+
+# Inizio primavera: prima l'invecchiamento (così i nuovi nati non diventano subito adulti), poi le nascite piene col
+# tasso della specie, senza freno — il massimo lo riporta a posto lo split dell'anno dopo.
+static func _apply_aging_and_births(rules: AnimalRules, entry: WildFaunaRegion) -> String:
+	var young := _count(entry, GameTypes.AgeBand.YOUNG)
+	var adult := _count(entry, GameTypes.AgeBand.ADULT)
+	var to_adult := mini(young, _random_round(float(young) / maxi(1, rules.youth_duration_years)))
+	var to_old := mini(adult, _random_round(float(adult) / maxi(1, rules.adult_duration_years)))
+	entry.age_counts[GameTypes.AgeBand.YOUNG] = young - to_adult
+	entry.age_counts[GameTypes.AgeBand.ADULT] = adult - to_old + to_adult
+	entry.age_counts[GameTypes.AgeBand.OLD] = _count(entry, GameTypes.AgeBand.OLD) + to_old
+	var fertile := 0.0
+	for age_band in [GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD]:
+		if age_band < rules.fertility_multiplier_by_age.size():
+			fertile += _count(entry, age_band) * rules.fertility_multiplier_by_age[age_band]
+	var births := _random_round(fertile * rules.base_birth_rate)
+	entry.age_counts[GameTypes.AgeBand.YOUNG] = _count(entry, GameTypes.AgeBand.YOUNG) + births
+	return "%d diventati adulti, %d diventati vecchi, +%d nati" % [to_adult, to_old, births]
+
+
+# Fine autunno: muore di vecchiaia 1/old_duration_years dei vecchi. Mandria a zero -> riquadro "assente" da quel giorno.
+static func _apply_old_age_deaths(rules: AnimalRules, entry: WildFaunaRegion, day: int) -> String:
+	var old := _count(entry, GameTypes.AgeBand.OLD)
+	var deaths := mini(old, _random_round(float(old) / maxi(1, rules.old_duration_years)))
+	entry.age_counts[GameTypes.AgeBand.OLD] = old - deaths
+	if entry.get_total() <= 0:
+		_empty_region(entry, day)
+		return "%d morti di vecchiaia — mandria estinta" % deaths
+	return "%d morti di vecchiaia" % deaths
+
+
+static func _count(entry: WildFaunaRegion, age_band: int) -> int:
+	return int(entry.age_counts.get(age_band, 0))
+
+
+# Arrotondamento a caso secondo la parte decimale (2.3 -> 3 una volta su 3 circa): con mandrie piccole un
+# arrotondamento normale non farebbe mai invecchiare o nascere nessuno.
+static func _random_round(value: float) -> int:
+	var whole := floori(value)
+	return whole + (1 if randf() < value - whole else 0)
 
 
 # Mandria che si sposta: presente, in un riquadro più grande di una cella.

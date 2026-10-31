@@ -241,14 +241,17 @@ extends Resource
 # Fauna ad hoc (2026-10-31, piano fauna — WildFaunaService): lato in macrocelle del riquadro fisso in cui vive al più una
 # mandria della specie (1 = stanziale nella cella). Più è grande, più di rado la mandria passa da una data cella.
 @export var herd_region_side: int = 1
-# Mandria a taglia "normale" del menu: alla nascita del riquadro un numero a caso tra min e max; max fa anche da tetto
-# alle nascite. Rada/densa scalano entrambi con lo stesso fattore (WildFaunaService.herd_size_scale).
+# herd_size_max: massimo fisso della mandria, fatto rispettare dallo split di fine estate; la taglia del menu decide solo
+# la partenza, come quota di questo massimo (WildFaunaService.START_RATIO_BY_SIZE). herd_size_min oggi non è usato.
 @export var herd_size_min: int = 1
 @export var herd_size_max: int = 1
 # Giorni in cui la mandria resta in una cella del riquadro prima di passare a un'altra (passo 1b). Ignorati con
 # herd_region_side 1: la mandria non si sposta.
 @export var herd_stay_days_min: int = 1
 @export var herd_stay_days_max: int = 3
+# Anni dopo cui una mandria sparita (cacciata o morta di vecchiaia) torna nel suo riquadro con un gruppetto
+# (WildFaunaService, passo 3b). I riquadri vuoti fin dall'inizio restano vuoti.
+@export var recolonization_years: int = 2
 
 @export_group("Suitability")
 # Stessa forma e stessa semantica di SubtypeRules.suitable_biomes/suitable_terrains (vedi

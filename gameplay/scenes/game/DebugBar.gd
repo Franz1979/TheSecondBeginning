@@ -39,12 +39,9 @@ var _last_fps: int = -1
 # Branco di lupi del villaggio (2026-10-26): numero di lupi, dettaglio per lupo nel tooltip (set_wolf_pack). Dal
 # 2026-10-28 (lupi passo L1) è un pulsante: fa partire una visita del branco (action_pressed &"wolf_visit").
 @onready var wolves_button: Button = $MarginContainer/HBoxContainer/ContentGroup/WolvesButton
-# Sete (2026-10-31, richiesta utente): in fondo a destra, tra i controlli da togliere — accende/spegne
-# GameData.thirst_enabled (action_pressed &"toggle_thirst"; lo stato lo rimette GameScene con set_thirst_enabled).
-@onready var thirst_button: Button = $MarginContainer/HBoxContainer/ContentGroup/ThirstButton
-# Arnesi da caccia (2026-10-31, prove della fauna ad hoc): lancia e coltello al pipottino selezionato
-# (action_pressed &"give_hunt_tools").
-@onready var hunt_tools_button: Button = $MarginContainer/HBoxContainer/ContentGroup/HuntToolsButton
+# Stermina (2026-10-31, prove della fauna ad hoc, passo 3b): toglie le mandrie che stanno nelle celle vive
+# (action_pressed &"exterminate_herds").
+@onready var exterminate_button: Button = $MarginContainer/HBoxContainer/ContentGroup/ExterminateButton
 
 signal action_pressed(action_id: StringName)
 # Evento casuale da scatenare subito (id di RandomEventRules), dal menu a tendina degli eventi.
@@ -86,10 +83,8 @@ func _ready() -> void:
 	random_event_apply_button.tooltip_text = TooltipText.wrap(tr("debug_random_event_apply") + ": " + tr("debug_random_event_apply_tooltip"))
 	random_event_apply_button.pressed.connect(_on_random_event_apply_pressed)
 	wolves_button.pressed.connect(func() -> void: action_pressed.emit(&"wolf_visit"))
-	thirst_button.tooltip_text = TooltipText.wrap(tr("toggle_thirst_tooltip") + ": " + tr("toggle_thirst_description"))
-	thirst_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_thirst"))
-	hunt_tools_button.tooltip_text = TooltipText.wrap("Arnesi da caccia: lancia e coltello di pietra al pipottino selezionato (o al primo)")
-	hunt_tools_button.pressed.connect(func() -> void: action_pressed.emit(&"give_hunt_tools"))
+	exterminate_button.tooltip_text = TooltipText.wrap("Stermina: toglie le mandrie selvatiche che ora stanno nelle celle vive (tornano dopo recolonization_years)")
+	exterminate_button.pressed.connect(func() -> void: action_pressed.emit(&"exterminate_herds"))
 	_apply_state()
 
 
@@ -140,11 +135,6 @@ func _apply_state() -> void:
 # Inoltrato da GameScene per riflettere lo stato dei due toggle (flora/animali) — stesso schema
 # di IconButtonRow.set_slot_toggled, GameScene continua a decidere QUANDO chiamarlo, questo
 # metodo esiste solo perche' content_row non e' esposto direttamente al chiamante.
-func set_thirst_enabled(enabled: bool) -> void:
-	thirst_button.set_pressed_no_signal(enabled)
-	thirst_button.modulate = Color.WHITE if enabled else Color(1.0, 1.0, 1.0, 0.45)
-
-
 func set_slot_toggled(index: int, is_active: bool) -> void:
 	content_row.set_slot_toggled(index, is_active)
 

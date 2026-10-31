@@ -946,8 +946,6 @@ func _ready() -> void:
 		push_warning("Nessun game_data condiviso: creo un anno locale di riserva.")
 		game_data = GameData.new()
 	sim.game_data = game_data
-	# Slot 💧 della barra di debug (2026-10-31): stato della sete di questa partita (GameData.thirst_enabled).
-	debug_bar.set_thirst_enabled(game_data.thirst_enabled)
 	sim.world = macro_world
 	sim.live_cells = live_cells
 	# Pavimento delle zone (2026-10-01) su tutte le memorie con zone, anche di macrocelle non vive: prune_stale gira su
@@ -3912,25 +3910,6 @@ func _on_hunt_zone_series_continue_requested(hunter: HumanIndividual, series: Di
 	var effects := GameEffects.new()
 	WorkFollowUpService.continue_hunt_series(_game_context(), hunter, series, effects)
 	_apply_effects(effects)
-
-
-# Debug (2026-10-31): lancia e coltello di pietra nei posti liberi della cintura del pipottino selezionato, o del primo
-# del popolo se nessuno è selezionato. Per cacciare e macellare in una partita appena iniziata.
-func _debug_give_hunt_tools() -> void:
-	var targets := _get_selected_individuals()
-	if targets.is_empty() and not human_individuals.is_empty():
-		targets.append(human_individuals[0])
-	if targets.is_empty():
-		return
-	var member: HumanIndividual = targets[0]
-	var given: Array[String] = []
-	for tool_name in ["stone_spear", "stone_knife"]:
-		for slot in range(member.equipped_tools.size()):
-			if member.get_equipped_tool(slot) == "" and member.equip_tool_direct(tool_name, slot, game_data):
-				given.append(tool_name)
-				break
-	print("[DEBUG] arnesi da caccia a #%d %s: %s" % [member.id, member.name, ", ".join(given) if not given.is_empty() else "cintura piena"])
-	_refresh_selected_individual_panel()
 
 
 func _get_selected_individuals() -> Array[HumanIndividual]:
@@ -13633,14 +13612,11 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			flora_daily_updates_enabled = not flora_daily_updates_enabled
 			debug_bar.set_slot_toggled(0, flora_daily_updates_enabled)
 			GameSettings.game_scene_flora_updates_enabled = flora_daily_updates_enabled
-		# Sete (2026-10-31, richiesta utente): spenta = niente calo, sorsi, bevute né morte di sete (ThirstService).
-		&"toggle_thirst":
+		# Stermina (2026-10-31, richiesta utente — prova del passo 3b): via le mandrie che stanno nelle celle vive.
+		&"exterminate_herds":
 			if game_data != null:
-				game_data.thirst_enabled = not game_data.thirst_enabled
-				debug_bar.set_thirst_enabled(game_data.thirst_enabled)
-		# Arnesi da caccia (2026-10-31, richiesta utente — prove della fauna ad hoc): lancia e coltello di pietra in cintura.
-		&"give_hunt_tools":
-			_debug_give_hunt_tools()
+				for coords in live_cells:
+					WildFaunaService.exterminate_in_cell(game_data, coords)
 		&"world_debug":
 			_on_world_debug_pressed()
 		&"macro_cell_debug":

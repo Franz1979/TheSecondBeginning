@@ -63,5 +63,6 @@ herd_size_min = 6
 herd_size_max = 20
 herd_stay_days_min = 1
 herd_stay_days_max = 3
+recolonization_years = 2
 suitable_biomes = Array[int]([1, 2, 4, 5])
 suitable_terrains = Array[int]([1, 2, 3])

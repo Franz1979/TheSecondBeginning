@@ -27,6 +27,9 @@ var last_move_day: int = 0
 var last_update_day: int = 0
 # Giorno (assoluto) da cui la specie manca dal riquadro, -1 se presente o mai.
 var extinct_since_day: int = -1
+# La mandria c'era ed è sparita (caccia, vecchiaia): torna dopo AnimalRules.recolonization_years. False per i riquadri
+# vuoti fin dall'inizio, che restano vuoti.
+var returns: bool = false
 
 
 func get_total() -> int:
