@@ -127,6 +127,9 @@ var next_wild_animal_group_id: int = 1
 # Visite in corso di quei gruppi al villaggio (2026-10-28, lupi passo L1 — WildAnimalVisitService). Non salvate: al
 # caricamento una visita in corso sparisce.
 var wild_animal_visits: Array[WildAnimalVisit] = []
+# Fauna selvatica ad hoc (2026-10-31, piano fauna passo 1a — WildFaunaService): riquadri delle specie già creati,
+# chiave WildFaunaService.region_key -> WildFaunaRegion. Non ancora salvati (passo 4).
+var wild_fauna: Dictionary = {}
 
 # Ultimo absolute_day (vedi get_absolute_day sotto) in cui GameScene ha eseguito la pulizia
 # periodica di FogOfWarMemory.last_seen_by_position (vedi FogOfWarMemory.prune_stale/

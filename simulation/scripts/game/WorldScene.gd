@@ -267,6 +267,10 @@ func _populate_new_world(target_world: World) -> void:
 			density = GameTypes.AnimalDensity.MANY
 	var population_size := AnimalSeedingService.population_size_from_string(GameSettings.selected_population_size)
 
+	# Fauna ad hoc (2026-10-31): niente popolazioni mondiali, gli animali nascono solo nelle celle dove si gioca.
+	if SimulationSettings.WILD_FAUNA_AD_HOC:
+		print("[WILD FAUNA] semina mondiale saltata (SimulationSettings.WILD_FAUNA_AD_HOC)")
+		return
 	AnimalSeedingService.new().populate_animals(target_world, density, population_size)
 
 # Ingresso "vero" per una partita NUOVA appena seminata O per un salvataggio ESISTENTE appena

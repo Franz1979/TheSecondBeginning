@@ -988,10 +988,15 @@ func _ready() -> void:
 			# normale di WorldScene), mai per un salvataggio caricato. Esclusa CLASSIC, che per scelta
 			# non semina animali. Prima di qualunque _activate_live_cell sotto, così gli individui
 			# animali della cella di partenza includono già la preda al primo frame.
+			# Fauna ad hoc (2026-10-31, passo 1c): niente PopulationGroup; i riquadri di coniglio e pernice della cella
+			# di partenza nascono qui con la mandria certa, le altre specie col tiro normale.
 			if game_data.starting_guarantee_animal_presence and game_data.starting_world_age_mode != "CLASSIC":
-				AnimalSeedingService.new().ensure_small_prey_at(
-					macro_world, chosen, AnimalSeedingService.population_size_from_string(game_data.starting_population_size)
-				)
+				if SimulationSettings.WILD_FAUNA_AD_HOC:
+					WildFaunaService.ensure_cell(macro_world, game_data, chosen, AnimalSeedingService.SMALL_PREY_SPECIES)
+				else:
+					AnimalSeedingService.new().ensure_small_prey_at(
+						macro_world, chosen, AnimalSeedingService.population_size_from_string(game_data.starting_population_size)
+					)
 
 	# Popolo: seminato per una partita nuova, oppure riusato così com'è (salvataggio appena caricato o ritorno da
 	# WorldScene/MacroCellScene) — GameSimulation.setup_population. human_rules a path fisso: un solo Folk per ora.
@@ -11529,6 +11534,9 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	cell.fog_of_war_renderer.update_visibility(game_data.get_absolute_day(), _relevant_source_positions_for_cell(cell))
 	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Vedi il call site gemello in _process sopra.
 	cell.fog_of_war_renderer.set_debug_source_context(_debug_source_context_for_cell(cell))
+	# Fauna ad hoc (2026-10-31, passo 1a): riquadri delle specie che contengono la cella, creati la prima volta.
+	if SimulationSettings.WILD_FAUNA_AD_HOC and cell.macro_cell != null:
+		WildFaunaService.ensure_cell(macro_world, game_data, coords)
 	# Individui da un salvataggio appena caricato (step 2) — PRIMA del _refresh_resource_visuals
 	# sotto, la cui riconciliazione con la popolazione è così un no-op invece di una rigenerazione.
 	# DOPO la nebbia (2026-09-26): crea i renderer delle specie salvate, e _setup_animal_renderer ne
