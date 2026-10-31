@@ -75,6 +75,10 @@ func save_game_to_json(
 				func(group: WildAnimalGroup) -> Dictionary: return group.to_save_data()
 			),
 			"next_wild_animal_group_id": game_data.next_wild_animal_group_id,
+			# Riquadri della fauna ad hoc (2026-10-31, passo 4 — WildFaunaRegion.to_save_data); la chiave si ricava.
+			"wild_fauna": game_data.wild_fauna.values().map(
+				func(entry: WildFaunaRegion) -> Dictionary: return entry.to_save_data()
+			),
 			# Visite in corso (2026-10-30, vedi WildAnimalVisit.to_save_data).
 			"wild_animal_visits": game_data.wild_animal_visits.map(
 				func(visit: WildAnimalVisit) -> Dictionary: return visit.to_save_data()

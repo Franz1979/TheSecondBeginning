@@ -149,6 +149,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for saved_group in data["game"].get("wild_animal_groups", []):
 		game_data.wild_animal_groups.append(WildAnimalGroup.from_save_data(saved_group))
 	game_data.next_wild_animal_group_id = int(data["game"].get("next_wild_animal_group_id", 1))
+	# Riquadri della fauna ad hoc (2026-10-31, passo 4) — .get() per i save precedenti: nessun riquadro noto, li crea
+	# WildFaunaService.ensure_cell entrando nelle celle.
+	game_data.wild_fauna.clear()
+	for saved_region in data["game"].get("wild_fauna", []):
+		var entry := WildFaunaRegion.from_save_data(saved_region)
+		game_data.wild_fauna[WildFaunaService.region_key(entry.species, entry.region)] = entry
 	# Visite in corso (2026-10-30) — .get() per i save precedenti: nessuna visita. Le ricostruisce alla prima mossa
 	# WildAnimalVisitService (collisione, edifici, animali usciti dal branco).
 	game_data.wild_animal_visits.clear()

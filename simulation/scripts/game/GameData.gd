@@ -128,7 +128,7 @@ var next_wild_animal_group_id: int = 1
 # caricamento una visita in corso sparisce.
 var wild_animal_visits: Array[WildAnimalVisit] = []
 # Fauna selvatica ad hoc (2026-10-31, piano fauna passo 1a — WildFaunaService): riquadri delle specie già creati,
-# chiave WildFaunaService.region_key -> WildFaunaRegion. Non ancora salvati (passo 4).
+# chiave WildFaunaService.region_key -> WildFaunaRegion. Salvati (passo 4, "wild_fauna" nella sezione "game").
 var wild_fauna: Dictionary = {}
 # Una mandria ha cambiato cella nel giro di oggi (WildFaunaService.tick_day): la scena ridisegna gli animali delle celle
 # vive e lo rimette a false. Mai salvato.
