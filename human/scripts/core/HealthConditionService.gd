@@ -45,25 +45,34 @@ static func has_condition(individual: HumanIndividual, condition_id: String) -> 
 	return false
 
 
-# `individual` può prendere `condition_id`: condizione esistente, non già presente (la stessa due volte non si somma) e
-# fascia d'età ammessa (HealthConditionRules.age_bands, vuota = tutte).
+# `individual` può prendere `condition_id`: condizione esistente, non già presente (la stessa due volte non si somma,
+# salvo HealthConditionRules.repeat_adds: il morso) e fascia d'età ammessa (HealthConditionRules.age_bands, vuota = tutte).
 static func can_get(individual: HumanIndividual, condition_id: String, game_data: GameData) -> bool:
 	var rules := get_rules(condition_id)
-	if rules == null or individual == null or has_condition(individual, condition_id):
+	if rules == null or individual == null or (has_condition(individual, condition_id) and not rules.repeat_adds):
 		return false
 	return rules.age_bands.is_empty() or GameContext.age_band_for(individual, game_data) in rules.age_bands
 
 
 # Dà a `individual` la condizione `condition_id` (se can_get): toglie subito immediate_health_loss ed estrae la durata
-# della fase acuta.
+# della fase acuta. Già presente con repeat_adds: la perdita si prende di nuovo e la fase acuta riparte coi giorni
+# nuovi sommati a quelli rimasti.
 static func add_condition(individual: HumanIndividual, condition_id: String, game_data: GameData) -> bool:
 	if not can_get(individual, condition_id, game_data):
 		return false
-	var rules := get_rules(condition_id)
+	_start(individual, get_rules(condition_id))
+	return true
+
+
+static func _start(individual: HumanIndividual, rules: HealthConditionRules) -> void:
 	individual.current_health = maxf(individual.current_health - rules.immediate_health_loss, 0.0)
 	var days := randi_range(rules.min_duration_days, maxi(rules.min_duration_days, rules.max_duration_days))
-	individual.health_conditions.append({"id": condition_id, "days": days, "phase": PHASE_ACUTE})
-	return true
+	for entry in individual.health_conditions:
+		if String(entry.get("id", "")) == rules.id:
+			entry["days"] = int(entry.get("days", 0)) + days
+			entry["phase"] = PHASE_ACUTE
+			return
+	individual.health_conditions.append({"id": rules.id, "days": days, "phase": PHASE_ACUTE})
 
 
 # Un giorno di tutte le condizioni. Fase acuta: perdite acute e un giorno in meno; a fine durata guarita se la salute è
@@ -74,6 +83,7 @@ static func advance_daily(individual: HumanIndividual) -> float:
 		return 0.0
 	var health_before := individual.current_health
 	var remaining: Array[Dictionary] = []
+	var infections: Array[String] = []
 	for entry in individual.health_conditions:
 		var rules := get_rules(String(entry.get("id", "")))
 		if rules == null:
@@ -84,6 +94,9 @@ static func advance_daily(individual: HumanIndividual) -> float:
 		var remedy_rules := CaloricCalculator.get_caloric_source_rules(String(entry.get(KEY_REMEDY, "")))
 		var health_factor := 0.0 if remedy_rules != null and remedy_rules.remedy_blocks_daily_loss else 1.0
 		if phase == PHASE_ACUTE:
+			# Infezione (2026-10-30, richiesta utente — morso): un tiro al giorno, saltato se oggi è stata medicata.
+			if rules.infection_probability_per_day > 0.0 and remedy_rules == null 					and randf() < rules.infection_probability_per_day:
+				infections.append(rules.infection_condition_id)
 			_lose(individual, rules.daily_health_loss * health_factor, rules.daily_happiness_loss)
 			days -= 1
 			if days <= 0:
@@ -101,6 +114,12 @@ static func advance_daily(individual: HumanIndividual) -> float:
 			kept[KEY_REMEDY] = remedy_rules.secondary_resource_name
 		remaining.append(kept)
 	individual.health_conditions = remaining
+	for infection_id in infections:
+		var infection_rules := get_rules(infection_id)
+		if infection_rules == null or has_condition(individual, infection_id):
+			continue
+		_start(individual, infection_rules)
+		print("[INFEZIONE] #%d %s: ferita infetta -> %s" % [individual.id, individual.name, infection_id])
 	return health_before - individual.current_health
 
 

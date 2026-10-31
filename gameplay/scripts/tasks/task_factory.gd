@@ -288,6 +288,10 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				# Nessun argomento (2026-10-13, talk.tres): il partner resta nel context (TalkService.CONTEXT_PARTNER_ID).
 				steps.append(TalkAction.new())
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.DRINK:
+				# Bere alla riva (2026-10-30, sete): nessun argomento, la riva è il Walk prima.
+				steps.append(DrinkAction.new())
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.WAIT_FOR_SAFETY:
 				# Attesa al riparo (2026-10-30, flee.tres): context_keys[0] facoltativo, tetto di sicurezza in giorni.
 				var flee_max_wait_days := DangerFleeService.DEFAULT_MAX_WAIT_DAYS

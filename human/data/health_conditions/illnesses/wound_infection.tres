@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="HealthConditionRules" format=3]
+
+[ext_resource type="Script" path="res://human/scripts/core/HealthConditionRules.gd" id="1_condition"]
+
+[resource]
+script = ExtResource("1_condition")
+id = "wound_infection"
+display_name = "illness_wound_infection"
+category = 0
+severity = 0
+min_duration_days = 3
+max_duration_days = 5
+daily_health_loss = 150.0
+daily_happiness_loss = 100.0
+bed_rest = true
+recovery_health_ratio = 0.5
+convalescence_daily_health_loss = 0.0
+convalescence_daily_happiness_loss = 50.0
+convalescence_bed_rest = false

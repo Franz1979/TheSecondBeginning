@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_waterskin"]
+
+[resource]
+script = ExtResource("1_waterskin")
+secondary_resource_name = "waterskin"
+calories_per_unit = 0.0
+category = 4
+required_idea_id = "smoking"
+generation_source = 2
+space_per_unit = 2.0
+recipe_inputs = {
+"fiber_rope": 1,
+"sinew": 1,
+"smoked_hide": 2
+}
+recipe_labor = 250.0
+recipe_workstation_types = Array[String](["toolmaker_hut"])
+recipe_required_tool_categories = Array[int]([6])
+tool_categories = Array[int]([12])
+max_uses = 200
+water_capacity = 90.0

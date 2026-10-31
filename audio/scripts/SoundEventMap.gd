@@ -34,6 +34,10 @@ const EVENTS: Dictionary = {
 	&"star_vigil_call": &"call_for_stars_fest",
 	# Arrivo di un gruppo di animali selvatici in visita (2026-10-28, lupi L1): evento "wild_animal_arrived:<specie>".
 	&"wild_animal_arrived:wolf": &"wolf_howl",
+	# Inizio della carica di un gruppo in visita (2026-10-30, lupi L4): evento "wild_animal_charged:<specie>".
+	&"wild_animal_charged:wolf": &"wolf_attack",
+	# Branco scacciato da un gruppo di persone (2026-10-30, lupi L6.1): grido di guerra di chi lo scaccia.
+	&"wild_animal_driven_off": &"war_cry",
 	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per
 	# usi futuri): quello di una ricetta con RiteRules.completion_sound_id vuoto.
 	&"rite_completed": &"rite_paleolithic",

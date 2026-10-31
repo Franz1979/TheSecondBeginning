@@ -7,6 +7,7 @@ func save_world_to_json(world: World, file_path: String) -> void:
 	"file_type": "world_map",
 	"width": World.WIDTH,
 	"height": World.HEIGHT,
+	"streams_generated": world.streams_generated,
 	"cells": []
 }
 
@@ -17,6 +18,8 @@ func save_world_to_json(world: World, file_path: String) -> void:
 			"terrain_base": cell.terrain_base,
 			"water_type": cell.water_type,
 			"river_shape":cell.river_shape,
+			"stream_edges": cell.stream_edges,
+			"stream_has_spring": cell.stream_has_spring,
 			"coast_type": cell.coast_type,
 			"biome": cell.biome
 		})

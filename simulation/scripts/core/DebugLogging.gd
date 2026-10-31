@@ -234,6 +234,8 @@ const SHOW_FOOD_SELECTION_LOGS := false
 # risorsa, spazio e calorie prima/dopo). RESTOCK_LOG_INDIVIDUAL_ID = -1 significa TUTTI gli individui.
 # Solo print: nessun effetto sulla simulazione.
 const SHOW_RESTOCK_LOGS := false
+# THIRST (2026-10-30): [THIRST] sorsi al passaggio, compiti di bere assegnati, ricerche della riva fallite (ThirstService).
+const SHOW_THIRST_LOGS := false
 const RESTOCK_LOG_INDIVIDUAL_ID: int = -1
 
 # true se il log RESTOCK e' attivo per questo individuo (flag acceso e id configurato uguale, oppure -1).

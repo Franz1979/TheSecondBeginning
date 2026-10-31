@@ -197,7 +197,16 @@ extends Resource
 # (consumato/recuperato da un futuro sistema di Task/Action), non più "giorni di digiuno prima
 # della morte": stesso spostamento concettuale già maturato per stamina rispetto alla vecchia
 # Workforce.
-@export var base_max_thirst: float = 5000.0
+#
+# Sete (2026-10-30, richiesta utente — passo 1, solo il calo): current_thirst è l'ACQUA NEL CORPO (piena = dissetato),
+# nella stessa unità del cibo. Massimo = base_max_thirst × taglia (size_multiplier_by_age/by_sex, come la riserva
+# calorica: un corpo più piccolo contiene meno acqua), vedi HumanCalculator.get_max_thirst. Consumo giornaliero =
+# base_daily_water_consumption × thirst_multiplier_by_age/by_sex (come caloric_multiplier per il cibo; neonato 0,
+# allattamento × EraRules.dependent_child_calorie_multiplier), vedi HumanCalculator.get_daily_water_consumption.
+# Un adulto passa da pieno a zero in base_max_thirst / base_daily_water_consumption giorni (4, 2026-10-30), poi
+# ThirstService.DEHYDRATION_DAYS giorni a zero prima di morire (DeathCause.DEHYDRATION).
+@export var base_max_thirst: float = 120.0
+@export var base_daily_water_consumption: float = 30.0
 @export var thirst_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 @export var thirst_multiplier_by_sex: Array[float] = [1.0, 1.0]
 
@@ -206,7 +215,7 @@ extends Resource
 @export var health_multiplier_by_sex: Array[float] = [1.0, 1.0]
 # Malato (2026-10-24, richiesta utente): sotto questa salute niente lavori, svago, riti né comandi diretti, solo
 # bisogni (riposo, provviste). Vedi HumanIndividual.is_sick.
-@export var sick_health_threshold: float = 1000.0
+@export var sick_health_threshold: float = 500.0
 
 @export var base_max_happiness: float = 5000.0
 @export var happiness_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]

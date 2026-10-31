@@ -24,4 +24,7 @@ enum DeathCause {
 	ILLNESS,
 	# Ferite (2026-10-25, richiesta utente): salute a 0 con solo ferite tra le condizioni (HealthConditionService.death_cause).
 	WOUNDS,
+	# Sete (2026-10-30, richiesta utente): ThirstService.DEHYDRATION_DAYS giorni con l'acqua nel corpo a zero
+	# (ThirstService.apply_drain, morte immediata da GameSimulation.tick_frame).
+	DEHYDRATION,
 }

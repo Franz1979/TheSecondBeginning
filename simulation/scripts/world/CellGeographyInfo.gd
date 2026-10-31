@@ -15,7 +15,7 @@ func show_geography(cell: MacroCellData) -> void:
 	terrain_label.text = "Terrain: " + _terrain_to_text(cell.terrain_base)
 	water_label.text = "Water: " + _water_to_text(cell.water_type)
 	coast_label.text = "Coast: " + _coast_to_text(cell.coast_type)
-	river_label.text = "River: " + _river_to_text(cell.river_shape)
+	river_label.text = "River: " + _river_to_text(cell.river_shape) + "  ·  Stream: " + _stream_to_text(cell)
 	biome_label.text = "Biome: " + _biome_to_text(cell.biome)
 
 
@@ -79,6 +79,12 @@ func _river_to_text(value: GameTypes.RiverShape) -> String:
 			return "Horizontal"
 		_:
 			return "River shape"
+
+
+func _stream_to_text(cell: MacroCellData) -> String:
+	if cell.stream_edges == 0:
+		return "Spring" if cell.stream_has_spring else "None"
+	return "Yes, spring" if cell.stream_has_spring else "Yes"
 
 
 func _biome_to_text(value: GameTypes.Biome) -> String:

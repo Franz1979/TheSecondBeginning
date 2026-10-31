@@ -4,6 +4,9 @@ const WIDTH: int = 100
 const HEIGHT: int = 100
 
 var cells: Array[MacroCellData] = []
+# true quando la rete dei ruscelli è già stata generata per questo mondo (anche se l'esito è
+# "nessun ruscello"): i mondi salvati prima dei ruscelli la ricevono una sola volta al caricamento.
+var streams_generated: bool = false
 var cell_states: Array[MacroCellState] = []
 # Popolazioni animali "vere" (rabbit/deer) — world-level, non più proprietà della singola
 # macrocella (vedi PopulationGroup). Ogni gruppo ha un Territory (vedi Territory.gd) di dimensione

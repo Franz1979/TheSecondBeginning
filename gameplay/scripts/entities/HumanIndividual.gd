@@ -285,6 +285,21 @@ const FALLBACK_MAX_VITAL: float = 5000.0
 
 var current_thirst: float = 0.0
 var max_thirst: float = 0.0
+# Consumo d'acqua di oggi (HumanCalculator.get_daily_water_consumption), ricalcolato una volta al giorno da
+# HumanVitalsIndividualService.recalculate_vitals e letto a ogni frame da ThirstService.apply_drain. Non salvato.
+var daily_water_consumption: float = 0.0
+# Bere (ThirstService, non salvati): dopo una ricerca della riva fallita si riprova solo quando current_thirst scende
+# sotto questo valore (INF = nessun rinvio); ultima microcella controllata dal sorso al passaggio.
+var thirst_retry_below: float = INF
+var thirst_last_microcell: Vector2i = Vector2i(-1, -1)
+# Nella fascia vicino all'acqua all'ultima microcella controllata (ThirstService.try_sip): niente calo. Non salvato, si
+# ricalcola al primo controllo dopo il caricamento.
+var thirst_in_water_band: bool = false
+# Acqua nell'otre in cintura (2026-10-30, ThirstService): riempita alla riva, bevuta sotto la soglia del sorso. Se l'otre
+# non c'è più (posato, rotto) si azzera al primo controllo. Persistito.
+var waterskin_water: float = 0.0
+# Avviso "sta morendo di sete" già mostrato per questo episodio a zero; azzerato alla prima bevuta. Persistito.
+var thirst_zero_alerted: bool = false
 var current_health: float = 0.0
 var max_health: float = 0.0
 # Condizioni di salute in corso (2026-10-25, HealthConditionService — malattie e ferite): lista di {"id" di
@@ -367,6 +382,10 @@ var body_reserve_in_use: bool = false
 # che lo porta (nessun individuo con dependent_child_id uguale al suo id). Si azzera il giorno in cui la
 # condizione cessa. A GameTimeService.STARVATION_DAYS muore con causa DeathCause.STARVATION. Persistito.
 var starvation_days: int = 0
+# Tempo passato con l'acqua nel corpo a zero, in giorni di gioco (2026-10-31, sete): cresce fotogramma per fotogramma
+# (ThirstService.apply_drain), si azzera appena si beve. A ThirstService.DEHYDRATION_DAYS muore subito, causa
+# DeathCause.DEHYDRATION. Persistito.
+var dehydration_elapsed: float = 0.0
 # Fascia d'eta' (HumanTypes.AgeBand come int) usata all'ULTIMO ricalcolo di max_stamina; -1 = non ancora nota.
 # Transitorio, NON persistito (2026-09-19, richiesta utente): serve a HumanStaminaIndividualService per
 # riconoscere il cambio di fascia e alzare current_stamina in proporzione al nuovo massimo. Dopo un
@@ -916,10 +935,10 @@ const ASSIGN_REJECT_SICK := "sick"
 
 # Malato (2026-10-24, richiesta utente): soglia senza HumanRules risolvibile, stesso default di
 # HumanRules.sick_health_threshold.
-const FALLBACK_SICK_HEALTH_THRESHOLD: float = 1000.0
+const FALLBACK_SICK_HEALTH_THRESHOLD: float = 500.0
 # Task-bisogno senza priorità di interruzione che un malato può ricevere: riposo lungo (leisure_rest) e
 # provviste del tasto F (leisure_restock, leisure_restock_backpack). Riconosciute dal task_name.
-const SICK_ALLOWED_TASK_NAMES: Array[String] = ["task_leisure_rest_name", "task_leisure_restock_name"]
+const SICK_ALLOWED_TASK_NAMES: Array[String] = ["task_leisure_rest_name", "task_leisure_restock_name", "task_drink_name"]
 
 
 # Condizione che manda a letto (HealthConditionService) oppure salute sotto HumanRules.sick_health_threshold: solo bisogni (riposo, provviste), nessun lavoro, svago, rito o
@@ -932,6 +951,28 @@ func is_sick() -> bool:
 	if folk_ref != null and folk_ref.human_rules_ref != null:
 		threshold = folk_ref.human_rules_ref.sick_health_threshold
 	return current_health < threshold
+
+
+# Riparo per sé (2026-10-31, richiesta utente): malato senza casa e solo per salute bassa (nessuna condizione che manda a
+# letto) può lavorare ai cantieri residenziali, altrimenti senza casa perderebbe salute ogni giorno senza uscirne.
+func may_build_own_shelter() -> bool:
+	return house_id == -1 and not (not health_conditions.is_empty() and HealthConditionService.requires_bed_rest(self))
+
+
+# Task ammesse dal riparo per sé: "Cerca lavoro" (per arrivare alla lista) e Costruisci su un edificio residenziale
+# (rules.max_residents > 0) non completo.
+static func is_shelter_task(task: Task) -> bool:
+	if task == null:
+		return false
+	if task.task_name == JobBoardService.SEEK_JOB_TASK_NAME:
+		return true
+	if not JobWorkScanService.BUILD_TASK_NAMES.has(task.task_name):
+		return false
+	for step in task.steps:
+		var build := step as BuildAction
+		if build != null and build.target_building != null and build.target_building.rules != null 				and build.target_building.rules.max_residents > 0 and not build.target_building.is_complete:
+			return true
+	return false
 
 
 # Stessi controlli (e stessi log [TASK GUARD]) di sempre, nello stesso ordine, ma restituisce il MOTIVO
@@ -951,6 +992,7 @@ func get_assign_rejection_reason(task: Task, age_band: HumanTypes.AgeBand) -> St
 		if not [
 			HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_REST,
 			HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_RESTOCK,
+			HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_DRINK,
 			HumanIndividualActionService.INTERRUPT_PRIORITY_REST,
 			HumanIndividualActionService.INTERRUPT_PRIORITY_FLEE,
 		].has(task.interrupt_priority):
@@ -963,9 +1005,10 @@ func get_assign_rejection_reason(task: Task, age_band: HumanTypes.AgeBand) -> St
 	if is_sick() and not [
 		HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_REST,
 		HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_RESTOCK,
+		HumanIndividualActionService.INTERRUPT_PRIORITY_EMERGENCY_DRINK,
 		HumanIndividualActionService.INTERRUPT_PRIORITY_REST,
 		HumanIndividualActionService.INTERRUPT_PRIORITY_FLEE,
-	].has(task.interrupt_priority) and not SICK_ALLOWED_TASK_NAMES.has(task.task_name):
+	].has(task.interrupt_priority) and not SICK_ALLOWED_TASK_NAMES.has(task.task_name) 			and not (may_build_own_shelter() and is_shelter_task(task)):
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[TASK GUARD] Individuo #%d %s: malato (salute %.1f) — solo Task-bisogno ammesse, '%s' rifiutata." % [
 				id, name, current_health, task.task_name

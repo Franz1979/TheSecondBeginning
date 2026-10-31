@@ -3,8 +3,8 @@ extends RefCounted
 
 # Visita di un gruppo di animali selvatici al villaggio (2026-10-28, richiesta utente — lupi passo L1): una parte del
 # WildAnimalGroup entra dal bordo della macrocella del villaggio, va alla Fossa più piena (o in un punto ai margini del
-# villaggio se non c'è una Fossa), resta un poco ed esce. Dato di partita in GameData.wild_animal_visits, NON salvato
-# (L1): al caricamento la visita sparisce. Movimento in WildAnimalVisitService.advance, disegno in WildAnimalVisitView.
+# villaggio se non c'è una Fossa), resta un poco ed esce. Dato di partita in GameData.wild_animal_visits, salvato
+# (vedi to_save_data). Movimento in WildAnimalVisitService.advance, disegno in WildAnimalVisitView.
 #
 # Coordinate: microcella continue, locali a `macro_coords` (come VisitorParty).
 
@@ -73,6 +73,18 @@ var charge_remaining: float = 0.0
 var charge_min_distance: float = INF
 # Distanza del presente più vicino alla persona all'inizio della carica (microcelle), per il log.
 var charge_start_distance: float = 0.0
+# Inseguimento (lupi L5b, 2026-10-30): pausa rimasta dopo un morso (giorni) e morsi dati in questa carica.
+var charge_pause: float = 0.0
+var bites: int = 0
+# Scacciati in gruppo (lupi L6.1, 2026-10-30): chi corre contro il branco (id degli HumanIndividual), quanti ne servono
+# perché rinunci (0 = nessuno interviene) e branco scacciato (se ne va di corsa).
+var defender_ids: Array[int] = []
+var defenders_needed: int = 0
+var driven_off: bool = false
+# Ringhio della carica già suonato (GameScene.wild_animal_charged): una volta sola.
+var charge_announced: bool = false
+# Grido di chi l'ha scacciato già suonato (GameScene.wild_animal_driven_off): una volta sola.
+var driven_off_announced: bool = false
 var attacked: bool = false
 # Scia del centro in viaggio (2026-10-30): ultimi punti percorsi (microcelle), dal più vecchio al più recente; chi ha
 # il suo posto nella formazione dietro un ostacolo la segue (WildAnimalVisitService._follow_with_collision).
@@ -85,3 +97,92 @@ var path: Array[Vector2] = []
 var path_target: Vector2 = Vector2.ZERO
 var path_planned: bool = false
 var path_block_version: int = -1
+# Da ricostruire alla prima mossa dopo il caricamento (WildAnimalVisitService._restore_after_load): collisione, edifici
+# a cui reagire, animali usciti dal branco nel frattempo. Mai salvato.
+var needs_restore: bool = false
+
+
+# Salvataggio (2026-10-30, richiesta utente — visite e fughe salvate): lo stato che non si ricalcola. Collisione,
+# percorso, scia ed edifici (reazioni, ripari, zone del fuoco) si ricostruiscono al caricamento. Vettori come [x, y].
+func to_save_data() -> Dictionary:
+	return {
+		"group_id": group_id, "species": species, "phase": phase, "target_kind": target_kind,
+		"pit_building_id": pit_building_id, "macro_coords": _pair(Vector2(macro_coords)),
+		"position": _pair(position), "facing_direction": _pair(facing_direction), "entry_point": _pair(entry_point),
+		"target_point": _pair(target_point), "look_point": _pair(look_point), "stay_remaining": stay_remaining,
+		"animal_ids": animal_ids, "offsets": offsets.map(_pair), "home_offsets": home_offsets.map(_pair),
+		"headings": headings, "moving": moving, "phase_timers": phase_timers, "hopping": hopping,
+		"hop_timers": hop_timers, "sniff_points": sniff_points.map(_pair), "notice_radii": notice_radii,
+		"attack_chance": attack_chance, "attack_rolled_ids": attack_rolled_ids.keys(),
+		"attack_target_id": attack_target_id, "charge_remaining": charge_remaining,
+		"charge_min_distance": charge_min_distance if is_finite(charge_min_distance) else -1.0,
+		"charge_start_distance": charge_start_distance, "charge_pause": charge_pause, "bites": bites,
+		"attacked": attacked, "arrival_announced": arrival_announced,
+		"defender_ids": defender_ids, "defenders_needed": defenders_needed, "driven_off": driven_off, "driven_off_announced": driven_off_announced, "charge_announced": charge_announced,
+	}
+
+
+static func from_save_data(data: Dictionary) -> WildAnimalVisit:
+	var visit := WildAnimalVisit.new()
+	visit.group_id = int(data.get("group_id", 0))
+	visit.species = String(data.get("species", ""))
+	visit.phase = int(data.get("phase", Phase.ARRIVING)) as Phase
+	visit.target_kind = int(data.get("target_kind", TargetKind.VILLAGE_EDGE)) as TargetKind
+	visit.pit_building_id = int(data.get("pit_building_id", -1))
+	visit.macro_coords = Vector2i(_vector(data.get("macro_coords")))
+	visit.position = _vector(data.get("position"))
+	visit.facing_direction = _vector(data.get("facing_direction"))
+	visit.entry_point = _vector(data.get("entry_point"))
+	visit.target_point = _vector(data.get("target_point"))
+	visit.look_point = _vector(data.get("look_point"))
+	visit.stay_remaining = float(data.get("stay_remaining", 0.0))
+	for value in data.get("animal_ids", []):
+		visit.animal_ids.append(int(value))
+	for value in data.get("offsets", []):
+		visit.offsets.append(_vector(value))
+	for value in data.get("home_offsets", []):
+		visit.home_offsets.append(_vector(value))
+	for value in data.get("headings", []):
+		visit.headings.append(float(value))
+	for value in data.get("moving", []):
+		visit.moving.append(bool(value))
+	for value in data.get("phase_timers", []):
+		visit.phase_timers.append(float(value))
+	for value in data.get("hopping", []):
+		visit.hopping.append(bool(value))
+	for value in data.get("hop_timers", []):
+		visit.hop_timers.append(float(value))
+	for value in data.get("sniff_points", []):
+		visit.sniff_points.append(_vector(value))
+	for value in data.get("notice_radii", []):
+		visit.notice_radii.append(float(value))
+	visit.attack_chance = float(data.get("attack_chance", 0.0))
+	for value in data.get("attack_rolled_ids", []):
+		visit.attack_rolled_ids[int(value)] = true
+	visit.attack_target_id = int(data.get("attack_target_id", -1))
+	visit.charge_remaining = float(data.get("charge_remaining", 0.0))
+	var min_distance := float(data.get("charge_min_distance", -1.0))
+	visit.charge_min_distance = min_distance if min_distance >= 0.0 else INF
+	visit.charge_start_distance = float(data.get("charge_start_distance", 0.0))
+	visit.charge_pause = float(data.get("charge_pause", 0.0))
+	visit.bites = int(data.get("bites", 0))
+	visit.attacked = bool(data.get("attacked", false))
+	visit.arrival_announced = bool(data.get("arrival_announced", false))
+	for value in data.get("defender_ids", []):
+		visit.defender_ids.append(int(value))
+	visit.defenders_needed = int(data.get("defenders_needed", 0))
+	visit.driven_off = bool(data.get("driven_off", false))
+	visit.driven_off_announced = bool(data.get("driven_off_announced", false))
+	visit.charge_announced = bool(data.get("charge_announced", false))
+	visit.needs_restore = true
+	return visit
+
+
+static func _pair(vector: Vector2) -> Array:
+	return [vector.x, vector.y]
+
+
+static func _vector(value: Variant) -> Vector2:
+	if value is Array and value.size() >= 2:
+		return Vector2(float(value[0]), float(value[1]))
+	return Vector2.ZERO

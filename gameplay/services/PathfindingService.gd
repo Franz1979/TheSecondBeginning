@@ -33,6 +33,12 @@ extends RefCounted
 
 # Peso dei guadi (per ora costante): attraversarli costa più del terreno normale.
 const FORD_WEIGHT_SCALE: float = 3.0
+# Ruscello (2026-10-31, richiesta utente): 8 × terreno, così si attraversa solo se il giro è lungo — o dal guado di pietre
+# (LiveMacroCell.stream_crossings), che pesa STONE_FORD_WEIGHT_SCALE × terreno.
+const STREAM_WEIGHT_SCALE: float = 8.0
+const STONE_FORD_WEIGHT_SCALE: float = 1.5
+# Nessuna macrocella per move_with_collision: niente rallentamento del guado.
+const NO_MACRO := Vector2i(-2147483648, -2147483648)
 # Preferenza per le strade (2026-10-16, richiesta utente): il vantaggio sul terreno normale (1 − costo) moltiplicato, solo
 # nella scelta del percorso. 4 (2026-10-18, era 2: i pipottini tagliavano nel bosco, che pesa quanto il terreno) =
 # sentiero di ciottoli visto a ~0.43 invece di ~0.86, terra battuta a 0.80 invece di 0.95: terreno normale ~2.33 volte il
@@ -103,8 +109,16 @@ static func blocked_test_for(macro_coords: Vector2i) -> Callable:
 # si entra solo in una microcella non bloccata, o si resta nella propria; se lo spostamento pieno è bloccato si prova
 # solo l'asse X, poi solo l'asse Y; bloccato su tutti e due = fermo (ritorna `from_position`). Unica regola per la fauna
 # (AnimalGroupRenderer) e gli animali in visita (WildAnimalVisitService), unificata il 2026-10-28. Fuori dalla macrocella
-# niente blocchi: i bordi li gestisce il chiamante.
-static func move_with_collision(blocked_test: Callable, from_position: Vector2, displacement: Vector2) -> Vector2:
+# niente blocchi: i bordi li gestisce il chiamante. Con `macro_coords` (2026-10-30, guado): nella microcella di un
+# ruscello lo spostamento è ridotto a MovementTerrainService.STREAM_SPEED; sul guado di pietre (2026-10-31) no.
+static func move_with_collision(
+	blocked_test: Callable, from_position: Vector2, displacement: Vector2, macro_coords: Vector2i = NO_MACRO
+) -> Vector2:
+	if macro_coords != NO_MACRO:
+		var cell: LiveMacroCell = _live_cells.get(macro_coords)
+		var from_micro := Vector2i(from_position.floor())
+		if cell != null and cell.stream_positions.has(from_micro) and not cell.stream_crossings.has(from_micro):
+			displacement *= MovementTerrainService.STREAM_SPEED
 	var next_position := from_position + displacement
 	if not blocked_test.is_valid():
 		return next_position
@@ -155,9 +169,16 @@ static func pick_free_destination(individual: HumanIndividual, sampler: Callable
 	for _attempt in range(RANDOM_DESTINATION_ATTEMPTS):
 		var candidate: Vector2 = sampler.call()
 		var microcell := Vector2i(floori(candidate.x), floori(candidate.y))
-		if is_blocked(cell, microcell) or not is_reachable(cell, from, microcell):
+		# Ruscello (2026-10-31, richiesta utente — pipottini che riposavano nell'acqua): si attraversa, ma non ci si ferma.
+		if cell.stream_positions.has(microcell) or is_blocked(cell, microcell) or not is_reachable(cell, from, microcell):
 			continue
 		return candidate
+	# Nessuna meta e fermo nel ruscello: la riva accanto (il ruscello è largo 1, una riva è tra i 4 vicini).
+	if cell.stream_positions.has(from):
+		for offset in [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]:
+			var bank: Vector2i = from + offset
+			if cell.water_access.has(bank) and not is_blocked(cell, bank):
+				return Vector2(bank) + Vector2(0.5, 0.5)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_PATHFINDING_LOGS:
 		print("[PATHFINDING] #%d %s: nessuna destinazione casuale libera e raggiungibile in %d tentativi — resta dov'è." % [
 			individual.id, individual.name, RANDOM_DESTINATION_ATTEMPTS
@@ -479,7 +500,7 @@ static func count_blocked(cell: LiveMacroCell) -> int:
 # Blocco di UNA microcella secondo la regola condivisa (MicrocellObstacles.is_free): guado = fiume ammesso, edifici
 # MOVEMENT ignorati. Acqua dell'intera macrocella compresa (is_free la rifiuta).
 static func _is_blocked_by_rule(cell: LiveMacroCell, position: Vector2i) -> bool:
-	return not cell.path_obstacles.is_free(position, false, cell.path_fords.has(position), false, true)
+	return not cell.path_obstacles.is_free(position, false, cell.path_fords.has(position), false, true, false, false, true)
 
 
 # Pesi diversi da quello del terreno normale: le microcelle con modificatori di movimento (path_weight) e i guadi.
@@ -493,6 +514,9 @@ static func _compute_weights(cell: LiveMacroCell) -> Dictionary:
 			weights[position] = weight
 	for position in cell.path_fords.keys():
 		weights[position] = FORD_WEIGHT_SCALE * terrain
+	# Ruscello: si guada ovunque, a caro prezzo; sul guado di pietre poco più del terreno.
+	for position in cell.stream_positions.keys():
+		weights[position] = (STONE_FORD_WEIGHT_SCALE if cell.stream_crossings.has(position) else STREAM_WEIGHT_SCALE) * terrain
 	return weights
 
 

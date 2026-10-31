@@ -3,6 +3,7 @@ class_name RandomMapGenerator
 func generate(world: World) -> void:
 	_set_all_plain(world)
 	_generate_lakes(world)
+	StreamNetworkGenerator.generate(world)
 
 
 func _set_all_plain(world: World) -> void:

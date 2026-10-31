@@ -250,6 +250,7 @@ death_cause_childbirth,parto
 death_cause_starvation,fame
 death_cause_illness,malattia
 death_cause_wounds,ferite
+death_cause_dehydration,sete
 notification_birth,"{name} è {birth_verb}, {offspring_word} di {mother}"
 notification_stillbirth,{mother} ha perso il bambino durante il parto
 birth_verb_male,nato
@@ -261,6 +262,9 @@ notification_resource_decayed_individual,{name} ha perso {quantity} {resource} (
 notification_resource_decayed_building,{quantity} {resource} deperiti in {building} (#{id})
 notification_building_material_needed,Serve materiale per avviare la costruzione di {building}
 notification_body_reserve_started,{name} ha finito le provviste e sta consumando la riserva corporea
+notification_thirst_zero,{name} ha finito l'acqua e sta morendo di sete
+individual_thirst_tooltip_waterskin,Corpo {body}/{max} · Otre {water}/{capacity}
+individual_thirst_tooltip_dehydration,Disidratazione: {days} giorni rimasti
 sex_label,Sesso: {sex}
 sex_female,Femmina
 sex_male,Maschio
@@ -351,6 +355,10 @@ task_heal_job_name,Cura {name}
 "task_heal_job_tooltip","Cura · {name} è a letto (salute {health}): portargli il rimedio"
 task_restock_step_backpack,Mangiando dallo zaino
 task_emergency_restock_name,Rifornimento urgente
+task_drink_name,Bere
+task_drink_step_walk,Andando a bere
+task_drink_step_drink,Bevendo
+task_emergency_drink_name,Bere urgente
 transport_dialog_title,Trasporta risorsa
 transport_dialog_message,Scegli cosa prelevare da {building}:
 transport_dialog_group_products,Prodotti
@@ -482,7 +490,7 @@ individual_supplies_label,Provviste:
 individual_food_calories_value,{calories} cal
 individual_supplies_tooltip_pouch,Provviste: {used}/{capacity}
 individual_supplies_tooltip_body,Riserva corporea (provviste esaurite): {current}/{max} cal
-individual_thirst_label,Sete:
+individual_thirst_label,Acqua:
 individual_health_label,Salute:
 individual_happiness_label,Felicità:
 individual_loyalty_label,Lealtà:
@@ -643,6 +651,7 @@ health_condition_phase_convalescence,convalescenza
 health_condition_bed_rest,a letto
 health_sequela_line,postumi: -{amount} salute massima per sempre
 health_condition_low_health_tooltip,"Salute troppo bassa: deve riposare, niente lavori."
+health_sick_shelter_tooltip,"Senza casa: può comunque lavorare ai cantieri delle case, per avere un riparo."
 notification_condition_convalescence,{name} è in convalescenza ({condition}): resterà così finché la salute non risale.
 notification_condition_recovered,Guarigione: {name} ({condition}).
 notification_condition_onset,Sintomi di {condition} per {name}: a letto finché non guarisce.
@@ -948,6 +957,7 @@ toolkit_tooltip_uses_of,{uses} su {max}
 toolkit_click_to_return_spare,Clic: rimetti nel magazzino un pezzo di scorta
 carried_resource_tooltip_dried_hide_bag,Sacca di pelle essiccata
 carried_resource_tooltip_smoked_hide_bag,Sacca di pelle affumicata
+carried_resource_tooltip_waterskin,Otre
 carried_resource_tooltip_stone_spear,Lancia con punta di pietra
 carried_resource_tooltip_bow,Arco
 carried_resource_tooltip_arrow_bundle,Mazzo di frecce
@@ -1066,7 +1076,7 @@ human_type_tool_slot_bonus,"+{bonus} per ogni posto attrezzo vuoto ({slots} post
 human_type_food_space,Provviste: {value}
 human_type_calories,Consumo giornaliero: {value} calorie
 human_type_stamina,Energia massima: {value}
-human_type_thirst,Sete massima: {value}
+human_type_thirst,Acqua massima: {value}
 human_type_health,Salute massima: {value}
 human_type_happiness,Felicità massima: {value}
 human_type_loyalty,Lealtà massima: {value}
@@ -1292,6 +1302,8 @@ task_assignment_setting_return_borrowed_tools,Riponi gli attrezzi presi per un l
 task_assignment_setting_return_borrowed_tools_tooltip,"Chi va a prendere un attrezzo in deposito per un lavoro della coda lo riporta quando è libero (dove l'ha preso, se c'è posto). Gli attrezzi che aveva già o che gli hai dato tu restano in cintura."
 task_assignment_setting_take_bag,Prendi la sacca se disponibile
 task_assignment_setting_take_bag_tooltip,"Chi è libero e non ha lavoro dalla coda, senza una sacca in cintura e con un posto libero, va a prendere in deposito la sacca migliore e la tiene."
+task_assignment_setting_take_waterskin,Prendi l'otre se disponibile
+task_assignment_setting_take_waterskin_tooltip,"Chi è libero e non ha lavoro dalla coda, senza un otre in cintura e con un posto libero, va a prendere in deposito l'otre migliore e lo tiene."
 task_assignment_setting_wear_apparel,Indossa i capi disponibili
 task_assignment_setting_wear_apparel_tooltip,"Chi è libero e non ha lavoro dalla coda, con un capo mancante (vestito, copricapo, calzari, monili), va a prendere in deposito quelli che gli servono e li indossa. Più capi nello stesso deposito in un solo viaggio."
 drawer_order_missing_materials,Mancano: {materials}
@@ -1385,7 +1397,7 @@ statistics_axis_percent,%
 statistics_param_health,Salute
 statistics_param_happiness,Felicità
 statistics_param_stamina,Stamina
-statistics_param_thirst,Sete
+statistics_param_thirst,Acqua
 statistics_param_loyalty,Lealtà
 statistics_param_faith,Fede
 statistics_param_tooltip,"{name} media: {current}/{max} ({percent}%)"
@@ -1452,6 +1464,8 @@ rite_oral_lesson_name,Lezione
 social_rite_reject_no_convocable,Nessuno da convocare nel villaggio (per la lezione servono bambini)
 building_pebble_path,Sentiero di ciottoli
 build_bar_pebble_path_tooltip,"Sentiero di ciottoli: si cammina meno affaticati (−10%) e un po' più veloci (+5%) della terra battuta"
+building_stone_ford,Guado di pietre
+build_bar_stone_ford_tooltip,"Guado di pietre: pietre piatte posate su un ruscello stretto, per attraversarlo più veloci e meno affaticati. Si piazza solo su un tratto largo una microcella; R per ruotare la fila."
 pending_no_active_idea,Nessuna idea in sviluppo
 pending_no_active_idea_detail,I pensieri depositati vanno persi: scegli un'idea
 carried_resource_tooltip_firewood,Legna da ardere
@@ -1658,3 +1672,9 @@ task_flee_name,Fuga dal pericolo
 task_flee_step_run,Corre al riparo
 task_flee_step_wait,Aspetta al riparo
 danger_predator,Predatore
+wound_bite,morso
+illness_wound_infection,infezione
+notification_wild_animal_driven_off,"{species}: scacciati da {names}"
+task_drive_off_name,Scaccia il pericolo
+task_drive_off_step_run,Corre contro il pericolo
+task_drive_off_step_wait,Grida e agita le braccia

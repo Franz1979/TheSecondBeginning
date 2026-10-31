@@ -276,6 +276,9 @@ extends Resource
 # conta il bonus più alto tra gli attrezzi in cintura, non la somma (HumanCalculator.get_equipped_carry_bonus).
 # 0.0 = nessun bonus.
 @export var carry_capacity_bonus: float = 0.0
+# Acqua che l'attrezzo contiene (2026-10-30, richiesta utente — otre, categoria WATERSKIN): si riempie alla riva e si beve
+# lontano dall'acqua (ThirstService). 0.0 = non contiene acqua.
+@export var water_capacity: float = 0.0
 # Efficienza di lavoro dell'attrezzo (2026-10-04, richiesta utente — generico): la durata del lavoro che lo usa si
 # divide per questo valore (2.0 = metà tempo). 1.0 = neutro. Oggi lo leggono CutAction e QuarryAction
 # (Action.get_tool_efficiency).

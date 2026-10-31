@@ -4,6 +4,7 @@ extends RefCounted
 const SEA := Color(0.10, 0.30, 0.90)
 const LAKE := Color(0.15, 0.50, 0.95)
 const RIVER := Color(0.20, 0.60, 1.00)
+const STREAM := Color(0.15, 0.45, 0.95)
 const PLAIN := Color(0.60, 0.90, 0.60)
 # Varianti di PLAIN per bioma — GRASSLAND/NONE restano sul verde di PLAIN sopra (invariato), gli
 # altri biomi hanno un colore distinto così una cella PLAIN+DESERT non appare identica a una

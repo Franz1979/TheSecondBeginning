@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_stone_ford"]
+
+[resource]
+script = ExtResource("1_stone_ford")
+building_name = "building_stone_ford"
+category = 3
+required_idea_id = "paleolithic_constructions"
+min_construction_days = 1
+required_labor = 400
+lifespan_years = 30
+required_materials = {
+"stone": 12
+}
+setup_site_material_per_cell = 0
+leaves_rubble = false
+walkable = true
+required_space = 1
+has_door = false
+visibility_radius = 1
+requires_narrow_stream = true
+movement_stamina_multiplier = 1.5
+movement_speed_multiplier = 0.7
+towing_speed_multiplier = 0.6

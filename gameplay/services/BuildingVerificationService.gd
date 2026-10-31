@@ -75,6 +75,9 @@ extends RefCounted
 # `rotation` di default/SOUTH veniva letta come se fosse una porta vera anche con has_door=false).
 
 #
+# Criterio 13 (2026-10-31, Guado di pietre): un tipo con rules.requires_narrow_stream si piazza solo su un tratto del
+# ruscello largo 1 (StreamMicrocellService.is_narrow); per lui, e solo per lui, il ruscello non è un ostacolo (Criteri 3-6).
+#
 # Criterio 10 (2026-09-28, richiesta utente; dal 2026-10-04 sempre attivo nel piazzamento della Build Task — le piante
 # vive si abbattono solo con la task Cut): alberi e cespugli VIVI sulla microcella dell'edificio
 # (BuildingSiteClearingService.has_woody_vegetation; ceppi e piante morte non contano) la rendono non edificabile con
@@ -100,6 +103,10 @@ static func is_position_buildable(
 
 		# Criterio 10
 		if not can_cut and BuildingSiteClearingService.has_woody_vegetation(cell.macro_state, microcell):
+			return false
+
+		# Criterio 13 (2026-10-31, Guado di pietre): solo su un tratto del ruscello largo 1.
+		if rules.requires_narrow_stream and not StreamMicrocellService.is_narrow(cell.stream_positions, microcell):
 			return false
 
 		# Criterio 11 (2026-10-16, Ceppo dell'insegnamento): serve almeno un ceppo d'albero sulla microcella.
@@ -190,7 +197,7 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 	return is_microcell_free(
 		Vector2i(cell.macro_x, cell.macro_y), cell.macro_cell, cell.macro_state, cell.river_positions, microcell, macro_world,
 		rules.buildable_on_water, rules.buildable_on_river, rules.buildable_on_stone, ignore_movement_buildings,
-		stacking and rules.allows_ground_beneath, stacking and rules.walkable
+		stacking and rules.allows_ground_beneath, stacking and rules.walkable, rules.requires_narrow_stream and not ignore_movement_buildings
 	)
 
 
@@ -199,17 +206,17 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 # né Fog of War qui: lavora su MacroCellData/MacroCellState/World, così la può usare chi non ha una
 # LiveMacroCell. `river_positions` = microcelle del fiume della macrocella (Array o Dictionary, basta .has()).
 # I tre flag allow_* corrispondono a BuildingRules.buildable_on_water/_river/_stone; ignore_movement_buildings
-# salta gli edifici calpestabili (categoria MOVEMENT).
+# salta gli edifici calpestabili (categoria MOVEMENT). `allow_stream` (2026-10-31): il ruscello non blocca (Guado di pietre).
 static func is_microcell_free(
 	macro_coords: Vector2i, macro_cell: MacroCellData, macro_state: MacroCellState, river_positions: Variant,
 	microcell: Vector2i, macro_world: World, allow_water: bool = false, allow_river: bool = false,
 	allow_stone: bool = false, ignore_movement_buildings: bool = false, stack_as_host: bool = false,
-	stack_as_ground: bool = false
+	stack_as_ground: bool = false, allow_stream: bool = false
 ) -> bool:
 	# Regola spostata in MicrocellObstacles (2026-09-27, pathfinding step 1), comportamento invariato: chi interroga
 	# molte microcelle della stessa macrocella costruisce MicrocellObstacles una volta e usa is_free direttamente.
 	return MicrocellObstacles.build(macro_coords, macro_cell, macro_state, river_positions, macro_world).is_free(
-		microcell, allow_water, allow_river, allow_stone, ignore_movement_buildings, stack_as_host, stack_as_ground
+		microcell, allow_water, allow_river, allow_stone, ignore_movement_buildings, stack_as_host, stack_as_ground, allow_stream
 	)
 
 

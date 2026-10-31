@@ -34,22 +34,37 @@ const VERSION_NOT_LIVE: int = -2
 # terreno.
 const TOWING_SPEED_GRASS: float = 0.85
 const TOWING_SPEED_FOREST: float = 0.5
+# Guado del ruscello (2026-10-30, richiesta utente): chi cammina nelle microcelle del ruscello (LiveMacroCell.stream_positions)
+# va a metà velocità e si stanca il doppio. Vale anche per gli animali (PathfindingService.move_with_collision, solo la
+# velocità). Chi traina ha in più TOWING_SPEED_STREAM, che con STREAM_SPEED dà 0.3.
+const STREAM_STAMINA: float = 2.0
+const STREAM_SPEED: float = 0.5
+const TOWING_SPEED_STREAM: float = 0.6
+# Guado di pietre (2026-10-31, richiesta utente): su una microcella di LiveMacroCell.stream_crossings il ruscello non
+# moltiplica più; valgono solo i moltiplicatori dell'edificio (stone_ford.tres: fatica 1.5, velocità 0.7, traino 0.6).
+# Danneggiato = come il ruscello nudo (le pietre smosse non aiutano).
 
 
 # Ricostruisce la mappa sparsa di UNA cella viva da macro_world.buildings. Solo edifici COMPLETI e
 # non demoliti (un cantiere non modifica il cammino), solo i tipi con un moltiplicatore diverso da
 # 1.0. Nessuna scansione della griglia 100x100: costo O(edifici del mondo), a eventi rari.
-# Fiumi/rocce/pendenze NON sono qui (nessuna percorribilità né modificatori naturali per ora): una
-# nuova fonte si aggiunge come un altro blocco di questa funzione, componendo per prodotto.
+# Fiumi/rocce/pendenze NON sono qui; il ruscello sì (2026-10-30, STREAM_*): una nuova fonte si aggiunge come un altro
+# blocco di questa funzione, componendo per prodotto.
 static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 	var modifiers: Dictionary = {}
 	var towing_surfaces: Dictionary = {}
+	var stream_crossings: Dictionary = {}
 	if macro_world != null:
 		for building in macro_world.buildings:
 			if building.macro_x != cell.macro_x or building.macro_y != cell.macro_y:
 				continue
 			if not building.is_complete or building.is_demolished or building.rules == null:
 				continue
+			if building.rules.requires_narrow_stream:
+				if building.is_damaged():
+					continue
+				for key in BuildingFootprint.cells_of(building):
+					stream_crossings[key] = true
 			# Danneggiato (2026-10-10): niente risparmio di stamina (la mappa si ricostruisce quando lo stato cambia,
 			# BuildingMaintenanceService.sync_damaged_buildings).
 			var stamina: float = building.get_effective_multiplier(building.rules.movement_stamina_multiplier)
@@ -63,8 +78,14 @@ static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 			for key in BuildingFootprint.cells_of(building):
 				var existing: Vector2 = modifiers.get(key, Vector2.ONE)
 				modifiers[key] = Vector2(existing.x * stamina, existing.y * speed)
+	for key in cell.stream_positions:
+		if stream_crossings.has(key):
+			continue
+		var existing: Vector2 = modifiers.get(key, Vector2.ONE)
+		modifiers[key] = Vector2(existing.x * STREAM_STAMINA, existing.y * STREAM_SPEED)
 	cell.movement_modifiers = modifiers
 	cell.towing_surfaces = towing_surfaces
+	cell.stream_crossings = stream_crossings
 	cell.movement_version = _next_version
 	_next_version += 1
 
@@ -110,6 +131,8 @@ static func _towing_speed_at(cell: LiveMacroCell, micro: Vector2i) -> float:
 		return TOWING_SPEED_GRASS
 	if cell.towing_surfaces.has(micro):
 		return float(cell.towing_surfaces[micro])
+	if cell.stream_positions.has(micro):
+		return TOWING_SPEED_STREAM
 	return TOWING_SPEED_FOREST if _forest_cells(cell).has(micro) else TOWING_SPEED_GRASS
 
 

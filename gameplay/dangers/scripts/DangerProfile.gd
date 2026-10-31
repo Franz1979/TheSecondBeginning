@@ -25,3 +25,17 @@ extends Resource
 @export_group("Waiting")
 # Tetto di sicurezza dell'attesa al riparo (giorni), se il pericolo non viene chiuso.
 @export var max_wait_days: float = 1.0
+
+@export_group("Drive off")
+# Scacciare il pericolo in gruppo (2026-10-30, richiesta utente — lupi L6.1): all'inizio del pericolo gli adulti
+# disponibili entro drive_off_radius (microcelle) da chi è preso di mira, se sono almeno drive_off_min_helpers e almeno
+# uno ogni drive_off_threats_per_helper minacce (animali), corrono verso il pericolo (compito drive_off.tres) e si
+# fermano a drive_off_stop_distance da lui. Meno di così: non si muove nessuno. false = nessuno lo scaccia.
+@export var drive_off_enabled: bool = false
+@export var drive_off_radius: float = 6.0
+@export var drive_off_min_helpers: int = 2
+@export var drive_off_threats_per_helper: int = 2
+@export var drive_off_stop_distance: float = 2.0
+# Chi può aiutare: fasce d'età ammesse.
+@export var drive_off_age_bands: Array[HumanTypes.AgeBand] = [
+	HumanTypes.AgeBand.FERTILE_ADULT, HumanTypes.AgeBand.MATURE_ADULT, HumanTypes.AgeBand.OLD]

@@ -108,9 +108,13 @@ func initialize_population() -> void:
 # rocce e alberi a circa START_RESOURCE_RADIUS microcelle; nessuno = il più vicino senza questa condizione. Il "vicino" è
 # misurato a blocchi di START_RESOURCE_BLOCK microcelle (il blocco del punto e quelli attorno), per non scorrere tutte le
 # rocce e gli alberi per ogni candidato.
+# Ruscello (2026-10-30, richiesta utente): cascata 1) rocce, alberi e ruscello (entro START_STREAM_RADIUS) vicini;
+# 2) solo il ruscello; 3) rocce e alberi; 4) il punto libero più vicino. Mai sopra il ruscello (calpestabile, quindi non
+# escluso dalla griglia): né il punto scelto né i singoli membri, che finendoci vanno sulla microcella libera più vicina.
 const START_REGION_MIN_CELLS: int = 400
 const START_RESOURCE_BLOCK: int = 5
 const START_RESOURCE_RADIUS: int = 10
+const START_STREAM_RADIUS: int = 15
 
 
 func relocate_start_group(cell: LiveMacroCell) -> void:
@@ -127,9 +131,27 @@ func relocate_start_group(cell: LiveMacroCell) -> void:
 		var plant: Vector3i = key
 		tree_cells.append(Vector2i(plant.x, plant.y))
 	var tree_blocks := _resource_blocks(tree_cells)
+	var stream_blocks := _resource_blocks(cell.stream_positions.keys())
+	var off_stream := func(microcell: Vector2i) -> bool:
+		return not cell.stream_positions.has(microcell)
 	var has_resources_near := func(microcell: Vector2i) -> bool:
 		return _blocks_near(stone_blocks, microcell) and _blocks_near(tree_blocks, microcell)
-	var anchor := PathfindingService.find_open_microcell(cell, near, START_REGION_MIN_CELLS, -1, has_resources_near)
+	var has_stream_near := func(microcell: Vector2i) -> bool:
+		return _blocks_near(stream_blocks, microcell, START_STREAM_RADIUS)
+	var rules: Array[Callable] = [
+		func(microcell: Vector2i) -> bool:
+			return off_stream.call(microcell) and has_stream_near.call(microcell) and has_resources_near.call(microcell),
+		func(microcell: Vector2i) -> bool:
+			return off_stream.call(microcell) and has_stream_near.call(microcell),
+		func(microcell: Vector2i) -> bool:
+			return off_stream.call(microcell) and has_resources_near.call(microcell),
+		off_stream,
+	]
+	var anchor := PathfindingService.NO_POCKET_EXIT
+	for rule in rules:
+		anchor = PathfindingService.find_open_microcell(cell, near, START_REGION_MIN_CELLS, -1, rule)
+		if anchor != PathfindingService.NO_POCKET_EXIT:
+			break
 	if anchor == PathfindingService.NO_POCKET_EXIT:
 		anchor = PathfindingService.find_open_microcell(cell, near, START_REGION_MIN_CELLS)
 	if anchor == PathfindingService.NO_POCKET_EXIT:
@@ -139,8 +161,8 @@ func relocate_start_group(cell: LiveMacroCell) -> void:
 	for member in individuals:
 		var target: Vector2 = member.position + offset
 		var microcell := Vector2i(floori(target.x), floori(target.y))
-		if PathfindingService.get_region(cell, microcell) != region:
-			var free := PathfindingService.find_open_microcell(cell, microcell, 0, region)
+		if PathfindingService.get_region(cell, microcell) != region or cell.stream_positions.has(microcell):
+			var free := PathfindingService.find_open_microcell(cell, microcell, 0, region, off_stream)
 			if free != PathfindingService.NO_POCKET_EXIT:
 				target = Vector2(free) + Vector2(0.5, 0.5)
 		if DebugLogging.ENABLED and target.distance_to(member.position) > 0.01:
@@ -161,10 +183,10 @@ static func _resource_blocks(microcells: Array) -> PackedByteArray:
 	return blocks
 
 
-# true se un blocco entro START_RESOURCE_RADIUS da `microcell` (in blocchi, per eccesso) ha la risorsa.
-static func _blocks_near(blocks: PackedByteArray, microcell: Vector2i) -> bool:
+# true se un blocco entro `radius` microcelle da `microcell` (in blocchi, per eccesso) ha la risorsa.
+static func _blocks_near(blocks: PackedByteArray, microcell: Vector2i, radius: int = START_RESOURCE_RADIUS) -> bool:
 	var side: int = ceili(float(World.WIDTH) / float(START_RESOURCE_BLOCK))
-	var reach: int = ceili(float(START_RESOURCE_RADIUS) / float(START_RESOURCE_BLOCK))
+	var reach: int = ceili(float(radius) / float(START_RESOURCE_BLOCK))
 	var bx := microcell.x / START_RESOURCE_BLOCK
 	var by := microcell.y / START_RESOURCE_BLOCK
 	for y in range(maxi(by - reach, 0), mini(by + reach, side - 1) + 1):
@@ -204,9 +226,16 @@ func tick_frame(real_delta: float, game_delta: float, is_playing: bool, focus: H
 	if timing:
 		parts["orologio lista"] = Time.get_ticks_usec() - step_started
 	var active_individuals: Array[HumanIndividual] = []
+	var dehydrated: Array[HumanIndividual] = []
 	for member in individuals:
-		if member.current_task != null and not member.current_task.is_finished():
+		# Sete (2026-10-30): calo continuo per tutti, nello stesso giro (ThirstService); chi finisce i giorni a zero muore
+		# dopo il giro, per non toccare la lista mentre la si scorre.
+		if ThirstService.apply_drain(member, game_delta, effects):
+			dehydrated.append(member)
+		elif member.current_task != null and not member.current_task.is_finished():
 			active_individuals.append(member)
+	for member in dehydrated:
+		time_service.kill_individual_now(member, DeathTypes.DeathCause.DEHYDRATION)
 	for member in active_individuals:
 		var member_started := Time.get_ticks_usec() if timing else 0
 		var action_label := ""
@@ -214,6 +243,7 @@ func tick_frame(real_delta: float, game_delta: float, is_playing: bool, focus: H
 			var action := member.current_task.get_current_action()
 			action_label = "%s / %s" % [member.current_task.task_name, action.get_script().get_global_name() if action != null and action.get_script() != null else "-"]
 		movement_service.advance_movement(member, game_delta, live_cells)
+		ThirstService.try_sip(member, effects)
 		var part_started := Time.get_ticks_usec() if timing else 0
 		if timing:
 			parts["movimento"] = int(parts.get("movimento", 0)) + part_started - member_started

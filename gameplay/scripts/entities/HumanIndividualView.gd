@@ -254,6 +254,12 @@ var _last_drawn_towed: String = ""
 # Centro dell'icona rispetto al centro della testa, in pixel dello schermo (Y negativo = in alto), uguale per tutti.
 const HEALTH_ICON_OFFSET := Vector2(0.0, -5.0)
 var _health_icon: HealthConditionIcon = null
+# Icona passeggera sopra la testa (2026-10-30, goccia del sorso): una sola alla volta, lampeggia come le icone di comando
+# e poi si libera. Sta più in alto dell'icona di salute, così non la copre.
+const TRANSIENT_ICON_OFFSET := Vector2(0.0, -9.0)
+const TRANSIENT_ICON_BLINK_COUNT: int = 2
+const TRANSIENT_ICON_BLINK_HALF_DURATION: float = 0.25
+var _transient_icon: Node2D = null
 
 # --- Colori del vestiario (2026-10-11, richiesta utente) ---
 # Il tratto clothing_color resta sull'individuo ma non colora più il busto finché non esistono capi tinti: chi indossa un
@@ -439,6 +445,8 @@ func _process(delta: float) -> void:
 	# la direzione", vedi HumanIndividual.gd), questa view si limita a leggerla.
 	rotation = individual.facing_direction.angle()
 	_update_health_icon()
+	if _transient_icon != null:
+		_place_overhead(_transient_icon, TRANSIENT_ICON_OFFSET)
 	# position/rotation/scale appena aggiornate sopra sono proprietà di TRASFORMAZIONE del nodo:
 	# Godot le riapplica da sé ogni frame ricompositando le istruzioni di disegno già cachate
 	# dall'ultimo _draw() reale — muovere/ruotare/scalare non richiede mai queue_redraw(), solo
@@ -478,9 +486,40 @@ func _update_health_icon() -> void:
 	_health_icon.set_states(states[0], states[1])
 	if not _health_icon.visible or scale.x == 0.0:
 		return
-	_health_icon.rotation = -rotation
-	_health_icon.scale = Vector2.ONE / scale
-	_health_icon.position = (HEALTH_ICON_OFFSET / scale).rotated(-rotation)
+	_place_overhead(_health_icon, HEALTH_ICON_OFFSET)
+
+
+# Annulla rotazione e scala del pipottino su un'icona figlia: dritta, della stessa misura per tutti, a `offset` dalla testa.
+func _place_overhead(icon: Node2D, offset: Vector2) -> void:
+	if scale.x == 0.0:
+		return
+	icon.rotation = -rotation
+	icon.scale = Vector2.ONE / scale
+	icon.position = (offset / scale).rotated(-rotation)
+
+
+# Icona disegnata di IconRegistry.COMMAND_ICON_NODES sopra la testa per qualche istante (sostituisce quella in corso).
+func show_transient_icon(key: String) -> void:
+	var icon := IconRegistry.get_command_icon_node(key)
+	if icon == null:
+		return
+	if _transient_icon != null:
+		_transient_icon.queue_free()
+	_transient_icon = icon
+	icon.z_index = 2
+	add_child(icon)
+	_place_overhead(icon, TRANSIENT_ICON_OFFSET)
+	var tween := icon.create_tween()
+	tween.set_loops(TRANSIENT_ICON_BLINK_COUNT)
+	tween.tween_property(icon, "modulate:a", 0.15, TRANSIENT_ICON_BLINK_HALF_DURATION)
+	tween.tween_property(icon, "modulate:a", 1.0, TRANSIENT_ICON_BLINK_HALF_DURATION)
+	tween.chain().tween_callback(_free_transient_icon.bind(icon))
+
+
+func _free_transient_icon(icon: Node2D) -> void:
+	if _transient_icon == icon:
+		_transient_icon = null
+	icon.queue_free()
 
 
 # Nomi dei capi del corpo e della testa: cambia quando un capo viene tolto, indossato o consumato.

@@ -67,4 +67,10 @@ enum NotificationPopupType {
 	POLITICAL_RITE_OUTCOME,
 	# Animali selvatici in visita che attaccano una persona (2026-10-30, lupi L4). Stile "alert" giallo. Aggiunto IN CODA.
 	WILD_ANIMAL_ATTACK,
+	# Branco scacciato da un gruppo di persone (lupi L6.1, 2026-10-30, WildAnimalVisitService._on_driven_off). Stile di
+	# default. Aggiunto IN CODA.
+	WILD_ANIMAL_DRIVEN_OFF,
+	# Acqua nel corpo (e nell'otre) finita: comincia la disidratazione (2026-10-30, ThirstService). Stile "alert" giallo,
+	# come BODY_RESERVE_IN_USE per la fame. Aggiunto IN CODA.
+	THIRST_ZERO,
 }

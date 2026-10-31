@@ -62,10 +62,20 @@ func select_starting_cell(
 		_collect_stone_present_cells(world) if guarantee_stone_presence else {}
 	)
 
+	# Ruscello (2026-10-30): obbligatorio quando il mondo ha almeno una cella di terra con un ruscello — vale anche per
+	# il ripiego "qualunque cella di terra" sotto. Senza nessuno (ruscelli spenti) resta com'era.
+	var require_water := false
+	for cell in world.cells:
+		if cell.terrain_base != GameTypes.TerrainBase.WATER and has_stream(cell):
+			require_water = true
+			break
+
 	var land_candidates: Array[Vector2i] = []
 	var filtered_candidates: Array[Vector2i] = []
 	for cell in world.cells:
 		if cell.terrain_base == GameTypes.TerrainBase.WATER:
+			continue
+		if require_water and not has_stream(cell):
 			continue
 		var pos := Vector2i(cell.x, cell.y)
 		land_candidates.append(pos)
@@ -122,6 +132,12 @@ func select_starting_cell(
 # roccioso, o qualunque costa (anche BEACH — una cella costiera e' comunque a rischio, es.
 # sea flood, non solo le coste scoscese). Non e' la stessa nozione di "acqua" usata sopra:
 # una cella ostile resta terra a tutti gli effetti, solo scartata quando l'utente lo chiede.
+# Ruscello nella cella (richiesta utente 2026-10-30): solo ruscello, non fiume grande né riva di lago/mare (casi da
+# scegliere più avanti).
+static func has_stream(cell: MacroCellData) -> bool:
+	return cell.stream_edges != 0
+
+
 func _is_hostile(cell: MacroCellData) -> bool:
 	if cell.terrain_base == GameTypes.TerrainBase.MOUNTAIN:
 		return true

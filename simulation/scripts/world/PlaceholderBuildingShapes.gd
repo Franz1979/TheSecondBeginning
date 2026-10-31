@@ -14,7 +14,14 @@ extends RefCounted
 # "clothing_hut" non è più qui (2026-10-20): sulla mappa e nell'anteprima usa ClothingHutShape (vista dall'alto); il suo ramo
 # di draw() resta per la sola icona della barra (ClothingHutIcon, vista di fronte). Lo stesso per "smokehouse" (2026-10-23):
 # mappa e anteprima con SmokehouseShape, qui solo l'icona (SmokehouseIcon).
-const TYPES: Array[String] = ["drying_rack", "burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit"]
+const TYPES: Array[String] = ["drying_rack", "burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford"]
+
+# Guado di pietre (stone_ford, 2026-10-31, richiesta utente): pietre piatte in fila sul ruscello, vista dall'alto, ognuna
+# col suo bordo scuro d'ombra sotto (come i banchi del ceppo dell'insegnamento). La fila va lungo Y (attraversa un ruscello
+# che scorre lungo X); ruota con la direzione scelta al piazzamento. Centro (x, y) e raggio (z).
+const STONE_FORD_STONES: Array[Vector3] = [
+	Vector3(0.3, -3.7, 1.15), Vector3(-0.4, -1.3, 1.3), Vector3(0.4, 1.2, 1.3), Vector3(-0.3, 3.6, 1.15),
+]
 
 # Ceppo dell'insegnamento (teaching_stump, 2026-10-16, richiesta utente): aula all'aperto vista dall'alto — il ceppo in
 # alto come cattedra (corteccia, sezione chiara con gli anelli) e davanti due file curve di pietre piatte come banchi
@@ -268,6 +275,17 @@ static func draw(
 				)
 				canvas.draw_colored_polygon(
 					_blob_polygon(p.call(seat.x, seat.y), w.call(seat.z), 400 + i, 8, 0.85, 1.1),
+					tint.call(STACKED_STONES_PILE_COLORS[i % STACKED_STONES_PILE_COLORS.size()])
+				)
+		"stone_ford":
+			for i in range(STONE_FORD_STONES.size()):
+				var ford_stone: Vector3 = STONE_FORD_STONES[i]
+				canvas.draw_colored_polygon(
+					_blob_polygon(p.call(ford_stone.x, ford_stone.y + 0.25), w.call(ford_stone.z), 900 + i, 8, 0.85, 1.1),
+					tint.call(SLAB_EDGE)
+				)
+				canvas.draw_colored_polygon(
+					_blob_polygon(p.call(ford_stone.x, ford_stone.y), w.call(ford_stone.z), 900 + i, 8, 0.85, 1.1),
 					tint.call(STACKED_STONES_PILE_COLORS[i % STACKED_STONES_PILE_COLORS.size()])
 				)
 		"stacked_stones":

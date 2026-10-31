@@ -272,6 +272,9 @@ static func _action_type_for_step(step: Action) -> int:
 	# WAIT_FOR_SAFETY (2026-10-30, WaitForSafetyAction, flee.tres), aggiunta insieme al proprio case in _build_step.
 	if step is WaitForSafetyAction:
 		return TaskTypes.ActionType.WAIT_FOR_SAFETY
+	# DRINK (2026-10-30, DrinkAction, drink.tres/emergency_drink.tres), aggiunta insieme al proprio case in _build_step.
+	if step is DrinkAction:
+		return TaskTypes.ActionType.DRINK
 	# REPAIR (2026-10-10, RepairAction, repair.tres), aggiunta insieme al proprio case in _build_step.
 	if step is RepairAction:
 		return TaskTypes.ActionType.REPAIR
@@ -555,6 +558,9 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.WAIT_AT_POINT:
 			# Tetto dell'attesa; il tempo trascorso arriva da load_save_data (solo per lo step corrente).
 			step = WaitAtPointAction.new(float(step_data.get("max_wait_days", -1.0)))
+		TaskTypes.ActionType.DRINK:
+			# Nessun argomento; il tempo trascorso da load_save_data.
+			step = DrinkAction.new()
 		TaskTypes.ActionType.WAIT_FOR_SAFETY:
 			# Tetto dell'attesa; il tempo trascorso da load_save_data. Dopo un caricamento il pericolo non c'è più (le visite
 			# non si salvano): l'attesa finisce al tetto.

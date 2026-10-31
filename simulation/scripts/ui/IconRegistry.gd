@@ -115,6 +115,8 @@ const RESOURCE_ICON_NODES := {
 	"dried_hide_bag": preload("res://simulation/scripts/ui/DriedHideBagIcon.gd"),
 	# Sacca di pelle affumicata (2026-10-25): la più durevole, stessa sagoma nel bruno della pelle affumicata col fumo.
 	"smoked_hide_bag": preload("res://simulation/scripts/ui/SmokedHideBagIcon.gd"),
+	# Otre (2026-10-30, sete): pelle affumicata col collo legato, il tappo e una goccia.
+	"waterskin": preload("res://simulation/scripts/ui/WaterskinIcon.gd"),
 	# Vestiario (2026-10-11, richiesta utente): pelliccia di base (pelle col pelo, toni grigi) e, per il secondo livello,
 	# pelli lavorate — vedi FurDressIcon/FurCapIcon/WorkedHideDressIcon/WorkedHideCapIcon. Gli altri capi usano ApparelIcon.
 	"fur_dress": preload("res://simulation/scripts/ui/FurDressIcon.gd"),
@@ -209,6 +211,8 @@ const BUILDING_ICON_NODES := {
 	"gate": preload("res://simulation/scripts/ui/GateIcon.gd"),
 	# Sentiero di ciottoli (2026-10-16, richiesta utente): tratto dritto del disegno della mappa (LinearShapes).
 	"pebble_path": preload("res://simulation/scripts/ui/PebblePathIcon.gd"),
+	# Guado di pietre (2026-10-31): pietre piatte in fila su una striscia d'acqua.
+	"stone_ford": preload("res://simulation/scripts/ui/StoneFordIcon.gd"),
 	# Spiazzo delle feste (2026-10-17): stesso disegno della mappa (FeastGroundShape).
 	"feast_ground": preload("res://simulation/scripts/ui/FeastGroundIcon.gd"),
 	# Cerchio del consiglio (2026-10-26): stesso disegno della mappa (CouncilCircleShape).
@@ -291,6 +295,8 @@ const COMMAND_ICONS := {
 	# come la luna dei riti religiosi). Solo emoji, nessuna icona disegnata: GameScene usa questa quando manca in
 	# COMMAND_ICON_NODES.
 	"banquet": "🍖",
+	# "drink" (2026-10-30, sete — ThirstService): sulla mappa la goccia disegnata (CommandDropIcon); questa per l'interfaccia.
+	"drink": "💧",
 	# "council" (2026-10-26, consiglio degli anziani al Cerchio del consiglio): sulla mappa l'anello disegnato
 	# (CommandCouncilIcon).
 	"council": "🗣",
@@ -418,6 +424,8 @@ const COMMAND_ICON_NODES := {
 	"cut": preload("res://simulation/scripts/ui/CommandAxeIcon.gd"),
 	# "quarry" (2026-10-05, task Quarry): piccone, lo stesso disegno della demolizione (CommandPickaxeIcon.gd).
 	"quarry": preload("res://simulation/scripts/ui/CommandPickaxeIcon.gd"),
+	# "drink" (2026-10-30, sete): goccia, vedi CommandDropIcon.gd; sopra la testa di chi beve (HumanIndividualView).
+	"drink": preload("res://simulation/scripts/ui/CommandDropIcon.gd"),
 	"task_rejected": preload("res://simulation/scripts/ui/CommandRejectedIcon.gd"),
 }
 

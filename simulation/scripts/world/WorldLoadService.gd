@@ -33,10 +33,17 @@ func load_world_from_json(file_path: String) -> World:
 		cell.terrain_base = int(cell_data["terrain_base"])
 		cell.water_type = int(cell_data["water_type"])
 		cell.river_shape = int(cell_data.get("river_shape", GameTypes.RiverShape.NONE))
+		cell.stream_edges = int(cell_data.get("stream_edges", 0))
+		cell.stream_has_spring = bool(cell_data.get("stream_has_spring", false))
 		cell.coast_type = int(cell_data["coast_type"])
 		cell.biome = int(cell_data["biome"])
 
 		world.cells.append(cell)
+
+	# Mappe salvate prima dei ruscelli: la rete viene generata una sola volta qui.
+	world.streams_generated = bool(data.get("streams_generated", false))
+	if not world.streams_generated:
+		StreamNetworkGenerator.generate(world)
 
 	print("World loaded from JSON: ", file_path)
 	return world

@@ -185,6 +185,10 @@ extends Resource
 # è stato tagliato almeno un albero di recente (BuildingSiteClearingService.count_tree_stumps). Le piante vive bloccano
 # come sempre; la pulizia del cantiere toglie i ceppi veri, il ceppo dell'edificio è solo disegno.
 @export var requires_tree_stump: bool = false
+# Solo sul ruscello (2026-10-31, richiesta utente — Guado di pietre, il primo edificio sull'acqua): la microcella dev'essere
+# un tratto del ruscello largo 1 (StreamMicrocellService.is_narrow: niente insenature, pozze, fiume né terra). Il ruscello
+# smette di essere un ostacolo al piazzamento solo per questi tipi (BuildingVerificationService, Criterio 13).
+@export var requires_narrow_stream: bool = false
 
 # Controlla SOLO il Criterio 7 di BuildingVerificationService (la porta non può affacciarsi su
 # terreno ostacolato/ignoto) — un edificio senza porta (es. una futura fontana) semplicemente non

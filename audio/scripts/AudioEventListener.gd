@@ -30,6 +30,10 @@ func _ready() -> void:
 		game_scene.star_vigil_called.connect(_on_star_vigil_called)
 	if game_scene.has_signal(&"wild_animal_arrived"):
 		game_scene.wild_animal_arrived.connect(_on_wild_animal_arrived)
+	if game_scene.has_signal(&"wild_animal_charged"):
+		game_scene.wild_animal_charged.connect(_on_wild_animal_charged)
+	if game_scene.has_signal(&"wild_animal_driven_off"):
+		game_scene.wild_animal_driven_off.connect(_on_wild_animal_driven_off)
 	if game_scene.has_signal(&"talk_sound_requested"):
 		game_scene.talk_sound_requested.connect(_on_talk_sound_requested)
 	if game_scene.has_signal(&"world_object_selected"):
@@ -70,6 +74,16 @@ func _on_star_vigil_called(global_pos: Vector2) -> void:
 # "wild_animal_arrived:<specie>" di SoundEventMap (il lupo ulula).
 func _on_wild_animal_arrived(global_pos: Vector2, species: String) -> void:
 	AudioManager.play_event(StringName("wild_animal_arrived:" + species), global_pos)
+
+
+# Inizio della carica (2026-10-30, lupi L4): suono della specie, evento "wild_animal_charged:<specie>" (il lupo ringhia).
+func _on_wild_animal_charged(global_pos: Vector2, species: String) -> void:
+	AudioManager.play_event(StringName("wild_animal_charged:" + species), global_pos)
+
+
+# Branco scacciato in gruppo (2026-10-30, lupi L6.1): grido di guerra posizionale dove era il branco.
+func _on_wild_animal_driven_off(global_pos: Vector2) -> void:
+	AudioManager.play_event(&"wild_animal_driven_off", global_pos)
 
 
 # Talk (2026-10-13): chiamata, risposta e inizio della conversazione, posizionali sul pipottino.

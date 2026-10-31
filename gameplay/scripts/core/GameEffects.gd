@@ -52,6 +52,9 @@ var tasks_to_wire: Array[Dictionary] = []
 # Icone di comando (2026-10-18, blocco 5d; dal 5B.2 a punto): {macro, point, key}, `point` in coordinate di microcella
 # continue; solo se la cella è viva.
 var command_icons: Array[Dictionary] = []
+# Icone sopra la testa di un individuo (2026-10-30, goccia del sorso — ThirstService): {member, key}; la scena le
+# aggancia alla vista, così seguono il pipottino mentre cammina.
+var individual_icons: Array[Dictionary] = []
 # Cantieri completati dalla simulazione (2026-10-18, blocco 5e — giorni minimi di costruzione maturati): la scena esegue
 # lo stesso percorso del completamento da parte di un costruttore (GameScene._on_building_construction_completed).
 var buildings_completed: Array[Building] = []
@@ -148,6 +151,10 @@ func command_icon_at_point(macro: Vector2i, point: Vector2, key: String) -> void
 	command_icons.append({"macro": macro, "point": point, "key": key})
 
 
+func individual_icon(member: HumanIndividual, key: String) -> void:
+	individual_icons.append({"member": member, "key": key})
+
+
 # Individuo passato in un'altra macrocella (2026-10-18, blocco 5b — IndividualBorderService): la scena sposta la vista
 # sotto la cella `macro` (attivandola se serve, come rete di sicurezza) e, se `is_focus`, ri-ancora centro, telecamera e
 # LOD di (dx, dy). `is_child`: figlio a carico che segue la madre (solo la vista, e solo se la cella è viva). In ordine.
@@ -195,6 +202,7 @@ func merge(other: GameEffects) -> void:
 	storage_tasks_to_wire.append_array(other.storage_tasks_to_wire)
 	tasks_to_wire.append_array(other.tasks_to_wire)
 	command_icons.append_array(other.command_icons)
+	individual_icons.append_array(other.individual_icons)
 	buildings_completed.append_array(other.buildings_completed)
 	individual_moves.append_array(other.individual_moves)
 	individuals_added.append_array(other.individuals_added)
@@ -208,5 +216,5 @@ func is_empty() -> bool:
 		and neighbor_refresh_buildings.is_empty() and marker_buildings.is_empty() and site_placeholder_buildings.is_empty() \
 		and vegetation_cells.is_empty() and rubble_lots.is_empty() and removed_building_ids.is_empty() and storage_tasks_to_wire.is_empty() \
 		and individual_moves.is_empty() and individuals_added.is_empty() and unload_tasks_to_wire.is_empty() \
-		and tasks_to_wire.is_empty() and command_icons.is_empty() and buildings_completed.is_empty() \
+		and tasks_to_wire.is_empty() and command_icons.is_empty() and individual_icons.is_empty() and buildings_completed.is_empty() \
 		and forgotten_job_board_waits.is_empty() and animals_domesticated.is_empty()

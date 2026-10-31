@@ -464,9 +464,10 @@ func _ready() -> void:
 				renderer.set_river(macro_cell.river_shape, thickness_ratio)
 				river_positions = RiverMicrocellService.get_river_positions(macro_cell.river_shape, thickness_ratio)
 				river_exterior_occupied = _compute_river_exterior_occupied(river_positions)
+			renderer.set_streams(StreamMicrocellService.get_layout(macro_world, macro_cell))
 
 			var stone_service := StonePositionService.new()
-			stone_service.generate_if_needed(macro_state, macro_cell)
+			stone_service.generate_if_needed(macro_state, macro_cell, StreamMicrocellService.get_positions(macro_world, macro_cell))
 			# Rocce esaurite (2026-10-08, RockStoneService.is_depleted): non si disegnano.
 			renderer.set_depleted_stone_positions(RockStoneService.get_depleted_positions(macro_state))
 			renderer.set_stone_positions(macro_state.stone_positions)
@@ -567,6 +568,8 @@ func _refresh_resource_visuals() -> void:
 		if not depleted_rocks.has(pos):
 			occupied[pos] = true
 	for pos in river_positions:
+		occupied[pos] = true
+	for pos in StreamMicrocellService.get_positions(macro_world, macro_cell):
 		occupied[pos] = true
 
 	# begin_vegetation_batch()/end_vegetation_batch() (vedi MicroCellRenderer.gd e il commento

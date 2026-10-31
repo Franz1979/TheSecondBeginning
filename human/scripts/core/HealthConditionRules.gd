@@ -72,7 +72,13 @@ enum Severity { LIGHT, SEVERE }
 @export var immunity_days: int = 0
 
 @export_group("Infection")
-# Infezione di una ferita (per il futuro): probabilità al giorno di prendere la condizione `infection_condition_id`.
-# Nessun sistema le legge ancora.
+# Infezione di una ferita (2026-10-30, richiesta utente — morso del lupo): probabilità al giorno, durante la fase acuta,
+# di prendere la condizione `infection_condition_id` (HealthConditionService.advance_daily). Niente tiro nel giorno in cui
+# la condizione è stata curata con un rimedio (ferita medicata). 0 = non si infetta.
 @export var infection_probability_per_day: float = 0.0
 @export var infection_condition_id: String = ""
+
+@export_group("Repeat")
+# Ripetuta (2026-10-30, richiesta utente — più morsi): presa di nuovo mentre c'è già, invece di essere rifiutata si
+# aggiunge: toglie ancora immediate_health_loss e la fase acuta riparte con i nuovi giorni sommati a quelli rimasti.
+@export var repeat_adds: bool = false

@@ -75,6 +75,10 @@ func save_game_to_json(
 				func(group: WildAnimalGroup) -> Dictionary: return group.to_save_data()
 			),
 			"next_wild_animal_group_id": game_data.next_wild_animal_group_id,
+			# Visite in corso (2026-10-30, vedi WildAnimalVisit.to_save_data).
+			"wild_animal_visits": game_data.wild_animal_visits.map(
+				func(visit: WildAnimalVisit) -> Dictionary: return visit.to_save_data()
+			),
 			# Ultimo giorno di pulizia periodica del fog of war (vedi GameData) — deve
 			# sopravvivere a save/load per non sfasare la cadenza reale.
 			"fog_of_war_last_prune_absolute_day": game_data.fog_of_war_last_prune_absolute_day,
@@ -148,6 +152,7 @@ func save_game_to_json(
 			"stock_workstation_food_rule_enabled": game_data.stock_workstation_food_rule_enabled,
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
 			"job_board_take_bag": game_data.job_board_take_bag,
+			"job_board_take_waterskin": game_data.job_board_take_waterskin,
 			"job_board_wear_apparel": game_data.job_board_wear_apparel,
 			"real_seconds_in_game": game_data.real_seconds_in_game,
 			"real_seconds_playing": game_data.real_seconds_playing,
@@ -174,6 +179,7 @@ func save_game_to_json(
 		"world": {
 			"width": World.WIDTH,
 			"height": World.HEIGHT,
+			"streams_generated": world.streams_generated,
 			"cells": [],
 			"cell_states": [],
 			"population_groups": [],
@@ -187,6 +193,8 @@ func save_game_to_json(
 			"terrain_base": cell.terrain_base,
 			"water_type": cell.water_type,
 			"river_shape": cell.river_shape,
+			"stream_edges": cell.stream_edges,
+			"stream_has_spring": cell.stream_has_spring,
 			"coast_type": cell.coast_type,
 			"biome": cell.biome
 		})
@@ -694,6 +702,9 @@ func save_game_to_json(
 				"body_calories": individual.body_calories,
 				"body_reserve_in_use": individual.body_reserve_in_use,
 				"starvation_days": individual.starvation_days,
+				"dehydration_elapsed": individual.dehydration_elapsed,
+				"waterskin_water": individual.waterskin_water,
+				"thirst_zero_alerted": individual.thirst_zero_alerted,
 				"current_thirst": individual.current_thirst,
 				"max_thirst": individual.max_thirst,
 				"current_health": individual.current_health,

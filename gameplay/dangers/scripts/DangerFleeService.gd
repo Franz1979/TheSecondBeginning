@@ -1,9 +1,10 @@
 class_name DangerFleeService
 extends RefCounted
 
-# Fuga dal pericolo (2026-10-30, richiesta utente — lupi L5a). Stateless. Generica: chi crea il pericolo (oggi la carica
-# dei lupi, WildAnimalVisitService; un domani i nemici) chiama start_flee con il nome del profilo (DangerProfile), un id
-# del pericolo, da dove arriva e i punti sicuri; quando il pericolo è passato chiama end_danger con lo stesso id.
+# Fuga dal pericolo (2026-10-30, richiesta utente — lupi L5a) e il gruppo che lo scaccia (L6.1, start_drive_off).
+# Stateless. Generica: chi crea il pericolo (oggi la carica dei lupi, WildAnimalVisitService; un domani i nemici) chiama
+# start_flee con il nome del profilo (DangerProfile), un id del pericolo, da dove arriva e i punti sicuri; quando il
+# pericolo è passato chiama end_danger con lo stesso id (chiude anche chi lo stava scacciando).
 # La fuga è il compito flee.tres (interrupt_priority HumanIndividualActionService.INTERRUPT_PRIORITY_FLEE: interrompe
 # qualunque lavoro e nessun bisogno la interrompe): corsa al riparo (RunAction), poi attesa (WaitForSafetyAction) finché
 # il pericolo non è chiuso; finita, resolve_idle_individual riprende il lavoro sospeso.
@@ -15,6 +16,10 @@ const CONTEXT_DANGER_ID: String = "flee_danger_id"
 const CONTEXT_DANGER_OVER: String = "flee_danger_over"
 # Tetto dell'attesa se il profilo non lo dà (giorni).
 const DEFAULT_MAX_WAIT_DAYS: float = 1.0
+# Scacciare il pericolo in gruppo (2026-10-30, richiesta utente — lupi L6.1): compito drive_off.tres, stesse chiavi di
+# context della fuga (CONTEXT_DANGER_ID/CONTEXT_DANGER_OVER: end_danger chiude anche questo).
+const DRIVE_OFF_TASK_DEFINITION_PATH: String = "res://gameplay/scripts/tasks/definitions/drive_off.tres"
+const DRIVE_OFF_TASK_NAME: String = "task_drive_off_name"
 # Margine dal bordo della macrocella per il punto di "corri via" (microcelle).
 const RUN_AWAY_BORDER_MARGIN: float = 0.5
 
@@ -65,6 +70,61 @@ static func end_danger(individuals: Array[HumanIndividual], danger_id: int) -> v
 			continue
 		member.current_task.context[CONTEXT_DANGER_OVER] = true
 		print("[FLEE] #%d %s: pericolo passato, riprende il lavoro" % [member.id, member.name])
+
+
+# Scacciare in gruppo (L6.1, DangerProfile gruppo "Drive off"): gli adulti disponibili vicino a `target` (stessa
+# macrocella, entro drive_off_radius, età ammessa, non a letto, non già alle prese con questo pericolo, e `can_help` —
+# Callable(HumanIndividual) -> bool di chi crea il pericolo: per i lupi fuori dagli edifici e con la linea libera)
+# corrono verso la minaccia più vicina tra `threat_positions` e si fermano a drive_off_stop_distance da lei. Servono
+# almeno drive_off_min_helpers e uno ogni drive_off_threats_per_helper minacce; meno di così non parte nessuno.
+# {"helper_ids": Array[int] partiti, "needed": int richiesti}.
+static func start_drive_off(individuals: Array[HumanIndividual], target: HumanIndividual, profile_name: String,
+		danger_id: int, threat_positions: Array[Vector2], can_help: Callable, game_data: GameData) -> Dictionary:
+	var helper_ids: Array[int] = []
+	var profile := get_profile(profile_name)
+	if profile == null or not profile.drive_off_enabled or target == null or threat_positions.is_empty():
+		return {"helper_ids": helper_ids, "needed": 0}
+	var needed := maxi(profile.drive_off_min_helpers,
+		ceili(float(threat_positions.size()) / float(maxi(profile.drive_off_threats_per_helper, 1))))
+	var candidates: Array[HumanIndividual] = []
+	for member in individuals:
+		if member == null or member == target or member.home_macro_coords != target.home_macro_coords:
+			continue
+		if member.position.distance_to(target.position) > profile.drive_off_radius:
+			continue
+		if member.is_sick() or is_fleeing_from(member, danger_id):
+			continue
+		if not GameContext.age_band_for(member, game_data) in profile.drive_off_age_bands:
+			continue
+		if can_help.is_valid() and not bool(can_help.call(member)):
+			continue
+		candidates.append(member)
+	if candidates.size() < needed:
+		print("[DRIVE OFF] #%d %s: %d adulti disponibili, ne servono %d, nessuno interviene" % [
+			target.id, target.name, candidates.size(), needed])
+		return {"helper_ids": helper_ids, "needed": needed}
+	var definition := TaskDefinitionCache.get_definition(DRIVE_OFF_TASK_DEFINITION_PATH)
+	for member in candidates:
+		var nearest := threat_positions[0]
+		for threat in threat_positions:
+			if threat.distance_to(member.position) < nearest.distance_to(member.position):
+				nearest = threat
+		var away := member.position - nearest
+		var direction := away.normalized() if away.length() > 0.001 else Vector2.RIGHT
+		var task := TaskFactory.build_task(definition, {
+			"drive_off_target": nearest + direction * profile.drive_off_stop_distance,
+			"flee_max_wait_days": profile.max_wait_days,
+			CONTEXT_DANGER_ID: danger_id,
+		})
+		if member.assign_task(task, GameContext.age_band_for(member, game_data), true):
+			helper_ids.append(member.id)
+			print("[DRIVE OFF] #%d %s corre a scacciare il pericolo (%s)" % [member.id, member.name, profile_name])
+	return {"helper_ids": helper_ids, "needed": needed}
+
+
+# `member` sta scacciando il pericolo `danger_id` ed è arrivato (corsa finita, ora grida sul posto).
+static func has_reached_danger(member: HumanIndividual, danger_id: int) -> bool:
+	return is_fleeing_from(member, danger_id) and member.current_task.task_name == DRIVE_OFF_TASK_NAME 		and member.current_task.current_step_index >= 1
 
 
 static func is_fleeing_from(member: HumanIndividual, danger_id: int) -> bool:

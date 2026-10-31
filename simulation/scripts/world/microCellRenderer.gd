@@ -253,6 +253,9 @@ var neighbor_states: Dictionary = {}
 var is_river: bool = false
 var river_shape: GameTypes.RiverShape = GameTypes.RiverShape.NONE
 var river_thickness_ratio: float = 0.0 # river_space / MacroCellState.TOTAL_SPACE
+# Ruscello (StreamMicrocellService.get_layout): nastro d'acqua più stretto della microcella, con rive
+# frastagliate e un alone di fango, cotto in un unico ArrayMesh in set_streams (1 draw call).
+var _stream_mesh: ArrayMesh = null
 
 var stone_positions: Array = [] # Array[Vector2i]
 var depleted_stone_positions: Dictionary = {} # Vector2i -> true, vedi set_depleted_stone_positions
@@ -544,6 +547,140 @@ func clear_river() -> void:
 	river_shape = GameTypes.RiverShape.NONE
 	river_thickness_ratio = 0.0
 	queue_redraw()
+
+
+# Ruscello: mezza larghezza del nastro d'acqua per lato, in pixel (la microcella è CELL_SIZE = 10), scelta a ogni
+# punto della linea centrale in modo indipendente a sinistra e a destra, così le rive vengono frastagliate.
+const STREAM_HALF_WIDTH_MIN: float = 1.8
+const STREAM_HALF_WIDTH_MAX: float = 3.4
+# Alone di fango oltre l'acqua, in pixel.
+const STREAM_MUD_MARGIN_MIN: float = 1.5
+const STREAM_MUD_MARGIN_MAX: float = 4.0
+const STREAM_WIDENING_RADIUS: float = 5.5
+const COLOR_STREAM_MUD := Color(0.42, 0.36, 0.24, 0.55)
+const STREAM_FAN_SEGMENTS: int = 8
+const STREAM_POND_SEGMENTS: int = 14
+
+
+# Tracciato del ruscello di questa macrocella (StreamMicrocellService.get_layout; layout vuoto = nessun ruscello).
+func set_streams(layout: Dictionary) -> void:
+	var mud_vertices := PackedVector2Array()
+	var mud_colors := PackedColorArray()
+	var water_vertices := PackedVector2Array()
+	var water_colors := PackedColorArray()
+	var paths: Array = layout.get("paths", [])
+	for path_index in range(paths.size()):
+		var points: PackedVector2Array = paths[path_index]
+		var left_widths := PackedFloat32Array()
+		var right_widths := PackedFloat32Array()
+		var mud_extra := PackedFloat32Array()
+		for i in range(points.size()):
+			var key := Vector2i(int(points[i].x * 8.0), int(points[i].y * 8.0))
+			left_widths.append(lerpf(STREAM_HALF_WIDTH_MIN, STREAM_HALF_WIDTH_MAX, _stream_noise(key, 1)))
+			right_widths.append(lerpf(STREAM_HALF_WIDTH_MIN, STREAM_HALF_WIDTH_MAX, _stream_noise(key, 2)))
+			mud_extra.append(lerpf(STREAM_MUD_MARGIN_MIN, STREAM_MUD_MARGIN_MAX, _stream_noise(key, 3)))
+		for i in range(points.size()):
+			var center := points[i] * CELL_SIZE
+			var water_radius := (left_widths[i] + right_widths[i]) / 2.0
+			_append_stream_fan(mud_vertices, mud_colors, center, water_radius + mud_extra[i], COLOR_STREAM_MUD)
+			_append_stream_fan(water_vertices, water_colors, center, water_radius, TerrainColors.RIVER)
+			if i == points.size() - 1:
+				continue
+			var next := points[i + 1] * CELL_SIZE
+			var normal := (next - center).normalized().orthogonal()
+			if normal == Vector2.ZERO:
+				continue
+			_append_stream_quad(
+				mud_vertices, mud_colors, center, next, normal,
+				left_widths[i] + mud_extra[i], right_widths[i] + mud_extra[i],
+				left_widths[i + 1] + mud_extra[i + 1], right_widths[i + 1] + mud_extra[i + 1], COLOR_STREAM_MUD
+			)
+			_append_stream_quad(
+				water_vertices, water_colors, center, next, normal,
+				left_widths[i], right_widths[i], left_widths[i + 1], right_widths[i + 1], TerrainColors.RIVER
+			)
+	for widening in layout.get("widenings", []):
+		var center: Vector2 = widening * CELL_SIZE
+		_append_stream_fan(mud_vertices, mud_colors, center, STREAM_WIDENING_RADIUS + STREAM_MUD_MARGIN_MIN, COLOR_STREAM_MUD)
+		_append_stream_fan(water_vertices, water_colors, center, STREAM_WIDENING_RADIUS, TerrainColors.RIVER)
+	var pond_center: Variant = layout.get("pond_center", null)
+	if pond_center != null:
+		var pond_radius := StreamMicrocellService.POND_RADIUS * CELL_SIZE
+		_append_stream_pond(mud_vertices, mud_colors, pond_center * CELL_SIZE, pond_radius + STREAM_MUD_MARGIN_MAX, COLOR_STREAM_MUD)
+		_append_stream_pond(water_vertices, water_colors, pond_center * CELL_SIZE, pond_radius, TerrainColors.RIVER)
+
+	if _stream_mesh != null:
+		_stream_mesh.clear_surfaces()
+	if water_vertices.is_empty():
+		queue_redraw()
+		return
+	if _stream_mesh == null:
+		_stream_mesh = ArrayMesh.new()
+	# Fango prima dell'acqua: nello stesso mesh i triangoli successivi coprono i precedenti.
+	mud_vertices.append_array(water_vertices)
+	mud_colors.append_array(water_colors)
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = mud_vertices
+	arrays[Mesh.ARRAY_COLOR] = mud_colors
+	_stream_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	queue_redraw()
+
+
+func _draw_streams() -> void:
+	if _stream_mesh == null or _stream_mesh.get_surface_count() == 0:
+		return
+	draw_mesh(_stream_mesh, null)
+	_debug_draw_primitive_count += 1
+
+
+# Rumore deterministico 0..1 per la larghezza del ruscello (stesso punto = stessa larghezza a ogni ridisegno).
+static func _stream_noise(key: Vector2i, channel: int) -> float:
+	var h: int = (key.x * 73856093) ^ (key.y * 19349663) ^ (channel * 83492791)
+	h = (h ^ (h >> 13)) * 1274126177
+	h = h ^ (h >> 16)
+	return float(h & 0xffff) / 65535.0
+
+
+static func _append_stream_fan(vertices: PackedVector2Array, colors: PackedColorArray, center: Vector2, radius: float, color: Color) -> void:
+	for s in range(STREAM_FAN_SEGMENTS):
+		var a0 := TAU * float(s) / float(STREAM_FAN_SEGMENTS)
+		var a1 := TAU * float(s + 1) / float(STREAM_FAN_SEGMENTS)
+		vertices.append(center)
+		vertices.append(center + Vector2(cos(a0), sin(a0)) * radius)
+		vertices.append(center + Vector2(cos(a1), sin(a1)) * radius)
+		colors.append(color)
+		colors.append(color)
+		colors.append(color)
+
+
+static func _append_stream_quad(
+	vertices: PackedVector2Array, colors: PackedColorArray, from: Vector2, to: Vector2, normal: Vector2,
+	from_left: float, from_right: float, to_left: float, to_right: float, color: Color
+) -> void:
+	var a := from + normal * from_left
+	var b := from - normal * from_right
+	var c := to - normal * to_right
+	var d := to + normal * to_left
+	for vertex in [a, b, c, a, c, d]:
+		vertices.append(vertex)
+		colors.append(color)
+
+
+# Pozza della sorgente: ventaglio con raggio irregolare (riva frastagliata).
+static func _append_stream_pond(vertices: PackedVector2Array, colors: PackedColorArray, center: Vector2, radius: float, color: Color) -> void:
+	var rim: Array[Vector2] = []
+	for s in range(STREAM_POND_SEGMENTS):
+		var angle := TAU * float(s) / float(STREAM_POND_SEGMENTS)
+		var jitter := lerpf(0.75, 1.1, _stream_noise(Vector2i(int(center.x), int(center.y)), 10 + s))
+		rim.append(center + Vector2(cos(angle), sin(angle)) * radius * jitter)
+	for s in range(STREAM_POND_SEGMENTS):
+		vertices.append(center)
+		vertices.append(rim[s])
+		vertices.append(rim[(s + 1) % STREAM_POND_SEGMENTS])
+		colors.append(color)
+		colors.append(color)
+		colors.append(color)
 
 
 # Rocce esaurite (2026-10-08, RockStoneService.get_depleted_positions): microcella -> true. Non si disegnano né si
@@ -1261,6 +1398,7 @@ func _draw() -> void:
 	var grid_size: int = World.WIDTH * CELL_SIZE
 	if is_river:
 		_draw_river(grid_size)
+	_draw_streams()
 
 	_draw_stone_positions()
 	_draw_pebble_positions()

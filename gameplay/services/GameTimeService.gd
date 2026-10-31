@@ -1055,17 +1055,18 @@ func _apply_scheduled_human_deaths() -> void:
 # non per id — coerente con come questa classe non ha mai un indice stabile a parte quello
 # nell'array stesso. No-op silenzioso se l'individuo non è (più) nel roster, stesso principio
 # difensivo di _free_partner_if_any.
-func kill_individual_now(individual: HumanIndividual) -> void:
+# `cause` (2026-10-31): anche la morte per sete, che scatta a metà giornata (GameSimulation.tick_frame).
+func kill_individual_now(individual: HumanIndividual, cause: DeathTypes.DeathCause = DeathTypes.DeathCause.MURDER) -> void:
 	var index := _human_individuals.find(individual)
 	if index == -1:
 		return
 	var age_at_death := _game_data.year - individual.birth_year_virtual
 	var partner_freed := _kill_individual(
-		individual, index, DeathTypes.DeathCause.MURDER, _game_data.current_day, age_at_death
+		individual, index, cause, _game_data.current_day, age_at_death
 	)
 	if DebugLogging.ENABLED:
 		print("[HUMAN DEATH] kill immediato: #%d %s (eta'=%d, causa=%s%s)" % [
-			individual.id, individual.name, age_at_death, _cause_debug_name(DeathTypes.DeathCause.MURDER),
+			individual.id, individual.name, age_at_death, _cause_debug_name(cause),
 			", coniuge liberato" if partner_freed else ""
 		])
 	# Fuori dal ciclo giornaliero, nessun batch da attendere — stesso segnale che
@@ -1295,6 +1296,12 @@ func _apply_daily_starvation() -> void:
 		individual.starvation_days = (individual.starvation_days + 1) if starving else 0
 		if individual.starvation_days >= STARVATION_DAYS:
 			doomed.append(individual)
+	_kill_doomed(doomed, DeathTypes.DeathCause.STARVATION)
+
+
+# Uccide `doomed` con la stessa causa (fame), via _kill_individual (death_events, corpo, popup "death_cause_<causa>",
+# figlio a carico); l'indice è ricalcolato fresco per ogni morte.
+func _kill_doomed(doomed: Array[HumanIndividual], cause: DeathTypes.DeathCause) -> void:
 	if doomed.is_empty():
 		return
 	var removed_log_lines: Array[String] = []
@@ -1304,12 +1311,12 @@ func _apply_daily_starvation() -> void:
 			continue
 		var age_at_death := _game_data.year - individual.birth_year_virtual
 		var partner_freed := _kill_individual(
-			individual, index, DeathTypes.DeathCause.STARVATION, _game_data.current_day, age_at_death
+			individual, index, cause, _game_data.current_day, age_at_death
 		)
 		if DebugLogging.ENABLED:
 			removed_log_lines.append("#%d %s (eta'=%d, causa=%s%s)" % [
 				individual.id, individual.name, age_at_death,
-				_cause_debug_name(DeathTypes.DeathCause.STARVATION), ", coniuge liberato" if partner_freed else ""
+				_cause_debug_name(cause), ", coniuge liberato" if partner_freed else ""
 			])
 	if DebugLogging.ENABLED and not removed_log_lines.is_empty():
 		print("[HUMAN DEATH] giorno=%d: %s" % [_game_data.current_day, ", ".join(removed_log_lines)])

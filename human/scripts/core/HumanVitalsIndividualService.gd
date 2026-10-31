@@ -45,6 +45,7 @@ static func recalculate_vitals(individual: HumanIndividual, game_data: GameData)
 		individual.max_happiness = HumanIndividual.FALLBACK_MAX_VITAL
 		individual.max_loyalty = HumanIndividual.FALLBACK_MAX_VITAL
 		individual.max_faith = HumanIndividual.FALLBACK_MAX_VITAL
+		individual.daily_water_consumption = 0.0
 	else:
 		var age := float(game_data.year - individual.birth_year_virtual)
 		var age_band := HumanCalculator.get_age_band(
@@ -52,6 +53,11 @@ static func recalculate_vitals(individual: HumanIndividual, game_data: GameData)
 			individual.sex, age
 		)
 		individual.max_thirst = HumanCalculator.get_max_thirst(human_rules, age_band, individual.sex)
+		# Sete (2026-10-30): consumo del giorno, con l'allattamento dell'era corrente come per le calorie.
+		individual.daily_water_consumption = HumanCalculator.get_daily_water_consumption(
+			human_rules, age_band, individual.sex, individual.dependent_child_id != -1,
+			EraCalculator.get_era_rules(game_data.current_era_name)
+		)
 		# Postumi permanenti (2026-10-26): il massimo si rifà qui ogni giorno, quindi la perdita va tolta qui.
 		individual.max_health = maxf(
 			HumanCalculator.get_max_health(human_rules, age_band, individual.sex) - individual.permanent_max_health_loss, 1.0)
@@ -125,9 +131,12 @@ static func apply_daily_calorie_consumption(individual: HumanIndividual, game_da
 	var daily_consumption: float = HumanCalculator.get_daily_calorie_consumption(
 		human_rules, age_band, individual.sex, individual.dependent_child_id != -1, era_rules
 	)
+	# Riserva corporea prima della saccoccia (2026-10-31, richiesta utente): dalle provviste esce anche quanto manca a
+	# riempire la riserva, se intaccata.
+	var body_deficit: float = maxf(individual.body_calories_capacity - individual.body_calories, 0.0)
 	var consumed: float = 0.0
 	if calories_before > 0.0:
-		consumed = minf(daily_consumption, calories_before)
+		consumed = minf(daily_consumption + body_deficit, calories_before)
 	if consumed > 0.0:
 		individual.food_space_used *= (calories_before - consumed) / calories_before
 		individual.food_calories_held -= consumed
@@ -135,6 +144,9 @@ static func apply_daily_calorie_consumption(individual: HumanIndividual, game_da
 	# intacca body_calories, che si ferma a 0 (nessuna penalita' ne' morte per ora).
 	var body_before: float = individual.body_calories
 	var shortfall: float = daily_consumption - consumed
+	if shortfall < 0.0:
+		individual.body_calories = body_before - shortfall
+		shortfall = 0.0
 	var consumed_from_body: float = 0.0
 	if shortfall > 0.0 and body_before > 0.0:
 		consumed_from_body = minf(shortfall, body_before)

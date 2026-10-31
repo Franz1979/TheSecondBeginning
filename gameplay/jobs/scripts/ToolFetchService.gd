@@ -24,6 +24,8 @@ const TOOL_FETCH_SOURCE_KEY := "tool_fetch_source"
 const BORROWED_TOOL_RETURN_KEY := "borrowed_tool_return"
 # Sacca presa con la regola "Prendi la sacca se disponibile" (try_take_bag): "id edificio:nome" nel context, la prenotazione.
 const BAG_FETCH_KEY := "bag_fetch"
+# Otre preso con la regola "Prendi l'otre se disponibile" (try_take_waterskin): stessa prenotazione della sacca.
+const WATERSKIN_FETCH_KEY := "waterskin_fetch"
 # Capo preso con la regola "Indossa i capi disponibili" (try_wear_apparel): "id edificio:nome" nel context, la prenotazione.
 const APPAREL_FETCH_KEY := "apparel_fetch"
 # Mezzo da traino preso prima di un lavoro a più viaggi (start_towed_fetch): "id edificio:nome", la prenotazione.
@@ -918,16 +920,10 @@ static func forget_borrowed_tools(individuals: Array[HumanIndividual]) -> void:
 # già andando a prendere (BAG_FETCH_KEY) non contano, così una sacca manda una persona sola. true = task assegnata.
 static func try_take_bag(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
 	var game_data: GameData = GameSettings.active_game_data
-	if game_data == null or world == null or not game_data.job_board_take_bag:
-		return false
-	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+	if game_data == null or not game_data.job_board_take_bag:
 		return false
 	if HumanCalculator.get_equipped_carry_bonus(individual.equipped_tools) > 0.0:
 		return false
-	var slots := free_belt_slots(individual)
-	if slots.is_empty() or not JobBoardService.is_enabled(GameSettings.active_human_folk):
-		return false
-	var reserved := _reserved_fetches(individual, BAG_FETCH_KEY)
 	var bag_names := fetchable_tool_names(TaskTypes.ToolCategory.CARRYING)
 	# A pari capacità vince la sacca con più usi (2026-10-25, richiesta utente: affumicata prima dell'essiccata). Vale solo
 	# per chi è senza sacca: nessuno cambia quella che ha, la sostituisce quando si rompe.
@@ -938,22 +934,57 @@ static func try_take_bag(individual: HumanIndividual, age_band: HumanTypes.AgeBa
 			return bonus_a > bonus_b
 		return ToolInstance.get_max_uses(a) > ToolInstance.get_max_uses(b)
 	)
+	return _try_take_belt_tool(individual, age_band, world, bag_names, BAG_FETCH_KEY, "regola della sacca")
+
+
+# Regola "Prendi l'otre se disponibile" (2026-10-31, richiesta utente — GameData.job_board_take_waterskin): come la sacca,
+# chiamata subito dopo. Senza otre in cintura (ThirstService.waterskin_slot) e con un posto libero va a prendere in
+# deposito l'otre con più acqua (a pari acqua, con più usi). Uno solo: chi ne ha già uno non ne prende un secondo.
+static func try_take_waterskin(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null or not game_data.job_board_take_waterskin or ThirstService.waterskin_slot(individual) != -1:
+		return false
+	var waterskin_names := fetchable_tool_names(TaskTypes.ToolCategory.WATERSKIN)
+	waterskin_names.sort_custom(func(a: String, b: String) -> bool:
+		var capacity_a := CaloricCalculator.get_caloric_source_rules(a).water_capacity
+		var capacity_b := CaloricCalculator.get_caloric_source_rules(b).water_capacity
+		if not is_equal_approx(capacity_a, capacity_b):
+			return capacity_a > capacity_b
+		return ToolInstance.get_max_uses(a) > ToolInstance.get_max_uses(b)
+	)
+	return _try_take_belt_tool(individual, age_band, world, waterskin_names, WATERSKIN_FETCH_KEY, "regola dell'otre")
+
+
+# Parte comune di sacca e otre (2026-10-31): niente neonati né bambini, un posto libero in cintura, la lista dei lavori
+# attiva; il primo di `tool_names` (già in ordine di preferenza) libero e raggiungibile in un deposito, non prenotato da
+# altri (`fetch_key`): task equip_tool.tres, in cintura, e resta suo. true = task assegnata.
+static func _try_take_belt_tool(
+	individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World, tool_names: Array, fetch_key: String, rule_label: String
+) -> bool:
+	if world == null:
+		return false
+	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+		return false
+	var slots := free_belt_slots(individual)
+	if slots.is_empty() or not JobBoardService.is_enabled(GameSettings.active_human_folk):
+		return false
+	var reserved := _reserved_fetches(individual, fetch_key)
 	var reachability := PathfindingService.reachability_for(individual)
-	for bag_name in bag_names:
-		var source := _find_free_source(individual, world, bag_name, reserved, reachability)
+	for tool_name in tool_names:
+		var source := _find_free_source(individual, world, tool_name, reserved, reachability)
 		if source == null:
 			continue
-		var task := TaskBuilderService.build_equip_tool_task(individual, source, bag_name, slots[0])
+		var task := TaskBuilderService.build_equip_tool_task(individual, source, tool_name, slots[0])
 		if task == null:
 			return false
-		task.context[BAG_FETCH_KEY] = _fetch_key(source, bag_name)
+		task.context[fetch_key] = _fetch_key(source, tool_name)
 		if not individual.assign_task(task, age_band):
 			return false
 		if storage_signal_connector.is_valid():
 			storage_signal_connector.call(task, individual)
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
-			print("[JOB BOARD] #%d %s: va a prendere %s in %s #%d (regola della sacca)." % [
-				individual.id, individual.name, bag_name, source.building_type_name, source.id
+			print("[JOB BOARD] #%d %s: va a prendere %s in %s #%d (%s)." % [
+				individual.id, individual.name, tool_name, source.building_type_name, source.id, rule_label
 			])
 		return true
 	return false

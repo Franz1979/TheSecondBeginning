@@ -149,6 +149,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for saved_group in data["game"].get("wild_animal_groups", []):
 		game_data.wild_animal_groups.append(WildAnimalGroup.from_save_data(saved_group))
 	game_data.next_wild_animal_group_id = int(data["game"].get("next_wild_animal_group_id", 1))
+	# Visite in corso (2026-10-30) — .get() per i save precedenti: nessuna visita. Le ricostruisce alla prima mossa
+	# WildAnimalVisitService (collisione, edifici, animali usciti dal branco).
+	game_data.wild_animal_visits.clear()
+	for saved_visit in data["game"].get("wild_animal_visits", []):
+		game_data.wild_animal_visits.append(WildAnimalVisit.from_save_data(saved_visit))
 	# .get(key, 0) per compatibilità con save precedenti l'introduzione della pulizia
 	# periodica del fog of war (vedi GameData) — 0 è lo stesso default della classe.
 	game_data.fog_of_war_last_prune_absolute_day = int(data["game"].get("fog_of_war_last_prune_absolute_day", 0))
@@ -300,6 +305,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				game_data.stock_toolkit_targets[String(type_name)] = by_tool
 	game_data.job_board_return_borrowed_tools = bool(data["game"].get("job_board_return_borrowed_tools", true))
 	game_data.job_board_take_bag = bool(data["game"].get("job_board_take_bag", false))
+	game_data.job_board_take_waterskin = bool(data["game"].get("job_board_take_waterskin", false))
 	game_data.job_board_wear_apparel = bool(data["game"].get("job_board_wear_apparel", false))
 	game_data.real_seconds_in_game = float(data["game"].get("real_seconds_in_game", 0.0))
 	game_data.real_seconds_playing = float(data["game"].get("real_seconds_playing", 0.0))
@@ -417,9 +423,15 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		cell.terrain_base = int(cell_data["terrain_base"])
 		cell.water_type = int(cell_data["water_type"])
 		cell.river_shape = int(cell_data.get("river_shape", GameTypes.RiverShape.NONE))
+		cell.stream_edges = int(cell_data.get("stream_edges", 0))
+		cell.stream_has_spring = bool(cell_data.get("stream_has_spring", false))
 		cell.coast_type = int(cell_data["coast_type"])
 		cell.biome = int(cell_data["biome"])
 		world.cells.append(cell)
+	# Salvataggi precedenti ai ruscelli: la rete viene generata una sola volta qui.
+	world.streams_generated = bool(world_data.get("streams_generated", false))
+	if not world.streams_generated:
+		StreamNetworkGenerator.generate(world)
 
 	world.cell_states.clear()
 	if world_data.has("cell_states"):
@@ -1036,6 +1048,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				individual.body_calories_resolved = true
 			individual.body_reserve_in_use = bool(individual_data.get("body_reserve_in_use", false))
 			individual.starvation_days = int(individual_data.get("starvation_days", 0))
+			individual.dehydration_elapsed = float(individual_data.get("dehydration_elapsed", individual_data.get("dehydration_days", 0.0)))
+			individual.waterskin_water = float(individual_data.get("waterskin_water", 0.0))
+			individual.thirst_zero_alerted = bool(individual_data.get("thirst_zero_alerted", false))
 			individual.current_thirst = float(individual_data.get("current_thirst", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.max_thirst = float(individual_data.get("max_thirst", HumanIndividual.FALLBACK_MAX_VITAL))
 			individual.current_health = float(individual_data.get("current_health", HumanIndividual.FALLBACK_MAX_VITAL))

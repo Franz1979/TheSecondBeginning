@@ -8,7 +8,8 @@ extends RefCounted
 #
 # La regola "microcella libera" (is_free) è quella di sempre dei Criteri 3-6 del piazzamento edifici:
 #   3. acqua: la macrocella intera è WATER;
-#   4. fiume: la microcella è nella fascia fluviale;
+#   4. fiume: la microcella è nella fascia fluviale; ruscello (StreamMicrocellService): blocca il piazzamento ma
+#      non il cammino (allow_stream, il pathfinding lo attraversa a costo alto);
 #   5. roccia: la microcella è in MacroCellState.stone_positions e la roccia non è esaurita (RockStoneService.is_depleted);
 #   6. edificio: un edificio del mondo sta su quella microcella (quelli MOVEMENT, calpestabili, contano o no a scelta).
 # Alberi, vegetazione e mucchi a terra non sono ostacoli qui.
@@ -17,6 +18,7 @@ extends RefCounted
 var cell_known: bool = false
 var water_cell: bool = false
 var river: Dictionary = {}
+var stream: Dictionary = {}
 var stones: Dictionary = {}
 # Edifici che bloccano (tutti tranne i calpestabili, BuildingRules.walkable): microcella -> id edificio.
 var blocking_buildings: Dictionary = {}
@@ -48,6 +50,7 @@ static func build(
 	elif river_positions is Array:
 		for position in river_positions:
 			obstacles.river[position] = true
+	obstacles.stream = StreamMicrocellService.get_positions(macro_world, macro_cell)
 	if macro_state != null:
 		# Rocce esaurite (2026-10-08): non sono più ostacoli (RockStoneService.is_depleted).
 		var depleted := RockStoneService.get_depleted_positions(macro_state)
@@ -103,13 +106,16 @@ func is_barrier(microcell: Vector2i) -> bool:
 # andare sotto un ospite (aperto, chiuso o cantiere) ma non dove c'è già un altro edificio di suolo.
 func is_free(
 	microcell: Vector2i, allow_water: bool = false, allow_river: bool = false, allow_stone: bool = false,
-	ignore_movement_buildings: bool = false, stack_as_host: bool = false, stack_as_ground: bool = false
+	ignore_movement_buildings: bool = false, stack_as_host: bool = false, stack_as_ground: bool = false,
+	allow_stream: bool = false
 ) -> bool:
 	if not cell_known:
 		return false
 	if not allow_water and water_cell:
 		return false
 	if not allow_river and river.has(microcell):
+		return false
+	if not allow_stream and not allow_river and stream.has(microcell):
 		return false
 	if not allow_stone and stones.has(microcell):
 		return false

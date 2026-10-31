@@ -13,6 +13,7 @@
 [ext_resource type="AudioStream" path="res://audio/assets/sfx/world/build_2.wav" id="11_build_2"]
 [ext_resource type="AudioStream" path="res://audio/assets/sfx/world/build_3.wav" id="12_build_3"]
 [ext_resource type="AudioStream" path="res://audio/assets/sfx/creatures/wolf.wav" id="13_wolf"]
+[ext_resource type="AudioStream" path="res://audio/assets/sfx/creatures/wolf_attack.wav" id="14_wolf_attack"]
 
 [sub_resource type="Resource" id="Resource_cut"]
 script = ExtResource("1_def")
@@ -74,6 +75,14 @@ spatial = false
 max_voices = 1
 cooldown_ms = 5000
 
+[sub_resource type="Resource" id="Resource_wolf_attack"]
+script = ExtResource("1_def")
+id = &"wolf_attack"
+streams = Array[AudioStream]([ExtResource("14_wolf_attack")])
+spatial = true
+max_voices = 1
+cooldown_ms = 2500
+
 [resource]
 script = ExtResource("2_bank")
-defs = Array[ExtResource("1_def")]([SubResource("Resource_cut"), SubResource("Resource_quarry"), SubResource("Resource_kids"), SubResource("Resource_hunt"), SubResource("Resource_crowd"), SubResource("Resource_knapping"), SubResource("Resource_build"), SubResource("Resource_wolf_howl")])
+defs = Array[ExtResource("1_def")]([SubResource("Resource_cut"), SubResource("Resource_quarry"), SubResource("Resource_kids"), SubResource("Resource_hunt"), SubResource("Resource_crowd"), SubResource("Resource_knapping"), SubResource("Resource_build"), SubResource("Resource_wolf_howl"), SubResource("Resource_wolf_attack")])

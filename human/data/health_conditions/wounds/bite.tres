@@ -1,0 +1,24 @@
+[gd_resource type="Resource" script_class="HealthConditionRules" format=3]
+
+[ext_resource type="Script" path="res://human/scripts/core/HealthConditionRules.gd" id="1_condition"]
+
+[resource]
+script = ExtResource("1_condition")
+id = "bite"
+display_name = "wound_bite"
+category = 1
+severity = 1
+age_bands = Array[int]([0, 1, 2, 3, 4, 5])
+immediate_health_loss = 800.0
+min_duration_days = 3
+max_duration_days = 8
+daily_health_loss = 100.0
+daily_happiness_loss = 60.0
+bed_rest = true
+recovery_health_ratio = 0.55
+convalescence_daily_health_loss = 20.0
+convalescence_daily_happiness_loss = 30.0
+convalescence_bed_rest = false
+repeat_adds = true
+infection_probability_per_day = 0.05
+infection_condition_id = "wound_infection"

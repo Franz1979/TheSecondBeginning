@@ -26,7 +26,9 @@ const NOISE_THRESHOLD: float = 0.4
 # originale: non un servizio a sé con una propria schedulazione), solo il codice che lo fa vive
 # ora nel servizio generico "capacità per lotto" invece che qui. Dal 2026-10-05 prepara solo la cache delle capacità
 # (ricavate dalla posizione), non scrive più nulla nel registro salvato.
-func generate_if_needed(macro_state: MacroCellState, cell: MacroCellData) -> void:
+# `excluded` (Vector2i -> true): microcelle dove le rocce non vanno, oggi il ruscello (StreamMicrocellService,
+# 2026-10-30). Vale solo per le celle generate da ora in poi: le rocce già salvate restano dove sono.
+func generate_if_needed(macro_state: MacroCellState, cell: MacroCellData, excluded: Dictionary = {}) -> void:
 	if macro_state.stone_positions_generated:
 		return
 
@@ -37,7 +39,7 @@ func generate_if_needed(macro_state: MacroCellState, cell: MacroCellData) -> voi
 	)
 
 	macro_state.stone_positions = ResourcePositionService.generate_positions(
-		macro_state.micro_seed, count, {}, NOISE_FREQUENCY, NOISE_THRESHOLD
+		macro_state.micro_seed, count, excluded.duplicate(), NOISE_FREQUENCY, NOISE_THRESHOLD
 	)
 	macro_state.stone_positions_generated = true
 

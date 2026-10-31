@@ -23,6 +23,16 @@ var fog_of_war_renderer: FogOfWarRenderer
 var fog_of_war_memory: FogOfWarMemory
 var river_positions: Array = []
 var river_exterior_occupied: Dictionary = {}
+# Microcelle del ruscello (StreamMicrocellService.get_positions, Vector2i -> true): calpestabili a costo
+# alto (PathfindingService), niente vegetazione né edifici sopra.
+var stream_positions: Dictionary = {}
+# Rive (ThirstService.build_water_access, all'attivazione): microcelle da cui si beve (Vector2i -> true), e le stesse in
+# un Array per la ricerca della riva più vicina.
+var water_access: Dictionary = {}
+var drink_spots: Array = []
+# Fascia vicino all'acqua (ThirstService.build_water_access, 2026-10-30): microcelle entro ThirstService.WATER_BAND_RADIUS
+# dall'acqua (Vector2i -> true); chi ci sta non perde acqua.
+var water_band: Dictionary = {}
 
 # Mappa SPARSA dei modificatori di movimento (2026-09-19, richiesta utente): SOLO le microcelle che
 # deviano dalla norma, Vector2i (microcella) -> Vector2(moltiplicatore stamina, moltiplicatore
@@ -36,6 +46,11 @@ var movement_version: int = 0
 # Mezzo da traino (2026-10-23, travois): microcelle con un fondo (BuildingRules.towing_speed_multiplier >= 0) -> velocità
 # di traino, costruita insieme a movement_modifiers da MovementTerrainService.rebuild.
 var towing_surfaces: Dictionary = {}
+# Guadi costruiti sul ruscello (2026-10-31, Guado di pietre): microcelle del ruscello coperte da un edificio con
+# BuildingRules.requires_narrow_stream completo e non danneggiato (Vector2i -> true), costruita insieme a movement_modifiers
+# da MovementTerrainService.rebuild. Lì valgono i moltiplicatori del guado al posto di quelli del ruscello (umani, travois,
+# peso del percorso, animali).
+var stream_crossings: Dictionary = {}
 # Microcelle con almeno un albero o arbusto (Vector2i -> true), ricavate da cached_vegetation_positions SOLO quando un
 # pipottino che traina chiede il bosco qui (MovementTerrainService._forest_cells): niente lavoro al taglio né alla
 # rigenerazione. forest_cells_version = vegetation_layout_version da cui sono state ricavate (-1 = mai): se la vegetazione

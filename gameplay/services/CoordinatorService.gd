@@ -387,6 +387,9 @@ static func _call_idle_individuals(
 		var task := member.current_task
 		if task == null or task.is_finished() or not task.is_idle_activity:
 			continue
+		# Malati (2026-10-31): mai richiamati; chi può fare il riparo per sé ci va da solo (resolve_idle_individual).
+		if member.is_sick():
+			continue
 		if age_band_resolver.is_valid():
 			var age_band: HumanTypes.AgeBand = age_band_resolver.call(member)
 			if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:

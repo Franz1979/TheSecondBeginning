@@ -55,11 +55,23 @@ const YOUNG_POINTS_SHARE: float = 0.5
 # Attacco (lupi L4, 2026-10-30, richiesta utente): una persona, chiunque, entrata nel raggio in cui un presente nota le
 # persone (da MIN_NOTICE_RADIUS ad aggressività 0 a MAX_NOTICE_RADIUS a 100, microcelle) mentre il branco è in sosta alla
 # meta viene tirata una volta sola per visita, con probabilità MAX_ATTACK_CHANCE × aggressività/100 del più aggressivo dei
-# presenti (0 = non attacca mai). Riuscito: la carica tutto il branco, dritto e senza pause a hop_speed; al contatto
-# (ATTACK_CONTACT_DISTANCE) log e notifica, poi il branco se ne va. Senza contatto entro MAX_CHARGE_DAYS (o se la persona
-# sparisce o va al sicuro) se ne va lo stesso. In ogni caso la visita è "con attacco". La persona caricata scappa (L5a,
-# DangerFleeService col profilo DANGER_PROFILE); il morso arriva con L5b.
+# presenti (0 = non attacca mai). Riuscito: la persona scappa (L5a, DangerFleeService col profilo DANGER_PROFILE) e tutto
+# il branco la insegue a balzi con pause (L5b, 2026-10-30, richiesta utente). Al contatto (ATTACK_CONTACT_DISTANCE) la
+# morde (BITE_CONDITION_ID, si sommano) con log e notifica, poi il branco resta fermo BITE_PAUSE_DAYS e riparte.
+# L'inseguimento finisce quando la persona è al riparo, sparisce o muore, dopo MAX_BITES_PER_CHARGE morsi o
+# MAX_CHARGE_DAYS; poi il branco se ne va. In ogni caso la visita è "con attacco".
 const DANGER_PROFILE: String = "predator"
+const BITE_CONDITION_ID: String = "bite"
+# Pausa dopo un morso (giorni: 2 ore), in cui chi scappa guadagna strada.
+const BITE_PAUSE_DAYS: float = 2.0 / 24.0
+# Tetto dei morsi in una carica: chi non ha un riparo e aspetta allo scoperto non viene morso fino alla morte.
+const MAX_BITES_PER_CHARGE: int = 3
+# Scacciati in gruppo (L6.1, 2026-10-30, richiesta utente): all'inizio della carica gli adulti vicini corrono contro il
+# branco (DangerFleeService.start_drive_off, regole nel profilo DANGER_PROFILE); appena ne sono arrivati quanti servono
+# (finita la loro corsa, o entro DRIVE_OFF_GIVE_UP_DISTANCE microcelle da un presente) il branco rinuncia e se ne va di
+# corsa. Niente punti né calma (visita con attacco), aggressività invariata: il branco annota la cacciata
+# (WildAnimalGroup.driven_off_count/last_driven_off_day), che le visite spontanee (L2) useranno.
+const DRIVE_OFF_GIVE_UP_DISTANCE: float = 3.0
 const MIN_NOTICE_RADIUS: float = 3.0
 const MAX_NOTICE_RADIUS: float = 6.0
 const MAX_ATTACK_CHANCE: float = 0.5
@@ -68,7 +80,7 @@ const MAX_ATTACK_CHANCE: float = 0.5
 const FEAR_SAFE_RADIUS: float = 3.0
 # Contatto a 1 microcella: chi lavora a un cantiere sta su una microcella bloccata e il lupo arriva solo a quella accanto.
 const ATTACK_CONTACT_DISTANCE: float = 1.0
-const MAX_CHARGE_DAYS: float = 0.5
+const MAX_CHARGE_DAYS: float = 1.0
 # Via libera (2026-10-30, richiesta utente): si carica solo chi è raggiungibile in linea retta — passo di controllo sulla
 # linea lupo-persona (microcelle); una microcella bloccata in mezzo (palizzata, edifici, rocce) la protegge. Quella
 # della persona non conta (un cantiere blocca, ma non ripara): ripara solo stare in un edificio completato (shelter_rects).
@@ -243,10 +255,41 @@ static func advance_all(game_data: GameData, world: World, game_delta: float, fo
 		return
 	var departed: Array[WildAnimalVisit] = []
 	for visit in game_data.wild_animal_visits:
+		if visit.needs_restore and not _restore_after_load(visit, game_data, world):
+			departed.append(visit)
+			continue
 		if advance(visit, world, game_delta, game_data, folk, individuals, effects):
 			departed.append(visit)
 	for visit in departed:
 		game_data.wild_animal_visits.erase(visit)
+
+
+# Visita appena caricata (2026-10-30, WildAnimalVisit.to_save_data): toglie gli animali non più nel branco, rimette la
+# collisione, fa ripianificare il percorso e, in sosta o in carica, raccoglie di nuovo gli edifici come all'arrivo.
+# false = non resta nessuno (o il branco non c'è più): la visita va tolta.
+static func _restore_after_load(visit: WildAnimalVisit, game_data: GameData, world: World) -> bool:
+	visit.needs_restore = false
+	var group := _find_group(game_data, visit.group_id)
+	if group == null:
+		return false
+	for i in range(visit.animal_ids.size() - 1, -1, -1):
+		if group.find_animal(visit.animal_ids[i]) != null:
+			continue
+		for per_animal: Array in [visit.animal_ids, visit.offsets, visit.home_offsets, visit.headings, visit.moving,
+				visit.phase_timers, visit.hopping, visit.hop_timers, visit.sniff_points, visit.notice_radii]:
+			if i < per_animal.size():
+				per_animal.remove_at(i)
+	if visit.animal_ids.is_empty():
+		return false
+	visit.blocked_test = PathfindingService.blocked_test_for(visit.macro_coords)
+	visit.path.clear()
+	visit.path_planned = false
+	visit.trail.clear()
+	if visit.phase == WildAnimalVisit.Phase.STAYING or visit.phase == WildAnimalVisit.Phase.CHARGING:
+		_collect_reaction_sources(visit, world, _wild_rules(visit.species))
+	print("[WILD ANIMAL VISITS] %s: visita ripresa dal salvataggio (fase %d, %d animali)" % [
+		visit.species, visit.phase, visit.animal_ids.size()])
+	return true
 
 
 # true = la visita è uscita dalla mappa e va tolta.
@@ -258,7 +301,7 @@ static func advance(visit: WildAnimalVisit, world: World, game_delta: float, gam
 	if visit.phase == WildAnimalVisit.Phase.STAYING:
 		var target := _find_attack_target(visit, individuals)
 		if target != null:
-			_start_charge(visit, target, world, game_data)
+			_start_charge(visit, target, world, game_data, individuals)
 	if visit.phase == WildAnimalVisit.Phase.CHARGING:
 		_charge(visit, wild_rules, game_delta, individuals, game_data, world, folk, effects)
 		return false
@@ -284,13 +327,16 @@ static func advance(visit: WildAnimalVisit, world: World, game_delta: float, gam
 			return false
 		return _on_target_reached(visit, world, wild_rules)
 	var direction := to_goal / to_goal.length()
-	var speed := _travel_speed(wild_rules)
+	# Scacciati: se ne vanno di corsa, balzi senza pause.
+	var driven_away := visit.driven_off and visit.phase == WildAnimalVisit.Phase.LEAVING and wild_rules != null
+	var speed := wild_rules.hop_speed if driven_away else _travel_speed(wild_rules)
 	var old_positions: Array[Vector2] = []
 	for i in range(visit.offsets.size()):
 		old_positions.append(get_animal_position(visit, i))
 	_turn_formation(visit, direction, speed * game_delta)
 	var step := speed * game_delta
-	_travel_gait(visit, wild_rules, step, game_delta)
+	if not driven_away:
+		_travel_gait(visit, wild_rules, step, game_delta)
 	var reached := step >= remaining
 	visit.position += direction * (remaining if reached else step)
 	if visit.trail.is_empty() or visit.trail[visit.trail.size() - 1].distance_to(visit.position) >= TRAIL_SPACING:
@@ -323,7 +369,7 @@ static func _follow_with_collision(visit: WildAnimalVisit, old_positions: Array[
 		if bool(visit.blocked_test.call(Vector2i(goal.floor()))) or not _is_line_clear(visit, from_position, goal):
 			goal = _trail_point_in_sight(visit, from_position)
 		var next_position := PathfindingService.move_with_collision(visit.blocked_test, from_position,
-			(goal - from_position).limit_length(max_step))
+			(goal - from_position).limit_length(max_step), visit.macro_coords)
 		next_position = next_position.clamp(Vector2.ZERO, Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001))
 		visit.offsets[i] = (next_position - visit.position).rotated(-frame_angle)
 
@@ -429,7 +475,7 @@ static func _sniff(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: float
 					heading = lerp_angle(heading, push.angle(), clampf(push.length() * strength, 0.0, 1.0))
 		# Collisione: stessa regola della fauna (PathfindingService.move_with_collision), poi dentro la cella.
 		var next_position := PathfindingService.move_with_collision(visit.blocked_test, from_position,
-			Vector2.from_angle(heading) * minf(wild_rules.hop_speed * delta, to_point.length()))
+			Vector2.from_angle(heading) * minf(wild_rules.hop_speed * delta, to_point.length()), visit.macro_coords)
 		next_position = next_position.clamp(Vector2.ZERO, Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001))
 		if next_position == from_position:
 			# Bloccato su entrambi gli assi: per il resto del balzo da un'altra parte, invece di restare incollato.
@@ -617,11 +663,14 @@ static func _find_individual(individuals: Array[HumanIndividual], individual_id:
 # Parte la carica: il riferimento del gruppo resta fermo (come in sosta), ognuno con la sua direzione. La persona
 # caricata scappa (L5a, DangerFleeService, profilo DANGER_PROFILE): il pericolo ha l'id del gruppo (una visita alla volta
 # per gruppo) e arriva dal presente più vicino; i punti sicuri sono le zone del fuoco (safe_points).
-static func _start_charge(visit: WildAnimalVisit, target: HumanIndividual, world: World, game_data: GameData) -> void:
+static func _start_charge(visit: WildAnimalVisit, target: HumanIndividual, world: World, game_data: GameData,
+		individuals: Array[HumanIndividual]) -> void:
 	visit.phase = WildAnimalVisit.Phase.CHARGING
 	visit.attack_target_id = target.id
 	visit.charge_remaining = MAX_CHARGE_DAYS
 	visit.charge_min_distance = INF
+	visit.charge_pause = 0.0
+	visit.bites = 0
 	visit.attacked = true
 	visit.path.clear()
 	visit.path_planned = false
@@ -634,11 +683,23 @@ static func _start_charge(visit: WildAnimalVisit, target: HumanIndividual, world
 	print("[WILD ANIMAL VISITS] %s: caricano #%d %s da %.1f microcelle" % [
 		visit.species, target.id, target.name, visit.charge_start_distance])
 	DangerFleeService.start_flee(target, DANGER_PROFILE, visit.group_id, nearest_wolf, visit.safe_points, world, game_data)
+	var wolf_positions: Array[Vector2] = []
+	for i in range(visit.animal_ids.size()):
+		wolf_positions.append(get_animal_position(visit, i))
+	# Aiuta chi è fuori dagli edifici e vede i lupi in linea retta (stessa regola dell'attacco).
+	var can_help := func(member: HumanIndividual) -> bool:
+		if visit.shelter_rects.any(func(rect: Rect2) -> bool: return rect.has_point(member.position)):
+			return false
+		return wolf_positions.any(func(wolf: Vector2) -> bool: return _is_line_clear(visit, wolf, member.position))
+	var drive_off := DangerFleeService.start_drive_off(individuals, target, DANGER_PROFILE, visit.group_id,
+		wolf_positions, can_help, game_data)
+	visit.defender_ids = drive_off["helper_ids"]
+	visit.defenders_needed = int(drive_off["needed"]) if not visit.defender_ids.is_empty() else 0
 
 
-# Carica: ognuno corre dritto verso la persona a hop_speed, senza pause, con la collisione della fauna. Il primo che
-# arriva a ATTACK_CONTACT_DISTANCE la raggiunge: log, notifica e il branco se ne va. Persona sparita (morta o in
-# un'altra macrocella) o tempo scaduto: se ne va senza contatto.
+# Inseguimento: ognuno va dritto verso la persona alternando balzi a hop_speed e pause (hop_*), come la fauna, con la
+# sua collisione; in media un po' più veloce di chi corre. Il primo che arriva a ATTACK_CONTACT_DISTANCE morde
+# (_on_attack_contact), poi tutti fermi per BITE_PAUSE_DAYS. Fine: vedi il commento delle costanti d'attacco.
 static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: float, individuals: Array[HumanIndividual],
 		game_data: GameData, world: World, folk: Folk, effects: GameEffects) -> void:
 	var target := _find_individual(individuals, visit.attack_target_id)
@@ -650,16 +711,25 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 		end_reason = "persona uscita dalla macrocella"
 	elif visit.shelter_rects.any(func(rect: Rect2) -> bool: return rect.has_point(target.position)):
 		end_reason = "persona al riparo in un edificio"
+	elif visit.defenders_needed > 0 and _defenders_arrived(visit, individuals) >= visit.defenders_needed:
+		_on_driven_off(visit, individuals, game_data, effects)
+		_end_charge(visit, individuals, game_data, world, folk, effects)
+		return
 	elif _in_fear_zone(visit, target.position):
 		end_reason = "persona al sicuro vicino al fuoco"
+	elif visit.bites >= MAX_BITES_PER_CHARGE:
+		end_reason = "%d morsi" % visit.bites
 	elif visit.charge_remaining <= 0.0:
 		end_reason = "tempo scaduto"
 	elif wild_rules == null:
 		end_reason = "regole della specie mancanti"
 	if end_reason != "":
-		print("[WILD ANIMAL VISITS] %s: carica finita senza contatto (%s) dopo %.1f ore, distanza minima %.1f microcelle" % [
-			visit.species, end_reason, _charge_hours(visit), visit.charge_min_distance])
+		print("[WILD ANIMAL VISITS] %s: carica finita (%s) dopo %.1f ore, %d morsi, distanza minima %.1f microcelle" % [
+			visit.species, end_reason, _charge_hours(visit), visit.bites, visit.charge_min_distance])
 		_end_charge(visit, individuals, game_data, world, folk, effects)
+		return
+	if visit.charge_pause > 0.0:
+		visit.charge_pause -= delta
 		return
 	var frame_angle := visit.facing_direction.angle()
 	for i in range(visit.offsets.size()):
@@ -668,23 +738,34 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 		var distance := to_target.length()
 		visit.charge_min_distance = minf(visit.charge_min_distance, distance)
 		if distance <= ATTACK_CONTACT_DISTANCE:
-			_on_attack_contact(visit, target, effects)
-			_end_charge(visit, individuals, game_data, world, folk, effects)
+			_on_attack_contact(visit, target, game_data, effects)
+			visit.charge_pause = BITE_PAUSE_DAYS
 			return
+		visit.hop_timers[i] -= delta
+		if visit.hop_timers[i] <= 0.0:
+			visit.hopping[i] = not visit.hopping[i]
+			visit.hop_timers[i] = randf_range(wild_rules.hop_duration_min, wild_rules.hop_duration_max) 				if visit.hopping[i] else randf_range(wild_rules.hop_pause_min, wild_rules.hop_pause_max)
 		var heading := to_target.angle()
+		visit.headings[i] = heading
+		if not visit.hopping[i]:
+			continue
 		var next_position := PathfindingService.move_with_collision(visit.blocked_test, from_position,
-			Vector2.from_angle(heading) * minf(wild_rules.hop_speed * delta, distance))
+			Vector2.from_angle(heading) * minf(wild_rules.hop_speed * delta, distance), visit.macro_coords)
 		next_position = next_position.clamp(Vector2.ZERO, Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001))
 		# Nella zona sicura del fuoco non si entra: ci si ferma al bordo.
 		if _in_fear_zone(visit, next_position) and not _in_fear_zone(visit, from_position):
 			next_position = from_position
-		visit.headings[i] = heading
 		visit.offsets[i] = (next_position - visit.position).rotated(-frame_angle)
 
 
-static func _on_attack_contact(visit: WildAnimalVisit, target: HumanIndividual, effects: GameEffects) -> void:
-	print("[WILD ANIMAL VISITS] %s: attacco a #%d %s dopo %.1f ore di carica (partiti da %.1f microcelle)" % [
-		visit.species, target.id, target.name, _charge_hours(visit), visit.charge_start_distance])
+# Morso (L5b): la ferita BITE_CONDITION_ID (si somma a quelle di prima, HealthConditionRules.repeat_adds), log e notifica.
+static func _on_attack_contact(visit: WildAnimalVisit, target: HumanIndividual, game_data: GameData,
+		effects: GameEffects) -> void:
+	visit.bites += 1
+	var bitten := HealthConditionService.add_condition(target, BITE_CONDITION_ID, game_data)
+	print("[WILD ANIMAL VISITS] %s: morso %d a #%d %s dopo %.1f ore di carica (partiti da %.1f microcelle)%s, salute %d" % [
+		visit.species, visit.bites, target.id, target.name, _charge_hours(visit), visit.charge_start_distance,
+		"" if bitten else " (ferita rifiutata)", int(target.current_health)])
 	if effects == null:
 		return
 	var group_rules := WildAnimalGroupService.get_rules(visit.species)
@@ -692,6 +773,57 @@ static func _on_attack_contact(visit: WildAnimalVisit, target: HumanIndividual, 
 	effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_ATTACK,
 		GameContext.tr_text("notification_wild_animal_attack").format({
 			"species": GameContext.tr_text("animal_species_" + wild_species), "name": target.name}))
+
+
+# Aiutanti arrivati: corsa finita (gridano sul posto) o entro DRIVE_OFF_GIVE_UP_DISTANCE da un presente.
+static func _defenders_arrived(visit: WildAnimalVisit, individuals: Array[HumanIndividual]) -> int:
+	if visit.defender_ids.is_empty():
+		return 0
+	var frame_angle := visit.facing_direction.angle()
+	var arrived := 0
+	for defender_id in visit.defender_ids:
+		var member := _find_individual(individuals, defender_id)
+		if member == null or not DangerFleeService.is_fleeing_from(member, visit.group_id):
+			continue
+		if DangerFleeService.has_reached_danger(member, visit.group_id):
+			arrived += 1
+			continue
+		for i in range(visit.offsets.size()):
+			if (visit.position + visit.offsets[i].rotated(frame_angle)).distance_to(member.position) <= DRIVE_OFF_GIVE_UP_DISTANCE:
+				arrived += 1
+				break
+	return arrived
+
+
+# Il branco rinuncia (L6.1): log, notifica coi nomi di chi l'ha scacciato, cacciata annotata sul branco.
+static func _on_driven_off(visit: WildAnimalVisit, individuals: Array[HumanIndividual], game_data: GameData,
+		effects: GameEffects) -> void:
+	visit.driven_off = true
+	var names: Array[String] = []
+	for defender_id in visit.defender_ids:
+		var member := _find_individual(individuals, defender_id)
+		if member != null:
+			names.append(member.name)
+	var group := _find_group(game_data, visit.group_id)
+	if group != null:
+		group.driven_off_count += 1
+		group.last_driven_off_day = game_data.get_absolute_day()
+	print("[WILD ANIMAL VISITS] %s: scacciati da %s dopo %.1f ore, %d morsi (cacciate in tutto: %d)" % [
+		visit.species, ", ".join(names), _charge_hours(visit), visit.bites, group.driven_off_count if group != null else 0])
+	if effects == null:
+		return
+	var group_rules := WildAnimalGroupService.get_rules(visit.species)
+	var wild_species := group_rules.wild_species_name if group_rules != null else visit.species
+	effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_DRIVEN_OFF,
+		GameContext.tr_text("notification_wild_animal_driven_off").format({
+			"species": GameContext.tr_text("animal_species_" + wild_species), "names": ", ".join(names)}))
+
+
+static func _find_group(game_data: GameData, group_id: int) -> WildAnimalGroup:
+	for group in game_data.wild_animal_groups:
+		if group.id == group_id:
+			return group
+	return null
 
 
 # Durata della carica fin qui, in ore di gioco (per i log).
@@ -719,10 +851,7 @@ static func apply_visit_outcome(visit: WildAnimalVisit, game_data: GameData, wor
 	if visit.attacked:
 		print("[WILD ANIMAL VISITS] %s: visita con attacco, niente punti né calma" % visit.species)
 		return
-	var group: WildAnimalGroup = null
-	for candidate in game_data.wild_animal_groups:
-		if candidate.id == visit.group_id:
-			group = candidate
+	var group := _find_group(game_data, visit.group_id)
 	if group == null:
 		return
 	var pit_ratio := _visit_pit_fill_ratio(visit, world)

@@ -128,6 +128,8 @@ enum ActionType {
 	REMEDY,
 	# WAIT_FOR_SAFETY (2026-10-30, fuga dal pericolo — WaitForSafetyAction, flee.tres) — IN CODA (36).
 	WAIT_FOR_SAFETY,
+	# DRINK (2026-10-30, sete — DrinkAction, drink.tres/emergency_drink.tres) — IN CODA (37).
+	DRINK,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,
@@ -163,4 +165,7 @@ enum ToolCategory {
 	# CONTAINER (2026-10-24, richiesta utente — ciotola di pietra, stone_bowl.tres) aggiunto IN FONDO, stesso motivo: un
 	# recipiente. Nessuna ricetta la richiede ancora: servirà al rimedio con le erbe medicinali e alle ricette future.
 	CONTAINER,
+	# WATERSKIN (2026-10-30, richiesta utente — otre, waterskin.tres) aggiunto IN FONDO, stesso motivo: una riserva d'acqua
+	# in cintura (SecondaryResourceRules.water_capacity), letta da ThirstService. Nessuna Action la richiede.
+	WATERSKIN,
 }

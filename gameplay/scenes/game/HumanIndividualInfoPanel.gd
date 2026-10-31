@@ -257,7 +257,62 @@ var _type_open: bool = false
 var _current_individual: HumanIndividual
 
 
+# Barra della sete con l'otre (2026-10-30, ThirstService): come la sacca allarga il carico, l'otre allunga la barra
+# (massimo = corpo + capacità dell'otre). ThirstBar disegna solo il corpo (azzurro, sfondo trasparente); dietro, la barra
+# _thirst_total_bar disegna lo sfondo e corpo + otre color cuoio, così il tratto dell'otre si vede dopo quello del corpo.
+const WATERSKIN_FILL_COLOR := Color(0.62, 0.45, 0.28, 1.0)
+var _thirst_total_bar: ProgressBar = null
+# Disidratazione (2026-10-31): a zero la barra diventa rossa e mostra i giorni che restano, come la riserva corporea
+# nella barra del cibo (stesso rosso, FOOD_BAR_BODY_RESERVE_COLOR).
+var _thirst_fill_normal: StyleBox = null
+var _thirst_fill_dehydration: StyleBox = null
+
+
+func _build_thirst_total_bar() -> void:
+	_thirst_total_bar = ProgressBar.new()
+	_thirst_total_bar.show_percentage = false
+	_thirst_total_bar.show_behind_parent = true
+	_thirst_total_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_thirst_total_bar.add_theme_stylebox_override("background", thirst_bar.get_theme_stylebox("background"))
+	var fill := thirst_bar.get_theme_stylebox("fill").duplicate() as StyleBox
+	if fill is StyleBoxFlat:
+		(fill as StyleBoxFlat).bg_color = WATERSKIN_FILL_COLOR
+	_thirst_total_bar.add_theme_stylebox_override("fill", fill)
+	_thirst_fill_normal = thirst_bar.get_theme_stylebox("fill")
+	_thirst_fill_dehydration = _thirst_fill_normal.duplicate() as StyleBox
+	if _thirst_fill_dehydration is StyleBoxFlat:
+		(_thirst_fill_dehydration as StyleBoxFlat).bg_color = FOOD_BAR_BODY_RESERVE_COLOR
+	thirst_bar.add_theme_stylebox_override("background", StyleBoxEmpty.new())
+	thirst_bar.add_child(_thirst_total_bar)
+	_thirst_total_bar.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+
+func _show_thirst_bar(individual: HumanIndividual, max_thirst: float, current_thirst: float) -> void:
+	var days_left := ThirstService.dehydration_days_left(individual) if individual != null else -1.0
+	if days_left >= 0.0:
+		thirst_bar.add_theme_stylebox_override("fill", _thirst_fill_dehydration)
+		thirst_bar.max_value = ThirstService.DEHYDRATION_DAYS
+		thirst_bar.value = days_left
+		_thirst_total_bar.value = 0.0
+		thirst_bar.tooltip_text = TooltipText.wrap(tr("individual_thirst_tooltip_dehydration").format({"days": "%.1f" % days_left}))
+		return
+	thirst_bar.add_theme_stylebox_override("fill", _thirst_fill_normal)
+	var capacity := ThirstService.waterskin_capacity(individual) if individual != null else 0.0
+	var water := minf(individual.waterskin_water, capacity) if individual != null else 0.0
+	thirst_bar.max_value = max_thirst + capacity
+	thirst_bar.value = current_thirst
+	_thirst_total_bar.max_value = max_thirst + capacity
+	_thirst_total_bar.value = current_thirst + water
+	if capacity > 0.0:
+		thirst_bar.tooltip_text = TooltipText.wrap(tr("individual_thirst_tooltip_waterskin").format({
+			"body": int(current_thirst), "max": int(max_thirst), "water": int(water), "capacity": int(capacity)
+		}))
+	else:
+		thirst_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_thirst), int(max_thirst)])
+
+
 func _ready() -> void:
+	_build_thirst_total_bar()
 	cancel_task_button.tooltip_text = TooltipText.wrap(tr("individual_cancel_task_tooltip"))
 	cancel_task_button.pressed.connect(func(): cancel_task_requested.emit(_current_individual))
 	_build_kill_debug_button()
@@ -601,9 +656,7 @@ func show_individual(
 		])
 
 	thirst_label.text = tr("individual_thirst_label")
-	thirst_bar.max_value = max_thirst
-	thirst_bar.value = current_thirst
-	thirst_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(current_thirst), int(max_thirst)])
+	_show_thirst_bar(individual, max_thirst, current_thirst)
 
 	# Condizioni di salute in corso (2026-10-25, HealthConditionService): i nomi accanto a "Salute", senza i giorni (il
 	# giocatore non sa quando guarirà); malato per salute bassa: "sta male".
@@ -621,6 +674,9 @@ func show_individual(
 		health_tooltip += "\n" + "\n".join(HealthConditionService.tooltip_lines(individual))
 	elif individual != null and individual.is_sick():
 		health_tooltip += "\n" + tr("health_condition_low_health_tooltip")
+	# Riparo per sé (2026-10-31, HumanIndividual.may_build_own_shelter): malato senza casa, può costruire le case.
+	if individual != null and individual.is_sick() and individual.may_build_own_shelter():
+		health_tooltip += "\n" + tr("health_sick_shelter_tooltip")
 	# Postumi permanenti (2026-10-26): sempre, anche da guarito.
 	if individual != null and individual.permanent_max_health_loss > 0.0:
 		health_tooltip += "\n" + tr("health_sequela_line").format({"amount": int(individual.permanent_max_health_loss)})

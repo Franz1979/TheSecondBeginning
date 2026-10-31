@@ -334,6 +334,9 @@ var job_board_return_borrowed_tools: bool = true
 # si libera senza sacca in cintura e con un posto libero va a prendere in deposito la sacca migliore e la tiene. Salvata da
 # GameSaveService ("job_board_take_bag"); partita nuova e salvataggi vecchi: spenta.
 var job_board_take_bag: bool = false
+# Regola "Prendi l'otre se disponibile" (2026-10-31, richiesta utente — ToolFetchService.try_take_waterskin): come la sacca,
+# per l'otre (ThirstService). Salvata da GameSaveService ("job_board_take_waterskin"); partita nuova e salvataggi vecchi: spenta.
+var job_board_take_waterskin: bool = false
 # Regola di assegnazione "Indossa i capi disponibili" (2026-10-19, richiesta utente — ToolFetchService.try_wear_apparel):
 # chi si libera con uno slot del vestiario vuoto va a prendere in deposito i capi che gli mancano e li indossa. Separata
 # dalla sacca. Salvata da GameSaveService ("job_board_wear_apparel"); partita nuova e salvataggi vecchi: spenta.

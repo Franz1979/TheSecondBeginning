@@ -241,12 +241,26 @@ static func get_max_body_calories(human_rules: HumanRules, age_band: HumanTypes.
 # decisione se/quali di questi modificatori li riguardino anche loro). Nessuna chiamata a
 # get_age_band qui, stesso principio di get_max_stamina/get_max_carry_capacity: il chiamante passa
 # già l'age_band risolto.
+# Sete (2026-10-30): acqua massima nel corpo, scalata per taglia come get_max_body_calories (i thirst_multiplier
+# scalano il consumo, vedi get_daily_water_consumption sotto).
 static func get_max_thirst(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:
-	return (
-		human_rules.base_max_thirst
+	return _size_scaled_amount(human_rules.base_max_thirst, human_rules, age_band, sex)
+
+
+# Consumo d'acqua giornaliero (2026-10-30): stesso schema di get_daily_calorie_consumption, con i thirst_multiplier;
+# l'allattamento usa lo stesso moltiplicatore dell'era delle calorie.
+static func get_daily_water_consumption(
+	human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex,
+	has_dependent_child: bool = false, era_rules: EraRules = null
+) -> float:
+	var consumption: float = (
+		human_rules.base_daily_water_consumption
 		* human_rules.thirst_multiplier_by_age[age_band]
 		* human_rules.thirst_multiplier_by_sex[sex]
 	)
+	if has_dependent_child and era_rules != null:
+		consumption *= era_rules.dependent_child_calorie_multiplier
+	return consumption
 
 
 static func get_max_health(human_rules: HumanRules, age_band: HumanTypes.AgeBand, sex: HumanTypes.Sex) -> float:

@@ -9,6 +9,8 @@ const COLOR_DROUGHT_MARKER_RECOVERING := Color(0.85, 0.65, 0.15, 0.75)  # giallo
 const COLOR_SEA_FLOOD_MARKER_FRESH := Color(0.05, 0.35, 0.55, 0.9)        # blu intenso, anno dell'inondazione
 const COLOR_SEA_FLOOD_MARKER_RECOVERING := Color(0.55, 0.75, 0.85, 0.75)  # azzurro salino, anni successivi
 const COLOR_PAINT_FLASH := Color(1.0, 1.0, 1.0, 1.0)
+const STREAM_LINE_WIDTH: float = 1.5 # i fiumi occupano ~4.5 px su 10
+const STREAM_SPRING_RADIUS: float = 1.8
 const PAINT_FLASH_DURATION: float = 0.35 # secondi, feedback visivo di una cella appena dipinta nel map editor
 # Etichetta ID sopra ciascun territorio evidenziato da highlight_group_territories sotto — colore
 # fisso (non dipende dal colore del territorio, deve restare leggibile su qualunque tinta) con un
@@ -170,6 +172,11 @@ func _draw() -> void:
 			overlay_color.a *= fade
 			draw_rect(rect, overlay_color)
 			draw_rect(rect, Color(overlay_color.r, overlay_color.g, overlay_color.b, fade), false, 2.0)
+
+	# Ruscelli in un secondo giro: il tratto che entra in una cella-fiume a est/sud verrebbe
+	# coperto dal terreno di quella cella, disegnata dopo nel ciclo sopra.
+	for cell in world.cells:
+		_draw_stream(cell, Rect2(cell.x * CELL_SIZE, cell.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
 
 	_draw_species_territory_overlay_labels()
 
@@ -370,6 +377,30 @@ func _draw_river_cell(cell: MacroCellData, rect: Rect2) -> void:
 		_:
 			draw_rect(rect, TerrainColors.RIVER)
 			
+# Ruscello (StreamNetworkGenerator): una linea sottile dal centro della cella al punto medio di
+# ogni lato marcato, più un puntino per la sorgente. Disegnato sopra l'overlay delle risorse,
+# così resta visibile anche con l'overlay acceso. Se il lato dà su una cella-fiume la linea
+# prosegue fino al centro di quella cella, dove passa la fascia del fiume (che non riempie la
+# cella come lago e mare): senza, tra ruscello e fiume resterebbe un tratto di verde.
+func _draw_stream(cell: MacroCellData, rect: Rect2) -> void:
+	if not StreamNetworkGenerator.STREAMS_ENABLED:
+		return
+	if cell.stream_edges == 0 and not cell.stream_has_spring:
+		return
+	var center := rect.position + rect.size / 2.0
+	for d in range(StreamNetworkGenerator.DIRECTIONS.size()):
+		if not (cell.stream_edges & StreamNetworkGenerator.DIRECTION_EDGES[d]):
+			continue
+		var direction: Vector2i = StreamNetworkGenerator.DIRECTIONS[d]
+		var length: float = CELL_SIZE / 2.0
+		var neighbor := world.get_cell_at(cell.x + direction.x, cell.y + direction.y)
+		if neighbor != null and neighbor.water_type == GameTypes.WaterType.RIVER:
+			length = CELL_SIZE
+		draw_line(center, center + Vector2(direction) * length, TerrainColors.STREAM, STREAM_LINE_WIDTH)
+	if cell.stream_has_spring:
+		draw_circle(center, STREAM_SPRING_RADIUS, TerrainColors.STREAM)
+
+
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.pressed and event.button_index == MOUSE_BUTTON_LEFT:

@@ -1373,7 +1373,7 @@ func _record_process_timing(usec: int) -> void:
 # blocked_test, o fuori dalla macrocella: come prima. La regola è PathfindingService.move_with_collision (2026-10-28),
 # condivisa con gli animali in visita.
 func _move_with_collision(group: AnimalVisualGroup, displacement: Vector2) -> void:
-	var next_position := PathfindingService.move_with_collision(blocked_test, group.position, displacement)
+	var next_position := PathfindingService.move_with_collision(blocked_test, group.position, displacement, macro_coords)
 	if next_position == group.position:
 		return
 	group.position = next_position

@@ -15,7 +15,7 @@ extends RefCounted
 # è malato e ha ancora un lavoro in corso o in coda (appena sceso sotto la soglia) va a letto.
 static func release_sick_queues(ctx: GameContext) -> void:
 	for individual in ctx.individuals.duplicate():
-		if individual.is_sick() and (not individual.task_queue.is_empty() or _has_work_in_progress(individual)):
+		if individual.is_sick() and (_has_unshelter_queue(individual) or _has_work_in_progress(individual)):
 			on_bedridden(ctx, individual, GameEffects.new())
 
 
@@ -54,7 +54,35 @@ static func is_bed_compatible(task: Task) -> bool:
 
 static func _has_work_in_progress(individual: HumanIndividual) -> bool:
 	var task := individual.current_task
-	return task != null and not task.is_finished() and not is_bed_compatible(task)
+	return task != null and not task.is_finished() and not is_bed_compatible(task) 		and not (individual.may_build_own_shelter() and HumanIndividual.is_shelter_task(task))
+
+
+# Coda con qualcosa che non sia il riparo per sé (2026-10-31, HumanIndividual.may_build_own_shelter).
+static func _has_unshelter_queue(individual: HumanIndividual) -> bool:
+	if not individual.may_build_own_shelter():
+		return not individual.task_queue.is_empty()
+	for task in individual.task_queue:
+		if not HumanIndividual.is_shelter_task(task):
+			return true
+	return false
+
+
+# Riparo per sé (2026-10-31): c'è un cantiere residenziale nuovo prendibile adesso nella lista (open_job_keys, letta
+# dall'ultimo giro, mai ricalcolata). Solo allora il malato senza casa va al punto di assegnazione.
+static func has_open_shelter_job(game_data: GameData, world: World) -> bool:
+	if game_data == null or world == null:
+		return false
+	for key in game_data.job_board_runtime.open_job_keys.keys():
+		var parts := String(key).split(":")
+		if parts.size() != 2 or parts[0] != "build":
+			continue
+		var building_id := int(parts[1])
+		for building in world.buildings:
+			if building.id == building_id:
+				if building.rules != null and building.rules.max_residents > 0:
+					return true
+				break
+	return false
 
 
 # Macellazioni tolte con la carcassa ancora intera: avviso "In sospeso", il giocatore la riassegna a mano.

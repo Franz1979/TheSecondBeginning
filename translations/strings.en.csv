@@ -270,6 +270,10 @@ task_heal_job_name,Heal {name}
 "task_heal_job_tooltip","Healing · {name} is bedridden (health {health}): bring them the remedy"
 task_restock_step_backpack,Eating from the backpack
 task_emergency_restock_name,Urgent restock
+task_drink_name,Drinking
+task_drink_step_walk,Heading to the water
+task_drink_step_drink,Drinking
+task_emergency_drink_name,Urgent drinking
 pregnant,Pregnant
 individual_vitals_section_label,Vital parameters:
 individual_identity_line,{name} - {sex} - {age} - {band}
@@ -279,7 +283,7 @@ individual_supplies_label,Supplies:
 individual_food_calories_value,{calories} cal
 individual_supplies_tooltip_pouch,Supplies: {used}/{capacity}
 individual_supplies_tooltip_body,Body reserve (supplies depleted): {current}/{max} cal
-individual_thirst_label,Thirst:
+individual_thirst_label,Water:
 individual_health_label,Health:
 individual_happiness_label,Happiness:
 individual_loyalty_label,Loyalty:
@@ -387,10 +391,14 @@ notification_stillbirth,{mother} lost the child during childbirth
 notification_idea_completed,New idea completed: {idea}
 notification_building_material_needed,Material needed to start construction of {building}
 notification_body_reserve_started,{name} has run out of supplies and is using their body reserve
+notification_thirst_zero,{name} has run out of water and is dying of thirst
+individual_thirst_tooltip_waterskin,Body {body}/{max} · Waterskin {water}/{capacity}
+individual_thirst_tooltip_dehydration,Dehydration: {days} days left
 death_cause_childbirth,childbirth
 death_cause_starvation,starvation
 death_cause_illness,illness
 death_cause_wounds,wounds
+death_cause_dehydration,dehydration
 birth_verb_male,born
 birth_verb_female,born
 offspring_word_male,son
@@ -467,6 +475,7 @@ health_condition_phase_convalescence,convalescence
 health_condition_bed_rest,bed rest
 health_sequela_line,after-effects: -{amount} max health permanently
 health_condition_low_health_tooltip,"Health too low: must rest, no work."
+health_sick_shelter_tooltip,"Homeless: can still work on house construction sites, to get a shelter."
 notification_condition_convalescence,{name} is convalescent ({condition}): this lasts until their health recovers.
 notification_condition_recovered,{name} has recovered: {condition}.
 notification_condition_onset,{name} shows symptoms of {condition}: bed rest until recovery.
@@ -890,6 +899,7 @@ toolkit_tooltip_uses_of,{uses} of {max}
 toolkit_click_to_return_spare,Click: put a spare piece back in storage
 carried_resource_tooltip_dried_hide_bag,Dried hide bag
 carried_resource_tooltip_smoked_hide_bag,Smoked hide bag
+carried_resource_tooltip_waterskin,Waterskin
 carried_resource_tooltip_stone_spear,Stone-tipped spear
 carried_resource_tooltip_bow,Bow
 carried_resource_tooltip_arrow_bundle,Bundle of arrows
@@ -1012,7 +1022,7 @@ human_type_tool_slot_bonus,"+{bonus} for each empty tool slot ({slots} slots)"
 human_type_food_space,Supplies: {value}
 human_type_calories,Daily consumption: {value} calories
 human_type_stamina,Max energy: {value}
-human_type_thirst,Max thirst: {value}
+human_type_thirst,Max water: {value}
 human_type_health,Max health: {value}
 human_type_happiness,Max happiness: {value}
 human_type_loyalty,Max loyalty: {value}
@@ -1238,6 +1248,8 @@ task_assignment_setting_return_borrowed_tools,Return tools taken for a job
 task_assignment_setting_return_borrowed_tools_tooltip,"Whoever takes a tool from storage for a queued job brings it back when free (where it came from, if there is room). Tools they already had or that you gave them stay on the belt."
 task_assignment_setting_take_bag,Take a bag if available
 task_assignment_setting_take_bag_tooltip,"Whoever is free with no queued job, no bag on the belt and a free belt slot fetches the best bag from storage and keeps it."
+task_assignment_setting_take_waterskin,Take a waterskin if available
+task_assignment_setting_take_waterskin_tooltip,"Whoever is free with no queued job, no waterskin on the belt and a free belt slot fetches the best waterskin from storage and keeps it."
 task_assignment_setting_wear_apparel,Wear available apparel
 task_assignment_setting_wear_apparel_tooltip,"Whoever is free with no queued job and a missing item (clothes, headwear, footwear, jewelry) fetches what they need from storage and wears it. Several items from the same storage in one trip."
 drawer_order_missing_materials,Missing: {materials}
@@ -1331,7 +1343,7 @@ statistics_axis_percent,%
 statistics_param_health,Health
 statistics_param_happiness,Happiness
 statistics_param_stamina,Stamina
-statistics_param_thirst,Thirst
+statistics_param_thirst,Water
 statistics_param_loyalty,Loyalty
 statistics_param_faith,Faith
 statistics_param_tooltip,"Average {name}: {current}/{max} ({percent}%)"
@@ -1398,6 +1410,8 @@ rite_oral_lesson_name,Lesson
 social_rite_reject_no_convocable,Nobody to call in the village (a lesson needs children)
 building_pebble_path,Pebble path
 build_bar_pebble_path_tooltip,"Pebble path: walking is less tiring (−10%) and a bit faster (+5%), better than packed earth"
+building_stone_ford,Stone ford
+build_bar_stone_ford_tooltip,"Stone ford: flat stones laid across a narrow stream, to cross it faster and less tired. Only placeable on a stretch one microcell wide; R to rotate the row."
 pending_no_active_idea,No idea in development
 pending_no_active_idea_detail,Deposited thoughts are lost: choose an idea
 carried_resource_tooltip_firewood,Firewood
@@ -1604,3 +1618,9 @@ task_flee_name,Fleeing danger
 task_flee_step_run,Running to shelter
 task_flee_step_wait,Waiting in shelter
 danger_predator,Predator
+wound_bite,bite
+illness_wound_infection,infection
+notification_wild_animal_driven_off,"{species}: driven off by {names}"
+task_drive_off_name,Driving off danger
+task_drive_off_step_run,Running at the danger
+task_drive_off_step_wait,Shouting and waving

@@ -120,7 +120,10 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Hut resta l'ultimo (slot 25). Categoria RELIGIOUS, richiede star_knowledge. Il Cerchio sacro (council_circle) non
 	# ha slot: nasce solo migliorando questo.
 	"star_circle": 24,
-	"hut": 25,
+	# Guado di pietre (2026-10-31, richiesta utente) — slot 25, submenu_row.slot_count portato a 27; Hut resta l'ultimo
+	# (slot 26). Categoria MOVEMENT, richiede paleolithic_constructions; si piazza solo su un ruscello stretto.
+	"stone_ford": 25,
+	"hut": 26,
 }
 
 # Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 10). RUINS esclusa:
@@ -253,7 +256,7 @@ func _ready() -> void:
 	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
 	# Legnaia (2026-10-08): richiede advanced_paleolithic_constructions, disabilitata da _refresh_building_slots_buildable.
 	# Capanna del vestiario (2026-10-11): richiede advanced_paleolithic_constructions, come la legnaia.
-	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack", "healer_hut", "star_circle"]:
+	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack", "healer_hut", "star_circle", "stone_ford"]:
 		submenu_row.configure_slot(
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)

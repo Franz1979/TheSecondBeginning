@@ -127,6 +127,8 @@ const INTERRUPT_PRIORITY_REST: int = 30
 # interrupt_priority -1, come wander e leisure_rest. Letta da _resolve_active_food_need_priority, da HumanIndividual.can_assign_task e dagli agganci
 # automatici (_handle_food_interrupt, resolve_idle_individual) che assegnano emergency_restock.
 const INTERRUPT_PRIORITY_EMERGENCY_RESTOCK: int = 20
+# Bere urgente (2026-10-30, sete — emergency_drink.tres, ThirstService): più urgente del cibo, meno del riposo d'emergenza.
+const INTERRUPT_PRIORITY_EMERGENCY_DRINK: int = 15
 # Fuga dal pericolo (2026-10-30, lupi L5a — flee.tres, DangerFleeService): più urgente di ogni bisogno, quindi nessun
 # bisogno la interrompe, e ammessa anche sotto la soglia di stamina e da malati (HumanIndividual.get_assign_rejection_reason).
 const INTERRUPT_PRIORITY_FLEE: int = 5
@@ -289,6 +291,10 @@ func _apply_action(individual: HumanIndividual, delta: float, world: World = nul
 	# apply_action dal prossimo frame, stesso principio gia' in uso per un normale cambio di step
 	# (activate() ora, delta dal prossimo giro del ciclo).
 	if _handle_stamina_interrupt(individual, task, world, game_data):
+		return
+	# Sete (2026-10-30): bere urgente, blocco a sé come le provviste sotto (ThirstService.handle_interrupt esce al primo
+	# confronto finché l'acqua è sopra la soglia d'emergenza).
+	if ThirstService.needs_emergency_drink(individual) and game_data != null 			and ThirstService.handle_interrupt(individual, task, _resolve_age_band(individual, game_data)):
 		return
 	# Bisogno di PROVVISTE (2026-09-19, richiesta utente): blocco a se', MAI fuso con quello di stamina
 	# sopra (come dice il commento su _resolve_active_stamina_need_priority). Stesso schema: bool di
@@ -2445,6 +2451,12 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 			NeedTaskAssignmentService.assign_rest_task(individual, world, age_band, true)
 		return
 
+	# Sete (2026-10-30, ThirstService): urgente prima del cibo; sotto la soglia del sorso si va a bere da liberi, anche da
+	# malati, prima di riprendere la coda.
+	if ThirstService.needs_emergency_drink(individual) and ThirstService.assign_drink_task(individual, age_band, true, true):
+		return
+	_idle_step("acqua di emergenza")
+
 	# Individuo libero con bisogno di provviste di emergenza (2026-09-19, richiesta utente): riceve
 	# emergency_restock invece di una perditempo. Nessun guard sullo spazio libero. Se nessun magazzino
 	# ha cibo la Task non nasce e si prosegue con coda/perditempo (il caso "resta ad aspettare" verra'
@@ -2458,6 +2470,10 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 			return
 	_idle_step("provviste di emergenza")
 
+	if ThirstService.needs_drink(individual) and ThirstService.assign_drink_task(individual, age_band, false, false):
+		return
+	_idle_step("bere")
+
 	# Malato (2026-10-24, richiesta utente — HumanIndividual.is_sick): dopo i bisogni sopra riporta il carico rimasto
 	# senza proprietario, poi solo provviste (stessa regola dello svago: sacca non quasi piena) o riposo, un giorno alla
 	# volta. Niente coda (liberata da SicknessService), attrezzi, lista dei lavori né svago.
@@ -2467,6 +2483,20 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 		if IdleTaskAssignmentService._is_leisure_restock_eligible(individual) \
 				and NeedTaskAssignmentService.assign_leisure_restock_task(individual, world, age_band):
 			return
+		# Riparo per sé (2026-10-31, richiesta utente — HumanIndividual.may_build_own_shelter): senza casa e malato solo per
+		# salute bassa, va alla lista se c'è un cantiere residenziale aperto; lì può prendere solo quello
+		# (get_assign_rejection_reason).
+		if individual.may_build_own_shelter():
+			if arrived_at_assignment_point:
+				if JobBoardService.try_take_job(individual):
+					var received: Task = individual.current_task if individual.current_task != null else (individual.task_queue.back() if not individual.task_queue.is_empty() else null)
+					CoordinatorService.report_departure(individual, received.get_activity_description() if received != null else "?")
+					return
+				CoordinatorService.report_departure(individual, "")
+				JobBoardService.note_empty_trip(GameSettings.active_game_data, individual)
+			elif SicknessService.has_open_shelter_job(GameSettings.active_game_data, world) \
+					and JobBoardService.try_seek_job(individual, age_band, world) == JobBoardService.SeekOutcome.STARTED:
+				return
 		NeedTaskAssignmentService.assign_sick_rest_task(individual, world, age_band)
 		return
 
@@ -2565,7 +2595,9 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 			return
 		if ToolFetchService.try_take_bag(individual, age_band, world):
 			return
-		_idle_step("attrezzi, vestiti e sacca")
+		if ToolFetchService.try_take_waterskin(individual, age_band, world):
+			return
+		_idle_step("attrezzi, vestiti, sacca e otre")
 	if individual.skip_job_board_once:
 		individual.skip_job_board_once = false
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:

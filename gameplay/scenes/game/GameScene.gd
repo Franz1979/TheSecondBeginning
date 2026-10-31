@@ -41,6 +41,10 @@ signal star_vigil_called(global_pos: Vector2)
 # Arrivo di un gruppo di animali selvatici in visita (2026-10-28, lupi L1), alla meta della visita: suono della specie
 # (AudioEventListener, il lupo ulula). Una volta per visita (WildAnimalVisit.arrival_announced).
 signal wild_animal_arrived(global_pos: Vector2, species: String)
+# Inizio della carica di un gruppo in visita (2026-10-30, lupi L4): suono della specie (AudioEventListener).
+signal wild_animal_charged(global_pos: Vector2, species: String)
+# Branco in visita scacciato da un gruppo di persone (2026-10-30, lupi L6.1): grido di guerra (AudioEventListener).
+signal wild_animal_driven_off(global_pos: Vector2)
 # Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
 # per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
 # riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
@@ -7020,6 +7024,16 @@ func _sync_wild_animal_visit_views() -> void:
 				var group_rules := WildAnimalGroupService.get_rules(visit.species)
 				wild_animal_arrived.emit(cell.container.to_global(visit.position * MicroCellRenderer.CELL_SIZE),
 					group_rules.wild_species_name if group_rules != null else visit.species)
+			# Ringhio all'inizio della carica (L4), una volta sola.
+			if visit.phase == WildAnimalVisit.Phase.CHARGING and not visit.charge_announced:
+				visit.charge_announced = true
+				var charging_rules := WildAnimalGroupService.get_rules(visit.species)
+				wild_animal_charged.emit(cell.container.to_global(visit.position * MicroCellRenderer.CELL_SIZE),
+					charging_rules.wild_species_name if charging_rules != null else visit.species)
+			# Grido di chi scaccia il branco (L6.1), una volta sola.
+			if visit.driven_off and not visit.driven_off_announced:
+				visit.driven_off_announced = true
+				wild_animal_driven_off.emit(cell.container.to_global(visit.position * MicroCellRenderer.CELL_SIZE))
 	for group_id in _wild_animal_visit_views.keys():
 		if alive.has(group_id):
 			continue
@@ -7698,6 +7712,18 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 						"detail": tr("building_awaiting_site_cut").format({
 							"cells": SiteCutService.cells_with_plants(macro_world, building).size(),
 						}) if building.awaiting_site_cut else tr("pending_reason_builder_missing"),
+					})
+				# Rimandato per materiale (2026-10-31, richiesta utente): assegnato ma fermo nella coda di chi lo tiene, chi è
+				# e cosa manca (stessa riga del cassetto).
+				elif assigned["postponed"].has(building.id) and not assigned["build_active"].has(building.id) \
+						and not MaterialSupplyService.get_missing_materials(building).is_empty():
+					jobs.append({
+						"key": "postponed:%d" % building.id,
+						"text": tr("pending_upgrade" if is_upgrade else "pending_build").format({"building": building_name}),
+						"detail": tr("job_postponed_material").format({
+							"name": (assigned["postponed"][building.id] as HumanIndividual).name,
+							"materials": _missing_materials_text(building),
+						}),
 					})
 			elif building.rules.is_workstation:
 				for order_key in ProductionService.get_order_keys(building):
@@ -11354,9 +11380,12 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 				cell.renderer.set_river(cell.macro_cell.river_shape, thickness_ratio)
 				cell.river_positions = RiverMicrocellService.get_river_positions(cell.macro_cell.river_shape, thickness_ratio)
 				cell.river_exterior_occupied = _compute_river_exterior_occupied(cell.river_positions)
+			cell.stream_positions = StreamMicrocellService.get_positions(macro_world, cell.macro_cell)
+			cell.renderer.set_streams(StreamMicrocellService.get_layout(macro_world, cell.macro_cell))
+			ThirstService.build_water_access(cell, macro_world)
 
 			var stone_service := StonePositionService.new()
-			stone_service.generate_if_needed(cell.macro_state, cell.macro_cell)
+			stone_service.generate_if_needed(cell.macro_state, cell.macro_cell, cell.stream_positions)
 			cell.renderer.set_depleted_stone_positions(RockStoneService.get_depleted_positions(cell.macro_state))
 			cell.renderer.set_stone_positions(cell.macro_state.stone_positions)
 			# Pebble (2026-09-08, richiesta utente) — NON più sincronizzato qui a parte (2026-09-09,
@@ -11606,6 +11635,9 @@ func _refresh_debug_domestication() -> void:
 	if wolves != null:
 		wolf_lines.insert(0, "Punti cane: %d/%d (resto %.1f)" % [DomesticationPointsService.get_points(game_data, "dog"),
 			rules.domestication_points_required, wolves.pending_domestication_points])
+		wolf_lines.insert(1, "Scacciati: %d volte%s" % [wolves.driven_off_count,
+			", l'ultima %d giorni fa" % (game_data.get_absolute_day() - wolves.last_driven_off_day)
+			if wolves.last_driven_off_day >= 0 else ""])
 	var wolf_visit := WildAnimalVisitService.find_visit(game_data, wolves.id) if wolves != null else null
 	if wolf_visit != null:
 		wolf_lines.append(WildAnimalVisitService.debug_line(wolf_visit))
@@ -12084,6 +12116,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 		if not depleted_rocks.has(pos):
 			occupied[pos] = true
 	for pos in cell.river_positions:
+		occupied[pos] = true
+	for pos in cell.stream_positions:
 		occupied[pos] = true
 	# Le microcelle edificate vanno escluse esattamente come stone/river — GRASS si affida solo a
 	# `occupied` (nessuna memoria persistita, vedi VegetationPositionService), mentre per TREE/SHRUB
@@ -13507,6 +13541,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 			return "feast_ground"
 		&"build_waste_pit":
 			return "waste_pit"
+		# Guado di pietre (2026-10-31) — azione cablata in BuildBar._ready.
+		&"build_stone_ford":
+			return "stone_ford"
 		_:
 			return ""
 
@@ -14328,6 +14365,11 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.set_take_bag(game_data.job_board_take_bag)
 		_task_assignment_panel.take_bag_changed.connect(func(enabled: bool) -> void:
 			game_data.job_board_take_bag = enabled
+		)
+		# Prendi l'otre se disponibile (2026-10-31): dato della partita, letto da ToolFetchService.try_take_waterskin.
+		_task_assignment_panel.set_take_waterskin(game_data.job_board_take_waterskin)
+		_task_assignment_panel.take_waterskin_changed.connect(func(enabled: bool) -> void:
+			game_data.job_board_take_waterskin = enabled
 		)
 		# Indossa i capi disponibili (2026-10-19): dato della partita, letto da ToolFetchService.try_wear_apparel.
 		_task_assignment_panel.set_wear_apparel(game_data.job_board_wear_apparel)
@@ -16224,6 +16266,10 @@ func _apply_effects(effects: GameEffects) -> void:
 		var icon_cell: LiveMacroCell = live_cells.get(entry["macro"])
 		if icon_cell != null:
 			_spawn_command_icon(icon_cell, entry["point"], String(entry["key"]))
+	for entry in effects.individual_icons:
+		var icon_view: HumanIndividualView = human_individual_views.get((entry["member"] as HumanIndividual).id)
+		if icon_view != null:
+			icon_view.show_transient_icon(String(entry["key"]))
 	HumanIndividualActionService.timing_step("effetti: completamenti e icone")
 	for macro_coords in effects.cells_to_refresh.keys():
 		if live_cells.has(macro_coords):

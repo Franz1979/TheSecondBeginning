@@ -165,6 +165,8 @@ static func apply_daily_interaction(individual: HumanIndividual, home_multiplier
 		var discomfort_health: float = human_rules.discomfort_coverage_daily_health_loss if human_rules != null else FALLBACK_DISCOMFORT_DAILY_HEALTH_LOSS
 		individual.current_happiness = _add_clamped(individual.current_happiness, -discomfort_happiness, individual.max_happiness)
 		individual.current_health -= discomfort_health
+	# Sete (2026-10-30, ThirstService): sotto il 25% d'acqua, e di più a zero.
+	individual.current_health -= ThirstService.daily_health_loss(individual)
 	# Unico limite della salute del giorno (vedi sopra): a 0 il controllo delle morti per malattia la trova a 0.
 	individual.current_health = clampf(individual.current_health, 0.0, individual.max_health)
 

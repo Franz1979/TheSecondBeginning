@@ -53,6 +53,8 @@ signal auto_clear_rubble_changed(enabled: bool)
 signal return_borrowed_tools_changed(enabled: bool)
 # Regola "Prendi la sacca se disponibile" (2026-10-19, GameData.job_board_take_bag).
 signal take_bag_changed(enabled: bool)
+# Regola "Prendi l'otre se disponibile" (2026-10-31, GameData.job_board_take_waterskin).
+signal take_waterskin_changed(enabled: bool)
 # Regola "Indossa i capi disponibili" (2026-10-19, GameData.job_board_wear_apparel).
 signal wear_apparel_changed(enabled: bool)
 # Regola "Un solo costruttore per cantiere" (2026-10-17, GameData.job_board_single_builder).
@@ -121,6 +123,7 @@ var _auto_repair_percent: int = JobBoardService.AUTO_REPAIR_DEFAULT_PERCENT
 var _auto_clear_rubble: bool = false
 var _return_borrowed_tools: bool = true
 var _take_bag: bool = false
+var _take_waterskin: bool = false
 var _wear_apparel: bool = false
 var _single_builder: bool = false
 # Priorità (2026-10-08): valori passati da GameScene prima di _ready (set_priority_settings), elenco dei tipi visibile solo
@@ -865,6 +868,7 @@ func _build_settings_section() -> void:
 	DashedSeparator.add_item(_settings_box, _build_auto_clear_rubble_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_return_borrowed_tools_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_take_bag_setting_row())
+	DashedSeparator.add_item(_settings_box, _build_take_waterskin_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_wear_apparel_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_single_builder_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_collect_piles_setting_row())
@@ -1082,6 +1086,29 @@ func _build_take_bag_setting_row() -> Control:
 			return
 		_take_bag = pressed
 		take_bag_changed.emit(pressed)
+	)
+	return check
+
+
+# Regola "Prendi l'otre se disponibile" (2026-10-31): come quella della sacca (set_take_waterskin prima di _ready, ogni
+# cambio esce con take_waterskin_changed; ToolFetchService.try_take_waterskin).
+func set_take_waterskin(enabled: bool) -> void:
+	_take_waterskin = enabled
+
+
+func _build_take_waterskin_setting_row() -> Control:
+	var check := CheckBox.new()
+	check.text = tr("task_assignment_setting_take_waterskin")
+	check.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_take_waterskin_tooltip"))
+	check.focus_mode = Control.FOCUS_NONE
+	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	check.button_pressed = _take_waterskin
+	check.toggled.connect(func(pressed: bool) -> void:
+		if _take_waterskin == pressed:
+			return
+		_take_waterskin = pressed
+		take_waterskin_changed.emit(pressed)
 	)
 	return check
 
