@@ -3914,6 +3914,25 @@ func _on_hunt_zone_series_continue_requested(hunter: HumanIndividual, series: Di
 	_apply_effects(effects)
 
 
+# Debug (2026-10-31): lancia e coltello di pietra nei posti liberi della cintura del pipottino selezionato, o del primo
+# del popolo se nessuno è selezionato. Per cacciare e macellare in una partita appena iniziata.
+func _debug_give_hunt_tools() -> void:
+	var targets := _get_selected_individuals()
+	if targets.is_empty() and not human_individuals.is_empty():
+		targets.append(human_individuals[0])
+	if targets.is_empty():
+		return
+	var member: HumanIndividual = targets[0]
+	var given: Array[String] = []
+	for tool_name in ["stone_spear", "stone_knife"]:
+		for slot in range(member.equipped_tools.size()):
+			if member.get_equipped_tool(slot) == "" and member.equip_tool_direct(tool_name, slot, game_data):
+				given.append(tool_name)
+				break
+	print("[DEBUG] arnesi da caccia a #%d %s: %s" % [member.id, member.name, ", ".join(given) if not given.is_empty() else "cintura piena"])
+	_refresh_selected_individual_panel()
+
+
 func _get_selected_individuals() -> Array[HumanIndividual]:
 	var selected: Array[HumanIndividual] = []
 	for member in human_individuals:
@@ -11841,11 +11860,17 @@ func _refresh_debug_animal_summary() -> void:
 	var entries: Array = []
 	var cell: LiveMacroCell = live_cells.get(center_macro_coords)
 	if cell != null and macro_world != null:
+		var herds := WildFaunaService.get_herds_in_cell(game_data, center_macro_coords) \
+			if SimulationSettings.WILD_FAUNA_AD_HOC else {}
 		for species in cell.animal_renderers:
-			var group := macro_world.find_population_group(species, center_macro_coords)
-			if group == null:
-				continue
-			var quota: int = int(group.get_population_by_cell().get(center_macro_coords, 0))
+			var quota := 0
+			if SimulationSettings.WILD_FAUNA_AD_HOC:
+				for count in herds.get(species, {}).values():
+					quota += int(count)
+			else:
+				var group := macro_world.find_population_group(species, center_macro_coords)
+				if group != null:
+					quota = int(group.get_population_by_cell().get(center_macro_coords, 0))
 			if quota <= 0:
 				continue
 			# Non tipizzata: un renderer già liberato (es. subito dopo un caricamento) darebbe errore all'assegnazione.
@@ -13037,6 +13062,17 @@ func _refresh_animal_individuals(cell: LiveMacroCell) -> void:
 	if cell.macro_cell == null or macro_world == null:
 		return
 	var this_cell := Vector2i(cell.macro_cell.x, cell.macro_cell.y)
+	# Fauna ad hoc (2026-10-31, passo 2): le mandrie dei riquadri che stanno ora in questa cella.
+	if SimulationSettings.WILD_FAUNA_AD_HOC:
+		var herds := WildFaunaService.get_herds_in_cell(game_data, this_cell)
+		for species in cell.animal_renderers.keys():
+			if not herds.has(species):
+				_remove_animal_renderer(cell, String(species))
+		for species in herds:
+			var herd_renderer := _ensure_animal_renderer(cell, String(species))
+			if herd_renderer != null:
+				_set_animal_renderer_age_counts(herd_renderer, herds[species], AnimalCalculator.get_animal_rules(species))
+		return
 	# Renderer solo per le specie presenti (2026-09-26): specie con quota > 0 in questa cella -> il suo
 	# gruppo (uno per specie per cella: i territori della stessa specie non si sovrappongono).
 	var present_groups: Dictionary = {}
@@ -13132,6 +13168,17 @@ func _update_animal_renderer_population(
 		)
 	else:
 		renderer_node.set_population(int(group.get_population_by_cell().get(coords, 0)))
+
+
+# Stessa riconciliazione di _update_animal_renderer_population, dai conteggi per fascia di una mandria (fauna ad hoc).
+func _set_animal_renderer_age_counts(renderer_node: AnimalGroupRenderer, age_counts: Dictionary, rules: AnimalRules) -> void:
+	var young := int(age_counts.get(GameTypes.AgeBand.YOUNG, 0))
+	var adult := int(age_counts.get(GameTypes.AgeBand.ADULT, 0))
+	var old := int(age_counts.get(GameTypes.AgeBand.OLD, 0))
+	if rules != null and rules.track_age_bands:
+		renderer_node.set_population_by_age(young, adult, old)
+	else:
+		renderer_node.set_population(young + adult + old)
 
 
 # GameInfoPanel non ha ancora un corpo con dati da mostrare (body_container vuoto per ora — vedi
@@ -13591,6 +13638,9 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			if game_data != null:
 				game_data.thirst_enabled = not game_data.thirst_enabled
 				debug_bar.set_thirst_enabled(game_data.thirst_enabled)
+		# Arnesi da caccia (2026-10-31, richiesta utente — prove della fauna ad hoc): lancia e coltello di pietra in cintura.
+		&"give_hunt_tools":
+			_debug_give_hunt_tools()
 		&"world_debug":
 			_on_world_debug_pressed()
 		&"macro_cell_debug":
@@ -15901,7 +15951,7 @@ func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, pre
 	var cell: LiveMacroCell = live_cells.get(prey_macro_coords)
 	if cell != null and cell.animal_renderers.has(prey_species):
 		cell.animal_renderers[prey_species].remove_individual(prey_id)
-	HuntService.apply_prey_kill(macro_world, prey_species, prey_age_band, prey_macro_coords)
+	HuntService.apply_prey_kill(macro_world, game_data, prey_species, prey_age_band, prey_macro_coords)
 	if not selected_animal.is_empty() and not selected_animal.has("wild_group_id") and int(selected_animal["individual_id"]) == prey_id:
 		_clear_animal_selection()
 
@@ -16962,7 +17012,9 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	# flora_daily_updates_enabled=false non gira) — altrimenti gli individui resterebbero indietro
 	# rispetto alla popolazione fino al prossimo refresh da movimento/checkpoint. Tutte le celle vive,
 	# non solo quelle di prossimità: costo trascurabile, nessun MultiMesh vegetazione coinvolto.
-	if animals_changed:
+	# Fauna ad hoc (passo 2): anche quando una mandria ha cambiato cella nel giro di oggi (GameSimulation.tick_day sopra).
+	if animals_changed or game_data.wild_fauna_moved:
+		game_data.wild_fauna_moved = false
 		for cell in live_cells.values():
 			_refresh_animal_individuals(cell)
 

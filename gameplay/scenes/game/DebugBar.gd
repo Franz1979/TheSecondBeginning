@@ -42,6 +42,9 @@ var _last_fps: int = -1
 # Sete (2026-10-31, richiesta utente): in fondo a destra, tra i controlli da togliere — accende/spegne
 # GameData.thirst_enabled (action_pressed &"toggle_thirst"; lo stato lo rimette GameScene con set_thirst_enabled).
 @onready var thirst_button: Button = $MarginContainer/HBoxContainer/ContentGroup/ThirstButton
+# Arnesi da caccia (2026-10-31, prove della fauna ad hoc): lancia e coltello al pipottino selezionato
+# (action_pressed &"give_hunt_tools").
+@onready var hunt_tools_button: Button = $MarginContainer/HBoxContainer/ContentGroup/HuntToolsButton
 
 signal action_pressed(action_id: StringName)
 # Evento casuale da scatenare subito (id di RandomEventRules), dal menu a tendina degli eventi.
@@ -85,6 +88,8 @@ func _ready() -> void:
 	wolves_button.pressed.connect(func() -> void: action_pressed.emit(&"wolf_visit"))
 	thirst_button.tooltip_text = TooltipText.wrap(tr("toggle_thirst_tooltip") + ": " + tr("toggle_thirst_description"))
 	thirst_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_thirst"))
+	hunt_tools_button.tooltip_text = TooltipText.wrap("Arnesi da caccia: lancia e coltello di pietra al pipottino selezionato (o al primo)")
+	hunt_tools_button.pressed.connect(func() -> void: action_pressed.emit(&"give_hunt_tools"))
 	_apply_state()
 
 

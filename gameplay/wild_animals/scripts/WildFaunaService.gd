@@ -8,8 +8,9 @@ extends RefCounted
 # cella diventa viva (ensure_cell) e poi si riprende soltanto: habitat sbagliato -> "mai", altrimenti un tiro con la
 # densità del menu (PRESENCE_CHANCE) -> mandria o "assente". Il lupo resta fuori: esiste solo come branco del villaggio
 # (WildAnimalGroup). Spostamenti (1b, tick_day): la mandria resta in una cella per herd_stay_days_min..max giorni, poi
-# passa a un'altra cella adatta del riquadro; con lato 1 non si sposta mai. Conti col tempo e salvataggio arrivano nei
-# passi dopo.
+# passa a un'altra cella adatta del riquadro; con lato 1 non si sposta mai. Passo 2: la scena disegna le mandrie che
+# stanno in una cella (get_herds_in_cell) e la caccia toglie un capo (remove_one). Conti col tempo e salvataggio
+# arrivano nei passi dopo.
 
 # Probabilità che un riquadro adatto abbia la mandria, per densità del menu (GameData.starting_animal_density).
 const PRESENCE_CHANCE := {
@@ -114,6 +115,55 @@ static func _create_region(world: World, game_data: GameData, rules: AnimalRules
 	return entry
 
 
+# Mandrie che in questo momento stanno in `coords`: specie -> conteggi per fascia d'età (GameTypes.AgeBand -> int).
+static func get_herds_in_cell(game_data: GameData, coords: Vector2i) -> Dictionary:
+	var herds: Dictionary = {}
+	if game_data == null:
+		return herds
+	for species in herd_species():
+		var entry := _region_at(game_data, species, coords)
+		if entry != null and entry.status == WildFaunaRegion.Status.PRESENT and entry.current_cell == coords \
+				and entry.get_total() > 0:
+			herds[species] = entry.age_counts
+	return herds
+
+
+# Preda uccisa (passo 2, HuntService.apply_prey_kill): un capo in meno nella mandria del riquadro, nella sua fascia
+# d'età (o in un'altra se quella è già vuota). Mandria a zero -> riquadro "assente" da oggi.
+static func remove_one(game_data: GameData, species: String, age_band: int, coords: Vector2i) -> void:
+	if game_data == null:
+		return
+	var entry := _region_at(game_data, species, coords)
+	if entry == null or entry.status != WildFaunaRegion.Status.PRESENT:
+		return
+	var band := age_band
+	if int(entry.age_counts.get(band, 0)) <= 0:
+		band = -1
+		for other in entry.age_counts:
+			if int(entry.age_counts[other]) > 0:
+				band = other
+				break
+	if band == -1:
+		return
+	entry.age_counts[band] = int(entry.age_counts[band]) - 1
+	var total := entry.get_total()
+	if total <= 0:
+		entry.status = WildFaunaRegion.Status.ABSENT
+		entry.extinct_since_day = game_data.get_absolute_day()
+		entry.current_cell = Vector2i(-1, -1)
+	if DebugLogging.ENABLED:
+		print("[WILD FAUNA] %s (%d,%d): preda uccisa in (%d, %d), restano %d%s" % [species, entry.region.x, entry.region.y,
+			coords.x, coords.y, total, " — mandria sterminata" if total <= 0 else ""])
+
+
+static func _region_at(game_data: GameData, species: String, coords: Vector2i) -> WildFaunaRegion:
+	var rules := AnimalCalculator.get_animal_rules(species)
+	if rules == null:
+		return null
+	var side := region_side(rules)
+	return game_data.wild_fauna.get(region_key(species, Vector2i(coords.x / side, coords.y / side)))
+
+
 # Giro giornaliero (1b, GameSimulation.tick_day): solo le mandrie dei riquadri che contengono una cella viva, una volta
 # ciascuna. Finito il soggiorno, la mandria passa a un'altra cella adatta del riquadro.
 static func tick_day(ctx: GameContext) -> void:
@@ -134,11 +184,13 @@ static func tick_day(ctx: GameContext) -> void:
 				continue
 			if entry.last_move_day < today - 1:
 				_place(ctx.world, rules, entry, today, "rientro: ")
+				ctx.game_data.wild_fauna_moved = true
 				continue
 			entry.last_move_day = today
 			entry.stay_remaining -= 1
 			if entry.stay_remaining <= 0:
 				_place(ctx.world, rules, entry, today, "")
+				ctx.game_data.wild_fauna_moved = true
 
 
 # Mandria che si sposta: presente, in un riquadro più grande di una cella.
