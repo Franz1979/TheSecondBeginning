@@ -3,7 +3,7 @@ extends RefCounted
 
 # Fauna selvatica "ad hoc" (2026-10-31, richiesta utente — piano fauna, passo 1a; acceso da
 # SimulationSettings.WILD_FAUNA_AD_HOC): niente popolazioni simulate in tutto il mondo. Ogni specie divide la mappa in
-# riquadri fissi di lato ceil(sqrt(min_territory_cells)) macrocelle (coniglio 1×1, cervo 2×2, uro 3×3); ogni riquadro
+# riquadri fissi di lato AnimalRules.herd_region_side macrocelle (coniglio 1×1, cervo 2×2, uro 3×3); ogni riquadro
 # ha al più una mandria, sempre tutta insieme in una sola macrocella. Un riquadro si crea la prima volta che una sua
 # cella diventa viva (ensure_cell) e poi si riprende soltanto: habitat sbagliato -> "mai", altrimenti un tiro con la
 # densità del menu (PRESENCE_CHANCE) -> mandria o "assente". Il lupo resta fuori: esiste solo come branco del villaggio
@@ -22,7 +22,15 @@ const ABSENT_SINCE_MAX_YEARS := 3
 
 
 static func region_side(rules: AnimalRules) -> int:
-	return maxi(1, ceili(sqrt(float(rules.min_territory_cells))))
+	return maxi(1, rules.herd_region_side)
+
+
+# Fattore della taglia del menu sulla mandria (min, max e tetto insieme): normale 1, rada ~0.67, densa ~1.8 — gli
+# stessi rapporti dei divisori della semina vecchia (AnimalSeedingService.POPULATION_SIZE_DIVISOR).
+static func herd_size_scale(game_data: GameData) -> float:
+	var size := AnimalSeedingService.population_size_from_string(game_data.starting_population_size)
+	return AnimalSeedingService.POPULATION_SIZE_DIVISOR[GameTypes.PopulationSize.NORMAL] \
+		/ AnimalSeedingService.POPULATION_SIZE_DIVISOR[size]
 
 
 static func region_key(species: String, region: Vector2i) -> String:
@@ -75,9 +83,9 @@ static func _create_region(world: World, game_data: GameData, rules: AnimalRules
 		entry.extinct_since_day = today - randi_range(0, ABSENT_SINCE_MAX_YEARS * GameData.DAYS_PER_YEAR)
 		return entry
 	entry.status = WildFaunaRegion.Status.PRESENT
-	# Taglia dei gruppi di oggi (tetto per cella × celle del territorio ÷ taglia del menu, ±10%), età dalla specie.
-	var total := AnimalSeedingService.new().compute_population_target(
-		rules, AnimalSeedingService.population_size_from_string(game_data.starting_population_size))
+	# Mandria tra herd_size_min e herd_size_max della specie, scalata dalla taglia del menu; età dalla specie.
+	var scale := herd_size_scale(game_data)
+	var total := maxi(1, roundi(randi_range(rules.herd_size_min, maxi(rules.herd_size_min, rules.herd_size_max)) * scale))
 	var weights := rules.initial_age_ratio
 	if weights.is_empty():
 		weights = {GameTypes.AgeBand.YOUNG: 1.0, GameTypes.AgeBand.ADULT: 1.0, GameTypes.AgeBand.OLD: 1.0}

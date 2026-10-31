@@ -237,6 +237,15 @@ extends Resource
 # sempre a 1 cella; deer=18, un branco realistico).
 @export var max_density_per_cell: float = 999.0
 
+@export_group("Wild herd")
+# Fauna ad hoc (2026-10-31, piano fauna — WildFaunaService): lato in macrocelle del riquadro fisso in cui vive al più una
+# mandria della specie (1 = stanziale nella cella). Più è grande, più di rado la mandria passa da una data cella.
+@export var herd_region_side: int = 1
+# Mandria a taglia "normale" del menu: alla nascita del riquadro un numero a caso tra min e max; max fa anche da tetto
+# alle nascite. Rada/densa scalano entrambi con lo stesso fattore (WildFaunaService.herd_size_scale).
+@export var herd_size_min: int = 1
+@export var herd_size_max: int = 1
+
 @export_group("Suitability")
 # Stessa forma e stessa semantica di SubtypeRules.suitable_biomes/suitable_terrains (vedi
 # SubtypeRules.gd) — vuoto = nessuna restrizione, altrimenti lista bianca. Letto da
