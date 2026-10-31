@@ -5,7 +5,10 @@
 [resource]
 script = ExtResource("1_fish")
 secondary_resource_name = "fish_meat"
-calories_per_unit = 6.0
-day_durability = 10
-space_per_unit = 5.0
-required_idea_id = "fishing"
+calories_per_unit = 0.0
+consuming_depletes_primary = false
+category = 1
+prefers_recipe_workstation = true
+generation_source = 3
+day_durability = 12
+space_per_unit = 4.0

@@ -30,6 +30,11 @@ effects_by_action_key = {
 "skill": "skill_crafting",
 "skill_max": 1000.0
 },
+"fish": {
+"bonus": 0.5,
+"skill": "skill_fishing",
+"skill_max": 1000.0
+},
 "hunt_throw": {
 "bonus": 0.5,
 "skill": "skill_hunting",

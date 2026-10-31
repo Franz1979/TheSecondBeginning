@@ -70,6 +70,11 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"dried_hide_bag": "_draw_deposit_storage_dried_hide_bag_icon",
 	"smoked_hide_bag": "_draw_deposit_storage_smoked_hide_bag_icon",
 	"waterskin": "_draw_deposit_storage_waterskin_icon",
+	"fishing_line": "_draw_deposit_storage_fishing_line_icon",
+	"fish_meat": "_draw_deposit_storage_fish_meat_icon",
+	"cooked_fish": "_draw_deposit_storage_cooked_fish_icon",
+	"dried_fish": "_draw_deposit_storage_dried_fish_icon",
+	"smoked_fish": "_draw_deposit_storage_smoked_fish_icon",
 	# Vestiario (2026-10-11): pelliccia di base e pelli lavorate (secondo livello).
 	"fur_dress": "_draw_deposit_storage_fur_dress_icon",
 	"fur_cap": "_draw_deposit_storage_fur_cap_icon",
@@ -579,6 +584,27 @@ static func _draw_deposit_storage_smoked_hide_bag_icon(canvas: CanvasItem, top_l
 # Otre (2026-10-30): stessa geometria dell'icona del pannello (WaterskinIcon.draw_into).
 static func _draw_deposit_storage_waterskin_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	WaterskinIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Pesca (2026-10-31): stessa geometria delle icone del pannello (FishingLineIcon/FishMeatIcon.draw_into).
+static func _draw_deposit_storage_fishing_line_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	FishingLineIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_fish_meat_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	FishMeatIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_cooked_fish_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	CookedFishIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_dried_fish_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	DriedFishIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_smoked_fish_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	SmokedFishIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 # Vestiario (2026-10-11): stessa geometria delle icone del pannello.

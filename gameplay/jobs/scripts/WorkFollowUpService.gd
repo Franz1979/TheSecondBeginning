@@ -346,6 +346,64 @@ static func continue_cut_cell_series(ctx: GameContext, worker: HumanIndividual, 
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
 
 
+# Pesca successiva della serie di pesca in zona (fish_zone_series_continue_requested, 2026-10-31): a fine Task, dopo una
+# consegna o un punto vuoto. Serie completa: niente. Motivo di fermata scritto dalla pesca (zona senza pesci, lenza rotta
+# senza ricambio, zaino pieno a mani vuote), zona tolta, lenza mancante o nessun punto libero: "serie interrotta" (come la
+# cava e la caccia: dalla barra la lenza non si va a prendere in deposito). Altrimenti la pesca successiva sul punto
+# migliore della zona si accoda come seguito, con i pesci in mano.
+static func continue_fish_series(ctx: GameContext, worker: HumanIndividual, series: Dictionary, effects: GameEffects) -> void:
+	if worker == null or not ctx.individuals.has(worker):
+		return
+	# Ordine del cassetto (2026-10-31, passo 4): pesci consegnati annotati sull'ordine, che a serie finita sparisce; ordine
+	# tolto o rimesso in coda (Rimetti in coda, X) = la serie non continua. Interrotta qui sotto: torna in coda da sé
+	# (settle_zone_orders, nessuno la porta più) con quello che resta.
+	if series.has(DrawerOrderService.SERIES_KEY):
+		DrawerOrderService.note_progress(ctx.game_data, series)
+		var drawer_order := DrawerOrderService.find(ctx.game_data, int(series[DrawerOrderService.SERIES_KEY]))
+		if not FishZoneService.is_series_complete(series) and (drawer_order.is_empty() or not bool(drawer_order.get("taken", false))):
+			return
+	if FishZoneService.is_series_complete(series):
+		_log_fish(worker, "serie completata %d/%d." % [int(series.get("delivered", 0)), int(series.get("target", 0))])
+		return
+	var stop_reason := String(series.get("stop_reason", ""))
+	var area := WorkAreaService.find_by_id(ctx.game_data, int(series.get("work_area_id", -1)))
+	if stop_reason == "" and (area == null or not FishZoneService.list_fish_work_areas(ctx.game_data).has(area)):
+		stop_reason = GameContext.tr_text("series_stop_zone_gone")
+	if stop_reason == "" and not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.FISHING):
+		stop_reason = GameContext.tr_text("series_stop_no_tool").format({
+			"tools": ToolFetchService.describe_missing_categories([TaskTypes.ToolCategory.FISHING]),
+		})
+	var spot: Variant = null
+	if stop_reason == "":
+		spot = FishZoneService.choose_spot(area, worker, FishZoneService.collect_reserved_spots(ctx.individuals))
+		if spot == null:
+			stop_reason = GameContext.tr_text("fish_series_stop_no_fish")
+	if stop_reason != "":
+		_fish_series_stopped(worker, series, stop_reason, effects)
+		return
+	var task := FishCommandService.build_task(ctx, worker, area.macro_coords, spot, area.id, series)
+	if task == null:
+		return
+	TaskQueueService.push_follow_up_task(worker, task)
+	FishCommandService.wire(task, worker, effects)
+	_log_fish(worker, "serie %d/%d, prossima pesca in %s %s, %d in mano." % [
+		int(series.get("delivered", 0)), int(series.get("target", 0)), str(area.macro_coords), str(spot), int(series.get("in_hand", 0))
+	])
+	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
+
+
+static func _log_fish(worker: HumanIndividual, text: String) -> void:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_FISH_LOGS:
+		print("[FISH] #%d %s: %s" % [worker.id, worker.name, text])
+
+
+# Avviso "pesca interrotta a 4/10: motivo" (conteggio dei pesci consegnati).
+static func _fish_series_stopped(worker: HumanIndividual, series: Dictionary, reason: String, effects: GameEffects) -> void:
+	var counts := {"done": int(series.get("delivered", 0)), "target": int(series.get("target", 0))}
+	_log_fish(worker, "serie interrotta a %d/%d: %s." % [counts["done"], counts["target"], reason])
+	CommandFeedback.reject(worker, HumanIndividualActionService.series_stopped_message(worker, FishZoneService.SERIES_STOPPED_KEY, counts, reason), effects)
+
+
 # Serie interrotta (cava: QuarryZoneService.SERIES_STOPPED_KEY; taglio: CutZoneService.SERIES_STOPPED_KEY): avanzamento
 # dell'eventuale ordine del cassetto registrato, poi l'avviso con il motivo.
 static func series_stopped(

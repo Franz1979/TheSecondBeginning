@@ -33,10 +33,21 @@ func _init() -> void:
 	visible = false
 
 
+# Pesce (2026-10-31, popup della Pesca nelle zone): solo il pulsante della carne, con l'icona e il titolo del pesce;
+# niente pelli.
+func set_fish_mode(enabled: bool) -> void:
+	_meat_button.set_fish_mode(enabled)
+	_hide_button.visible = visible and not enabled
+	_fish_mode = enabled
+
+
+var _fish_mode: bool = false
+
+
 # Stessi argomenti di ButcherDestinationButton.set_destination. Ritorna true se la visibilità è cambiata.
 func set_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> bool:
 	var visibility_changed := visible != is_shown
 	visible = is_shown
 	_meat_button.set_destination(is_shown, current, options)
-	_hide_button.set_destination(is_shown, current, options)
+	_hide_button.set_destination(is_shown and not _fish_mode, current, options)
 	return visibility_changed

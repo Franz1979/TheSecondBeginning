@@ -80,6 +80,8 @@ var work_area_quarry_count: int = 3
 # Piante da tagliare del comando Taglia nelle zone (2026-10-06), CutZoneService.COUNT_MIN..COUNT_MAX, la prima volta 2.
 var work_area_cut_count: int = 2
 var hunt_zone_meat_target: int = 10
+# Pesci da consegnare del comando Pesca nelle zone (2026-10-31), uno di FishZoneService.TARGET_OPTIONS, la prima volta 10.
+var fish_zone_target: int = 10
 # Attesa prima dell'assegnazione automatica della lista dei lavori (2026-10-07, impostazioni del cassetto
 # "Assegnazione compiti"): secondi scelti dal giocatore; -1 = mai scelto, vale JobBoardService.MANUAL_ASSIGN_WINDOW_SECONDS.
 # I limiti li applica JobBoardService.get_manual_assign_window_seconds. Chiave in options.cfg con lo stesso nome.
@@ -152,6 +154,7 @@ func load_from_disk() -> void:
 	work_area_quarry_count = int(config.get_value(SECTION, "work_area_quarry_count", 3))
 	work_area_cut_count = int(config.get_value(SECTION, "work_area_cut_count", 2))
 	hunt_zone_meat_target = int(config.get_value(SECTION, "hunt_zone_meat_target", 10))
+	fish_zone_target = int(config.get_value(SECTION, "fish_zone_target", 10))
 	job_board_manual_assign_seconds = int(config.get_value(SECTION, "job_board_manual_assign_seconds", -1))
 	job_board_collect_piles = bool(config.get_value(SECTION, "job_board_collect_piles", true))
 	job_board_empty_full_outputs = bool(config.get_value(SECTION, "job_board_empty_full_outputs", true))
@@ -181,6 +184,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "work_area_quarry_count", work_area_quarry_count)
 	config.set_value(SECTION, "work_area_cut_count", work_area_cut_count)
 	config.set_value(SECTION, "hunt_zone_meat_target", hunt_zone_meat_target)
+	config.set_value(SECTION, "fish_zone_target", fish_zone_target)
 	config.set_value(SECTION, "job_board_manual_assign_seconds", job_board_manual_assign_seconds)
 	config.set_value(SECTION, "job_board_collect_piles", job_board_collect_piles)
 	config.set_value(SECTION, "job_board_empty_full_outputs", job_board_empty_full_outputs)

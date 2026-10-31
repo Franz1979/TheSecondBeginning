@@ -34,6 +34,11 @@ const JOBS := {
 		"name_key": "work_area_job_cut", "required_idea_id": ADVANCED_REQUIRED_IDEA_ID, "unlock_name_key": "unlock_job_cut",
 		"default_filters": {"all": true},
 	},
+	# Pesca nei ruscelli della zona (2026-10-31, richiesta utente — pesca nelle aree di lavoro, passo 1): FishZoneService.
+	"fish": {
+		"name_key": "work_area_job_fish", "required_idea_id": ADVANCED_REQUIRED_IDEA_ID, "unlock_name_key": "unlock_job_fish",
+		"default_filters": {"all": true},
+	},
 }
 
 

@@ -276,6 +276,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				game_data.stock_min_levels[String(resource_name)] = level
 	game_data.stock_min_food_days = maxi(int(data["game"].get("stock_min_food_days", 0)), 0)
 	game_data.stock_excess_meat_destination = String(data["game"].get("stock_excess_meat_destination", "warehouse"))
+	game_data.stock_excess_fish_destination = String(data["game"].get("stock_excess_fish_destination", "warehouse"))
 	# Regola del combustibile: il primo salvataggio (un solo N per tutti, "stock_fuel_min_per_building") la accende soltanto.
 	game_data.stock_fuel_rule_enabled = bool(data["game"].get("stock_fuel_rule_enabled", int(data["game"].get("stock_fuel_min_per_building", 0)) > 0))
 	# Regola dei banchetti spontanei (2026-10-17) — 500 e accesa per i salvataggi precedenti.
@@ -306,6 +307,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.job_board_return_borrowed_tools = bool(data["game"].get("job_board_return_borrowed_tools", true))
 	game_data.job_board_take_bag = bool(data["game"].get("job_board_take_bag", false))
 	game_data.job_board_take_waterskin = bool(data["game"].get("job_board_take_waterskin", false))
+	game_data.thirst_enabled = bool(data["game"].get("thirst_enabled", true))
 	game_data.job_board_wear_apparel = bool(data["game"].get("job_board_wear_apparel", false))
 	game_data.real_seconds_in_game = float(data["game"].get("real_seconds_in_game", 0.0))
 	game_data.real_seconds_playing = float(data["game"].get("real_seconds_playing", 0.0))
@@ -512,6 +514,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# Pietra tolta dalle rocce (2026-10-05, Quarry) — assente nei salvataggi precedenti.
 			for quarried_data in state_data.get("quarried_stone_by_position", []):
 				state.quarried_stone_by_position[Vector2i(int(quarried_data["x"]), int(quarried_data["y"]))] = int(quarried_data["amount"])
+			# Pesce dei ruscelli pescato (2026-10-31) — assente nei salvataggi precedenti: ruscelli pieni.
+			for fish_data in state_data.get("stream_fish_taken", []):
+				state.stream_fish_taken[Vector2i(int(fish_data["x"]), int(fish_data["y"]))] = {
+					"count": int(fish_data["count"]), "since": int(fish_data["since"])
+				}
 			for pos_data in state_data.get("vegetation_cut_exceptions", []):
 				var cut_key := Vector3i(int(pos_data["x"]), int(pos_data["y"]), int(pos_data["i"]))
 				state.vegetation_cut_exceptions[cut_key] = {
@@ -1111,6 +1118,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.skill_social = float(individual_data.get("skill_social", 0.0))
 			# skill_medicine (2026-10-25): 0.0 per i save precedenti alla skill.
 			individual.skill_medicine = float(individual_data.get("skill_medicine", 0.0))
+			# skill_fishing (2026-10-31): 0.0 per i save precedenti alla skill.
+			individual.skill_fishing = float(individual_data.get("skill_fishing", 0.0))
 			# Capacità di trasporto (2026-09-08, richiesta utente) — .get() con default "non sta
 			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
 			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre

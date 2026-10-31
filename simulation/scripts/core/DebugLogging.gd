@@ -307,6 +307,14 @@ const SHOW_REST_CHOICE_LOGS := false
 # [BUILD PROGRESS DEBUG]/[OCCUPIED SPACE DEBUG] (SetupSiteAction/ClearAction/BuildAction),
 # [ASSIGN HOUSE] (AssignHouseService).
 const SHOW_TRANSPORT_BUILD_LOGS := false
+# FISH — [FISH] pesca (2026-10-31, prove della pesca nelle zone): tentativi, fine sessione o viaggio, cambio di punto
+# (FishAction), pesci consegnati (unload_action.gd), pesca successiva e fine della serie (WorkFollowUpService). Temporaneo:
+# da spegnere quando la pesca nelle zone funziona.
+const SHOW_FISH_LOGS := true
+# Cacce del gestore scorte (2026-10-31, richiesta utente — capire come nascono): a ogni Inventario il calcolo di
+# WarehouseManagerService._request_hunt passo per passo (carne per le lavorazioni, livelli, scoperto per prodotto, domanda,
+# ordini tolti/creati). Temporaneo: da spegnere dopo la prova.
+const SHOW_STOCK_HUNT_LOGS := true
 # BUILDERS — solo le righe dei costruttori (2026-10-17, prove dei più costruttori): assegnazione della task di costruzione
 # (o demolizione), cella di lavoro di ciascuno, attesa del materiale già in arrivo con altri, effetti di fine costruzione
 # agli altri costruttori. Le stesse righe escono anche con TRANSPORT_BUILD.
@@ -381,7 +389,7 @@ const SHOW_PATHFINDING_LOGS := false
 # tempo medio per frame speso nel _process di TUTTI gli AnimalGroupRenderer, e di cui nel controllo
 # periodico di disagio (AnimalGroupRenderer._run_disturbance_check), con numero di renderer e individui.
 # Solo misura, nessun effetto sul comportamento.
-const SHOW_ANIMAL_PROCESS_TIMING := true
+const SHOW_ANIMAL_PROCESS_TIMING := false
 
 
 # SAFETY — [ZOMBIE GUARD] (TaskQueueService/HumanIndividualActionService/HumanIndividual),
@@ -433,7 +441,12 @@ const SHOW_JOB_BOARD_LOGS := false
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per
 # voce) e un riepilogo al secondo (chiamanti, liste rifatte, picco del fotogramma). Acceso per la misura; solo log.
-const SHOW_JOB_BOARD_TIMING_LOGS := false
+const SHOW_JOB_BOARD_TIMING_LOGS := true
+# Tempi della pesca (2026-10-31, misura temporanea — richiesta utente): [FISH TIMING] quando un tentativo di pesca
+# (FishAction._attempt) o la scelta di un altro punto (FishAction._series_spot_empty) supera FISH_TIMING_SLOW_MSEC. La
+# parte della bacheca (bersaglio, riva raggiungibile, presa) esce in [JOB BOARD TIMING]. Da togliere dopo la misura.
+const SHOW_FISH_TIMING_LOGS := true
+const FISH_TIMING_SLOW_MSEC := 1.0
 
 # Fotogrammi lenti del giro per fotogramma (2026-10-28, scatto da 900 ms dentro GameSimulation): [SIM FRAME] quando
 # GameSimulation.tick_frame supera SIM_FRAME_SLOW_MSEC, con il tempo di ogni passo e il pipottino/azione più lento.

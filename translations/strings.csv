@@ -1466,6 +1466,8 @@ building_pebble_path,Sentiero di ciottoli
 build_bar_pebble_path_tooltip,"Sentiero di ciottoli: si cammina meno affaticati (−10%) e un po' più veloci (+5%) della terra battuta"
 building_stone_ford,Guado di pietre
 build_bar_stone_ford_tooltip,"Guado di pietre: pietre piatte posate su un ruscello stretto, per attraversarlo più veloci e meno affaticati. Si piazza solo su un tratto largo una microcella; R per ruotare la fila."
+toggle_thirst_tooltip,Sete
+toggle_thirst_description,"Accende/spegne la sete (debug): spenta, l'acqua non cala, nessuno va a bere e nessuno muore di sete. Si salva con la partita."
 pending_no_active_idea,Nessuna idea in sviluppo
 pending_no_active_idea_detail,I pensieri depositati vanno persi: scegli un'idea
 carried_resource_tooltip_firewood,Legna da ardere
@@ -1493,8 +1495,8 @@ warehouse_rule_banquet,Banchetti spontanei
 warehouse_rule_banquet_tooltip,"Banchetti che gli abitanti organizzano da soli: si porta sullo spiazzo cibo fino alla Soglia calorie dello spiazzo"
 warehouse_rule_banquet_safe_only,Al massimo un terzo delle scorte
 warehouse_rule_banquet_safe_only_tooltip,"Un banchetto spontaneo parte solo se nei magazzini c'è almeno il triplo del cibo che consuma"
-warehouse_rule_workstation_food,Cuoci la carne lasciata nelle postazioni
-warehouse_rule_workstation_food_tooltip,"A ogni inventario, la carne rimasta in un focolare o in un affumicatoio diventa un ordine di produzione lì, anche con le scorte già a posto, così non marcisce. Solo il massimo del prodotto la ferma"
+warehouse_rule_workstation_food,Cuoci carne e pesce lasciati nelle postazioni
+warehouse_rule_workstation_food_tooltip,"A ogni inventario, la carne e il pesce rimasti in un focolare o in un affumicatoio diventano un ordine di produzione lì, anche con le scorte già a posto, così non marciscono. Solo il massimo del prodotto li ferma"
 task_assignment_setting_single_builder,Un solo costruttore per cantiere
 task_assignment_setting_single_builder_tooltip,"La coda dei lavori manda al massimo un costruttore per cantiere, anche dove ne servirebbero di più. A mano puoi sempre mandarne fino al massimo dell'edificio."
 building_construction_phase_finishing,"In finitura: ancora {days} giorni"
@@ -1678,3 +1680,73 @@ notification_wild_animal_driven_off,"{species}: scacciati da {names}"
 task_drive_off_name,Scaccia il pericolo
 task_drive_off_step_run,Corre contro il pericolo
 task_drive_off_step_wait,Grida e agita le braccia
+carried_resource_tooltip_fish_meat,Pesce crudo
+carried_resource_tooltip_fishing_line,Lenza
+tool_category_fishing,pesca
+microcell_inspection_stream,Ruscello
+microcell_inspection_stream_fish,"Pesci: {count}"
+microcell_inspection_stream_no_fish,Nessun pesce in questo punto
+microcell_inspection_river,Fiume
+task_fish_name,Pesca
+task_fish_step_fish,Pescando con la lenza
+task_activity_fish,pescare
+fish_reject_empty,Nessun pesce in questo punto del ruscello
+fish_reject_reserved,In questo punto sta già pescando {name}.
+help_hunt_products_menu_link,"Dove vanno carne, pelli e pesce"
+help_hunt_products_title,"Dove vanno carne, pelli e pesce"
+help_hunt_products_intro,"Quando un cacciatore macella una preda, o un pescatore prende un pesce, porta da solo i prodotti a destinazione. Dove, dipende da chi ha ordinato la caccia: quelle che ordini tu (a mano, dal popup della caccia o nelle aree di lavoro) vanno dove dice il pulsante della destinazione; quelle che ordina da solo il gestore scorte coprono prima i minimi e mandano il resto dove dice la sua regola."
+help_hunt_products_needs_title,"1. Cacce del gestore scorte: prima i minimi"
+help_hunt_products_needs_intro,"Le cacce che il gestore scorte ordina da solo (con la Gestione magazzino attiva: idea scoperta e lista dei lavori accesa) portano carne e pelli prima dove servono adesso:"
+help_hunt_products_needs_without_manager,"Gli ordini già aperti: gli ordini di affumicatura sull'Affumicatoio che aspettano carne, e gli ordini ""Produci"" del cassetto che aspettano carne o pelli (questi le ricevono al magazzino, da dove l'ordine le va a prendere)."
+help_hunt_products_needs_with_manager,"I livelli che hai impostato nel cassetto Scorte: la carne cotta che manca al Focolare, la carne e le pelli essiccate all'Essiccatoio, la riserva di carne cruda e di pelli al magazzino. Ogni livello sotto il minimo è un bisogno."
+help_hunt_products_needs_split,"Se più posti hanno bisogno della stessa risorsa, quello che arriva si divide in proporzione a quanto manca a ciascuno. Quello che avanza va dove dice la regola ""Destinazione di carne e pelli che non servono ai minimi"" del cassetto Scorte."
+help_hunt_products_destination_title,"2. Cacce che ordini tu: la destinazione scelta"
+help_hunt_products_destination_intro,"Le cacce e le pesche che ordini tu non guardano minimi né ordini aperti: tutto va alla destinazione scelta, separata per la carne (Focolare, Essiccatoio, Affumicatoio o Magazzino) e per le pelli (Essiccatoio, Affumicatoio o Magazzino):"
+help_hunt_products_destination_without_manager,"Decide il pulsante della destinazione: è uno solo, condiviso dalla barra dei comandi, dal popup della caccia e dallo strato Caccia del cassetto, e vale per le cacce ordinate da quel momento. Nella barra compare solo quando hai un Essiccatoio o un Affumicatoio, cioè quando c'è davvero da scegliere."
+help_hunt_products_destination_with_manager,"Vale anche con la Gestione magazzino attiva: la regola del cassetto Scorte decide solo per le cacce del gestore, il pulsante solo per le tue. Sono due scelte indipendenti: cambiarne una non tocca l'altra."
+help_hunt_products_destination_default,"Se non hai mai scelto nulla, la carne va al Focolare e le pelli al Magazzino. Se l'edificio scelto non c'è (non costruito, demolito o fuori servizio), la carne ripiega sul Focolare e poi sul Magazzino, le pelli sul Magazzino."
+help_hunt_products_rules_title,"Da sapere"
+help_hunt_products_rule_only_ingredients,"Essiccatoio e Affumicatoio accettano solo ciò che usano nelle loro ricette: il resto va al magazzino."
+help_hunt_products_rule_always_warehouse,"Ossa e tendini vanno sempre al magazzino."
+help_hunt_products_rule_fish,"Il pesce si comporta in tutto come la carne: stessi bisogni e stessa destinazione della carne."
+help_hunt_products_rule_no_room,"Se la destinazione non ha posto, il prodotto va al magazzino più vicino che lo accetta."
+help_hunt_products_example_title,"Esempio"
+help_hunt_products_example,"Il pulsante dice: carne all'Essiccatoio, e l'Affumicatoio ha un ordine che aspetta 2 di carne. Un cacciatore mandato da te porta 5 di carne: vanno tutte e 5 all'Essiccatoio. Se invece la caccia l'ha ordinata il gestore scorte, 2 vanno all'Affumicatoio per l'ordine e le altre 3 dove dice la regola del cassetto Scorte."
+carried_resource_tooltip_cooked_fish,Pesce cotto
+carried_resource_tooltip_dried_fish,Pesce essiccato
+carried_resource_tooltip_smoked_fish,Pesce affumicato
+skill_fishing_label,Pesca
+skill_fishing_short,Pes.
+work_area_job_fish,Pesca
+unlock_job_fish,Pesca nelle zone
+work_area_fish_no_stream,Nessun ruscello nella zona: qui non si può pescare.
+command_bar_fish_tooltip,Pesca
+command_bar_fish_no_zone_tooltip,Nessuna zona di lavoro con la pesca abilitata
+work_area_fish_no_zone,{name}: nessuna zona di lavoro con la pesca abilitata.
+work_area_fish_no_spot,Nessun punto del ruscello con pesci libero nella zona
+fish_order_dialog_title,Pesca nelle zone di lavoro
+fish_order_dialog_message,Il pescatore pesca nel ruscello della zona e porta a casa il pescato in un solo viaggio quando ha i pesci che mancano o lo zaino è pieno; poi torna a pescare finché non raggiunge la quantità scelta.
+fish_order_dialog_stop_suffix,pesci
+fish_destination_button_label,Destinazione del pescato
+task_fish_zone_activity_series,{task} ({zone}) {delivered}/{target} pesci
+help_fish_command,"Pesca nelle zone di lavoro (barra dei comandi, se c'è una zona con la pesca attiva e il pipottino ha la lenza)"
+fish_destination_caption,Pesce
+fish_destination_tooltip,Destinazione del pescato: {name}
+fish_series_stopped,"{name}: pesca interrotta a {done}/{total} pesci: {reason}"
+fish_series_stop_no_fish,nessun punto del ruscello con pesci libero nella zona
+drawer_fish_title,Pesca
+drawer_fish_button_tooltip,Pesca nelle zone di lavoro: la prende in coda un individuo libero con la lenza
+drawer_fish_no_zone,Nessuna zona di pesca
+drawer_fish_nobody_has_line,Nessuno ha la lenza
+drawer_fish_count_label,Pesci da portare a casa
+drawer_order_fish_row,Pesca · {count} pesci
+drawer_order_fish_row_one,Pesca · 1 pesce
+drawer_order_fish_started_row,Pesca
+task_assignment_kind_fish,Pesca
+warehouse_fish_level_tooltip,"Pesce crudo da tenere in più, oltre a quello che serve per pesce cotto, affumicato ed essiccato. Prima si lavora, poi si riempie questa riserva."
+warehouse_level_needs_building,"Serve un edificio completo ({building}): il livello si potrà fissare quando sarà finito."
+warehouse_level_needs_building_unknown,"Serve un edificio completo che lo produca: il livello si potrà fissare quando sarà finito."
+warehouse_raw_derived_tooltip,"Si procura da sola: quanto serve lo decidono i livelli dei prodotti che la usano (cotto, essiccato, affumicato)."
+warehouse_rule_excess_fish,Destinazione del pesce che non serve ai minimi
+warehouse_rule_excess_fish_tooltip,"Pesche del magazzino: il pesce va prima dove manca ai minimi (pesce essiccato all'essiccatoio, pesce cotto al focolare, ordini dell'affumicatoio), diviso in proporzione. Quello che avanza va qui; ciò che non trova posto va al magazzino."
+warehouse_rule_excess_fish_button_tooltip,Pesce che non serve ai minimi: {name}

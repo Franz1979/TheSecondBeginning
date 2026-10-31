@@ -14,7 +14,8 @@ extends RefCounted
 # "clothing_hut" non è più qui (2026-10-20): sulla mappa e nell'anteprima usa ClothingHutShape (vista dall'alto); il suo ramo
 # di draw() resta per la sola icona della barra (ClothingHutIcon, vista di fronte). Lo stesso per "smokehouse" (2026-10-23):
 # mappa e anteprima con SmokehouseShape, qui solo l'icona (SmokehouseIcon).
-const TYPES: Array[String] = ["drying_rack", "burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford"]
+# Lo stesso per "drying_rack" (2026-10-31): mappa e anteprima con DryingRackShape, qui solo l'icona (DryingRackIcon).
+const TYPES: Array[String] = ["burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford"]
 
 # Guado di pietre (stone_ford, 2026-10-31, richiesta utente): pietre piatte in fila sul ruscello, vista dall'alto, ognuna
 # col suo bordo scuro d'ombra sotto (come i banchi del ceppo dell'insegnamento). La fila va lungo Y (attraversa un ruscello

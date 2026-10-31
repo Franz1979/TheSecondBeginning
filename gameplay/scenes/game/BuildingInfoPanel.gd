@@ -159,6 +159,8 @@ signal demolition_cancel_requested(building: Building)
 const DEMOLITION_IN_PROGRESS_STATUS_COLOR := Color(1.0, 0.55, 0.15, 1.0)
 
 const STORAGE_SLOT_SIZE: float = 32.0
+# Slot del magazzino per riga al massimo (2026-10-31): come le icone di produzione, ce ne stanno 5.
+const STORAGE_GRID_MAX_COLUMNS: int = 5
 const EMPTY_STORAGE_SLOT_COLOR := Color(0.3, 0.3, 0.3, 0.4)
 
 # Griglia residenti (2026-09-12, richiesta utente — "quadrati simili a quelli dello storage per
@@ -2081,7 +2083,8 @@ func _build_missing_material_chip(
 # Icona spenta (2026-09-24, stesse regole dei vecchi bottoni) con il motivo nel tooltip: postazione già impegnata
 # (Produce Task assegnate arrivate a ProductionService.get_max_concurrent_orders) e/o buffer di uscita senza posto per un
 # ciclo di QUESTA ricetta. Il tooltip di ogni icona ha nome, ingredienti, combustibile, lavoro e attrezzi richiesti.
-const RECIPE_GRID_COLUMNS: int = 4
+# 5 (2026-10-31, richiesta utente): con icone da 32 px nella larghezza del pannello ce ne stanno 5.
+const RECIPE_GRID_COLUMNS: int = 5
 const RECIPE_ICON_SIZE: float = 32.0
 const RECIPE_SELECTED_BORDER_COLOR := Color(1.0, 0.85, 0.2, 1.0)
 
@@ -2396,10 +2399,11 @@ func _refresh_storage_grid(building: Building) -> void:
 
 	storage_caption.visible = true
 	storage_grid.visible = true
-	# Colonne = ceil(sqrt(slot_count)): 3x3 per 9 (deposit_site), 3x2 per 6 (campfire, toolmaker_hut), 2x2 per 4 (hut)
-	# — regola generica per qualunque slot_count, nessuna configurazione per tipo. (La riga unica provata il 2026-09-27
-	# allargava troppo il pannello: tolta.)
-	storage_grid.columns = max(int(ceil(sqrt(float(slot_count)))), 1)
+	# Colonne (2026-10-31, richiesta utente): al massimo STORAGE_GRID_MAX_COLUMNS per riga, righe bilanciate — 4x2 per 8,
+	# 5+4 per 9, 3x2 per 6, 4 in riga per 4. Regola generica per qualunque slot_count, nessuna configurazione per tipo.
+	# (La riga unica provata il 2026-09-27 allargava troppo il pannello: il tetto per riga lo evita.)
+	var storage_rows := int(ceil(float(slot_count) / float(STORAGE_GRID_MAX_COLUMNS)))
+	storage_grid.columns = max(int(ceil(float(slot_count) / float(maxi(storage_rows, 1)))), 1)
 
 	# Danneggiato (2026-10-10, passo 2): slot effettivi (BuildingStorageService.get_slot_count); quelli oltre che contengono
 	# ancora qualcosa restano visibili, segnati come fuori capienza. Colonne sempre dagli slot del tipo: la griglia non

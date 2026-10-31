@@ -89,7 +89,11 @@ static func get_building_point(building: Building) -> Vector2:
 # e la griglia della cella disponibile, il punto deve anche essere su una microcella LIBERA e RAGGIUNGIBILE
 # (PathfindingService.is_blocked / is_reachable). Se nessun punto del bordo lo è, si ripiega sulla scelta di sempre
 # (solo non acqua) con un log [VISITOR].
-static func find_border_point(world: World, macro_coords: Vector2i, from_point: Vector2, reach_from: Variant = null) -> Variant:
+#
+# Con `random_start` (2026-10-31, richiesta utente — lupi in visita, che non hanno una strada da cui arrivare) i lati
+# sono provati in ordine casuale e su ciascuno si parte da una microcella a caso: `from_point` è ignorato.
+static func find_border_point(world: World, macro_coords: Vector2i, from_point: Vector2, reach_from: Variant = null,
+		random_start: bool = false) -> Variant:
 	if world == null:
 		return null
 	var cell: MacroCellData = world.get_cell_at(macro_coords.x, macro_coords.y)
@@ -103,31 +107,36 @@ static func find_border_point(world: World, macro_coords: Vector2i, from_point: 
 		var from_cell: Vector2i = reach_from
 		var strict: Variant = _scan_border(from_point, func(microcell: Vector2i) -> bool:
 			return not (water as Dictionary).has(microcell) and not PathfindingService.is_blocked(live_cell, microcell) 				and PathfindingService.is_reachable(live_cell, from_cell, microcell)
-		)
+		, random_start)
 		if strict != null:
 			return strict
 		if DebugLogging.ENABLED:
 			print("[VISITOR] Nessun punto del bordo di %s libero e raggiungibile da %s: si usa il primo punto non d'acqua." % [
 				macro_coords, from_cell
 			])
-	return _scan_border(from_point, func(microcell: Vector2i) -> bool: return not (water as Dictionary).has(microcell))
+	return _scan_border(from_point, func(microcell: Vector2i) -> bool: return not (water as Dictionary).has(microcell),
+		random_start)
 
 
 # Scansione della cornice (vedi find_border_point): primo punto per cui `accept` (Callable(Vector2i) -> bool) è vero,
-# lati dal più vicino a `from_point`, su ciascun lato a partire dalla microcella allineata. Centro della microcella o null.
-static func _scan_border(from_point: Vector2, accept: Callable) -> Variant:
+# lati dal più vicino a `from_point`, su ciascun lato a partire dalla microcella allineata (con `random_start` lati in
+# ordine casuale e partenza a caso su ciascuno). Centro della microcella o null.
+static func _scan_border(from_point: Vector2, accept: Callable, random_start: bool = false) -> Variant:
 	var width := World.WIDTH
 	var height := World.HEIGHT
 	# [distanza dal lato, lato] — 0 ovest, 1 est, 2 nord, 3 sud.
 	var sides: Array = [
 		[from_point.x, 0], [float(width) - from_point.x, 1], [from_point.y, 2], [float(height) - from_point.y, 3],
 	]
-	sides.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
+	if random_start:
+		sides.shuffle()
+	else:
+		sides.sort_custom(func(a: Array, b: Array) -> bool: return a[0] < b[0])
 	for side_entry in sides:
 		var side: int = side_entry[1]
 		var vertical_side := side <= 1
 		var length := height if vertical_side else width
-		var aligned: int = clampi(int(from_point.y if vertical_side else from_point.x), 0, length - 1)
+		var aligned: int = randi_range(0, length - 1) if random_start 			else clampi(int(from_point.y if vertical_side else from_point.x), 0, length - 1)
 		for step in range(length * 2):
 			var delta: int = (step + 1) / 2 * (1 if step % 2 == 1 else -1)
 			var along: int = aligned + delta

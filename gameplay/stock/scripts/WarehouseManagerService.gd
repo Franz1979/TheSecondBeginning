@@ -197,7 +197,7 @@ static func request_stock(ctx: GameContext, now: float, effects: GameEffects) ->
 		var source_kind := StockRequestService.source_kind_for(String(resource_name))
 		# Caccia: una domanda sola per carne, pelle, tendini e ossa (_request_hunt); produzione ed essiccatoio a parte.
 		if source_kind == "" or source_kind == StockRequestService.SOURCE_HUNT or source_kind == StockRequestService.SOURCE_PRODUCE \
-				or source_kind == StockRequestService.SOURCE_DRY:
+				or source_kind == StockRequestService.SOURCE_DRY or source_kind == StockRequestService.SOURCE_FISH:
 			continue
 		var unit_yield := _unit_yield(String(resource_name), source_kind, carry_capacity)
 		var level := int(game_data.stock_min_levels.get(resource_name, 0))
@@ -252,6 +252,8 @@ static func request_stock(ctx: GameContext, now: float, effects: GameEffects) ->
 			changed = true
 	if _request_hunt(ctx, now, stock, claims, open_by_resource.get(StockRequestService.HUNT_GROUP_KEY, [])):
 		changed = true
+	if _request_fish(ctx, now, stock, claims, open_by_resource.get(StockRequestService.FISH_GROUP_KEY, [])):
+		changed = true
 	if _request_produce(ctx, now, stock):
 		changed = true
 	if _request_dry(ctx, now, stock):
@@ -304,7 +306,9 @@ static func order_blocked_reason(ctx: GameContext, order_type: String, extra: Di
 # ordine finito senza prede, pausa fino a StockRuntimeState.hunt_pause_until. true se ha creato o tolto ordini.
 static func _request_hunt(ctx: GameContext, now: float, stock: Dictionary, claims: Dictionary, orders: Array) -> bool:
 	var game_data := ctx.game_data
+	_log_hunt("--- Inventario, caccia (giorno %.2f) ---" % now)
 	if not ButcherDestinationService.is_available(ButcherDestinationService.WAREHOUSE, ctx.world, ctx.folk):
+		_log_hunt("magazzino non disponibile: nessuna caccia.")
 		return false
 	var any_taken := false
 	var coverages: Dictionary = {}
@@ -314,15 +318,20 @@ static func _request_hunt(ctx: GameContext, now: float, stock: Dictionary, claim
 		coverages[int(order["id"])] = coverage
 		total_coverage += coverage
 		any_taken = any_taken or bool(order.get("taken", false))
+		_log_hunt("ordine aperto #%d (%s): copre ancora %d carne." % [int(order["id"]), "preso" if bool(order.get("taken", false)) else "in coda", coverage])
+	if orders.is_empty():
+		_log_hunt("nessun ordine di caccia del magazzino aperto.")
 	var arriving := _hunt_arriving(game_data) if any_taken else {}
+	if any_taken:
+		_log_hunt("in arrivo (mucchi e carcasse a terra, contati perché c'è una caccia in corso): %s" % str(arriving))
 	var demand := 0
 	var demand_by_resource: Dictionary = {}
-	# Livelli della caccia: quelli del giocatore; la carne cruda = il suo livello (la riserva, 2026-10-16) + quello che nasce
-	# dai prodotti che la usano (StockRequestService.DERIVED_LEVEL_RESOURCES, _derived_meat_breakdown).
-	var levels := game_data.stock_min_levels.duplicate()
-	var own_meat_level := int(levels.get(HuntZoneService.MEAT_RESOURCE, 0))
-	var meat_level := own_meat_level + int(_derived_meat_breakdown(ctx, stock)["total"])
-	levels.erase(HuntZoneService.MEAT_RESOURCE)
+	# Livelli della caccia: quelli del giocatore che agiscono (active_min_levels); la carne cruda = quello che nasce dai
+	# prodotti che la usano (StockRequestService.DERIVED_LEVEL_RESOURCES, _derived_meat_breakdown). La riserva propria
+	# della carne cruda non c'è più (2026-10-31, richiesta utente: marcirebbe in magazzino).
+	var levels := active_min_levels(ctx.world, game_data)
+	var meat_level := int(_derived_meat_breakdown(ctx, stock)["total"])
+	_log_hunt("livello della carne cruda = per le lavorazioni %d." % meat_level)
 	if meat_level > 0:
 		levels[HuntZoneService.MEAT_RESOURCE] = meat_level
 	for resource_name in levels.keys():
@@ -332,11 +341,24 @@ static func _request_hunt(ctx: GameContext, now: float, stock: Dictionary, claim
 		if String(resource_name) == HuntZoneService.MEAT_RESOURCE:
 			have += meat_in_workstations(ctx.world)
 		var uncovered := int(levels[resource_name]) - have - int(arriving.get(resource_name, 0))
+		if String(resource_name) == HuntZoneService.MEAT_RESOURCE:
+			_log_hunt("%s: livello %d − in casa %d (depositi %d + focolari/affumicatoi %d) − in arrivo %d = scoperto %d." % [
+				resource_name, int(levels[resource_name]), have, int(stock.get(resource_name, 0)), meat_in_workstations(ctx.world),
+				int(arriving.get(resource_name, 0)), uncovered,
+			])
+		else:
+			_log_hunt("%s: livello %d − in casa %d − in arrivo %d = scoperto %d." % [
+				resource_name, int(levels[resource_name]), have, int(arriving.get(resource_name, 0)), uncovered,
+			])
 		if uncovered <= 0:
 			continue
 		var meat := ceili(float(uncovered) * StockRequestService.get_meat_per_unit(String(resource_name)))
+		_log_hunt("   -> %d scoperti × %.2f carne per pezzo = %d carne da cacciare." % [
+			uncovered, StockRequestService.get_meat_per_unit(String(resource_name)), meat,
+		])
 		demand_by_resource[resource_name] = meat
 		demand = maxi(demand, meat)
+	_log_hunt("domanda = il massimo tra i prodotti = %d carne; già coperta dagli ordini aperti: %d." % [demand, total_coverage])
 	var changed := false
 	for index in range(orders.size() - 1, -1, -1):
 		var order: Dictionary = orders[index]
@@ -351,15 +373,23 @@ static func _request_hunt(ctx: GameContext, now: float, stock: Dictionary, claim
 			changed = true
 			if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 				print("[JOB BOARD] Magazzino: ordine di caccia #%d tolto (domanda %d carne coperta)." % [int(order["id"]), demand])
+			_log_hunt("ordine #%d in coda tolto: di troppo (senza di lui la domanda resta coperta)." % int(order["id"]))
 	if now < game_data.stock_runtime.hunt_pause_until:
+		_log_hunt("in pausa fino al giorno %.2f (ultima caccia finita senza prede): nessun ordine nuovo." % game_data.stock_runtime.hunt_pause_until)
 		return changed
 	var counts := StockRequestService.compute_new_order_counts(
 		demand, 0, total_coverage, orders.size(), 1, StockRequestService.STOCK_HUNT_MAX_MEAT
 	)
+	var unlimited_counts := counts.size()
 	counts = _limit_if_blocked(
 		ctx, counts, orders.size(), DrawerOrderService.TYPE_HUNT, {StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY}
 	)
+	if counts.size() < unlimited_counts:
+		_log_hunt("ordini bloccati (%s): al massimo uno, come avviso." % order_blocked_reason(
+			ctx, DrawerOrderService.TYPE_HUNT, {StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY}
+		))
 	if counts.is_empty():
+		_log_hunt("nessun ordine nuovo.")
 		return changed
 	# Destinazione (2026-10-19, richiesta utente): non più decisa qui. Le cacce del gestore portano la coppia carne/pelli
 	# della regola con il segno ":auto" (stock_hunt_destination), letta alla presa dell'ordine: allo scarico i prodotti
@@ -368,8 +398,107 @@ static func _request_hunt(ctx: GameContext, now: float, stock: Dictionary, claim
 		_create_zone_order(ctx, now, DrawerOrderService.TYPE_HUNT, StockRequestService.snap_hunt_count(count), -1, {
 			StockRequestService.ORDER_KEY: StockRequestService.HUNT_GROUP_KEY,
 		})
+		_log_hunt("nuovo ordine di caccia: %d carne (%d arrotondato a passi di %d, massimo %d)." % [
+			StockRequestService.snap_hunt_count(count), count, StockRequestService.HUNT_MEAT_STEP, StockRequestService.STOCK_HUNT_MAX_MEAT,
+		])
 		changed = true
 	return changed
+
+
+# Livelli minimi che agiscono (2026-10-31, richiesta utente): senza i crudi di StockRequestService.DERIVED_LEVEL_RESOURCES
+# (carne e pesce crudi si procurano solo per i prodotti che li usano: una riserva marcirebbe in magazzino) e senza i prodotti
+# con ricetta che non hanno una postazione completa (level_lock_reason; il cassetto Scorte ne spegne il campo). I livelli
+# restano salvati: tornano ad agire quando l'edificio è finito.
+static func active_min_levels(world: World, game_data: GameData) -> Dictionary:
+	var levels := game_data.stock_min_levels.duplicate()
+	for resource_name in game_data.stock_min_levels.keys():
+		if StockRequestService.DERIVED_LEVEL_RESOURCES.has(String(resource_name)) \
+				or level_lock_reason(world, null, String(resource_name)) != "":
+			levels.erase(resource_name)
+	return levels
+
+
+# Motivo per cui il livello di `resource_name` è spento ("" = attivo): prodotto con ricetta senza una postazione completa
+# che la fa (ProductionService.has_built_workstation_for). `folk` per il nome dell'edificio (null = testo senza nome).
+static func level_lock_reason(world: World, folk: Folk, resource_name: String) -> String:
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if rules == null or rules.recipe_inputs.is_empty() or ProductionService.has_built_workstation_for(world, resource_name):
+		return ""
+	if folk == null:
+		return "-"
+	var building_name := ProductionService.known_workstation_display_name(resource_name, folk)
+	if building_name == "":
+		return GameContext.tr_text("warehouse_level_needs_building_unknown")
+	return GameContext.tr_text("warehouse_level_needs_building").format({"building": building_name})
+
+
+static func _log_hunt(text: String, tag: String = "HUNT") -> void:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_STOCK_HUNT_LOGS:
+		print("[WM %s] %s" % [tag, text])
+
+
+# --- Pesca ---
+
+# Pesca del magazzino (2026-10-31, richiesta utente — pesca nel gestore scorte, passo 1), come la caccia ma con un prodotto
+# solo: livello del pesce crudo = pesce per pesce cotto, affumicato ed essiccato (_derived_meat_breakdown); in casa = depositi + focolari e affumicatoi; scoperto meno gli ordini aperti = ordini "fish" in
+# zona automatica da 5 a STOCK_FISH_MAX, chiave FISH_GROUP_KEY. Niente pausa (un ordine senza pesci torna in coda, spento,
+# e ne tiene il posto). Destinazione: alla presa, stock_fish_destination. true se ha creato o tolto ordini.
+static func _request_fish(ctx: GameContext, now: float, stock: Dictionary, claims: Dictionary, orders: Array) -> bool:
+	var game_data := ctx.game_data
+	var fish := StockRequestService.FISH_GROUP_KEY
+	_log_hunt("--- Inventario, pesca (giorno %.2f) ---" % now, "FISH")
+	var coverages: Dictionary = {}
+	var total_coverage := 0
+	for order in orders:
+		var coverage := _order_coverage(order, claims, fish, 1)
+		coverages[int(order["id"])] = coverage
+		total_coverage += coverage
+		_log_hunt("ordine aperto #%d (%s): copre ancora %d pesci." % [int(order["id"]), "preso" if bool(order.get("taken", false)) else "in coda", coverage], "FISH")
+	var level := int(_derived_meat_breakdown(ctx, stock, fish)["total"])
+	var in_workstations := meat_in_workstations(ctx.world, fish)
+	var have := int(stock.get(fish, 0)) + in_workstations
+	var demand := maxi(level - have, 0)
+	_log_hunt("livello del pesce crudo = per le lavorazioni %d; in casa %d (depositi %d + focolari/affumicatoi %d); scoperto %d; già coperto dagli ordini aperti %d." % [
+		level, have, int(stock.get(fish, 0)), in_workstations, demand, total_coverage,
+	], "FISH")
+	var changed := false
+	for index in range(orders.size() - 1, -1, -1):
+		var order: Dictionary = orders[index]
+		if bool(order.get("taken", false)):
+			continue
+		var coverage := int(coverages[int(order["id"])])
+		if StockRequestService.is_order_surplus(demand, 0, total_coverage, coverage, int(_margin(StockRequestService.HUNT_MEAT_STEP))) \
+				and not _order_too_young(order, demand, now):
+			total_coverage -= coverage
+			DrawerOrderService.remove(game_data, int(order["id"]))
+			orders.remove_at(index)
+			changed = true
+			_log_hunt("ordine #%d in coda tolto: di troppo (senza di lui la domanda resta coperta)." % int(order["id"]), "FISH")
+	var extra := {StockRequestService.ORDER_KEY: fish}
+	var counts := StockRequestService.compute_new_order_counts(
+		demand, 0, total_coverage, orders.size(), 1, StockRequestService.STOCK_FISH_MAX
+	)
+	var unlimited_counts := counts.size()
+	counts = _limit_if_blocked(ctx, counts, orders.size(), DrawerOrderService.TYPE_FISH, extra)
+	if counts.size() < unlimited_counts:
+		_log_hunt("ordini bloccati (%s): al massimo uno, come avviso." % order_blocked_reason(ctx, DrawerOrderService.TYPE_FISH, extra), "FISH")
+	if counts.is_empty():
+		_log_hunt("nessun ordine nuovo.", "FISH")
+		return changed
+	for count in counts:
+		_create_zone_order(ctx, now, DrawerOrderService.TYPE_FISH, StockRequestService.snap_hunt_count(count), -1, extra.duplicate())
+		_log_hunt("nuovo ordine di pesca: %d pesci (%d arrotondato a passi di %d, massimo %d)." % [
+			StockRequestService.snap_hunt_count(count), count, StockRequestService.HUNT_MEAT_STEP, StockRequestService.STOCK_FISH_MAX,
+		], "FISH")
+		changed = true
+	return changed
+
+
+# Destinazione delle pesche del gestore scorte: allo scarico il pesce copre prima i minimi (HuntProductAllocationService),
+# il resto va dove dice la regola "Pesce in eccesso" (GameData.stock_excess_fish_destination), con le parti non più
+# disponibili sul magazzino e il segno ":auto" (ButcherDestinationService.resolve_stock).
+static func stock_fish_destination(ctx: GameContext) -> String:
+	return ButcherDestinationService.resolve_stock(ctx.game_data.stock_excess_fish_destination, ctx.world, ctx.folk)
 
 
 # Coppia carne/pelli per ciò che avanza dalle cacce del gestore scorte (GameData.stock_excess_meat_destination), con le
@@ -380,15 +509,15 @@ static func stock_hunt_destination(ctx: GameContext) -> String:
 
 # Carne cruda nei depositi di focolari e affumicatoi (2026-10-19, richiesta utente): conta per la riserva di carne cruda
 # della caccia, così la carne portata lì non fa nascere cacce inutili. Quella sull'essiccatoio no: conta già come carne in
-# essiccazione per la carne essiccata.
-static func meat_in_workstations(world: World) -> int:
+# essiccazione per la carne essiccata. `resource_name` (2026-10-31): anche il pesce crudo per la pesca.
+static func meat_in_workstations(world: World, resource_name: String = HuntZoneService.MEAT_RESOURCE) -> int:
 	var total := 0
 	for building in world.buildings:
 		if building.is_demolished or building.rules == null:
 			continue
 		if building.building_type_name != "campfire" and building.building_type_name != "smokehouse":
 			continue
-		var entry: Variant = building.stored_resources.get(HuntZoneService.MEAT_RESOURCE, null)
+		var entry: Variant = building.stored_resources.get(resource_name, null)
 		if entry is Dictionary:
 			total += int((entry as Dictionary).get("quantity", 0))
 	return total
@@ -414,13 +543,16 @@ static func _hunt_arriving(game_data: GameData) -> Dictionary:
 # più la carne già impegnata (ordini sulle postazioni, ordini "Produci" fattibili, trasporti verso l'essiccatoio), così che
 # "livello − carne in deposito" dia la carne da cacciare. {"total": livello effettivo della carne, "dry": carne mancante
 # per l'essiccatoio, "other": carne mancante per le ricette con lavoro (carne cotta, affumicata)}.
-static func _derived_meat_breakdown(ctx: GameContext, stock: Dictionary) -> Dictionary:
+# `ingredient` (2026-10-31): la carne cruda per la caccia, o il pesce crudo per la pesca (pesce cotto, affumicato, essiccato).
+static func _derived_meat_breakdown(ctx: GameContext, stock: Dictionary, ingredient: String = HuntZoneService.MEAT_RESOURCE) -> Dictionary:
 	var game_data := ctx.game_data
-	var meat := HuntZoneService.MEAT_RESOURCE
+	var meat := ingredient
+	var log_tag := "HUNT" if ingredient == HuntZoneService.MEAT_RESOURCE else "FISH"
 	var in_production := _units_in_production(ctx, true)
 	var needed := 0
 	var needed_dry := 0
-	for resource_name in game_data.stock_min_levels.keys():
+	var levels := active_min_levels(ctx.world, game_data)
+	for resource_name in levels.keys():
 		var rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
 		if rules == null or not rules.recipe_inputs.has(meat):
 			continue
@@ -430,12 +562,24 @@ static func _derived_meat_breakdown(ctx: GameContext, stock: Dictionary) -> Dict
 			for order in game_data.drawer_orders:
 				if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and String(order.get("recipe", "")) == String(resource_name):
 					have += int(order.get("quantity", 0))
-		var missing := int(game_data.stock_min_levels[resource_name]) - have
+		var missing := int(levels[resource_name]) - have
+		_log_hunt("  lavorazione %s: livello %d − ce l'ho %d (scorta %d + in produzione/essiccazione/viaggio/trasporti %d) = mancano %d × %d %s." % [
+			resource_name, int(levels[resource_name]), have, int(stock.get(resource_name, 0)),
+			have - int(stock.get(resource_name, 0)), maxi(missing, 0), int(rules.recipe_inputs[meat]), meat,
+		], log_tag)
 		if missing > 0:
 			needed += missing * int(rules.recipe_inputs[meat])
 			if rules.recipe_auto_progress_days > 0:
 				needed_dry += missing * int(rules.recipe_inputs[meat])
+	# Ordini già sulle postazioni senza l'ingrediente (2026-10-31, richiesta utente — una cottura presa senza carne contava
+	# come "in produzione" e toglieva la caccia): quello che manca loro, tolto quanto ha in mano chi ci lavora, e che
+	# nemmeno il deposito copre, va procurato. La parte coperta dal deposito la conta già "in deposito già impegnata" qui sotto.
+	var unfed := maxi(_workstation_missing(ctx, meat) - int(stock.get(meat, 0)), 0)
+	if unfed > 0:
+		_log_hunt("  %s che manca alle postazioni e non c'è in deposito: %d." % [meat, unfed], log_tag)
+		needed += unfed
 	if needed <= 0:
+		_log_hunt("  %s per le lavorazioni: 0 (nessun prodotto sotto livello)." % meat, log_tag)
 		return {"total": 0, "dry": 0, "other": 0}
 	var free := int(_production_available(ctx, stock).get(meat, 0))
 	for order in game_data.drawer_orders:
@@ -443,7 +587,30 @@ static func _derived_meat_breakdown(ctx: GameContext, stock: Dictionary) -> Dict
 				and String(order.get("resource", "")) == meat:
 			free -= int(order.get("quantity", 0))
 	free = maxi(free, 0)
+	_log_hunt("  %s per le lavorazioni: %d mancanti + in deposito già impegnata %d (in deposito %d − libera %d) = %d." % [
+		meat, needed, maxi(int(stock.get(meat, 0)) - free, 0), int(stock.get(meat, 0)), free, needed + maxi(int(stock.get(meat, 0)) - free, 0),
+	], log_tag)
 	return {"total": needed + maxi(int(stock.get(meat, 0)) - free, 0), "dry": needed_dry, "other": needed - needed_dry}
+
+
+# `resource_name` che manca agli ordini sulle postazioni complete (ProductionService.get_missing_inputs: oltre a quello che
+# hanno nel deposito), meno quanto ne hanno in mano i lavoratori di quegli ordini (giro di rifornimento in corso).
+static func _workstation_missing(ctx: GameContext, resource_name: String) -> int:
+	var total := 0
+	for building in ctx.world.buildings:
+		if building.is_demolished or building.rules == null or not building.rules.is_workstation or not building.is_complete:
+			continue
+		var missing := int(ProductionService.get_missing_inputs(building).get(resource_name, 0))
+		if missing <= 0:
+			continue
+		var worker_ids: Dictionary = {}
+		for order_key in ProductionService.get_order_keys(building):
+			worker_ids[ProductionService.get_order_worker_id(building, order_key)] = true
+		for individual in ctx.individuals:
+			if worker_ids.has(individual.id):
+				missing -= individual.get_carried_quantity(resource_name)
+		total += maxi(missing, 0)
+	return total
 
 
 # --- Produzione ---
@@ -515,11 +682,13 @@ static func _request_produce(ctx: GameContext, now: float, stock: Dictionary) ->
 			order[StockRequestService.MISSING_KEY] = _produce_missing_text(order_recipe, order_quantity, available, order_fuel)
 	var in_production := _units_in_production(ctx)
 	var in_use := in_use_stock(ctx.individuals)
+	# Livello spento (2026-10-31: nessuna postazione completa) = 0, così gli ordini del magazzino già in coda si tolgono.
+	var active_levels := active_min_levels(ctx.world, game_data)
 	for resource_name in game_data.stock_min_levels.keys():
 		var recipe := String(resource_name)
 		if StockRequestService.source_kind_for(recipe) != StockRequestService.SOURCE_PRODUCE:
 			continue
-		var level := int(game_data.stock_min_levels[resource_name])
+		var level := int(active_levels.get(resource_name, 0))
 		# Attrezzi del villaggio in uso (2026-10-24): fanno scorta, torneranno al deposito da soli.
 		var quantity := int(stock.get(recipe, 0)) + int(in_use.get(recipe, 0))
 		var wm_orders: Array = []
@@ -737,14 +906,16 @@ static func _request_dry(ctx: GameContext, now: float, stock: Dictionary) -> boo
 	var warnings := game_data.stock_runtime.dry_warnings
 	var changed := false
 	warnings.clear()
-	for resource_name in game_data.stock_min_levels.keys():
+	# Senza essiccatoio completo il livello è spento (2026-10-31, active_min_levels): nessun trasporto né avviso.
+	var active_levels := active_min_levels(ctx.world, game_data)
+	for resource_name in active_levels.keys():
 		var recipe := String(resource_name)
 		if StockRequestService.source_kind_for(recipe) != StockRequestService.SOURCE_DRY:
 			continue
 		var ingredient := dry_ingredient(recipe)
 		if ingredient == "":
 			continue
-		var level := int(game_data.stock_min_levels[resource_name])
+		var level := int(active_levels[resource_name])
 		var open_orders: Array = []
 		var pending := 0
 		for order in game_data.drawer_orders:
@@ -1272,17 +1443,18 @@ static func _request_food_days(ctx: GameContext, now: float, stock: Dictionary) 
 	return changed
 
 
-# Carne cruda che i giorni di autonomia non cuociono (2026-10-16 — priorità: lavorazioni, poi la riserva, poi i giorni): la
-# riserva (livello proprio della carne cruda) e la carne degli ordini "transport" dell'essiccatoio non ancora presi. Quella
-# degli ordini "Produci" è già tolta da _production_available. Modifica `available` sul posto.
+# Carne cruda che i giorni di autonomia non cuociono (2026-10-16 — priorità: lavorazioni, poi i giorni): la carne degli
+# ordini "transport" dell'essiccatoio non ancora presi. Quella degli ordini "Produci" è già tolta da _production_available.
+# Modifica `available` sul posto. Anche il pesce crudo (2026-10-31), per ogni risorsa di StockRequestService.
+# DERIVED_LEVEL_RESOURCES; la riserva cruda non c'è più (2026-10-31).
 static func _food_days_free_meat_cut(game_data: GameData, available: Dictionary) -> void:
-	var meat := HuntZoneService.MEAT_RESOURCE
-	var kept := int(game_data.stock_min_levels.get(meat, 0))
-	for order in game_data.drawer_orders:
-		if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and not order.has(FuelStockService.FUEL_TARGET_KEY) \
-				and String(order.get("resource", "")) == meat:
-			kept += int(order.get("quantity", 0))
-	available[meat] = maxi(int(available.get(meat, 0)) - kept, 0)
+	for meat in StockRequestService.DERIVED_LEVEL_RESOURCES:
+		var kept := 0
+		for order in game_data.drawer_orders:
+			if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and not order.has(FuelStockService.FUEL_TARGET_KEY) \
+					and String(order.get("resource", "")) == meat:
+				kept += int(order.get("quantity", 0))
+		available[meat] = maxi(int(available.get(meat, 0)) - kept, 0)
 
 
 # Calorie del cibo già avviato alla lavorazione (2026-10-16): per i giorni di autonomia è cibo in arrivo. Essiccata

@@ -82,6 +82,11 @@ var _hunt_mode: bool = false
 var _meat_row: HBoxContainer = null
 var _meat_option: OptionButton = null
 var _meat_values: Array[int] = []
+# Etichette della frase della quantità e della riga della destinazione (2026-10-31, pesca nelle zone: stesso dialog della
+# caccia con "di pesce" e "Destinazione del pescato" al posto dei testi della caccia, open_hunt_dialog).
+var _meat_suffix_label: Label = null
+var _hunt_destination_label: Label = null
+var _fish_mode: bool = false
 # Altezza di partenza in modalità caccia: la finestra poi si adatta al contenuto (_fit_to_content).
 const HUNT_DIALOG_HEIGHT: float = 120.0
 # Destinazione della caccia (2026-10-09): la vecchia sezione da spuntare è stata tolta; resta il pulsante condiviso
@@ -171,7 +176,12 @@ func _on_menu_selection_changed(is_resource: bool, max_quantity: int) -> void:
 # valori: il chiamante non deve aspettarsi una risposta.
 # La destinazione è quella del pulsante (impostazione condivisa, GameScene.set_butcher_destination): hunt_choice_made
 # la passa vuota e GameScene usa quella attuale.
-func open_hunt_dialog(dialog_title: String, message: String, meat_options: Array[int], default_target: int) -> bool:
+# `fish` (2026-10-31, pesca nelle zone): stesso dialog con "pesci" al posto di "di carne" e la sola destinazione del
+# pesce (pulsante della carne con l'icona del pesce, niente pelli).
+func open_hunt_dialog(
+	dialog_title: String, message: String, meat_options: Array[int], default_target: int, fish: bool = false
+) -> bool:
+	_fish_mode = fish
 	_ensure_meat_row()
 	if _meat_option == null or meat_options.is_empty():
 		popup_anchor = {}
@@ -181,6 +191,10 @@ func open_hunt_dialog(dialog_title: String, message: String, meat_options: Array
 	_set_hunt_mode(true)
 	_show_auto_zone_row(true)
 	_show_hunt_destination_row()
+	if _meat_suffix_label != null:
+		_meat_suffix_label.text = tr("fish_order_dialog_stop_suffix" if fish else "hunt_order_dialog_stop_suffix")
+	if _hunt_destination_label != null:
+		_hunt_destination_label.text = tr("fish_destination_button_label" if fish else "hunt_destination_button_label")
 	title = dialog_title
 	message_label.text = message
 	_meat_values = meat_options.duplicate()
@@ -261,6 +275,7 @@ func _ensure_meat_row() -> void:
 	var suffix := Label.new()
 	suffix.text = tr("hunt_order_dialog_stop_suffix")
 	_meat_row.add_child(suffix)
+	_meat_suffix_label = suffix
 	var parent := repeat_check_box.get_parent()
 	parent.add_child(_meat_row)
 	parent.move_child(_meat_row, repeat_check_box.get_index() + 1)
@@ -327,6 +342,7 @@ func _show_hunt_destination_row() -> void:
 		_hunt_destination_row.add_theme_constant_override("separation", 6)
 		var label := Label.new()
 		label.text = tr("hunt_destination_button_label")
+		_hunt_destination_label = label
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -338,6 +354,7 @@ func _show_hunt_destination_row() -> void:
 		var box := _auto_zone_row.get_parent()
 		box.add_child(_hunt_destination_row)
 		box.move_child(_hunt_destination_row, _auto_zone_row.get_index())
+	_hunt_destination_button.set_fish_mode(_fish_mode)
 	var options: Array[Dictionary] = []
 	options.assign(_hunt_destination_state["options"])
 	set_butcher_destination(bool(_hunt_destination_state["shown"]), _hunt_destination_state["current"], options)

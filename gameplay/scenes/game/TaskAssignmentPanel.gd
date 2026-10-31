@@ -175,6 +175,11 @@ const ZONE_KIND_GATHER := "gather"
 # "Caccia" (2026-10-09, quinto tipo): carne da portare a casa (5/10/15/20) al posto del numero, e la riga del pulsante
 # della destinazione (visibile come quello della barra dei comandi, set_butcher_destination).
 const ZONE_KIND_HUNT := "hunt"
+# "Pesca" (2026-10-31, richiesta utente — pesca dal cassetto, passo 4): come la caccia, pesci da portare a casa (5/10/15/20)
+# e la riga della destinazione con il solo pulsante del pesce (set_fish_mode).
+const ZONE_KIND_FISH := "fish"
+var _fish_button: Button = null
+var _hunt_destination_label: Label = null
 var _hunt_button: Button = null
 var _hunt_destination_row: HBoxContainer = null
 var _hunt_destination_button: ButcherDestinationPair = null
@@ -251,6 +256,9 @@ func _build_new_task_section() -> void:
 		elif action["id"] == CommandBar.HUNT_ACTION:
 			zone_kind = ZONE_KIND_HUNT
 			_hunt_button = command_button
+		elif action["id"] == CommandBar.FISH_ACTION:
+			zone_kind = ZONE_KIND_FISH
+			_fish_button = command_button
 		if zone_kind != "":
 			command_button.pressed.connect(func() -> void:
 				if _cut_overlay != null and _cut_overlay.visible and _zone_kind == zone_kind:
@@ -262,6 +270,7 @@ func _build_new_task_section() -> void:
 	_apply_zone_available(ZONE_KIND_QUARRY)
 	_apply_zone_available(ZONE_KIND_GATHER)
 	_apply_zone_available(ZONE_KIND_HUNT)
+	_apply_zone_available(ZONE_KIND_FISH)
 	# Quinto bottone "Produci" (2026-10-09): stessa forma, la riga si divide la larghezza.
 	_produce_button = _build_command_button({"icon": "produce", "tooltip_key": "drawer_produce_button"})
 	_produce_button.pressed.connect(func() -> void:
@@ -290,6 +299,8 @@ func _zone_button(kind: String) -> Button:
 			return _gather_button
 		ZONE_KIND_HUNT:
 			return _hunt_button
+		ZONE_KIND_FISH:
+			return _fish_button
 	return _cut_button
 
 
@@ -299,7 +310,7 @@ func _apply_zone_available(kind: String) -> void:
 		return
 	var available := bool(_zone_available.get(kind, false))
 	button.disabled = not available
-	var button_tooltip_key: String = String({ZONE_KIND_QUARRY: "drawer_quarry_button_tooltip", ZONE_KIND_GATHER: "drawer_gather_button_tooltip", ZONE_KIND_HUNT: "drawer_hunt_button_tooltip"}.get(kind, "drawer_cut_button_tooltip"))
+	var button_tooltip_key: String = String({ZONE_KIND_QUARRY: "drawer_quarry_button_tooltip", ZONE_KIND_GATHER: "drawer_gather_button_tooltip", ZONE_KIND_HUNT: "drawer_hunt_button_tooltip", ZONE_KIND_FISH: "drawer_fish_button_tooltip"}.get(kind, "drawer_cut_button_tooltip"))
 	button.tooltip_text = TooltipText.wrap(tr(button_tooltip_key) if available else String(_zone_unavailable_reason.get(kind, "")))
 	if not available and _cut_overlay != null and _cut_overlay.visible and _zone_kind == kind:
 		close_cut_overlay()
@@ -1688,6 +1699,7 @@ func _build_cut_overlay(area: Control) -> void:
 	_hunt_destination_row.add_theme_constant_override("separation", 6)
 	_hunt_destination_row.visible = false
 	var destination_label := Label.new()
+	_hunt_destination_label = destination_label
 	destination_label.text = tr("hunt_destination_button_label")
 	destination_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	destination_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1784,7 +1796,9 @@ func open_zone_order_overlay(kind: String, title: String, count_label: String, m
 	_cut_count_spin.min_value = min_count
 	_cut_count_spin.max_value = max_count
 	_cut_count_spin.value = clampi(default_count, min_count, max_count)
-	_hunt_destination_row.visible = kind == ZONE_KIND_HUNT
+	_hunt_destination_row.visible = kind == ZONE_KIND_HUNT or kind == ZONE_KIND_FISH
+	_hunt_destination_label.text = tr("fish_destination_button_label" if kind == ZONE_KIND_FISH else "hunt_destination_button_label")
+	_hunt_destination_button.set_fish_mode(kind == ZONE_KIND_FISH)
 	# Zona automatica: quella dell'opzione (l'interruttore la mostra e la cambia, anche per gli altri posti).
 	_cut_auto_zone = UserOptions.work_area_auto_zone if _cut_auto_zone_toggle != null else auto_zone
 	_cut_zone_id = -1

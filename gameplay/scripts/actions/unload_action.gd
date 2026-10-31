@@ -528,6 +528,15 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		# Serie di cacce fino a un limite di carne (2026-10-01): la carne consegnata da una macellazione della serie.
 		if context.has(HuntZoneService.CONTEXT_MEAT_SERIES):
 			HuntZoneService.add_delivered_meat(context, int(deposited_by_resource.get(HuntZoneService.MEAT_RESOURCE, 0)))
+		# Serie di pesca nelle zone (2026-10-31): il pesce consegnato dal viaggio della serie.
+		if context.has(FishZoneService.CONTEXT_SERIES):
+			FishZoneService.add_delivered_fish(context, int(deposited_by_resource.get(FishAction.CAUGHT_RESOURCE_NAME, 0)))
+			if DebugLogging.ENABLED and DebugLogging.SHOW_FISH_LOGS:
+				var fish_series := FishZoneService.get_series(context)
+				print("[FISH] #%d %s: consegnati %d pesci in %s, serie %d/%d." % [
+					individual.id, individual.name, int(deposited_by_resource.get(FishAction.CAUGHT_RESOURCE_NAME, 0)),
+					target_building.building_type_name, int(fish_series.get("delivered", 0)), int(fish_series.get("target", 0))
+				])
 		# Consegna Transport (2026-09-20): valutata QUI, al deposito effettivo, non alla stima di activate().
 		if context.has("transport_destination_id") and int(context["transport_destination_id"]) == target_building.id:
 			var delivery_resource: String = String(context.get("transport_delivery_resource", ""))

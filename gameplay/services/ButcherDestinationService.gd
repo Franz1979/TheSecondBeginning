@@ -286,13 +286,10 @@ static func has_alternative_processing_destination(world: World, folk: Folk) -> 
 
 
 # Coppia proposta (e usata dalla caccia diretta e da ogni caccia senza scelta): per ciascun tipo l'ultima scelta se è ancora
-# disponibile, altrimenti il focolare per la carne e il magazzino per le pelli (poi il magazzino). Col gestore scorte
-# (2026-10-22, richiesta utente — stesse regole per tutte le cacce) la base è la coppia del magazzino per ciò che avanza
-# (GameData.stock_excess_meat_destination) invece dell'ultima scelta.
+# disponibile, altrimenti il focolare per la carne e il magazzino per le pelli (poi il magazzino). Anche col gestore scorte
+# (2026-10-31, richiesta utente — tolta la regola del 2026-10-22): le cacce ordinate dal giocatore vanno dove dice il
+# pulsante; la regola del magazzino (resolve_stock) vale solo per le cacce del gestore.
 static func resolve_default(last_destination: String, world: World, folk: Folk) -> String:
-	var game_data: GameData = GameSettings.active_game_data
-	if game_data != null and folk != null and folk.completed_ideas.has(WarehousePanel.REQUIRED_IDEA_ID) and JobBoardService.is_enabled(folk):
-		last_destination = game_data.stock_excess_meat_destination
 	var last := parse(last_destination) if last_destination != "" else {KIND_MEAT: CAMPFIRE, KIND_HIDE: WAREHOUSE, "auto": false}
 	var meat := String(last[KIND_MEAT])
 	if not is_available(meat, world, folk):

@@ -65,7 +65,9 @@ static func get_deficits(resource_name: String) -> Dictionary:
 
 static func _drying_deficit(world: World, game_data: GameData, stock: Dictionary, resource_name: String) -> int:
 	var total := 0
-	for level_name in game_data.stock_min_levels.keys():
+	# Solo i livelli che agiscono (2026-10-31: senza essiccatoio completo il livello è spento).
+	var levels := WarehouseManagerService.active_min_levels(world, game_data)
+	for level_name in levels.keys():
 		var recipe := String(level_name)
 		if StockRequestService.source_kind_for(recipe) != StockRequestService.SOURCE_DRY \
 				or WarehouseManagerService.dry_ingredient(recipe) != resource_name:
@@ -76,7 +78,7 @@ static func _drying_deficit(world: World, game_data: GameData, stock: Dictionary
 		for order in game_data.drawer_orders:
 			if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and String(order.get("recipe", "")) == recipe:
 				covered += int(order.get("quantity", 0))
-		var missing := int(game_data.stock_min_levels[level_name]) - covered
+		var missing := int(levels[level_name]) - covered
 		if missing > 0:
 			total += missing * int(rules.recipe_inputs.get(resource_name, 1))
 	return total
@@ -112,13 +114,14 @@ static func _ordered_deficit(world: World, target: String, resource_name: String
 static func _campfire_deficit(world: World, game_data: GameData, stock: Dictionary, resource_name: String) -> int:
 	var campfire_type := String(ButcherDestinationService.BUILDING_TYPES[ButcherDestinationService.CAMPFIRE])
 	var needed := 0
-	for level_name in game_data.stock_min_levels.keys():
+	var levels := WarehouseManagerService.active_min_levels(world, game_data)
+	for level_name in levels.keys():
 		var recipe := String(level_name)
 		var rules := CaloricCalculator.get_caloric_source_rules(recipe)
 		if rules == null or rules.recipe_auto_progress_days > 0 or not rules.recipe_inputs.has(resource_name) \
 				or not rules.recipe_workstation_types.has(campfire_type):
 			continue
-		var missing := int(game_data.stock_min_levels[level_name]) - int(stock.get(recipe, 0)) - _units_in_progress(world, recipe)
+		var missing := int(levels[level_name]) - int(stock.get(recipe, 0)) - _units_in_progress(world, recipe)
 		if missing > 0:
 			needed += missing * int(rules.recipe_inputs[resource_name])
 	if needed <= 0:
@@ -131,7 +134,8 @@ static func _campfire_deficit(world: World, game_data: GameData, stock: Dictiona
 
 
 static func _warehouse_deficit(game_data: GameData, stock: Dictionary, resource_name: String) -> int:
-	var needed := int(game_data.stock_min_levels.get(resource_name, 0))
+	# Niente riserva per carne e pesce crudi (2026-10-31, WarehouseManagerService.active_min_levels).
+	var needed := 0 if StockRequestService.DERIVED_LEVEL_RESOURCES.has(resource_name) else int(game_data.stock_min_levels.get(resource_name, 0))
 	var processing_types: Array[String] = []
 	for target in [ButcherDestinationService.CAMPFIRE, ButcherDestinationService.DRYING_RACK, ButcherDestinationService.SMOKEHOUSE]:
 		processing_types.append(String(ButcherDestinationService.BUILDING_TYPES[target]))

@@ -44,6 +44,16 @@ var _current_pair: String = ""
 # Chiave tr() del tooltip, con {name} = le due destinazioni attuali (2026-10-16): la regola del cassetto Scorte
 # (WarehousePanel) ne usa una sua, perché lì decide solo ciò che non serve ai minimi.
 var tooltip_key: String = "command_bar_butcher_destination_tooltip"
+# Pesce (2026-10-31, richiesta utente — popup della Pesca nelle zone): stessa scelta della carne, ma con l'icona del pesce
+# e il titolo "Pesce" (set_fish_mode, solo sul pulsante della carne; il pesce si comporta come la carne).
+var _fish_mode: bool = false
+
+
+func set_fish_mode(enabled: bool) -> void:
+	if _fish_mode == enabled:
+		return
+	_fish_mode = enabled
+	_signature = ""
 
 
 func _init() -> void:
@@ -94,8 +104,9 @@ func set_destination(is_shown: bool, current: Dictionary, options: Array[Diction
 		child.queue_free()
 	var entry: Dictionary = current.get(kind, {})
 	_icon_holder.add_child(_build_destination_icon(entry, kind))
-	var name_text := "%s: %s" % [tr(String(KIND_TITLE_KEYS[kind])), String(entry.get("name", ""))]
-	tooltip_text = TooltipText.wrap(tr(tooltip_key).format({"name": name_text}))
+	var title_key := "fish_destination_caption" if _fish_mode else String(KIND_TITLE_KEYS[kind])
+	var name_text := "%s: %s" % [tr(title_key), String(entry.get("name", ""))]
+	tooltip_text = TooltipText.wrap(tr("fish_destination_tooltip" if _fish_mode else tooltip_key).format({"name": name_text}))
 	return visibility_changed
 
 
@@ -141,7 +152,7 @@ func _open_popup() -> void:
 # Icona dell'edificio della destinazione con la piccola icona del tipo (carne o pelle) in alto a sinistra.
 func _build_destination_icon(entry: Dictionary, for_kind: String) -> Control:
 	var box := IconRegistry.build_building_icon_box(String(entry.get("building_type", "")), ICON_SIDE)
-	var resource_name := String(KIND_ICON_RESOURCE.get(for_kind, ""))
+	var resource_name := FishAction.CAUGHT_RESOURCE_NAME if _fish_mode else String(KIND_ICON_RESOURCE.get(for_kind, ""))
 	if resource_name == "":
 		return box
 	var badge := Control.new()

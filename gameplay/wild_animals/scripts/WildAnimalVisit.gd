@@ -65,8 +65,11 @@ var blocked_test: Callable = Callable()
 # nessuna), tempo rimasto alla carica (giorni) e visita con attacco (niente punti né calma,
 # WildAnimalVisitService.apply_visit_outcome).
 var notice_radii: Array[float] = []
-var attack_chance: float = 0.0
-var attack_rolled_ids: Dictionary = {}
+# Tiro d'attacco (2026-10-31, uno per visita): aggressività media e numero dei presenti senza i cuccioli, presi
+# all'inizio della visita, e tiro già fatto.
+var attack_aggression: float = 0.0
+var attack_wolves: int = 0
+var attack_rolled: bool = false
 var attack_target_id: int = -1
 var charge_remaining: float = 0.0
 # Distanza minima raggiunta da un presente durante la carica (microcelle), per il log di una carica senza contatto.
@@ -76,11 +79,15 @@ var charge_start_distance: float = 0.0
 # Inseguimento (lupi L5b, 2026-10-30): pausa rimasta dopo un morso (giorni) e morsi dati in questa carica.
 var charge_pause: float = 0.0
 var bites: int = 0
+# Attesa prima di far scegliere di nuovo la fuga allo scoperto al caricato (giorni; WildAnimalVisitService). Mai salvata.
+var redirect_cooldown: float = 0.0
 # Scacciati in gruppo (lupi L6.1, 2026-10-30): chi corre contro il branco (id degli HumanIndividual), quanti ne servono
 # perché rinunci (0 = nessuno interviene) e branco scacciato (se ne va di corsa).
 var defender_ids: Array[int] = []
 var defenders_needed: int = 0
 var driven_off: bool = false
+# Tempo (giorni) in cui quanti servono hanno gridato insieme davanti al branco (DangerProfile.drive_off_shout_days).
+var drive_off_shouting: float = 0.0
 # Ringhio della carica già suonato (GameScene.wild_animal_charged): una volta sola.
 var charge_announced: bool = false
 # Grido di chi l'ha scacciato già suonato (GameScene.wild_animal_driven_off): una volta sola.
@@ -113,12 +120,12 @@ func to_save_data() -> Dictionary:
 		"animal_ids": animal_ids, "offsets": offsets.map(_pair), "home_offsets": home_offsets.map(_pair),
 		"headings": headings, "moving": moving, "phase_timers": phase_timers, "hopping": hopping,
 		"hop_timers": hop_timers, "sniff_points": sniff_points.map(_pair), "notice_radii": notice_radii,
-		"attack_chance": attack_chance, "attack_rolled_ids": attack_rolled_ids.keys(),
+		"attack_aggression": attack_aggression, "attack_wolves": attack_wolves, "attack_rolled": attack_rolled,
 		"attack_target_id": attack_target_id, "charge_remaining": charge_remaining,
 		"charge_min_distance": charge_min_distance if is_finite(charge_min_distance) else -1.0,
 		"charge_start_distance": charge_start_distance, "charge_pause": charge_pause, "bites": bites,
 		"attacked": attacked, "arrival_announced": arrival_announced,
-		"defender_ids": defender_ids, "defenders_needed": defenders_needed, "driven_off": driven_off, "driven_off_announced": driven_off_announced, "charge_announced": charge_announced,
+		"defender_ids": defender_ids, "defenders_needed": defenders_needed, "driven_off": driven_off, "drive_off_shouting": drive_off_shouting, "driven_off_announced": driven_off_announced, "charge_announced": charge_announced,
 	}
 
 
@@ -156,9 +163,9 @@ static func from_save_data(data: Dictionary) -> WildAnimalVisit:
 		visit.sniff_points.append(_vector(value))
 	for value in data.get("notice_radii", []):
 		visit.notice_radii.append(float(value))
-	visit.attack_chance = float(data.get("attack_chance", 0.0))
-	for value in data.get("attack_rolled_ids", []):
-		visit.attack_rolled_ids[int(value)] = true
+	visit.attack_aggression = float(data.get("attack_aggression", 0.0))
+	visit.attack_wolves = int(data.get("attack_wolves", 0))
+	visit.attack_rolled = bool(data.get("attack_rolled", false))
 	visit.attack_target_id = int(data.get("attack_target_id", -1))
 	visit.charge_remaining = float(data.get("charge_remaining", 0.0))
 	var min_distance := float(data.get("charge_min_distance", -1.0))
@@ -172,6 +179,7 @@ static func from_save_data(data: Dictionary) -> WildAnimalVisit:
 		visit.defender_ids.append(int(value))
 	visit.defenders_needed = int(data.get("defenders_needed", 0))
 	visit.driven_off = bool(data.get("driven_off", false))
+	visit.drive_off_shouting = float(data.get("drive_off_shouting", 0.0))
 	visit.driven_off_announced = bool(data.get("driven_off_announced", false))
 	visit.charge_announced = bool(data.get("charge_announced", false))
 	visit.needs_restore = true

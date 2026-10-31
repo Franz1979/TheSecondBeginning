@@ -275,6 +275,9 @@ static func _action_type_for_step(step: Action) -> int:
 	# DRINK (2026-10-30, DrinkAction, drink.tres/emergency_drink.tres), aggiunta insieme al proprio case in _build_step.
 	if step is DrinkAction:
 		return TaskTypes.ActionType.DRINK
+	# FISH (2026-10-31, FishAction, fish.tres), aggiunta insieme al proprio case in _build_step.
+	if step is FishAction:
+		return TaskTypes.ActionType.FISH
 	# REPAIR (2026-10-10, RepairAction, repair.tres), aggiunta insieme al proprio case in _build_step.
 	if step is RepairAction:
 		return TaskTypes.ActionType.REPAIR
@@ -561,6 +564,12 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.DRINK:
 			# Nessun argomento; il tempo trascorso da load_save_data.
 			step = DrinkAction.new()
+		TaskTypes.ActionType.FISH:
+			# La microcella del ruscello; il tempo del tentativo in corso da load_save_data.
+			step = FishAction.new(
+				Vector2i(int(step_data.get("fish_macro_x", 0)), int(step_data.get("fish_macro_y", 0))),
+				Vector2i(int(step_data.get("fish_x", 0)), int(step_data.get("fish_y", 0)))
+			)
 		TaskTypes.ActionType.WAIT_FOR_SAFETY:
 			# Tetto dell'attesa; il tempo trascorso da load_save_data. Dopo un caricamento il pericolo non c'è più (le visite
 			# non si salvano): l'attesa finisce al tetto.

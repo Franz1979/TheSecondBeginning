@@ -292,6 +292,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				# Bere alla riva (2026-10-30, sete): nessun argomento, la riva è il Walk prima.
 				steps.append(DrinkAction.new())
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.FISH:
+				# 2 argomenti (macrocella, microcella del ruscello) — 2026-10-31, FishAction (fish.tres); la riva è il Walk prima.
+				if step_definition.context_keys.size() < 2 or not context.has(step_definition.context_keys[0]) 						or not context.has(step_definition.context_keys[1]):
+					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step FISH di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(FishAction.new(context[step_definition.context_keys[0]], context[step_definition.context_keys[1]]))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.WAIT_FOR_SAFETY:
 				# Attesa al riparo (2026-10-30, flee.tres): context_keys[0] facoltativo, tetto di sicurezza in giorni.
 				var flee_max_wait_days := DangerFleeService.DEFAULT_MAX_WAIT_DAYS

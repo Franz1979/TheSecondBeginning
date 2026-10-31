@@ -30,7 +30,8 @@ static var _retry_after: Dictionary = {}  # id ordine -> Time.get_ticks_msec() o
 
 
 static func uses_order_target(order_type: String) -> bool:
-	return order_type == DrawerOrderService.TYPE_CUT or order_type == DrawerOrderService.TYPE_QUARRY 		or order_type == DrawerOrderService.TYPE_GATHER or order_type == DrawerOrderService.TYPE_HUNT
+	return order_type == DrawerOrderService.TYPE_CUT or order_type == DrawerOrderService.TYPE_QUARRY 		or order_type == DrawerOrderService.TYPE_GATHER or order_type == DrawerOrderService.TYPE_HUNT \
+		or order_type == DrawerOrderService.TYPE_FISH
 
 
 static func has_target(order: Dictionary) -> bool:
@@ -89,6 +90,8 @@ static func get_pick(ctx: GameContext, order: Dictionary) -> Dictionary:
 	var cell := Vector2i(int(order.get("target_x", 0)), int(order.get("target_y", 0)))
 	if String(order.get("type", "")) == DrawerOrderService.TYPE_QUARRY:
 		return {"area": area, "rock": {"macro_coords": macro, "position": cell}}
+	if String(order.get("type", "")) == DrawerOrderService.TYPE_FISH:
+		return {"area": area, "spot": {"macro_coords": macro, "position": cell}}
 	var object_type := int(order.get("target_object_type", GameTypes.WorldObjectType.TREE)) as GameTypes.WorldObjectType
 	var individual_key := Vector3i(cell.x, cell.y, int(order.get("target_z", 0)))
 	var macro_state: MacroCellState = ctx.world.get_cell_state_at(macro.x, macro.y)
@@ -101,7 +104,10 @@ static func get_pick(ctx: GameContext, order: Dictionary) -> Dictionary:
 # Bersaglio per il controllo di raggiungibilità della voce (JobBoardService.find_takeable_jobs, reach_target); senza
 # bersaglio quello di sempre (macrocella -1 = sempre raggiungibile).
 static func reach_target(order: Dictionary) -> Dictionary:
-	if not has_target(order) or String(order.get("type", "")) == DrawerOrderService.TYPE_HUNT:
+	# Pesca (2026-10-31): il punto è nell'acqua e la riva si sceglie alla presa; raggiungibilità come la caccia (sempre sì,
+	# list_available_spots ha già chiesto una riva raggiungibile).
+	if not has_target(order) or String(order.get("type", "")) == DrawerOrderService.TYPE_HUNT \
+			or String(order.get("type", "")) == DrawerOrderService.TYPE_FISH:
 		return {"macro_x": -1, "macro_y": -1, "micro_x": 0, "micro_y": 0}
 	return {
 		"macro_x": int(order["target_macro_x"]), "macro_y": int(order["target_macro_y"]),
@@ -130,6 +136,8 @@ static func _target_key(order: Dictionary, order_type: String) -> String:
 	var cell := Vector2i(int(order.get("target_x", 0)), int(order.get("target_y", 0)))
 	if order_type == DrawerOrderService.TYPE_QUARRY:
 		return QuarryZoneService.rock_reservation_key(macro, cell)
+	if order_type == DrawerOrderService.TYPE_FISH:
+		return FishZoneService.spot_reservation_key(macro, cell)
 	return CutZoneService.plant_reservation_key(macro, int(order.get("target_object_type", 0)), Vector3i(cell.x, cell.y, int(order.get("target_z", 0))))
 
 
@@ -167,6 +175,10 @@ static func _is_target_valid(ctx: GameContext, order: Dictionary, order_type: St
 		return false
 	if order_type == DrawerOrderService.TYPE_QUARRY:
 		return RockStoneService.get_remaining_stone(macro_state, cell) > 0
+	if order_type == DrawerOrderService.TYPE_FISH:
+		var live_cell: LiveMacroCell = ctx.live_cells.get(macro)
+		return live_cell != null and live_cell.stream_positions.has(cell) and not FishZoneService.bank_cells(live_cell, cell).is_empty() \
+			and StreamFishService.get_fish(macro_state, live_cell.stream_positions, macro.x, macro.y, cell, ctx.game_data.get_absolute_day()) > 0
 	var object_type := int(order.get("target_object_type", -1)) as GameTypes.WorldObjectType
 	var individual_key := Vector3i(cell.x, cell.y, int(order.get("target_z", 0)))
 	if not PlantCutService.is_individual_alive(macro_state, object_type, individual_key):
@@ -217,6 +229,8 @@ static func _choose_target(ctx: GameContext, order: Dictionary, order_type: Stri
 				int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)), int(order.get("criterion_category", -1)),
 				String(order.get("resource_name", ""))
 			)
+		elif order_type == DrawerOrderService.TYPE_FISH:
+			area = FishZoneService.choose_work_area_from(ctx.game_data, origin["macro"], origin["position"], null, reserved)
 		elif order_type == DrawerOrderService.TYPE_QUARRY:
 			area = QuarryZoneService.choose_work_area_from(ctx.game_data, ctx.world, origin["macro"], origin["position"], null, reserved)
 		else:
@@ -235,6 +249,12 @@ static func _choose_target(ctx: GameContext, order: Dictionary, order_type: Stri
 		if gather_cell == null:
 			return false
 		_store(order, area, area.macro_coords, gather_cell, 0, 0)
+		return true
+	if order_type == DrawerOrderService.TYPE_FISH:
+		var spot: Variant = FishZoneService.choose_spot_from(area, origin["macro"], origin["position"], null, reserved)
+		if spot == null:
+			return false
+		_store(order, area, area.macro_coords, spot, 0, 0)
 		return true
 	if order_type == DrawerOrderService.TYPE_QUARRY:
 		var macro_state: MacroCellState = ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)

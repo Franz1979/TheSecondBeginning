@@ -52,6 +52,9 @@ signal hunt_zone_series_ended(individual: HumanIndividual, series: Dictionary, r
 signal quarry_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
 # Serie di tagli in zona (2026-10-06): taglio successivo dopo l'ultima consegna a mucchio vuoto (_continue_cut_zone_series).
 signal cut_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
+# Serie di pesca in zona (2026-10-31): una Task della serie è finita (consegna fatta o punto vuoto); GameScene accoda la
+# pesca successiva o chiude la serie (WorkFollowUpService.continue_fish_series).
+signal fish_zone_series_continue_requested(individual: HumanIndividual, series: Dictionary)
 # Cantiere nel bosco (2026-10-18): la pulizia ha trovato piante vive; la scena fa tagliare il costruttore (se ha l'ascia) o
 # chiama postpone_for_site_cut.
 signal site_cut_requested(individual: HumanIndividual, task: Task, site: Building)
@@ -430,6 +433,7 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 			_continue_hunt_zone_series(individual, task)
 			_continue_quarry_zone_series(individual, task, game_data)
 			_continue_cut_zone_series(individual, task, game_data)
+			_continue_fish_zone_series(individual, task)
 			_handle_task_completion_need_and_queue(individual, task, world, game_data)
 			return
 	task.advance_to_next_step()
@@ -473,6 +477,8 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 		_continue_quarry_zone_series(individual, task, game_data)
 		# Serie di tagli in zona (2026-10-06): stesso punto, stesso motivo.
 		_continue_cut_zone_series(individual, task, game_data)
+		# Serie di pesca in zona (2026-10-31): stesso punto, stesso motivo.
+		_continue_fish_zone_series(individual, task)
 		_action_step("serie in zona")
 		# Bisogno/coda (2026-09-13, richiesta utente, Punto 5) — PRIMA di considerare
 		# l'individuo libero: se un bisogno stamina è ANCORA attivo, assegna la Task-bisogno
@@ -1366,13 +1372,13 @@ func _handle_pending_warehouse_search(individual: HumanIndividual, task: Task, w
 	# quindi se find_best restituisce per una seconda varietà lo stesso magazzino già scelto per una
 	# precedente, non si accoda un secondo Walk+Unload identico (viaggio sprecato).
 	var targeted_building_ids: Array[int] = []
-	# Prodotti delle cacce (2026-10-19, HuntProductAllocationService; dal 2026-10-22 TUTTE le cacce, anche quelle comandate
-	# dal giocatore — stesse regole, richiesta utente): prima, per ogni risorsa, gli scarichi alle postazioni che coprono i
-	# minimi (con il tetto della loro parte), poi il resto alla destinazione scelta. In due giri, così ogni scarico al
-	# magazzino (che lascia tutto ciò che accetta) viene dopo quelli alle postazioni. Senza gestore scorte non ci sono
-	# livelli: i minimi sono solo gli ordini di produzione esistenti.
+	# Prodotti delle cacce del gestore scorte (2026-10-19, HuntProductAllocationService; destinazione col segno ":auto"):
+	# prima, per ogni risorsa, gli scarichi alle postazioni che coprono i minimi (con il tetto della loro parte), poi il
+	# resto alla destinazione scelta. In due giri, così ogni scarico al magazzino (che lascia tutto ciò che accetta) viene
+	# dopo quelli alle postazioni. Le cacce ordinate dal giocatore (2026-10-31, richiesta utente — dal 2026-10-22 passavano
+	# anche loro dai minimi) vanno solo alla destinazione scelta, col giro normale qui sotto.
 	var auto_destination := ButcherDestinationService.get_destination(task.context)
-	if task.context.has(ButcherDestinationService.CONTEXT_KEY):
+	if task.context.has(ButcherDestinationService.CONTEXT_KEY) and ButcherDestinationService.is_auto(auto_destination):
 		var remainders: Array[Dictionary] = []
 		for entry in searches:
 			var resource_name := String(entry.get("resource_name", ""))
@@ -2057,6 +2063,12 @@ func _tick_zone_hunt_without_capture(
 	_continue_hunt_zone_series(individual, task)
 	_handle_task_completion_need_and_queue(individual, task, world, game_data)
 	return true
+
+
+func _continue_fish_zone_series(individual: HumanIndividual, task: Task) -> void:
+	var series := FishZoneService.get_series(task.context)
+	if not series.is_empty():
+		fish_zone_series_continue_requested.emit(individual, series.duplicate())
 
 
 func _continue_hunt_zone_series(individual: HumanIndividual, task: Task) -> void:

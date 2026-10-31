@@ -152,6 +152,13 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fishing_fill"]
+bg_color = Color(0.3, 0.55, 0.8, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_tool_slot"]
 bg_color = Color(0.25, 0.25, 0.25, 0.35)
 border_width_left = 1
@@ -508,69 +515,15 @@ theme_override_constants/margin_top = 2
 
 [node name="SkillsRow" type="HBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin"]
 layout_mode = 2
-theme_override_constants/separation = 4
+theme_override_constants/separation = 3
 alignment = 1
-
-[node name="LeadershipColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
-layout_mode = 2
-
-[node name="LeadershipBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
-fill_mode = 3
-theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
-theme_override_styles/fill = SubResource("StyleBoxFlat_leadership_fill")
-show_percentage = false
-
-[node name="LeadershipCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
-
-[node name="LeadershipCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn/LeadershipCaptionWrapper"]
-layout_mode = 0
-offset_left = -24.0
-offset_top = 25.0
-offset_right = 44.0
-offset_bottom = 45.0
-pivot_offset = Vector2(34, 10)
-rotation_degrees = -90.0
-theme_override_font_sizes/font_size = 9
-horizontal_alignment = 2
-vertical_alignment = 1
-
-[node name="ManagementColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
-layout_mode = 2
-
-[node name="ManagementBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
-fill_mode = 3
-theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
-theme_override_styles/fill = SubResource("StyleBoxFlat_management_fill")
-show_percentage = false
-
-[node name="ManagementCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
-
-[node name="ManagementCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn/ManagementCaptionWrapper"]
-layout_mode = 0
-offset_left = -24.0
-offset_top = 25.0
-offset_right = 44.0
-offset_bottom = 45.0
-pivot_offset = Vector2(34, 10)
-rotation_degrees = -90.0
-theme_override_font_sizes/font_size = 9
-horizontal_alignment = 2
-vertical_alignment = 1
 
 [node name="BuilderColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
 layout_mode = 2
 
 [node name="BuilderBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/BuilderColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
+custom_minimum_size = Vector2(16, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_builder_fill")
@@ -578,13 +531,13 @@ show_percentage = false
 
 [node name="BuilderCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/BuilderColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
+custom_minimum_size = Vector2(18, 70)
 
 [node name="BuilderCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/BuilderColumn/BuilderCaptionWrapper"]
 layout_mode = 0
-offset_left = -24.0
+offset_left = -25.0
 offset_top = 25.0
-offset_right = 44.0
+offset_right = 43.0
 offset_bottom = 45.0
 pivot_offset = Vector2(34, 10)
 rotation_degrees = -90.0
@@ -597,7 +550,7 @@ layout_mode = 2
 
 [node name="TransporterBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/TransporterColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
+custom_minimum_size = Vector2(16, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_transporter_fill")
@@ -605,13 +558,13 @@ show_percentage = false
 
 [node name="TransporterCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/TransporterColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
+custom_minimum_size = Vector2(18, 70)
 
 [node name="TransporterCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/TransporterColumn/TransporterCaptionWrapper"]
 layout_mode = 0
-offset_left = -24.0
+offset_left = -25.0
 offset_top = 25.0
-offset_right = 44.0
+offset_right = 43.0
 offset_bottom = 45.0
 pivot_offset = Vector2(34, 10)
 rotation_degrees = -90.0
@@ -624,7 +577,7 @@ layout_mode = 2
 
 [node name="GatheringBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/GatheringColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
+custom_minimum_size = Vector2(16, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_gathering_fill")
@@ -632,40 +585,13 @@ show_percentage = false
 
 [node name="GatheringCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/GatheringColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
+custom_minimum_size = Vector2(18, 70)
 
 [node name="GatheringCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/GatheringColumn/GatheringCaptionWrapper"]
 layout_mode = 0
-offset_left = -24.0
+offset_left = -25.0
 offset_top = 25.0
-offset_right = 44.0
-offset_bottom = 45.0
-pivot_offset = Vector2(34, 10)
-rotation_degrees = -90.0
-theme_override_font_sizes/font_size = 9
-horizontal_alignment = 2
-vertical_alignment = 1
-
-[node name="CognitionColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
-layout_mode = 2
-
-[node name="CognitionBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
-fill_mode = 3
-theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
-theme_override_styles/fill = SubResource("StyleBoxFlat_cognition_fill")
-show_percentage = false
-
-[node name="CognitionCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
-
-[node name="CognitionCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn/CognitionCaptionWrapper"]
-layout_mode = 0
-offset_left = -24.0
-offset_top = 25.0
-offset_right = 44.0
+offset_right = 43.0
 offset_bottom = 45.0
 pivot_offset = Vector2(34, 10)
 rotation_degrees = -90.0
@@ -678,7 +604,7 @@ layout_mode = 2
 
 [node name="HuntingBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
+custom_minimum_size = Vector2(16, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_hunting_fill")
@@ -686,13 +612,40 @@ show_percentage = false
 
 [node name="HuntingCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
+custom_minimum_size = Vector2(18, 70)
 
 [node name="HuntingCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn/HuntingCaptionWrapper"]
 layout_mode = 0
-offset_left = -24.0
+offset_left = -25.0
 offset_top = 25.0
-offset_right = 44.0
+offset_right = 43.0
+offset_bottom = 45.0
+pivot_offset = Vector2(34, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="FishingColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="FishingBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FishingColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(16, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_fishing_fill")
+show_percentage = false
+
+[node name="FishingCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FishingColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 70)
+
+[node name="FishingCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FishingColumn/FishingCaptionWrapper"]
+layout_mode = 0
+offset_left = -25.0
+offset_top = 25.0
+offset_right = 43.0
 offset_bottom = 45.0
 pivot_offset = Vector2(34, 10)
 rotation_degrees = -90.0
@@ -705,7 +658,7 @@ layout_mode = 2
 
 [node name="CraftingBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
+custom_minimum_size = Vector2(16, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_crafting_fill")
@@ -713,67 +666,13 @@ show_percentage = false
 
 [node name="CraftingCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
+custom_minimum_size = Vector2(18, 70)
 
 [node name="CraftingCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn/CraftingCaptionWrapper"]
 layout_mode = 0
-offset_left = -24.0
+offset_left = -25.0
 offset_top = 25.0
-offset_right = 44.0
-offset_bottom = 45.0
-pivot_offset = Vector2(34, 10)
-rotation_degrees = -90.0
-theme_override_font_sizes/font_size = 9
-horizontal_alignment = 2
-vertical_alignment = 1
-
-[node name="RitualColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
-layout_mode = 2
-
-[node name="RitualBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
-fill_mode = 3
-theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
-theme_override_styles/fill = SubResource("StyleBoxFlat_ritual_fill")
-show_percentage = false
-
-[node name="RitualCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
-
-[node name="RitualCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn/RitualCaptionWrapper"]
-layout_mode = 0
-offset_left = -24.0
-offset_top = 25.0
-offset_right = 44.0
-offset_bottom = 45.0
-pivot_offset = Vector2(34, 10)
-rotation_degrees = -90.0
-theme_override_font_sizes/font_size = 9
-horizontal_alignment = 2
-vertical_alignment = 1
-
-[node name="SocialColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
-layout_mode = 2
-
-[node name="SocialBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
-fill_mode = 3
-theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
-theme_override_styles/fill = SubResource("StyleBoxFlat_social_fill")
-show_percentage = false
-
-[node name="SocialCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn"]
-layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
-
-[node name="SocialCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn/SocialCaptionWrapper"]
-layout_mode = 0
-offset_left = -24.0
-offset_top = 25.0
-offset_right = 44.0
+offset_right = 43.0
 offset_bottom = 45.0
 pivot_offset = Vector2(34, 10)
 rotation_degrees = -90.0
@@ -786,7 +685,7 @@ layout_mode = 2
 
 [node name="MedicineBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/MedicineColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(18, 70)
+custom_minimum_size = Vector2(16, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_medicine_fill")
@@ -794,13 +693,148 @@ show_percentage = false
 
 [node name="MedicineCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/MedicineColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(20, 70)
+custom_minimum_size = Vector2(18, 70)
 
 [node name="MedicineCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/MedicineColumn/MedicineCaptionWrapper"]
 layout_mode = 0
-offset_left = -24.0
+offset_left = -25.0
 offset_top = 25.0
-offset_right = 44.0
+offset_right = 43.0
+offset_bottom = 45.0
+pivot_offset = Vector2(34, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="CognitionColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="CognitionBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(16, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_cognition_fill")
+show_percentage = false
+
+[node name="CognitionCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 70)
+
+[node name="CognitionCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn/CognitionCaptionWrapper"]
+layout_mode = 0
+offset_left = -25.0
+offset_top = 25.0
+offset_right = 43.0
+offset_bottom = 45.0
+pivot_offset = Vector2(34, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="ManagementColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="ManagementBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(16, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_management_fill")
+show_percentage = false
+
+[node name="ManagementCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 70)
+
+[node name="ManagementCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn/ManagementCaptionWrapper"]
+layout_mode = 0
+offset_left = -25.0
+offset_top = 25.0
+offset_right = 43.0
+offset_bottom = 45.0
+pivot_offset = Vector2(34, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="LeadershipColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="LeadershipBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(16, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_leadership_fill")
+show_percentage = false
+
+[node name="LeadershipCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 70)
+
+[node name="LeadershipCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn/LeadershipCaptionWrapper"]
+layout_mode = 0
+offset_left = -25.0
+offset_top = 25.0
+offset_right = 43.0
+offset_bottom = 45.0
+pivot_offset = Vector2(34, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="SocialColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="SocialBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(16, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_social_fill")
+show_percentage = false
+
+[node name="SocialCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 70)
+
+[node name="SocialCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn/SocialCaptionWrapper"]
+layout_mode = 0
+offset_left = -25.0
+offset_top = 25.0
+offset_right = 43.0
+offset_bottom = 45.0
+pivot_offset = Vector2(34, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="RitualColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="RitualBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(16, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_ritual_fill")
+show_percentage = false
+
+[node name="RitualCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 70)
+
+[node name="RitualCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn/RitualCaptionWrapper"]
+layout_mode = 0
+offset_left = -25.0
+offset_top = 25.0
+offset_right = 43.0
 offset_bottom = 45.0
 pivot_offset = Vector2(34, 10)
 rotation_degrees = -90.0

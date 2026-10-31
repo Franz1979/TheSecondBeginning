@@ -62,6 +62,7 @@ const HEALTH_BADGE_GAP: float = HealthConditionIcon.GAP * HEALTH_ICON_SCALE
 # invece di inventarne un altro), solo font_size più piccolo (spazio di riga più stretto qui).
 const COLOR_TASK_DIM := Color(1, 1, 1, 0.65)
 const TASK_ROW_INDENT: float = 24.0
+const TASK_LINE_SEPARATION: int = 2
 # Stessa stringa già mostrata da GameScene per HumanIndividualInfoPanel.activity_text quando
 # current_task è null (tr("task_activity_idle") = "A riposo") — hardcoded qui invece di tr()
 # perché questo intero file non usa tr() (vedi commento in testa, "nessuna CSV di traduzione"),
@@ -126,7 +127,7 @@ var _sort_button: MenuButton = null
 # stesso flusso della barra.
 # SOVRAPPOSTI (2026-10-04, richiesta utente — prima stavano dentro la riga e ne aumentavano l'altezza): un solo riquadro
 # di pulsanti (_command_overlay, top_level: fuori dal flusso dell'impaginazione) posato sopra la riga sotto il mouse, a
-# destra, a sinistra dell'icona della casa, centrato in verticale sull'intera riga dell'abitante (nome più task). La
+# destra fino al bordo della riga (dal 2026-10-31 la casa è sulla riga del task), centrato in verticale sull'intera riga dell'abitante (nome più task). La
 # riga non cambia mai altezza: sotto i pulsanti il testo si tronca con i puntini grazie a due spaziatori (riga del nome e
 # riga del task) che prendono solo la larghezza occupata dai pulsanti. Con i task nascosti la riga è una sola e i
 # pulsanti si riducono alla sua altezza.
@@ -135,8 +136,8 @@ const COMMAND_BUTTON_SIZE: float = 18.0
 const COMMAND_BUTTON_SEPARATION: int = 1
 const COMMAND_BUTTON_DISABLED_MODULATE := Color(1, 1, 1, 0.35)
 var command_state_provider: Callable = Callable()
-# Una voce per riga: {"member", "wrapper" (blocco nome + task), "name_row", "house_icon" (dove finisce il riquadro dei
-# pulsanti), "health_slot", "health_icon", "name_spacer", "task_spacer", "task_label"}.
+# Una voce per riga: {"member", "wrapper" (blocco nome + task), "name_row", "house_icon" (inizio della riga del
+# task), "health_slot", "health_icon", "name_spacer", "task_spacer", "task_label"}.
 var _command_rows: Array[Dictionary] = []
 var _hovered_command_row: int = -1
 var _command_overlay: HBoxContainer = null
@@ -350,18 +351,10 @@ func show_population(
 		label.text = _row_name_text(member, current_year, era_effective_age_band_durations_male, era_effective_age_band_durations_female)
 		row.add_child(label)
 
-		# Spaziatore largo quanto i pulsanti delle azioni quando la riga è sotto il mouse, a sinistra della casa.
+		# Spaziatore largo quanto i pulsanti delle azioni quando la riga è sotto il mouse, in fondo alla riga.
 		var name_spacer := Control.new()
 		name_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(name_spacer)
-
-		# Simbolo casa (2026-09-12, richiesta utente). Posto riservato anche senza casa (2026-10-25): stesso glifo
-		# trasparente, così le case restano in colonna su tutte le righe.
-		var house_icon := Label.new()
-		house_icon.text = HOUSE_ICON_TEXT
-		house_icon.add_theme_font_size_override("font_size", 10)
-		_apply_house_icon(house_icon, member)
-		row.add_child(house_icon)
 
 		# Riga task indentata, SOTTO la riga dell'individuo (2026-09-18, richiesta utente) —
 		# row_wrapper (VBoxContainer) tiene insieme le due righe come un solo blocco, così l'ordine
@@ -378,14 +371,25 @@ func show_population(
 		row_wrapper.add_child(row)
 
 		var task_margin := MarginContainer.new()
-		task_margin.add_theme_constant_override("margin_left", int(TASK_ROW_INDENT))
 		task_margin.add_theme_constant_override("margin_bottom", 2)
 		task_margin.visible = _show_tasks
 
 		# Testo del task su una riga, tagliato con i puntini (2026-10-04): lascia spazio ai pulsanti delle azioni a destra
 		# senza mai allargare il pannello.
 		var task_line := HBoxContainer.new()
-		task_line.add_theme_constant_override("separation", 2)
+		task_line.add_theme_constant_override("separation", TASK_LINE_SEPARATION)
+		# Simbolo casa (2026-09-12, richiesta utente). Posto riservato anche senza casa (2026-10-25): stesso glifo
+		# trasparente, così le case restano in colonna su tutte le righe. Dal 2026-10-31 (richiesta utente — più posto ai
+		# pulsanti delle azioni sulla riga del nome) in piccolo all'inizio della riga del task, sotto il pulsante "centra",
+		# nel rientro della riga: con i task nascosti si nasconde con lei.
+		var house_icon := Label.new()
+		house_icon.text = HOUSE_ICON_TEXT
+		house_icon.add_theme_font_size_override("font_size", 8)
+		house_icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		house_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		house_icon.custom_minimum_size = Vector2(TASK_ROW_INDENT - TASK_LINE_SEPARATION, 0)
+		_apply_house_icon(house_icon, member)
+		task_line.add_child(house_icon)
 		var task_label := Label.new()
 		task_label.add_theme_font_size_override("font_size", 9)
 		task_label.clip_text = true
@@ -581,10 +585,8 @@ func _place_command_overlay() -> void:
 	if not is_instance_valid(wrapper) or not is_instance_valid(name_row):
 		_clear_command_overlay()
 		return
-	var house_icon: Variant = entry["house_icon"]
+	# Bordo destro della riga del nome (2026-10-31: la casa è scesa sulla riga del task, il posto è dei pulsanti).
 	var right_edge: float = name_row.get_global_rect().end.x
-	if house_icon != null and is_instance_valid(house_icon):
-		right_edge = (house_icon as Control).get_global_rect().position.x
 	var wrapper_rect := wrapper.get_global_rect()
 	var overlay_size := _command_overlay.size
 	_command_overlay.global_position = Vector2(

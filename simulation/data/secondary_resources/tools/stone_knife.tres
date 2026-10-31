@@ -14,7 +14,7 @@ recipe_inputs = {
 "pebble": 1
 }
 recipe_labor = 200.0
-recipe_workstation_types = Array[String](["campfire", "toolmaker_hut"])
+recipe_workstation_types = Array[String](["campfire"])
 tool_categories = Array[int]([1, 4, 5])
 max_uses = 60
 attack_power = 5.0

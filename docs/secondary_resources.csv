@@ -8,4 +8,7 @@ berry,berry.tres,SHRUB,fruit_bearing,Si,FOOD (default),No,20,1.0 (default),4.0,
 acorn,acorn.tres,TREE,wild_fruit,Si,FOOD,No,300,1.0 (default),15.0,
 fruit,fruit.tres,TREE,domesticable_fruit,Si,FOOD (default),Si,30,2.0,40.0,
 eggs,eggs.tres,BIRDS,(nessuno - deriva da BIRDS stessa),Si,FOOD,No,30,3.0,5.0,
-fish_meat,fish_meat.tres,FISH,(nessuno - deriva da FISH stessa),No (consuming_depletes_primary=true),FOOD (default),No,10,5.0,6.0,Nessuna specie ha ancora questo nome in diet_compatibility - non consumata oggi (vedi AnimalConsumptionService). Usata solo da CellRichnessCalculator per il punteggio ricchezza cella di partenza
+fish_meat,fish_meat.tres,(pesce di ruscello - modello da fare),(nessuno),No (consuming_depletes_primary=false: il pesce si toglie quando lo si pesca),RAW_MATERIAL (raw_materials; prefers_recipe_workstation; nessuna idea: si pesca solo con la lenza),No,12,4.0,0.0,"Pesce crudo (2026-10-31): 1 pescato = 1 fish_meat, niente macellazione. Si mangia cotto/essiccato/affumicato (60 calorie). Con 0 calorie non conta piu' nel punteggio di CellRichnessCalculator"
+cooked_fish,cooked_fish.tres,(nessuna - ricetta),(nessuno),No,FOOD (food),No,20,3.0,60.0,"Pesce cotto (2026-10-31): 1 fish_meat al focolare, lavoro 30, legna 1. Come la carne cotta (100 cal, 25 gg, 5 spazio) in proporzione"
+dried_fish,dried_fish.tres,(nessuna - ricetta),(nessuno),No,FOOD (food),No,180,2.0,60.0,"Pesce essiccato (2026-10-31): 1 fish_meat all'essiccatoio, 7 giorni da solo (carne 10)"
+smoked_fish,smoked_fish.tres,(nessuna - ricetta),(nessuno),No,FOOD (food),No,270,3.0,60.0,"Pesce affumicato (2026-10-31): 1 fish_meat all'affumicatoio, lavoro 60, legna 2 (carne 100/3, 360 gg)"

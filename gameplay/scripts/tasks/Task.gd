@@ -574,6 +574,20 @@ func get_activity_description() -> String:
 				var cut_current := mini(int(cut_series.get("done", 0)) + 1, cut_target)
 				return "%s (%s) %d/%d" % [base_text, cut_area.name, cut_current, cut_target]
 			return "%s (%s)" % [base_text, cut_area.name]
+		# Pesca in una zona (2026-10-31): "Pesca (Zona 1) 4/10 pesci", come la caccia in zona; col clic destro solo il nome.
+		"task_fish_name":
+			var fish_area: WorkArea = WorkAreaService.find_by_id(
+				GameSettings.active_game_data, int(context.get(FishZoneService.CONTEXT_WORK_AREA_ID, -1))
+			)
+			if fish_area == null:
+				return base_text
+			var fish_series := FishZoneService.get_series(context)
+			if not fish_series.is_empty():
+				return tr("task_fish_zone_activity_series").format({
+					"task": base_text, "zone": fish_area.name,
+					"delivered": int(fish_series.get("delivered", 0)), "target": int(fish_series.get("target", 0)),
+				})
+			return "%s (%s)" % [base_text, fish_area.name]
 		"task_hunt_zone_name":
 			var hunt_area := HuntZoneService.resolve_task_area(self)
 			if hunt_area == null:

@@ -70,6 +70,7 @@ const SKILL_DISPLAY := {
 	"ritual": {"name": "skill_ritual_label", "short": "skill_ritual_short", "color": Color(0.85, 0.5, 0.9)},
 	"social": {"name": "skill_social_label", "short": "skill_social_short", "color": Color(0.85, 0.85, 0.85)},
 	"medicine": {"name": "skill_medicine_label", "short": "skill_medicine_short", "color": Color(0.4, 0.75, 0.55)},
+	"fishing": {"name": "skill_fishing_label", "short": "skill_fishing_short", "color": Color(0.3, 0.55, 0.8)},
 }
 # Didascalie dei grafici nella scena: percorso del Label -> chiave di traduzione.
 const CHART_CAPTIONS := [

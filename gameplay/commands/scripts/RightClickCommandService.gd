@@ -7,7 +7,7 @@ extends RefCounted
 # ordine; la scena li prova in quell'ordine e il primo che consuma il clic vince (un comando può ancora rinunciare, per
 # esempio il trasporto da un edificio vuoto). Nessun comando = movimento verso il punto. Senza stato.
 
-enum Command { BURY, HUNT, BUTCHER, CUT, QUARRY, PICKUP, BUILD, TRANSPORT }
+enum Command { BURY, HUNT, BUTCHER, CUT, QUARRY, PICKUP, BUILD, TRANSPORT, FISH }
 
 
 # Comandi possibili per `targets`, in ordine di priorità:
@@ -15,6 +15,8 @@ enum Command { BURY, HUNT, BUTCHER, CUT, QUARRY, PICKUP, BUILD, TRANSPORT }
 #   - sulla sagoma di un corpo vince sempre la sepoltura; poi un animale (bersaglio esplicito, si muove), una carcassa;
 #   - taglio e cava solo con l'attrezzo (CHOPPING / DIGGING, in cintura o nello zaino), con la pianta o la roccia
 #     visibile in dettaglio e mai su un edificio con un lavoro da riprendere (è per Costruisci/Demolisci/Ripara);
+#   - pesca (2026-10-31) solo con la lenza (FISHING, in cintura o nello zaino), su un punto del ruscello con pesci visibile
+#     in dettaglio;
 #   - raccolta, poi costruzione (o riparazione) e trasporto sull'edificio.
 static func candidates(ctx: GameContext, worker: HumanIndividual, targets: RightClickTargets, transport_pending: bool) -> Array[Command]:
 	var commands: Array[Command] = []
@@ -39,6 +41,9 @@ static func candidates(ctx: GameContext, worker: HumanIndividual, targets: Right
 			and ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.DIGGING):
 		if FogOfWarVerificationService.is_detail_visible(ctx.live_cells, targets.rock["macro_coords"], targets.rock["position"], day):
 			commands.append(Command.QUARRY)
+	if not targets.stream_fish.is_empty() and ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.FISHING):
+		if FogOfWarVerificationService.is_detail_visible(ctx.live_cells, targets.stream_fish["macro_coords"], targets.stream_fish["position"], day):
+			commands.append(Command.FISH)
 	if not targets.pickup_candidates.is_empty():
 		commands.append(Command.PICKUP)
 	if targets.building != null:

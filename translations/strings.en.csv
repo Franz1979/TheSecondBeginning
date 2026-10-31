@@ -1412,6 +1412,8 @@ building_pebble_path,Pebble path
 build_bar_pebble_path_tooltip,"Pebble path: walking is less tiring (−10%) and a bit faster (+5%), better than packed earth"
 building_stone_ford,Stone ford
 build_bar_stone_ford_tooltip,"Stone ford: flat stones laid across a narrow stream, to cross it faster and less tired. Only placeable on a stretch one microcell wide; R to rotate the row."
+toggle_thirst_tooltip,Thirst
+toggle_thirst_description,"Turns thirst on/off (debug): when off, water does not drop, nobody goes to drink and nobody dies of thirst. Saved with the game."
 pending_no_active_idea,No idea in development
 pending_no_active_idea_detail,Deposited thoughts are lost: choose an idea
 carried_resource_tooltip_firewood,Firewood
@@ -1439,8 +1441,8 @@ warehouse_rule_banquet,Spontaneous banquets
 warehouse_rule_banquet_tooltip,"Banquets the villagers organize on their own: food is brought to the feast ground up to the ground's calorie threshold"
 warehouse_rule_banquet_safe_only,At most a third of the stock
 warehouse_rule_banquet_safe_only_tooltip,"A spontaneous banquet starts only if the storehouses hold at least three times the food it uses"
-warehouse_rule_workstation_food,Cook meat left at workstations
-warehouse_rule_workstation_food_tooltip,"At every inventory, meat left in a campfire or smokehouse becomes a production order there, even when stock is already fine, so it does not rot. Only the product's maximum stops it"
+warehouse_rule_workstation_food,Cook meat and fish left at workstations
+warehouse_rule_workstation_food_tooltip,"At every inventory, meat and fish left in a campfire or smokehouse become a production order there, even when stock is already fine, so they do not rot. Only the product's maximum stops them"
 task_assignment_setting_single_builder,One builder per site
 task_assignment_setting_single_builder_tooltip,"The job queue sends at most one builder per site, even where more could work. By hand you can still send up to the building's maximum."
 building_construction_phase_finishing,"Finishing: {days} more days"
@@ -1624,3 +1626,73 @@ notification_wild_animal_driven_off,"{species}: driven off by {names}"
 task_drive_off_name,Driving off danger
 task_drive_off_step_run,Running at the danger
 task_drive_off_step_wait,Shouting and waving
+carried_resource_tooltip_fish_meat,Raw fish
+carried_resource_tooltip_fishing_line,Fishing line
+tool_category_fishing,fishing
+microcell_inspection_stream,Stream
+microcell_inspection_stream_fish,"Fish: {count}"
+microcell_inspection_stream_no_fish,No fish at this spot
+microcell_inspection_river,River
+task_fish_name,Fishing
+task_fish_step_fish,Fishing with a line
+task_activity_fish,fish
+fish_reject_empty,No fish at this spot of the stream
+fish_reject_reserved,{name} is already fishing at this spot.
+help_hunt_products_menu_link,"Where meat, hides and fish go"
+help_hunt_products_title,"Where meat, hides and fish go"
+help_hunt_products_intro,"When a hunter butchers prey, or a fisher catches a fish, they carry the products to their destination on their own. Where depends on who ordered the hunt: the ones you order (by hand, from the hunt popup or in work areas) go where the destination button says; the ones the stock manager orders on its own cover the minimums first and send the rest where its rule says."
+help_hunt_products_needs_title,"1. Stock manager hunts: minimums first"
+help_hunt_products_needs_intro,"Hunts the stock manager orders on its own (with Warehouse Management active: idea discovered and job board on) first bring meat and hides where they are needed right now:"
+help_hunt_products_needs_without_manager,"Orders already open: smoking orders at the Smokehouse waiting for meat, and drawer ""Produce"" orders waiting for meat or hides (these get them at the storehouse, where the order picks them up)."
+help_hunt_products_needs_with_manager,"The levels you set in the Stock drawer: cooked meat missing at the Campfire, dried meat and hides at the Drying Rack, the reserve of raw meat and hides at the storehouse. Every level below its minimum is a need."
+help_hunt_products_needs_split,"If several places need the same resource, what arrives is split in proportion to how much each one is missing. Whatever is left goes where the rule ""Destination of meat and hides not needed for minimums"" in the Stock drawer says."
+help_hunt_products_destination_title,"2. Hunts you order: the chosen destination"
+help_hunt_products_destination_intro,"Hunts and fishing trips you order ignore minimums and open orders: everything goes to the chosen destination, chosen separately for meat (Campfire, Drying Rack, Smokehouse or Storehouse) and for hides (Drying Rack, Smokehouse or Storehouse):"
+help_hunt_products_destination_without_manager,"The destination button decides: there is only one, shared by the command bar, the hunt popup and the Hunt layer of the drawer, and it applies to hunts ordered from then on. In the command bar it only appears once you have a Drying Rack or a Smokehouse, that is when there is really something to choose."
+help_hunt_products_destination_with_manager,"This holds with Warehouse Management active too: the Stock drawer rule decides only for the manager's hunts, the button only for yours. They are two independent choices: changing one does not touch the other."
+help_hunt_products_destination_default,"If you never chose anything, meat goes to the Campfire and hides to the Storehouse. If the chosen building is not there (not built, demolished or out of service), meat falls back to the Campfire and then the Storehouse, hides to the Storehouse."
+help_hunt_products_rules_title,"Good to know"
+help_hunt_products_rule_only_ingredients,"The Drying Rack and the Smokehouse only accept what they use in their recipes: everything else goes to the storehouse."
+help_hunt_products_rule_always_warehouse,"Bones and sinew always go to the storehouse."
+help_hunt_products_rule_fish,"Fish behaves exactly like meat: same needs and same destination as meat."
+help_hunt_products_rule_no_room,"If the destination has no room, the product goes to the nearest storehouse that accepts it."
+help_hunt_products_example_title,"Example"
+help_hunt_products_example,"The button says: meat to the Drying Rack, and the Smokehouse has an order waiting for 2 meat. A hunter you sent brings 5 meat: all 5 go to the Drying Rack. If instead the stock manager ordered the hunt, 2 go to the Smokehouse for the order and the other 3 where the Stock drawer rule says."
+carried_resource_tooltip_cooked_fish,Cooked fish
+carried_resource_tooltip_dried_fish,Dried fish
+carried_resource_tooltip_smoked_fish,Smoked fish
+skill_fishing_label,Fishing
+skill_fishing_short,Fish.
+work_area_job_fish,Fishing
+unlock_job_fish,Fishing in work areas
+work_area_fish_no_stream,No stream in this area: fishing is not possible here.
+command_bar_fish_tooltip,Fish
+command_bar_fish_no_zone_tooltip,No work area with fishing enabled
+work_area_fish_no_zone,{name}: no work area with fishing enabled.
+work_area_fish_no_spot,No free stream spot with fish in the area
+fish_order_dialog_title,Fishing in work areas
+fish_order_dialog_message,The fisher fishes in the stream in the area and brings the catch home in a single trip once they have the fish still needed or their pack is full; then goes back to fishing until the chosen amount is reached.
+fish_order_dialog_stop_suffix,fish
+fish_destination_button_label,Catch destination
+task_fish_zone_activity_series,{task} ({zone}) {delivered}/{target} fish
+help_fish_command,"Fish in the work areas (command bar, if an area has fishing enabled and the worker has a fishing line)"
+fish_destination_caption,Fish
+fish_destination_tooltip,Catch destination: {name}
+fish_series_stopped,"{name}: fishing stopped at {done}/{total} fish: {reason}"
+fish_series_stop_no_fish,no free stream spot with fish in the area
+drawer_fish_title,Fish
+drawer_fish_button_tooltip,Fishing in the work areas: a free individual with a fishing line takes it from the queue
+drawer_fish_no_zone,No fishing area
+drawer_fish_nobody_has_line,Nobody has a fishing line
+drawer_fish_count_label,Fish to bring home
+drawer_order_fish_row,Fish · {count} fish
+drawer_order_fish_row_one,Fish · 1 fish
+drawer_order_fish_started_row,Fish
+task_assignment_kind_fish,Fishing
+warehouse_fish_level_tooltip,"Raw fish to keep in addition to what is needed for cooked, smoked and dried fish. Processing comes first, then this reserve is filled."
+warehouse_level_needs_building,"A completed building is needed ({building}): the level can be set once it is finished."
+warehouse_level_needs_building_unknown,"A completed building that makes it is needed: the level can be set once it is finished."
+warehouse_raw_derived_tooltip,"Procured automatically: the amount needed is set by the levels of the products that use it (cooked, dried, smoked)."
+warehouse_rule_excess_fish,Destination of fish not needed by minimums
+warehouse_rule_excess_fish_tooltip,"Warehouse fishing: fish first goes where minimums are short (dried fish to the drying rack, cooked fish to the campfire, smokehouse orders), split proportionally. What is left goes here; whatever finds no room goes to storage."
+warehouse_rule_excess_fish_button_tooltip,Fish not needed by minimums: {name}

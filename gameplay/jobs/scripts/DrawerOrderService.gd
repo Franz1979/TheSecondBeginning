@@ -40,6 +40,9 @@ const TYPE_HUNT := "hunt"
 # Ordine "transport" (2026-10-16, rinominato da "dry"): il gestore delle scorte chiede di portare una risorsa dal magazzino
 # a un edificio (essiccatoio, combustibile).
 const TYPE_TRANSPORT := "transport"
+# Pesca nelle zone (2026-10-31, richiesta utente — pesca dal cassetto, passo 4): pesci da portare a casa ("count"), con la
+# destinazione del pescato ("butcher_destination"); serie FishZoneService.CONTEXT_SERIES.
+const TYPE_FISH := "fish"
 
 # Attrezzi che servono per gli ordini di zona e per i comandi corrispondenti della barra (CommandBar.ACTIONS legge questi):
 # caccia = coltello per la macellazione e arma da caccia (dal 2026-10-11 il coltello non è più un'arma), taglio = accetta,
@@ -47,6 +50,8 @@ const TYPE_TRANSPORT := "transport"
 const HUNT_TOOL_CATEGORIES: Array = [TaskTypes.ToolCategory.BUTCHERING, TaskTypes.ToolCategory.HUNTING]
 const CUT_TOOL_CATEGORIES: Array = [TaskTypes.ToolCategory.CHOPPING]
 const QUARRY_TOOL_CATEGORIES: Array = [TaskTypes.ToolCategory.DIGGING]
+# Pesca = lenza (2026-10-31): per ora solo il comando della barra, l'ordine del cassetto arriverà dopo.
+const FISH_TOOL_CATEGORIES: Array = [TaskTypes.ToolCategory.FISHING]
 
 # Id dell'ordine del cassetto nella serie (salvato con lei) o nella zona della raccolta.
 const SERIES_KEY := "drawer_order_id"
@@ -55,12 +60,13 @@ const CARGO_KEY := "drawer_order_cargo"
 # Ordini "Produci" del cassetto dopo tutti gli altri lavori nell'ordine delle righe.
 const PRODUCE_JOB_SORT_OFFSET: float = 4000000.0
 # Righe dei tagli, delle estrazioni, delle raccolte e delle cacce dopo quelle di "Produci".
-const ZONE_JOB_SORT_OFFSET := {TYPE_CUT: 4500000.0, TYPE_QUARRY: 4700000.0, TYPE_GATHER: 4300000.0, TYPE_HUNT: 4900000.0}
+const ZONE_JOB_SORT_OFFSET := {TYPE_CUT: 4500000.0, TYPE_QUARRY: 4700000.0, TYPE_GATHER: 4300000.0, TYPE_HUNT: 4900000.0, TYPE_FISH: 4950000.0}
 
 
 # Taglio, estrazione, raccolta e caccia: ordini su una zona di lavoro.
 static func is_zone_order_type(order_type: String) -> bool:
-	return order_type == TYPE_CUT or order_type == TYPE_QUARRY or order_type == TYPE_GATHER or order_type == TYPE_HUNT
+	return order_type == TYPE_CUT or order_type == TYPE_QUARRY or order_type == TYPE_GATHER or order_type == TYPE_HUNT \
+		or order_type == TYPE_FISH
 
 
 static func tool_categories(order_type: String) -> Array:
@@ -71,6 +77,8 @@ static func tool_categories(order_type: String) -> Array:
 			return CUT_TOOL_CATEGORIES
 		TYPE_QUARRY:
 			return QUARRY_TOOL_CATEGORIES
+		TYPE_FISH:
+			return FISH_TOOL_CATEGORIES
 	return []
 
 
@@ -153,6 +161,8 @@ static func task_zone_series(task: Task) -> Dictionary:
 		series = QuarryZoneService.get_delivery_series(task)
 	if series.is_empty():
 		series = HuntZoneService.get_meat_series(task.context)
+	if series.is_empty():
+		series = FishZoneService.get_series(task.context)
 	return series
 
 
@@ -164,7 +174,7 @@ static func task_zone_info(task: Task) -> Dictionary:
 		return {}
 	var series := task_zone_series(task)
 	if not series.is_empty() and series.has(SERIES_KEY):
-		# Caccia: fatti = carne consegnata ("delivered").
+		# Caccia e pesca: fatti = carne / pesci consegnati ("delivered").
 		return {
 			"order_id": int(series[SERIES_KEY]), "done": int(series.get("done", series.get("delivered", 0))),
 			"series_id": String(series.get("id", "")),
@@ -203,15 +213,17 @@ static func collect_zone_claims(individuals: Array[HumanIndividual]) -> Dictiona
 	return claims
 
 
-# Fatti di una serie con ordine del cassetto: annotati sull'ordine; serie finita = ordine tolto.
+# Fatti di una serie con ordine del cassetto: annotati sull'ordine; serie finita = ordine tolto. Pesca (2026-10-31):
+# fatti = pesci consegnati ("delivered").
 static func note_progress(game_data: GameData, series: Dictionary) -> void:
 	if not series.has(SERIES_KEY):
 		return
 	var order := find(game_data, int(series[SERIES_KEY]))
 	if order.is_empty() or not bool(order.get("taken", false)):
 		return
-	order["done_seen"] = maxi(int(order.get("done_seen", 0)), int(series.get("done", 0)))
-	if int(series.get("done", 0)) >= int(series.get("target", 0)):
+	var done := int(series.get("done", series.get("delivered", 0)))
+	order["done_seen"] = maxi(int(order.get("done_seen", 0)), done)
+	if done >= int(series.get("target", 0)):
 		remove(game_data, int(order["id"]))
 
 
@@ -251,6 +263,8 @@ static func return_order(ctx: GameContext, order: Dictionary, end_if_zone_exhaus
 static func zone_areas(game_data: GameData, order_type: String) -> Array[WorkArea]:
 	if order_type == TYPE_HUNT:
 		return HuntZoneService.list_hunt_work_areas(game_data)
+	if order_type == TYPE_FISH:
+		return FishZoneService.list_fish_work_areas(game_data)
 	if order_type == TYPE_QUARRY:
 		return QuarryZoneService.list_quarry_work_areas(game_data)
 	if order_type == TYPE_GATHER:
@@ -267,6 +281,8 @@ static func zone_areas(game_data: GameData, order_type: String) -> Array[WorkAre
 static func zone_reserved(individuals: Array[HumanIndividual], order_type: String) -> Dictionary:
 	if order_type == TYPE_QUARRY:
 		return QuarryZoneService.collect_reserved_rocks(individuals)
+	if order_type == TYPE_FISH:
+		return FishZoneService.collect_reserved_spots(individuals)
 	if order_type == TYPE_GATHER or order_type == TYPE_HUNT:
 		return {}
 	return CutZoneService.collect_reserved_plants(individuals)
@@ -283,6 +299,9 @@ static func area_has_targets(
 	# Caccia: basta la macrocella viva (le prede si cercano pattugliando, fino a PatrolAreaAction.PATROL_DAYS_WITHOUT_PREY_LIMIT giorni).
 	if order_type == TYPE_HUNT:
 		return ctx.live_cells.has(area.macro_coords)
+	# Pesca: un punto di ruscello con pesci adesso, non prenotato, con una riva raggiungibile (da `individual`, se c'è).
+	if order_type == TYPE_FISH:
+		return ctx.live_cells.has(area.macro_coords) and not FishZoneService.list_available_spots(area, individual, reserved, true).is_empty()
 	if order_type == TYPE_GATHER:
 		if not ctx.live_cells.has(area.macro_coords):
 			return false
@@ -319,6 +338,10 @@ static func fixed_zone_exhausted(ctx: GameContext, order: Dictionary) -> bool:
 	if area == null or not zone_areas(ctx.game_data, order_type).has(area):
 		return true
 	if not ctx.live_cells.has(area.macro_coords):
+		return false
+	# Pesca: i pesci del ruscello tornano col tempo, la zona non si esaurisce (l'ordine torna in coda, spento finché non
+	# ci sono pesci).
+	if order_type == TYPE_FISH:
 		return false
 	return not area_has_targets(ctx, order_type, area, null, zone_reserved(ctx.individuals, order_type), order)
 

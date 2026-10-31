@@ -46,6 +46,7 @@ const ZONE_ORDER_TOOL_BLOCK_KEYS := {
 	TaskTypes.ToolCategory.HUNTING: "drawer_hunt_nobody_has_weapon",
 	TaskTypes.ToolCategory.CHOPPING: "drawer_cut_nobody_has_axe",
 	TaskTypes.ToolCategory.DIGGING: "drawer_quarry_nobody_has_pickaxe",
+	TaskTypes.ToolCategory.FISHING: "drawer_fish_nobody_has_line",
 }
 
 

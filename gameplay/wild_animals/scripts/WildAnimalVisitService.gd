@@ -25,6 +25,11 @@ const PIT_ARRIVAL_RADIUS: float = 2.0
 const VILLAGE_EDGE_DISTANCE: float = 6.0
 const VILLAGE_EDGE_ATTEMPTS: int = 8
 const BORDER_MARGIN: float = 3.0
+# Ingresso e uscita (2026-10-31, richiesta utente): tra BORDER_CANDIDATES punti a caso del bordo il branco prende quello
+# il cui tragitto in linea retta passa vicino a meno edifici del villaggio (entro BORDER_BUILDING_CLEARANCE microcelle):
+# arriva dalla parte libera invece di attraversare le case.
+const BORDER_CANDIDATES: int = 8
+const BORDER_BUILDING_CLEARANCE: float = 4.0
 # Disposizione sciolta attorno al centro del gruppo (microcelle).
 const CLUSTER_RADIUS: float = 1.4
 const CLUSTER_MIN_SPACING: float = 0.6
@@ -52,29 +57,40 @@ const POINTS_PER_ANIMAL_OTHERWISE: float = 0.5
 const AGGRESSION_DROP_PER_VISIT: float = 1.0
 # Giovani (cuccioli compresi, fascia YOUNG) prendono questa quota dei punti di un adulto (2026-10-30, richiesta utente).
 const YOUNG_POINTS_SHARE: float = 0.5
-# Attacco (lupi L4, 2026-10-30, richiesta utente): una persona, chiunque, entrata nel raggio in cui un presente nota le
-# persone (da MIN_NOTICE_RADIUS ad aggressività 0 a MAX_NOTICE_RADIUS a 100, microcelle) mentre il branco è in sosta alla
-# meta viene tirata una volta sola per visita, con probabilità MAX_ATTACK_CHANCE × aggressività/100 del più aggressivo dei
-# presenti (0 = non attacca mai). Riuscito: la persona scappa (L5a, DangerFleeService col profilo DANGER_PROFILE) e tutto
+# Attacco (lupi L4, 2026-10-30; tiro rifatto il 2026-10-31, richiesta utente): un tiro solo per visita, la prima volta
+# che il branco nota una persona che può caricare, in arrivo o in sosta. Nota chi è nel raggio di un presente (da
+# MIN_NOTICE_RADIUS ad aggressività 0 a MAX_NOTICE_RADIUS a 100, microcelle), in linea retta e fuori dagli edifici.
+# Per ogni notato caricabile (non al sicuro vicino al fuoco) probabilità = ATTACK_BASE_CHANCE × aggressività media/100 ×
+# lupi ÷ difesa (tetto ATTACK_CHANCE_CAP): lupi = presenti senza i cuccioli (sotto CUB_MAX_AGE_YEARS), difesa = forza sua
+# e di chi gli sta attorno fuori dagli edifici entro DangerProfile.drive_off_radius (chi verrebbe a scacciarli; adulto
+# sano 1, bambino/ragazzo/ferito/malato WEAK_PERSON_STRENGTH). Bersaglio: quello con la probabilità più alta (il debole
+# più isolato), su cui si tira. Riuscito: la persona scappa (L5a, DangerFleeService col profilo DANGER_PROFILE) e tutto
 # il branco la insegue a balzi con pause (L5b, 2026-10-30, richiesta utente). Al contatto (ATTACK_CONTACT_DISTANCE) la
 # morde (BITE_CONDITION_ID, si sommano) con log e notifica, poi il branco resta fermo BITE_PAUSE_DAYS e riparte.
 # L'inseguimento finisce quando la persona è al riparo, sparisce o muore, dopo MAX_BITES_PER_CHARGE morsi o
 # MAX_CHARGE_DAYS; poi il branco se ne va. In ogni caso la visita è "con attacco".
 const DANGER_PROFILE: String = "predator"
+const ATTACK_BASE_CHANCE: float = 0.5
+const ATTACK_CHANCE_CAP: float = 0.9
+const WEAK_PERSON_STRENGTH: float = 0.5
+const CUB_MAX_AGE_YEARS: int = 1
 const BITE_CONDITION_ID: String = "bite"
 # Pausa dopo un morso (giorni: 2 ore), in cui chi scappa guadagna strada.
 const BITE_PAUSE_DAYS: float = 2.0 / 24.0
 # Tetto dei morsi in una carica: chi non ha un riparo e aspetta allo scoperto non viene morso fino alla morte.
 const MAX_BITES_PER_CHARGE: int = 3
 # Scacciati in gruppo (L6.1, 2026-10-30, richiesta utente): all'inizio della carica gli adulti vicini corrono contro il
-# branco (DangerFleeService.start_drive_off, regole nel profilo DANGER_PROFILE); appena ne sono arrivati quanti servono
-# (finita la loro corsa, o entro DRIVE_OFF_GIVE_UP_DISTANCE microcelle da un presente) il branco rinuncia e se ne va di
-# corsa. Niente punti né calma (visita con attacco), aggressività invariata: il branco annota la cacciata
+# branco (DangerFleeService.start_drive_off, regole nel profilo DANGER_PROFILE); quando ne sono arrivati quanti servono
+# (finita la loro corsa, o entro DRIVE_OFF_GIVE_UP_DISTANCE microcelle da un presente) il branco si ferma e, dopo che
+# hanno gridato insieme per DangerProfile.drive_off_shout_days, rinuncia e se ne va di corsa. Niente punti né calma
+# (visita con attacco), aggressività invariata: il branco annota la cacciata
 # (WildAnimalGroup.driven_off_count/last_driven_off_day), che le visite spontanee (L2) useranno.
 const DRIVE_OFF_GIVE_UP_DISTANCE: float = 3.0
+# Tra due nuove scelte della fuga allo scoperto (giorni: 1 ora), così chi è chiuso contro il bordo o non trova un posto
+# non ci riprova a ogni fotogramma.
+const REDIRECT_COOLDOWN_DAYS: float = 1.0 / 24.0
 const MIN_NOTICE_RADIUS: float = 3.0
 const MAX_NOTICE_RADIUS: float = 6.0
-const MAX_ATTACK_CHANCE: float = 0.5
 # Zona sicura attorno agli edifici che la specie teme (il focolare, 2026-10-30, richiesta utente), microcelle: più
 # stretta della repulsione in sosta (building_reactions, 15 per il lupo coprirebbe mezzo villaggio).
 const FEAR_SAFE_RADIUS: float = 3.0
@@ -135,8 +151,7 @@ static func start_visit(game_data: GameData, world: World, group: WildAnimalGrou
 		visit.target_kind = WildAnimalVisit.TargetKind.VILLAGE_EDGE
 		visit.target_point = _find_village_edge_point(world, visit.macro_coords, center_point)
 	visit.look_point = visit.target_point if pit != null else center_point
-	var entry: Variant = VisitorService.find_border_point(world, visit.macro_coords, visit.target_point,
-		Vector2i(visit.target_point.floor()))
+	var entry: Variant = _pick_quiet_border_point(world, visit.macro_coords, visit.target_point, -1 if pit == null else pit.id)
 	if entry == null:
 		print("[WILD ANIMAL VISITS] %s: nessun ingresso dal bordo di %s" % [group.species, visit.macro_coords])
 		return null
@@ -149,6 +164,8 @@ static func start_visit(game_data: GameData, world: World, group: WildAnimalGrou
 	visit.home_offsets = visit.offsets.duplicate()
 	visit.blocked_test = PathfindingService.blocked_test_for(visit.macro_coords)
 	var wild_rules := _wild_rules(group.species)
+	var today := game_data.get_absolute_day()
+	var aggression_sum := 0.0
 	for i in range(visit.animal_ids.size()):
 		visit.headings.append(visit.facing_direction.angle())
 		visit.moving.append(false)
@@ -160,12 +177,49 @@ static func start_visit(game_data: GameData, world: World, group: WildAnimalGrou
 		var animal := group.find_animal(visit.animal_ids[i])
 		var aggression_share := clampf(animal.aggression, 0.0, 100.0) / 100.0 if animal != null else 0.0
 		visit.notice_radii.append(lerpf(MIN_NOTICE_RADIUS, MAX_NOTICE_RADIUS, aggression_share))
-		visit.attack_chance = maxf(visit.attack_chance, MAX_ATTACK_CHANCE * aggression_share)
+		# Forza del branco per il tiro d'attacco: i cuccioli non contano.
+		if animal != null and animal.get_age_years(today) >= CUB_MAX_AGE_YEARS:
+			visit.attack_wolves += 1
+			aggression_sum += clampf(animal.aggression, 0.0, 100.0)
+	visit.attack_aggression = aggression_sum / float(visit.attack_wolves) if visit.attack_wolves > 0 else 0.0
+	# Ripari e zone del fuoco servono già in arrivo (tiro d'attacco anche per strada).
+	_collect_reaction_sources(visit, world, wild_rules)
 	game_data.wild_animal_visits.append(visit)
 	print("[WILD ANIMAL VISITS] %s: arrivano %d animali %s, meta %s" % [
 		group.species, visit.animal_ids.size(), visit.animal_ids,
 		"fossa #%d" % pit.id if pit != null else "margini del villaggio"])
 	return visit
+
+
+# Punto del bordo per entrare o uscire (vedi BORDER_CANDIDATES): tra punti a caso raggiungibili da `point`, quello il
+# cui tragitto in linea retta verso `point` ha meno edifici della macrocella entro BORDER_BUILDING_CLEARANCE (escluso
+# `ignored_building_id`, la Fossa meta); a parità il primo estratto. null se il bordo non ha punti validi.
+static func _pick_quiet_border_point(world: World, macro_coords: Vector2i, point: Vector2, ignored_building_id: int) -> Variant:
+	var buildings: Array[Vector2] = []
+	for building in world.buildings:
+		if building.macro_x == macro_coords.x and building.macro_y == macro_coords.y and not building.is_demolished \
+				and building.id != ignored_building_id:
+			buildings.append(VisitorService.get_building_point(building))
+	var best: Variant = null
+	var best_count := -1
+	var tried := 0
+	for attempt in range(BORDER_CANDIDATES):
+		var candidate: Variant = VisitorService.find_border_point(world, macro_coords, point, Vector2i(point.floor()), true)
+		if candidate == null:
+			break
+		tried += 1
+		var count := 0
+		for building_point in buildings:
+			var closest := Geometry2D.get_closest_point_to_segment(building_point, candidate, point)
+			if closest.distance_to(building_point) <= BORDER_BUILDING_CLEARANCE:
+				count += 1
+		if best == null or count < best_count:
+			best = candidate
+			best_count = count
+	if best != null:
+		print("[WILD ANIMAL VISITS]   bordo scelto %s: %d edifici sul tragitto (migliore di %d punti a caso)" % [
+			best, best_count, tried])
+	return best
 
 
 # Fossa che riceve rifiuti nella macrocella, la più piena (WasteDisposalService.get_pit_fill); null se nessuna.
@@ -265,7 +319,7 @@ static func advance_all(game_data: GameData, world: World, game_delta: float, fo
 
 
 # Visita appena caricata (2026-10-30, WildAnimalVisit.to_save_data): toglie gli animali non più nel branco, rimette la
-# collisione, fa ripianificare il percorso e, in sosta o in carica, raccoglie di nuovo gli edifici come all'arrivo.
+# collisione, fa ripianificare il percorso e raccoglie di nuovo gli edifici come all'inizio della visita.
 # false = non resta nessuno (o il branco non c'è più): la visita va tolta.
 static func _restore_after_load(visit: WildAnimalVisit, game_data: GameData, world: World) -> bool:
 	visit.needs_restore = false
@@ -285,8 +339,7 @@ static func _restore_after_load(visit: WildAnimalVisit, game_data: GameData, wor
 	visit.path.clear()
 	visit.path_planned = false
 	visit.trail.clear()
-	if visit.phase == WildAnimalVisit.Phase.STAYING or visit.phase == WildAnimalVisit.Phase.CHARGING:
-		_collect_reaction_sources(visit, world, _wild_rules(visit.species))
+	_collect_reaction_sources(visit, world, _wild_rules(visit.species))
 	print("[WILD ANIMAL VISITS] %s: visita ripresa dal salvataggio (fase %d, %d animali)" % [
 		visit.species, visit.phase, visit.animal_ids.size()])
 	return true
@@ -296,10 +349,10 @@ static func _restore_after_load(visit: WildAnimalVisit, game_data: GameData, wor
 static func advance(visit: WildAnimalVisit, world: World, game_delta: float, game_data: GameData, folk: Folk,
 		individuals: Array[HumanIndividual], effects: GameEffects) -> bool:
 	var wild_rules := _wild_rules(visit.species)
-	# Solo in sosta (2026-10-30, richiesta utente): in arrivo la carica partiva lontano dalla meta e si fermava contro la
-	# palizzata.
-	if visit.phase == WildAnimalVisit.Phase.STAYING:
-		var target := _find_attack_target(visit, individuals)
+	# In arrivo e in sosta (2026-10-31, richiesta utente: il branco che attraversa il villaggio deve poter attaccare per
+	# strada). Una palizzata in mezzo toglie la linea retta (_is_line_clear): chi sta dietro non viene notato.
+	if visit.phase == WildAnimalVisit.Phase.STAYING or visit.phase == WildAnimalVisit.Phase.ARRIVING:
+		var target := _find_attack_target(visit, individuals, game_data)
 		if target != null:
 			_start_charge(visit, target, world, game_data, individuals)
 	if visit.phase == WildAnimalVisit.Phase.CHARGING:
@@ -525,7 +578,6 @@ static func _on_target_reached(visit: WildAnimalVisit, world: World, wild_rules:
 	if visit.phase == WildAnimalVisit.Phase.ARRIVING:
 		visit.phase = WildAnimalVisit.Phase.STAYING
 		visit.stay_remaining = randf_range(STAY_DAYS_MIN, STAY_DAYS_MAX)
-		_collect_reaction_sources(visit, world, wild_rules)
 		# Metà parte subito verso un punto da annusare, gli altri annusano dove sono per un poco: non si muovono tutti
 		# insieme. Riferimento del gruppo rivolto alla meta; i posti si riesprimono nel nuovo riferimento (niente salti).
 		var old_angle := visit.facing_direction.angle()
@@ -549,7 +601,7 @@ static func _on_target_reached(visit: WildAnimalVisit, world: World, wild_rules:
 
 
 # Edifici completi della macrocella della visita a cui la specie reagisce (AnimalRules.building_reactions; non elencati
-# = building_avoidance_radius, respinge; 0 = ignorato). Presi una volta all'arrivo: in una sosta di 1-2 giorni gli
+# = building_avoidance_radius, respinge; 0 = ignorato). Presi una volta all'inizio della visita: in pochi giorni gli
 # edifici non cambiano in modo che conti.
 static func _collect_reaction_sources(visit: WildAnimalVisit, world: World, wild_rules: AnimalRules) -> void:
 	visit.reaction_points.clear()
@@ -577,7 +629,7 @@ static func _collect_reaction_sources(visit: WildAnimalVisit, world: World, wild
 		if radius > 0.0 and wild_rules.building_reactions.has(building.building_type_name):
 			visit.safe_points.append(point)
 	if not visit.reaction_points.is_empty():
-		print("[WILD ANIMAL VISITS] %s: %d edifici a cui reagire in sosta" % [visit.species, visit.reaction_points.size()])
+		print("[WILD ANIMAL VISITS] %s: %d edifici a cui reagire" % [visit.species, visit.reaction_points.size()])
 
 
 # Spinta degli edifici su un animale in `from_position` (microcelle): somma dei contributi entro il raggio di ciascuno.
@@ -602,30 +654,80 @@ static func building_push(from_position: Vector2, points: Array[Vector2], radii:
 	return push.limit_length(1.0)
 
 
-# Persona da caricare: la prima della macrocella della visita non ancora tirata, non al sicuro (_is_safe), entro il raggio
-# in cui un presente la nota (notice_radii) e raggiungibile in linea retta (_is_line_clear), per cui il tiro
-# (attack_chance) riesce. Ogni persona notata è tirata una volta sola per visita. null se nessuna.
-static func _find_attack_target(visit: WildAnimalVisit, individuals: Array[HumanIndividual]) -> HumanIndividual:
-	if individuals.is_empty() or visit.attack_chance <= 0.0:
+# Tiro d'attacco della visita (vedi il commento delle costanti d'attacco): fatto una volta sola, appena il branco nota
+# qualcuno che può caricare. Ritorna il bersaglio se il tiro riesce, null altrimenti (o se non c'è ancora nessuno).
+static func _find_attack_target(visit: WildAnimalVisit, individuals: Array[HumanIndividual], game_data: GameData) -> HumanIndividual:
+	if visit.attack_rolled or visit.attack_wolves <= 0 or visit.attack_aggression <= 0.0 or individuals.is_empty():
 		return null
+	var candidates: Array[HumanIndividual] = []
 	for member in individuals:
-		if member.home_macro_coords != visit.macro_coords or visit.attack_rolled_ids.has(member.id):
-			continue
-		if _is_safe(visit, member.position):
-			continue
-		for i in range(visit.animal_ids.size()):
-			var radius: float = visit.notice_radii[i] if i < visit.notice_radii.size() else MIN_NOTICE_RADIUS
-			var animal_position := get_animal_position(visit, i)
-			if animal_position.distance_to(member.position) > radius \
-					or not _is_line_clear(visit, animal_position, member.position):
-				continue
-			visit.attack_rolled_ids[member.id] = true
-			if randf() < visit.attack_chance:
-				return member
-			print("[WILD ANIMAL VISITS] %s: notano #%d %s ma non attaccano (probabilità %d%%)" % [
-				visit.species, member.id, member.name, roundi(visit.attack_chance * 100.0)])
-			break
-	return null
+		if member.home_macro_coords == visit.macro_coords and _is_noticed(visit, member) \
+				and not _in_fear_zone(visit, member.position):
+			candidates.append(member)
+	if candidates.is_empty():
+		return null
+	visit.attack_rolled = true
+	var profile := DangerFleeService.get_profile(DANGER_PROFILE)
+	var defense_radius: float = profile.drive_off_radius if profile != null else MAX_NOTICE_RADIUS
+	# Chi può difendere: fuori dagli edifici, nella macrocella. Forza presa una volta sola per persona.
+	var defenders: Array[HumanIndividual] = []
+	var strengths: Array[float] = []
+	for member in individuals:
+		if member.home_macro_coords == visit.macro_coords \
+				and not visit.shelter_rects.any(func(rect: Rect2) -> bool: return rect.has_point(member.position)):
+			defenders.append(member)
+			strengths.append(_person_strength(member, game_data))
+	var target: HumanIndividual = null
+	var target_chance := -1.0
+	var target_defense := 0.0
+	var candidate_texts: PackedStringArray = []
+	for candidate in candidates:
+		var defense := 0.0
+		var nearby := 0
+		for k in range(defenders.size()):
+			if defenders[k].position.distance_to(candidate.position) <= defense_radius:
+				defense += strengths[k]
+				nearby += 1
+		defense = maxf(defense, WEAK_PERSON_STRENGTH)
+		var chance := minf(ATTACK_CHANCE_CAP,
+			ATTACK_BASE_CHANCE * visit.attack_aggression / 100.0 * float(visit.attack_wolves) / defense)
+		var age_band := HumanIndividualActionService._resolve_age_band(candidate, game_data)
+		candidate_texts.append("#%d %s %s%s difesa %.1f (%d persone) %d%%" % [candidate.id, candidate.name,
+			String(HumanTypes.AgeBand.keys()[age_band]).to_lower(),
+			" ferito/malato" if not candidate.health_conditions.is_empty() else "", defense, nearby, roundi(chance * 100.0)])
+		if chance > target_chance:
+			target = candidate
+			target_chance = chance
+			target_defense = defense
+	var roll := randf()
+	print("[WILD ANIMAL VISITS] %s: tiro d'attacco (%s) su #%d %s — aggressività media %d, %d lupi contro difesa %.1f -> %d%%, uscito %d -> %s" % [
+		visit.species, "in arrivo" if visit.phase == WildAnimalVisit.Phase.ARRIVING else "in sosta", target.id, target.name,
+		roundi(visit.attack_aggression), visit.attack_wolves, target_defense, roundi(target_chance * 100.0),
+		roundi(roll * 100.0), "caricano" if roll < target_chance else "non attaccano in questa visita"])
+	print("[WILD ANIMAL VISITS]   bersaglio: il notato con la probabilità più alta (il debole più isolato; difesa = lui e chi gli sta entro %.0f microcelle fuori dagli edifici); notati caricabili: %s" % [
+		defense_radius, ", ".join(candidate_texts)])
+	return target if roll < target_chance else null
+
+
+# Notata dal branco: nel raggio di un presente (notice_radii), in linea retta (_is_line_clear) e fuori dagli edifici.
+# Controlli dal più economico (2026-10-31): la distanza scarta quasi tutti, gli edifici si guardano solo per chi resta.
+static func _is_noticed(visit: WildAnimalVisit, member: HumanIndividual) -> bool:
+	for i in range(visit.animal_ids.size()):
+		var radius: float = visit.notice_radii[i] if i < visit.notice_radii.size() else MIN_NOTICE_RADIUS
+		var animal_position := get_animal_position(visit, i)
+		if animal_position.distance_squared_to(member.position) <= radius * radius \
+				and _is_line_clear(visit, animal_position, member.position):
+			return not visit.shelter_rects.any(func(rect: Rect2) -> bool: return rect.has_point(member.position))
+	return false
+
+
+# Quanto una persona scoraggia il branco: 1 un adulto sano, WEAK_PERSON_STRENGTH un bambino, un ragazzo, un ferito o un
+# malato (qualunque condizione di salute in corso).
+static func _person_strength(member: HumanIndividual, game_data: GameData) -> float:
+	var age_band := HumanIndividualActionService._resolve_age_band(member, game_data)
+	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD or age_band == HumanTypes.AgeBand.TEENAGER:
+		return WEAK_PERSON_STRENGTH
+	return WEAK_PERSON_STRENGTH if not member.health_conditions.is_empty() else 1.0
 
 
 # Al sicuro: al riparo in un edificio completato (shelter_rects) o in una zona sicura (_in_fear_zone).
@@ -712,8 +814,12 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 	elif visit.shelter_rects.any(func(rect: Rect2) -> bool: return rect.has_point(target.position)):
 		end_reason = "persona al riparo in un edificio"
 	elif visit.defenders_needed > 0 and _defenders_arrived(visit, individuals) >= visit.defenders_needed:
-		_on_driven_off(visit, individuals, game_data, effects)
-		_end_charge(visit, individuals, game_data, world, folk, effects)
+		visit.drive_off_shouting += delta
+		var profile := DangerFleeService.get_profile(DANGER_PROFILE)
+		if profile == null or visit.drive_off_shouting >= profile.drive_off_shout_days:
+			_on_driven_off(visit, individuals, game_data, effects)
+			_end_charge(visit, individuals, game_data, world, folk, effects)
+		# Davanti al gruppo che grida il branco resta fermo: niente inseguimento né morsi.
 		return
 	elif _in_fear_zone(visit, target.position):
 		end_reason = "persona al sicuro vicino al fuoco"
@@ -728,6 +834,10 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 			visit.species, end_reason, _charge_hours(visit), visit.bites, visit.charge_min_distance])
 		_end_charge(visit, individuals, game_data, world, folk, effects)
 		return
+	# Arrivato dove era corso via, senza riparo e coi lupi ancora dietro: sceglie di nuovo (DangerFleeService).
+	visit.redirect_cooldown -= delta
+	if visit.redirect_cooldown <= 0.0 and DangerFleeService.needs_new_escape(target, visit.group_id):
+		_redirect_flight(visit, target, world, game_data)
 	if visit.charge_pause > 0.0:
 		visit.charge_pause -= delta
 		return
@@ -740,6 +850,9 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 		if distance <= ATTACK_CONTACT_DISTANCE:
 			_on_attack_contact(visit, target, game_data, effects)
 			visit.charge_pause = BITE_PAUSE_DAYS
+			# Morso allo scoperto: approfitta della pausa per scegliere di nuovo dove scappare.
+			if DangerFleeService.needs_new_escape(target, visit.group_id, false):
+				_redirect_flight(visit, target, world, game_data)
 			return
 		visit.hop_timers[i] -= delta
 		if visit.hop_timers[i] <= 0.0:
@@ -773,6 +886,18 @@ static func _on_attack_contact(visit: WildAnimalVisit, target: HumanIndividual, 
 	effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_ATTACK,
 		GameContext.tr_text("notification_wild_animal_attack").format({
 			"species": GameContext.tr_text("animal_species_" + wild_species), "name": target.name}))
+
+
+# Il caricato sceglie di nuovo dove scappare (DangerFleeService.needs_new_escape), lontano dal presente più vicino.
+static func _redirect_flight(visit: WildAnimalVisit, target: HumanIndividual, world: World, game_data: GameData) -> void:
+	visit.redirect_cooldown = REDIRECT_COOLDOWN_DAYS
+	var nearest_wolf := visit.position
+	for i in range(visit.animal_ids.size()):
+		var animal_position := get_animal_position(visit, i)
+		if animal_position.distance_to(target.position) < nearest_wolf.distance_to(target.position):
+			nearest_wolf = animal_position
+	DangerFleeService.start_flee(target, DANGER_PROFILE, visit.group_id, nearest_wolf, visit.safe_points, world,
+		game_data, true)
 
 
 # Aiutanti arrivati: corsa finita (gridano sul posto) o entro DRIVE_OFF_GIVE_UP_DISTANCE da un presente.
@@ -928,8 +1053,10 @@ static func _start_leaving(visit: WildAnimalVisit, world: World) -> void:
 			visit.offsets[i] -= shift
 		visit.position = new_center
 	visit.trail.clear()
+	# Uscita dalla parte libera come l'ingresso, ma il branco scacciato scappa dal bordo più vicino.
 	var exit: Variant = VisitorService.find_border_point(world, visit.macro_coords, visit.position,
-		Vector2i(visit.position.floor()))
+		Vector2i(visit.position.floor())) if visit.driven_off \
+		else _pick_quiet_border_point(world, visit.macro_coords, visit.position, visit.pit_building_id)
 	visit.target_point = exit if exit != null else visit.entry_point
 	visit.phase = WildAnimalVisit.Phase.LEAVING
 	print("[WILD ANIMAL VISITS] %s: se ne vanno" % visit.species)

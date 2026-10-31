@@ -382,6 +382,7 @@ func _defer_or_rebuild_grass() -> void:
 
 
 var fish_positions: Array = [] # Array[Vector2i] — STEP 1: valorizzato solo per macrocelle SEA/LAKE
+var stream_fish_counts: Dictionary = {} # Vector2i -> int, pesci del ruscello (set_stream_fish_counts)
 # Posizioni (Vector3i, per TREE/SHRUB) con un blocco di taglio/morte attualmente attivo — vedi
 # IndividualVegetationService.get_cut_positions/get_dead_positions. Disegnate con un marker
 # statico distinto (tronco mozzato / pianta secca, vedi _rebuild_cut_dead_multimeshes) al posto
@@ -1260,6 +1261,16 @@ func _draw_selected_microcell_highlight() -> void:
 func set_fish_positions(positions: Array) -> void:
 	fish_positions = positions
 	_rebuild_fish_multimeshes()
+
+
+# Pesci del ruscello (2026-10-31, pesca — StreamFishService): Vector2i (microcella) -> pesci presenti. Un pesciolino per
+# microcella con pesce, MultiMesh proprio (_rebuild_stream_fish_multimesh); si ricostruisce solo se i conteggi cambiano.
+func set_stream_fish_counts(counts: Dictionary) -> void:
+	if counts == stream_fish_counts:
+		return
+	stream_fish_counts = counts
+	_rebuild_stream_fish_multimesh()
+	queue_redraw()
 	queue_redraw()
 
 
@@ -1399,6 +1410,7 @@ func _draw() -> void:
 	if is_river:
 		_draw_river(grid_size)
 	_draw_streams()
+	_draw_stream_fish()
 
 	_draw_stone_positions()
 	_draw_pebble_positions()
@@ -1560,6 +1572,10 @@ func _draw_buildings() -> void:
 		# Capanna del guaritore (2026-10-25): vista dall'alto, ruota con la porta; fumo solo mentre scalda un infuso (HealerHutShape).
 		if building_type_name == HealerHutShape.TYPE:
 			HealerHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
+			continue
+		# Essiccatoio (2026-10-31): vista dall'alto, ruota con la direzione scelta (DryingRackShape).
+		if building_type_name == DryingRackShape.TYPE:
+			DryingRackShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		# Affumicatoio (2026-10-23): vista dall'alto, ruota con la porta; fumo solo mentre produce (SmokehouseShape).
 		if building_type_name == SmokehouseShape.TYPE:
@@ -4571,6 +4587,17 @@ const FISH_BODY_LENGTH_RANGE := Vector2(2.0, 3.0) # semiasse lungo (direzione di
 const FISH_BODY_WIDTH_RANGE := Vector2(0.8, 1.2)  # semiasse corto (fianchi)
 const FISH_TAIL_LENGTH_RATIO: float = 0.6 # relativo a body_length
 const FISH_TAIL_WIDTH_RATIO: float = 1.3  # la coda è più larga della sezione del corpo
+# Pesci del ruscello (2026-10-31, richiesta utente — "sembrano sassi"): UN pesciolino stilizzato per microcella con
+# pesce (non uno per pesce), sagoma unica corpo a lente + coda a forcella, ombra blu scura semitrasparente nell'acqua.
+# Guarda a destra o a sinistra (hash) con una piccola inclinazione. Mesh unitaria lunga 2 (da -1 a +1), scalata a
+# STREAM_FISH_SIZE px per semi-lunghezza.
+const COLOR_STREAM_FISH := Color(0.08, 0.20, 0.36, 0.8)
+const STREAM_FISH_SIZE: float = 2.0
+const STREAM_FISH_MAX_TILT: float = 0.3
+const STREAM_FISH_BODY_SEGMENTS := 8
+
+var _stream_fish_mesh: ArrayMesh
+var _stream_fish_multimesh: MultiMesh
 
 var _fish_body_mesh: ArrayMesh
 var _fish_tail_mesh: ArrayMesh
@@ -4637,12 +4664,68 @@ func _rebuild_fish_multimeshes() -> void:
 	_apply_transforms(_fish_tail_multimesh, tail_transforms)
 
 
+func _rebuild_stream_fish_multimesh() -> void:
+	if _stream_fish_mesh == null:
+		_stream_fish_mesh = _build_stream_fish_mesh()
+		_stream_fish_multimesh = _make_multimesh(_stream_fish_mesh, false)
+	var transforms: Array = []
+	for pos in stream_fish_counts:
+		var center := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE) + Vector2(CELL_SIZE / 2.0, CELL_SIZE / 2.0)
+		var facing_left: bool = hash(pos * 3 + Vector2i(17, 5)) % 2 == 0
+		var tilt: float = lerp(-STREAM_FISH_MAX_TILT, STREAM_FISH_MAX_TILT, float(hash(pos * 11 + Vector2i(2, 29)) % 1000) / 1000.0)
+		# Verso sinistra = specchio orizzontale (non una rotazione di PI, che lo capovolgerebbe).
+		var fish_transform := Transform2D(tilt, Vector2.ZERO).scaled_local(
+			Vector2(-STREAM_FISH_SIZE if facing_left else STREAM_FISH_SIZE, STREAM_FISH_SIZE))
+		fish_transform.origin = center
+		transforms.append(fish_transform)
+	_apply_transforms(_stream_fish_multimesh, transforms)
+
+
+# Sagoma unitaria del pesciolino del ruscello, muso a destra (x = +1): corpo a lente da x = -0.5 a +1 e coda a forcella
+# da -0.5 a -1. Due ventagli (corpo attorno all'origine, coda attorno al peduncolo) nella stessa mesh: la coda a
+# forcella non è visibile tutta dall'origine, un ventaglio solo la disegnerebbe sbagliata.
+static func _build_stream_fish_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_color(COLOR_STREAM_FISH)
+
+	var body := PackedVector2Array()
+	for i in range(STREAM_FISH_BODY_SEGMENTS + 1):
+		var t: float = float(i) / float(STREAM_FISH_BODY_SEGMENTS)
+		body.append(Vector2(lerp(1.0, -0.5, t), -0.40 * sin(PI * t) * (0.7 + 0.3 * t)))
+	for i in range(1, STREAM_FISH_BODY_SEGMENTS):
+		var t: float = float(i) / float(STREAM_FISH_BODY_SEGMENTS)
+		body.append(Vector2(lerp(-0.5, 1.0, t), 0.34 * sin(PI * t) * (1.0 - 0.3 * t)))
+	_add_fan(st, Vector2.ZERO, body)
+
+	var tail := PackedVector2Array([
+		Vector2(-0.45, -0.10), Vector2(-1.0, -0.42), Vector2(-0.82, 0.0), Vector2(-1.0, 0.42), Vector2(-0.45, 0.10),
+	])
+	_add_fan(st, Vector2(-0.45, 0.0), tail)
+	return st.commit()
+
+
+static func _add_fan(st: SurfaceTool, center: Vector2, points: PackedVector2Array) -> void:
+	for i in range(points.size()):
+		var next: Vector2 = points[(i + 1) % points.size()]
+		st.add_vertex(Vector3(center.x, center.y, 0.0))
+		st.add_vertex(Vector3(points[i].x, points[i].y, 0.0))
+		st.add_vertex(Vector3(next.x, next.y, 0.0))
+
+
 func _draw_fish_positions() -> void:
 	if _fish_body_multimesh != null and _fish_body_multimesh.instance_count > 0:
 		draw_multimesh(_fish_body_multimesh, null)
 		_debug_draw_primitive_count += 1
 	if _fish_tail_multimesh != null and _fish_tail_multimesh.instance_count > 0:
 		draw_multimesh(_fish_tail_multimesh, null)
+		_debug_draw_primitive_count += 1
+
+
+# Subito dopo il ruscello, sotto tutto il resto: il pesciolino sta nell'acqua.
+func _draw_stream_fish() -> void:
+	if _stream_fish_multimesh != null and _stream_fish_multimesh.instance_count > 0:
+		draw_multimesh(_stream_fish_multimesh, null)
 		_debug_draw_primitive_count += 1
 
 

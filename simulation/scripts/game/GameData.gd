@@ -306,6 +306,10 @@ var stock_max_levels: Dictionary = {}
 # (HuntProductAllocationService). I valori di prima (una voce sola) si leggono come coppia (ButcherDestinationService.parse).
 # Salvata da GameSaveService ("stock_excess_meat_destination"); partita nuova e salvataggi vecchi: il magazzino.
 var stock_excess_meat_destination: String = "warehouse"
+# Regola "Pesce in eccesso" (2026-10-31): come stock_excess_meat_destination, per le pesche del gestore scorte (conta solo
+# la parte della carne della coppia). Salvata da GameSaveService ("stock_excess_fish_destination"); partita nuova e
+# salvataggi vecchi: il magazzino.
+var stock_excess_fish_destination: String = "warehouse"
 # Regola "Combustibile negli edifici che lo usano" (2026-10-16, FuelStockService): accesa/spenta e minimo per tipo di
 # edificio (nome tipo -> combustibile in fuel_value) cambiato nel cassetto; un tipo assente usa BuildingRules.fuel_stock_min.
 # Salvati da GameSaveService ("stock_fuel_rule_enabled", "stock_fuel_min_by_type"); partita nuova: spenta, nessun cambio.
@@ -337,6 +341,9 @@ var job_board_take_bag: bool = false
 # Regola "Prendi l'otre se disponibile" (2026-10-31, richiesta utente — ToolFetchService.try_take_waterskin): come la sacca,
 # per l'otre (ThirstService). Salvata da GameSaveService ("job_board_take_waterskin"); partita nuova e salvataggi vecchi: spenta.
 var job_board_take_waterskin: bool = false
+# Sete attiva (2026-10-31, debug — ThirstService.is_enabled, slot 💧 della barra di debug). Salvata ("thirst_enabled");
+# partita nuova e salvataggi vecchi: accesa.
+var thirst_enabled: bool = true
 # Regola di assegnazione "Indossa i capi disponibili" (2026-10-19, richiesta utente — ToolFetchService.try_wear_apparel):
 # chi si libera con uno slot del vestiario vuoto va a prendere in deposito i capi che gli mancano e li indossa. Separata
 # dalla sacca. Salvata da GameSaveService ("job_board_wear_apparel"); partita nuova e salvataggi vecchi: spenta.

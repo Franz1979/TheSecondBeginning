@@ -331,6 +331,10 @@ func _draw_shape() -> void:
 	if building_type_name == HealerHutShape.TYPE:
 		HealerHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
 		return
+	# Essiccatoio (2026-10-31): lo stesso disegno della mappa, semitrasparente.
+	if building_type_name == DryingRackShape.TYPE:
+		DryingRackShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
+		return
 	# Affumicatoio (2026-10-23): lo stesso disegno della mappa, semitrasparente, senza fumo.
 	if building_type_name == SmokehouseShape.TYPE:
 		SmokehouseShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)

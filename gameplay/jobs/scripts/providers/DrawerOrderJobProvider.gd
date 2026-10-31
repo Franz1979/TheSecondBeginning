@@ -196,6 +196,9 @@ static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary,
 	elif order_type == DrawerOrderService.TYPE_HUNT:
 		row_key = "drawer_order_hunt_row"
 		icon_key = "hunt"
+	elif order_type == DrawerOrderService.TYPE_FISH:
+		row_key = "drawer_order_fish_row"
+		icon_key = "fish"
 	# Avviato (2026-10-11): il nome senza conto, "fatti/totale" va nella seconda riga della voce ("progress").
 	var progress := ""
 	if is_started:
@@ -421,6 +424,24 @@ static func zone_rejection(ctx: GameContext, worker: HumanIndividual, job: Dicti
 		task = TaskBuilderService.build_haul_zone_task(zone, trips > 1, 0)
 	elif order_type == DrawerOrderService.TYPE_HUNT:
 		task = TaskBuilderService.build_hunt_zone_task(area.id)
+	elif order_type == DrawerOrderService.TYPE_FISH:
+		# Pesca (2026-10-31): il punto dell'ordine, con una riva che lui raggiunge (reach_target non la controlla).
+		var spot: Dictionary = pick["spot"]
+		var fish_macro: Vector2i = spot["macro_coords"]
+		var fish_cell: LiveMacroCell = ctx.live_cells.get(fish_macro)
+		if fish_cell == null:
+			return "nessuna zona valida"
+		var bank_reachable := false
+		started = JobBoardTimingService.now() if timing else 0
+		for bank in FishZoneService.bank_cells(fish_cell, spot["position"]):
+			if HaulZoneService.is_cell_reachable(worker, fish_macro, bank):
+				bank_reachable = true
+				break
+		if timing:
+			JobBoardTimingService.add("pesca: riva raggiungibile", started)
+		if not bank_reachable:
+			return "riva non raggiungibile"
+		task = TaskBuilderService.build_fish_task(worker, fish_macro, spot["position"])
 	elif order_type == DrawerOrderService.TYPE_QUARRY:
 		var rock: Dictionary = pick["rock"]
 		task = TaskBuilderService.build_quarry_task(worker, rock["macro_coords"], rock["position"], area.id)

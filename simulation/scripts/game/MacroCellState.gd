@@ -47,6 +47,10 @@ var stone_positions_generated: bool = false # separato dall'array vuoto: disting
 # quota iniziale di ogni roccia non si salva: la ricava RockStoneService dalla posizione, sul totale ricostruito
 # (quantità attuale + somma di questo campo). PERSISTITO (GameSaveService/GameLoadService, chiave assente se vuoto).
 var quarried_stone_by_position: Dictionary = {}
+# Pesce dei ruscelli pescato (2026-10-31, pesca — StreamFishService): Vector2i (microcella) -> {"count": pesci rimasti,
+# "since": giorno assoluto da cui conta il ritorno}. Solo le microcelle pescate: assente = piena. PERSISTITO
+# (GameSaveService/GameLoadService, chiave assente se vuoto).
+var stream_fish_taken: Dictionary = {}
 # Cache RUNTIME della pietra iniziale per roccia (RockStoneService): Vector2i -> int, costruita alla prima richiesta e
 # mai invalidata (posizioni e resource_quantity[ROCK] non cambiano). MAI persistita.
 var rock_stone_cache: Dictionary = {}
@@ -335,12 +339,12 @@ var eggs_harvested_by_lot: Dictionary = {}
 # di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0 (vedi
 # AnimalConsumptionService), momento in cui dedicated_space[GRASS] viene davvero decrementato.
 var pending_grass_space_debt: float = 0.0
-# Stesso meccanismo di pending_grass_space_debt sopra, per le altre due fonti a consumo diretto
-# (consuming_depletes_primary = true, nessuno stock proprio — vedi SecondaryResourceRules):
-# fish_meat decrementa water_dedicated_space[FISH], bird_meat decrementa
-# terrestrial_dedicated_space[BIRDS]. Campi separati (non un Dictionary unico) per restare
-# coerenti con lo schema già in uso per GRASS — nessun consumatore reale li tocca ancora (vedi
-# AnimalConsumptionService._consume_fish_meat/_consume_bird_meat).
+# Stesso meccanismo di pending_grass_space_debt sopra, sul pesce (water_dedicated_space[FISH]) e
+# sugli uccelli (terrestrial_dedicated_space[BIRDS]) consumati dagli animali. Campi separati (non
+# un Dictionary unico) per restare coerenti con lo schema già in uso per GRASS — nessun
+# consumatore reale li tocca ancora (vedi AnimalConsumptionService._consume_fish_meat/
+# _consume_bird_meat). Dal 2026-10-31 fish_meat è pesce crudo per gli umani: il pesce si toglie
+# alla pesca, non quando lo si mangia, quindi questo debito non riguarda il cibo umano.
 var pending_fish_space_debt: float = 0.0
 var pending_bird_space_debt: float = 0.0
 

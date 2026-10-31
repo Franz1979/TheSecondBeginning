@@ -11,6 +11,7 @@ extends RefCounted
 const TRANSPORT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/transport.tres"
 const CUT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/cut.tres"
 const QUARRY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/quarry.tres"
+const FISH_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/fish.tres"
 const REPAIR_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/repair.tres"
 const PRODUCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/produce.tres"
 const DELIVER_OUTPUT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/deliver_output.tres"
@@ -181,6 +182,38 @@ static func build_quarry_task(
 	if not series.is_empty():
 		task.context[QuarryZoneService.CONTEXT_SERIES] = series.duplicate()
 	return task
+
+
+# Task Fish (Walk alla riva + Fish) sulla microcella di ruscello `fish_position` della macrocella `macro_coords`
+# (2026-10-31, pesca manuale). Il pescatore sta DENTRO la microcella del ruscello (calpestabile), sul bordo che dà sulla
+# riva (richiesta utente: non più dalla microcella accanto): la riva è, tra le 4 microcelle accanto, quella più vicina a
+# `worker` che non è ruscello, non è bloccata e (nella sua macrocella) è raggiungibile; il punto è spostato dal centro
+# verso di lei di BANK_SIDE_SHIFT. Nessuna riva = il centro della microcella.
+const BANK_SIDE_SHIFT: float = 0.3
+static func build_fish_task(worker: HumanIndividual, macro_coords: Vector2i, fish_position: Vector2i) -> Task:
+	var definition := TaskDefinitionCache.get_definition(FISH_TASK_DEFINITION_PATH)
+	if definition == null:
+		return null
+	var offset := macro_offset(worker, macro_coords)
+	var bank_direction := Vector2i.ZERO
+	var cell := PathfindingService.get_live_cell(macro_coords)
+	if cell != null:
+		var from := Vector2i(floori(worker.position.x), floori(worker.position.y))
+		var same_cell := macro_coords == worker.home_macro_coords
+		var best_distance := INF
+		# Rive possibili: FishZoneService.bank_cells, la stessa regola della scelta del punto nelle zone.
+		for bank in FishZoneService.bank_cells(cell, fish_position):
+			if same_cell and not PathfindingService.is_reachable(cell, from, bank):
+				continue
+			var distance := (Vector2(bank) + offset).distance_squared_to(worker.position)
+			if distance < best_distance:
+				best_distance = distance
+				bank_direction = bank - fish_position
+	return TaskFactory.build_task(definition, {
+		"target_position": Vector2(fish_position) + offset + Vector2(0.5, 0.5) + Vector2(bank_direction) * BANK_SIDE_SHIFT,
+		"fish_macro_coords": macro_coords,
+		"fish_position": fish_position,
+	})
 
 
 # Repair Task per `worker` su `building` (Walk fino a un punto della microcella, poi Repair).

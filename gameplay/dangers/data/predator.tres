@@ -17,3 +17,5 @@ drive_off_min_helpers = 2
 drive_off_threats_per_helper = 2
 drive_off_stop_distance = 2.0
 drive_off_age_bands = Array[int]([3, 4, 5])
+shelter_blocked_angle_degrees = 45.0
+drive_off_shout_days = 0.041667

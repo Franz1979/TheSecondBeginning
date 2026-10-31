@@ -27,6 +27,8 @@ const PAGE_SHORTCUTS := "shortcuts"
 const PAGE_FOG_OF_WAR := "fog_of_war"
 const PAGE_ERA_ADVANCEMENT := "era_advancement"
 const PAGE_BUILDING_MATERIALS := "building_materials"
+# Pagina "Dove vanno carne, pelli e pesce" (2026-10-31, richiesta utente): bisogni prima, poi la destinazione.
+const PAGE_HUNT_PRODUCTS := "hunt_products"
 # Pagina "Edifici" (2026-10-07): elenco dei tipi costruibili, e scheda di un tipo con la pagina
 # BUILDING_PAGE_PREFIX + <tipo> (es. "building:hut").
 const PAGE_BUILDINGS := "buildings"
@@ -144,6 +146,8 @@ func _show_page(page: String) -> void:
 			content_label.text = _build_era_advancement_text()
 		PAGE_BUILDING_MATERIALS:
 			content_label.text = _build_building_materials_text()
+		PAGE_HUNT_PRODUCTS:
+			content_label.text = _build_hunt_products_text()
 		PAGE_BUILDINGS:
 			content_label.text = _build_buildings_list_text()
 		PAGE_RESOURCES:
@@ -256,6 +260,7 @@ func _build_main_menu_text() -> String:
 		"[url=%s]%s[/url]" % [PAGE_FOG_OF_WAR, tr("help_fog_of_war_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_ERA_ADVANCEMENT, tr("help_era_advancement_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_BUILDING_MATERIALS, tr("help_building_materials_menu_link")],
+		"[url=%s]%s[/url]" % [PAGE_HUNT_PRODUCTS, tr("help_hunt_products_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_BUILDINGS, tr("help_buildings_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_TOOLS, tr("help_tools_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_RESOURCES, tr("help_resources_menu_link")],
@@ -264,7 +269,8 @@ func _build_main_menu_text() -> String:
 
 
 func _build_fog_of_war_text() -> String:
-	# I tre livelli usano [ol]/[li] (lista numerata) invece di prefissare "1."/"2."/"3." dentro le
+	# I tre livelli usano [ol] (lista numerata: una voce per riga, il BBCode di Godot non ha [li]) invece di prefissare
+	# "1."/"2."/"3." dentro le
 	# chiavi tradotte — la formattazione è responsabilità del codice, il testo tradotto resta puro
 	# senza markup da dover replicare/mantenere in ogni lingua.
 	var lines: Array[String] = [
@@ -273,11 +279,11 @@ func _build_fog_of_war_text() -> String:
 		tr("help_fog_of_war_intro"),
 		"",
 		tr("help_fog_of_war_memory_intro"),
-		"[ol]",
-		"[li]%s[/li]" % tr("help_fog_of_war_tier_detail"),
-		"[li]%s[/li]" % tr("help_fog_of_war_tier_resources"),
-		"[li]%s[/li]" % tr("help_fog_of_war_tier_terrain"),
-		"[/ol]",
+		"[ol]%s[/ol]" % "\n".join([
+			tr("help_fog_of_war_tier_detail"),
+			tr("help_fog_of_war_tier_resources"),
+			tr("help_fog_of_war_tier_terrain"),
+		]),
 		tr("help_fog_of_war_full_forget"),
 		"",
 		tr("help_fog_of_war_persistence"),
@@ -321,6 +327,45 @@ func _build_building_materials_text() -> String:
 	return "\n".join(lines)
 
 
+# Pagina "Dove vanno carne, pelli e pesce" (2026-10-31, richiesta utente — spiegare bene al giocatore le due regole di
+# ButcherDestinationService e HuntProductAllocationService). Dallo stesso giorno: le cacce del gestore scorte coprono
+# prima i minimi, quelle ordinate dal giocatore vanno solo alla destinazione del pulsante. Solo documentazione.
+func _build_hunt_products_text() -> String:
+	var lines: Array[String] = [
+		"[b]%s[/b]" % tr("help_hunt_products_title"),
+		"",
+		tr("help_hunt_products_intro"),
+		"",
+		"[b]%s[/b]" % tr("help_hunt_products_needs_title"),
+		tr("help_hunt_products_needs_intro"),
+		"[ul]%s[/ul]" % "\n".join([
+			tr("help_hunt_products_needs_without_manager"),
+			tr("help_hunt_products_needs_with_manager"),
+		]),
+		tr("help_hunt_products_needs_split"),
+		"",
+		"[b]%s[/b]" % tr("help_hunt_products_destination_title"),
+		tr("help_hunt_products_destination_intro"),
+		"[ul]%s[/ul]" % "\n".join([
+			tr("help_hunt_products_destination_without_manager"),
+			tr("help_hunt_products_destination_with_manager"),
+		]),
+		tr("help_hunt_products_destination_default"),
+		"",
+		"[b]%s[/b]" % tr("help_hunt_products_rules_title"),
+		"[ul]%s[/ul]" % "\n".join([
+			tr("help_hunt_products_rule_only_ingredients"),
+			tr("help_hunt_products_rule_always_warehouse"),
+			tr("help_hunt_products_rule_fish"),
+			tr("help_hunt_products_rule_no_room"),
+		]),
+		"",
+		"[b]%s[/b]" % tr("help_hunt_products_example_title"),
+		tr("help_hunt_products_example"),
+	]
+	return "\n".join(lines)
+
+
 func _build_shortcuts_text() -> String:
 	# Aggiornata 2026-09-13 (richiesta utente — "ultimamente ne sono stati aggiunti un bel po' ma
 	# non è stata aggiornata la lista"): mancavano B (piazzamento istantaneo), il secondo significato
@@ -357,6 +402,7 @@ func _build_shortcuts_text() -> String:
 		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.HUNT_KEY), tr("help_hunt_command")],
 		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.CUT_KEY), tr("help_cut_command")],
 		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.QUARRY_KEY), tr("help_quarry_command")],
+		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.FISH_KEY), tr("help_fish_command")],
 		"[b]%s[/b] — %s" % [OS.get_keycode_string(CommandBar.AUTO_ZONE_KEY), tr("help_auto_zone_command")],
 		"[b]L[/b] — %s" % tr("help_cycle_map_layer"),
 		"[b]Esc[/b] — %s" % tr("help_escape_cancel"),

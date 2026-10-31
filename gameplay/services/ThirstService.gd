@@ -21,8 +21,11 @@ extends RefCounted
 # Effetti (2026-10-30): salute in calo ogni giorno sotto EMERGENCY_THRESHOLD, di più a zero
 # (HumanVitalsInteractionService); dopo DEHYDRATION_DAYS giorni a zero si muore subito (apply_drain → GameSimulation).
 
-# Interruttore unico: spento = la sete non cala e nessuno beve, come prima.
-const THIRST_ENABLED := true
+# Interruttore unico: spento = la sete non cala e nessuno beve, come prima. Dal 2026-10-31 (richiesta utente — giocare
+# partite avanzate nate senza ruscelli) è GameData.thirst_enabled, salvato, commutato dallo slot 💧 della barra di debug.
+static func is_enabled() -> bool:
+	var game_data: GameData = GameSettings.active_game_data
+	return game_data == null or game_data.thirst_enabled
 
 const SIP_THRESHOLD: float = 0.60
 const EMERGENCY_THRESHOLD: float = 0.25
@@ -50,7 +53,7 @@ const _NEIGHBORS := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-
 # giro che c'è già. Sotto SIP_THRESHOLD con acqua nell'otre beve dall'otre (la cintura si guarda solo in quel caso); a
 # zero, l'avviso e il tempo di disidratazione. true = DEHYDRATION_DAYS raggiunti: chi chiama lo fa morire.
 static func apply_drain(individual: HumanIndividual, game_delta: float, effects: GameEffects) -> bool:
-	if not THIRST_ENABLED or game_delta <= 0.0 or individual.daily_water_consumption <= 0.0 or individual.thirst_in_water_band:
+	if not is_enabled() or game_delta <= 0.0 or individual.daily_water_consumption <= 0.0 or individual.thirst_in_water_band:
 		return false
 	individual.current_thirst = maxf(individual.current_thirst - individual.daily_water_consumption * game_delta, 0.0)
 	if individual.waterskin_water > 0.0 and _ratio(individual) < SIP_THRESHOLD:
@@ -69,7 +72,7 @@ static func apply_drain(individual: HumanIndividual, game_delta: float, effects:
 
 # Giorni che restano prima di morire di sete, -1 se non è a zero (barra rossa di HumanIndividualInfoPanel).
 static func dehydration_days_left(individual: HumanIndividual) -> float:
-	if not THIRST_ENABLED or individual.daily_water_consumption <= 0.0 or individual.current_thirst > 0.0:
+	if not is_enabled() or individual.daily_water_consumption <= 0.0 or individual.current_thirst > 0.0:
 		return -1.0
 	return maxf(DEHYDRATION_DAYS - individual.dehydration_elapsed, 0.0)
 
@@ -115,7 +118,7 @@ static func waterskin_capacity(individual: HumanIndividual) -> float:
 # Le microcelle bloccate (rocce, edifici) si scartano al momento della ricerca, non qui.
 static func build_water_access(cell: LiveMacroCell, macro_world: World) -> void:
 	var access: Dictionary = {}
-	if THIRST_ENABLED and cell.macro_cell != null and cell.macro_cell.terrain_base != GameTypes.TerrainBase.WATER:
+	if cell.macro_cell != null and cell.macro_cell.terrain_base != GameTypes.TerrainBase.WATER:
 		for position in cell.stream_positions:
 			access[position] = true
 			_add_neighbors(access, position, {})
@@ -165,16 +168,16 @@ static func _ratio(individual: HumanIndividual) -> float:
 
 
 static func needs_drink(individual: HumanIndividual) -> bool:
-	return THIRST_ENABLED and individual.daily_water_consumption > 0.0 and _ratio(individual) < SIP_THRESHOLD
+	return is_enabled() and individual.daily_water_consumption > 0.0 and _ratio(individual) < SIP_THRESHOLD
 
 
 static func needs_emergency_drink(individual: HumanIndividual) -> bool:
-	return THIRST_ENABLED and individual.daily_water_consumption > 0.0 and _ratio(individual) < EMERGENCY_THRESHOLD
+	return is_enabled() and individual.daily_water_consumption > 0.0 and _ratio(individual) < EMERGENCY_THRESHOLD
 
 
 # Salute persa oggi per la sete (HumanVitalsInteractionService.apply_daily_interaction): 0 sopra EMERGENCY_THRESHOLD.
 static func daily_health_loss(individual: HumanIndividual) -> float:
-	if not THIRST_ENABLED or individual.daily_water_consumption <= 0.0:
+	if not is_enabled() or individual.daily_water_consumption <= 0.0:
 		return 0.0
 	if individual.current_thirst <= 0.0:
 		return NO_WATER_DAILY_HEALTH_LOSS
@@ -204,7 +207,7 @@ static func refill(individual: HumanIndividual) -> void:
 # microcella nuova, due lookup (fascia, rive). Alla riva torna pieno a qualsiasi livello e l'otre si riempie; l'icona
 # solo se mancava acqua (la cintura si guarda solo a corpo pieno, sulla riva).
 static func try_sip(individual: HumanIndividual, effects: GameEffects) -> void:
-	if not THIRST_ENABLED or individual.daily_water_consumption <= 0.0:
+	if not is_enabled() or individual.daily_water_consumption <= 0.0:
 		return
 	var microcell := Vector2i(floori(individual.position.x), floori(individual.position.y))
 	if microcell == individual.thirst_last_microcell:

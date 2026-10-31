@@ -15,6 +15,9 @@ extends Resource
 @export var flee_to_safe_points: bool = true
 # Distanza dal punto sicuro a cui fermarsi (microcelle): dentro la zona sicura, senza finire sul fuoco.
 @export var safe_point_stop_distance: float = 1.5
+# Un riparo si scarta se il pericolo è più vicino di chi scappa al riparo e sta davanti a lui, entro questi gradi
+# dalla linea verso il riparo (sulla strada). Di lato o dietro non conta.
+@export var shelter_blocked_angle_degrees: float = 45.0
 
 @export_group("No shelter")
 # Senza un riparo raggiungibile (o con il pericolo più vicino al riparo di chi scappa): corre via, nella direzione
@@ -36,6 +39,10 @@ extends Resource
 @export var drive_off_min_helpers: int = 2
 @export var drive_off_threats_per_helper: int = 2
 @export var drive_off_stop_distance: float = 2.0
+# Grida prima della resa (2026-10-31, richiesta utente: con gli aiutanti già vicini il pericolo spariva subito): il
+# pericolo rinuncia solo dopo che quanti servono hanno gridato insieme davanti a lui per questi giorni (1 ora); intanto
+# resta fermo.
+@export var drive_off_shout_days: float = 1.0 / 24.0
 # Chi può aiutare: fasce d'età ammesse.
 @export var drive_off_age_bands: Array[HumanTypes.AgeBand] = [
 	HumanTypes.AgeBand.FERTILE_ADULT, HumanTypes.AgeBand.MATURE_ADULT, HumanTypes.AgeBand.OLD]

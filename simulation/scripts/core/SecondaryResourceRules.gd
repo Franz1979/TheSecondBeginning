@@ -37,8 +37,10 @@ extends Resource
 # e chi ignora questo campo, verificato nel codice, non inventato): SOLO le risorse del modello a
 # stock aggregato via CaloricCalculator.SECONDARY_SOURCES — oggi berry/acorn/fruit/eggs. Qualunque
 # altra risorsa lo IGNORA, pur avendolo presente ed export-abile nel proprio .tres:
-#   - forage/fish_meat/bird_meat: consuming_depletes_primary=true, stateless per costruzione,
-#     nessuno stock da resettare;
+#   - forage: consuming_depletes_primary=true, stateless per costruzione, nessuno stock da
+#     resettare;
+#   - fish_meat (2026-10-31): pesce crudo, materia prima come meat — il pesce si toglie quando lo
+#     si pesca (1 pescato = 1 fish_meat), nessuno stock da resettare;
 #   - pebble/stick/plant_fiber/mushroom/wild_vegetables (modello "capacità per lotto", vedi
 #     TerrainScatteredResourceService): non hanno mai avuto un ciclo legato a questo campo — il
 #     loro raccolto (dove esiste, vedi reset_all_lot_harvests_on_season_rise) si azzera quando il
@@ -60,11 +62,9 @@ extends Resource
 # disponibile (vedi CaloricCalculator.get_available_units) — un consumo di X unità da questa
 # fonte deve scalare 1:1 la risorsa fisica collegata (resource_quantity[GRASS] per FORAGE, lo
 # stock derivato per i frutti), MAI moltiplicando/dividendo di nuovo per questo multiplier.
-# PROMEMORIA esplicito (da NON perdere quando arriverà un vero consumo umano, oggi nessuno
-# esiste ancora): fish_meat e bird_meat sono consuming_depletes_primary = true esattamente come
-# FORAGE, quindi consumare fish_meat DEVE scalare resource_quantity[FISH] e consumare bird_meat
-# DEVE scalare resource_quantity[BIRDS] — non sono risorse secondarie con stock proprio (a
-# differenza di eggs/berry/acorn/fruit), il consumo va sulla risorsa primaria stessa.
+# fish_meat (2026-10-31) NON è più a consumo diretto: è pesce crudo (consuming_depletes_primary =
+# false, 0 calorie, come meat) e il pesce si toglie dalla sua fonte al momento della PESCA, non
+# quando lo si mangia. bird_meat non esiste più (diventata meat, 2026-09-26).
 
 @export_group("Classification")
 # Se questa risorsa è utilizzabile come materiale da costruzione per edifici (BuildingRules.

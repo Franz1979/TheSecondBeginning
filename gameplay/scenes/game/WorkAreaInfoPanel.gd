@@ -181,6 +181,11 @@ func _job_check_box(job_id: String) -> CheckBox:
 		area_changed.emit(_area)
 		_rebuild()
 	)
+	# Pesca senza ruscello nella zona (2026-10-31, richiesta utente): spunta spenta con il motivo; se è già messa (zona
+	# spostata, salvataggio vecchio) resta attiva, così si può togliere.
+	if job_id == FishZoneService.FISH_JOB and not _area.enabled_jobs.has(job_id) and not FishZoneService.area_has_stream(_area):
+		check_box.disabled = true
+		check_box.tooltip_text = TooltipText.wrap(tr("work_area_fish_no_stream"))
 	return check_box
 
 

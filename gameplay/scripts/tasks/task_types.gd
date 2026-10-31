@@ -130,6 +130,8 @@ enum ActionType {
 	WAIT_FOR_SAFETY,
 	# DRINK (2026-10-30, sete — DrinkAction, drink.tres/emergency_drink.tres) — IN CODA (37).
 	DRINK,
+	# FISH (2026-10-31, pesca con la lenza nel ruscello — FishAction, fish.tres) — IN CODA (38).
+	FISH,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,
@@ -168,4 +170,7 @@ enum ToolCategory {
 	# WATERSKIN (2026-10-30, richiesta utente — otre, waterskin.tres) aggiunto IN FONDO, stesso motivo: una riserva d'acqua
 	# in cintura (SecondaryResourceRules.water_capacity), letta da ThirstService. Nessuna Action la richiede.
 	WATERSKIN,
+	# FISHING (2026-10-31, richiesta utente — lenza, fishing_line.tres) aggiunto IN FONDO, stesso motivo: senza uno
+	# strumento da pesca non si pesca (niente idea, come la caccia con la lancia). Nessuna Action la richiede ancora.
+	FISHING,
 }

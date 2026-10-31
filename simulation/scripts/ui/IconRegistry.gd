@@ -117,6 +117,13 @@ const RESOURCE_ICON_NODES := {
 	"smoked_hide_bag": preload("res://simulation/scripts/ui/SmokedHideBagIcon.gd"),
 	# Otre (2026-10-30, sete): pelle affumicata col collo legato, il tappo e una goccia.
 	"waterskin": preload("res://simulation/scripts/ui/WaterskinIcon.gd"),
+	# Pesca (2026-10-31): lenza (matassina di corda con lo stecchino d'osso) e pesce crudo (trota di profilo).
+	"fishing_line": preload("res://simulation/scripts/ui/FishingLineIcon.gd"),
+	"fish_meat": preload("res://simulation/scripts/ui/FishMeatIcon.gd"),
+	# Pesce cotto, essiccato e affumicato (2026-10-31): la sagoma del pesce crudo con i propri colori e dettagli.
+	"cooked_fish": preload("res://simulation/scripts/ui/CookedFishIcon.gd"),
+	"dried_fish": preload("res://simulation/scripts/ui/DriedFishIcon.gd"),
+	"smoked_fish": preload("res://simulation/scripts/ui/SmokedFishIcon.gd"),
 	# Vestiario (2026-10-11, richiesta utente): pelliccia di base (pelle col pelo, toni grigi) e, per il secondo livello,
 	# pelli lavorate — vedi FurDressIcon/FurCapIcon/WorkedHideDressIcon/WorkedHideCapIcon. Gli altri capi usano ApparelIcon.
 	"fur_dress": preload("res://simulation/scripts/ui/FurDressIcon.gd"),
@@ -309,6 +316,8 @@ const COMMAND_ICONS := {
 	"cut": "🪓",
 	# "quarry" (2026-10-05, task Quarry): sulla mappa vale l'icona disegnata (CommandPickaxeIcon); questa per le righe del popup.
 	"quarry": "⛏️",
+	# "fish" (2026-10-31, pesca): sulla mappa vale l'icona disegnata (CommandFishIcon); questa per le righe del popup.
+	"fish": "🎣",
 	# "heal" (2026-10-25, cura dei malati allettati): solo emoji, nessuna icona disegnata.
 	"heal": "🩹",
 	"task_rejected": "❌",
@@ -424,6 +433,8 @@ const COMMAND_ICON_NODES := {
 	"cut": preload("res://simulation/scripts/ui/CommandAxeIcon.gd"),
 	# "quarry" (2026-10-05, task Quarry): piccone, lo stesso disegno della demolizione (CommandPickaxeIcon.gd).
 	"quarry": preload("res://simulation/scripts/ui/CommandPickaxeIcon.gd"),
+	# "fish" (2026-10-31, pesca): pesciolino all'amo, vedi CommandFishIcon.gd.
+	"fish": preload("res://simulation/scripts/ui/CommandFishIcon.gd"),
 	# "drink" (2026-10-30, sete): goccia, vedi CommandDropIcon.gd; sopra la testa di chi beve (HumanIndividualView).
 	"drink": preload("res://simulation/scripts/ui/CommandDropIcon.gd"),
 	"task_rejected": preload("res://simulation/scripts/ui/CommandRejectedIcon.gd"),

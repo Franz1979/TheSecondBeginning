@@ -144,6 +144,7 @@ func save_game_to_json(
 			"stock_max_levels": game_data.stock_max_levels,
 			"stock_min_food_days": game_data.stock_min_food_days,
 			"stock_excess_meat_destination": game_data.stock_excess_meat_destination,
+			"stock_excess_fish_destination": game_data.stock_excess_fish_destination,
 			"stock_fuel_rule_enabled": game_data.stock_fuel_rule_enabled,
 			"stock_fuel_min_by_type": game_data.stock_fuel_min_by_type,
 			"stock_toolkit_rule_enabled": game_data.stock_toolkit_rule_enabled,
@@ -153,6 +154,7 @@ func save_game_to_json(
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
 			"job_board_take_bag": game_data.job_board_take_bag,
 			"job_board_take_waterskin": game_data.job_board_take_waterskin,
+			"thirst_enabled": game_data.thirst_enabled,
 			"job_board_wear_apparel": game_data.job_board_wear_apparel,
 			"real_seconds_in_game": game_data.real_seconds_in_game,
 			"real_seconds_playing": game_data.real_seconds_playing,
@@ -273,6 +275,14 @@ func save_game_to_json(
 			for pos in state.quarried_stone_by_position.keys():
 				quarried_data.append({"x": pos.x, "y": pos.y, "amount": int(state.quarried_stone_by_position[pos])})
 			state_data["quarried_stone_by_position"] = quarried_data
+		# Pesce dei ruscelli pescato (2026-10-31, StreamFishService): solo le microcelle pescate, {x,y,count,since}.
+		# Assente se vuoto.
+		if not state.stream_fish_taken.is_empty():
+			var stream_fish_data: Array = []
+			for pos in state.stream_fish_taken.keys():
+				var entry: Dictionary = state.stream_fish_taken[pos]
+				stream_fish_data.append({"x": pos.x, "y": pos.y, "count": int(entry["count"]), "since": int(entry["since"])})
+			state_data["stream_fish_taken"] = stream_fish_data
 		# Stesso principio sopra: assenti se vuote. Popolate solo dopo che MicroCellRenderer ha
 		# disegnato la cella almeno una volta (vedi MacroCellState.tree_virtual_birth_year). Chiave
 		# Vector3i (x, y lotto + "i" indice individuo locale): "i" va salvato insieme a x/y,
@@ -738,6 +748,7 @@ func save_game_to_json(
 				"skill_ritual": individual.skill_ritual,
 				"skill_social": individual.skill_social,
 				"skill_medicine": individual.skill_medicine,
+				"skill_fishing": individual.skill_fishing,
 				# Capacità di trasporto (2026-09-08, richiesta utente) — lo zaino è l'unico stato "posseduto"
 				# da un individuo che sparirebbe silenziosamente al reload senza persistenza (stesso
 				# principio di dependent_child_id sopra: un possesso, non un dato ricalcolabile al volo).

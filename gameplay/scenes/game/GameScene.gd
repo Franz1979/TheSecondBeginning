@@ -946,6 +946,8 @@ func _ready() -> void:
 		push_warning("Nessun game_data condiviso: creo un anno locale di riserva.")
 		game_data = GameData.new()
 	sim.game_data = game_data
+	# Slot 💧 della barra di debug (2026-10-31): stato della sete di questa partita (GameData.thirst_enabled).
+	debug_bar.set_thirst_enabled(game_data.thirst_enabled)
 	sim.world = macro_world
 	sim.live_cells = live_cells
 	# Pavimento delle zone (2026-10-01) su tutte le memorie con zone, anche di macrocelle non vive: prune_stale gira su
@@ -2341,6 +2343,7 @@ func _collect_right_click_targets(event: InputEvent) -> RightClickTargets:
 	targets.carcass_pile = _find_carcass_pile_at_click()
 	targets.plant = vegetation_selector_controller.find_live_at_mouse(live_cells)
 	targets.rock = stone_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
+	targets.stream_fish = _stream_fish_at_click()
 	targets.pickup_candidates = _resolve_pickup_candidates(event, game_data.get_absolute_day())
 	var building_hit := building_selector_controller.try_select(
 		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
@@ -2363,6 +2366,8 @@ func _run_right_click_command(command: RightClickCommandService.Command, targets
 			return _right_click_cut(targets)
 		RightClickCommandService.Command.QUARRY:
 			return _right_click_quarry(targets)
+		RightClickCommandService.Command.FISH:
+			return _right_click_fish(targets)
 		RightClickCommandService.Command.PICKUP:
 			return _right_click_pickup(targets)
 		RightClickCommandService.Command.BUILD:
@@ -3689,6 +3694,9 @@ var command_panel: Control = null
 const COMMAND_PANEL_COLOR := Color(0.5, 0.33, 0.15, 1.0)
 # Cacciatori in attesa della conferma del dialog di Caccia (PickupChoiceDialog in modalità caccia, 2026-10-01).
 var _hunt_dialog_hunters: Array[HumanIndividual] = []
+# Pescatori in attesa della conferma dello stesso dialog, aperto per la Pesca nelle zone (2026-10-31, _order_fish): con
+# pescatori in attesa la conferma va a _on_fish_order_confirmed.
+var _fish_dialog_workers: Array[HumanIndividual] = []
 # Spazio tra pannello comandi e BuildBar sulla riga in basso.
 const BOTTOM_ROW_SEPARATION: int = 12
 # Riga in basso a due livelli (2026-10-03): riga dei comandi sopra la BuildBar quando non stanno affiancati.
@@ -3805,6 +3813,7 @@ func _order_hunt(selected: Array[HumanIndividual]) -> void:
 	# Dialog della carne (2026-10-01); la scelta della zona segue alla conferma (_on_hunt_order_confirmed).
 	# Il dialog è condiviso con Raccogli: nessuna raccolta in attesa mentre è aperto per la caccia.
 	_pickup_dialog_work_area_workers = []
+	_fish_dialog_workers = []
 	_hunt_dialog_hunters = hunters
 	pickup_choice_dialog.popup_anchor = _popup_anchor
 	_sync_butcher_destination_button()
@@ -3846,6 +3855,10 @@ func _build_butcher_destination_options() -> Array[Dictionary]:
 # `butcher_destination` (2026-10-03): dove portare i prodotti della macellazione, ricordata nella partita
 # (GameData.last_butcher_destination) e scritta nella serie, che la passa a ogni caccia.
 func _on_hunt_order_confirmed(meat_target: int, butcher_destination: String = "") -> void:
+	# Dialog aperto per la Pesca (2026-10-31): stessa conferma, altro comando.
+	if not _fish_dialog_workers.is_empty():
+		_on_fish_order_confirmed(meat_target, butcher_destination)
+		return
 	UserOptions.hunt_zone_meat_target = meat_target
 	UserOptions.save_to_disk()
 	# Dal 2026-10-09 il popup non sceglie più: vale la destinazione condivisa del pulsante.
@@ -3983,6 +3996,8 @@ func _command_zone_rejection(action_id: StringName) -> String:
 			has_zone = QuarryZoneService.has_quarry_work_area(game_data)
 		CutZoneService.CUT_JOB:
 			has_zone = CutZoneService.has_cut_work_area(game_data)
+		FishZoneService.FISH_JOB:
+			has_zone = FishZoneService.has_fish_work_area(game_data)
 	return "" if has_zone else tr(String(action.get("no_zone_tooltip_key", "")))
 
 
@@ -4030,6 +4045,10 @@ func _sync_excess_meat_destination() -> void:
 		return
 	_warehouse_panel.set_excess_meat_destination(
 		true, _butcher_destination_entry(WarehouseManagerService.stock_hunt_destination(_game_context())), _build_butcher_destination_options()
+	)
+	# Regola "Pesce in eccesso" (2026-10-31): stesse opzioni, solo il pulsante della carne in modalità pesce.
+	_warehouse_panel.set_excess_fish_destination(
+		true, _butcher_destination_entry(WarehouseManagerService.stock_fish_destination(_game_context())), _build_butcher_destination_options()
 	)
 
 
@@ -4179,6 +4198,78 @@ func _report_quarry_series_stopped(worker: HumanIndividual, pile_ref: Dictionary
 func _on_quarry_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
 	var effects := GameEffects.new()
 	WorkFollowUpService.continue_quarry_series(_game_context(), worker, series, effects)
+	_apply_effects(effects)
+
+
+# --- Pesca nelle zone (2026-10-31, richiesta utente — pesca nelle aree di lavoro, passo 2) ---
+# Come _order_quarry per età e lenza (stessi controlli del bottone, come sicurezza) e come _order_hunt per il dialog:
+# lo stesso della caccia (pesci da consegnare tra FishZoneService.TARGET_OPTIONS, destinazione condivisa della carne,
+# zona automatica), con i testi della pesca. La zona segue alla conferma (_on_fish_order_confirmed).
+func _order_fish(selected: Array[HumanIndividual]) -> void:
+	var workers: Array[HumanIndividual] = []
+	for member in selected:
+		var age_band := _resolve_age_band(member)
+		if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+			_report_assign_rejection(member, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG, "task_activity_fish")
+			continue
+		var tool_rejection := _command_tool_rejection(member, CommandBar.FISH_ACTION)
+		if tool_rejection != "":
+			_report_command_rejection(member, tool_rejection)
+			continue
+		workers.append(member)
+	if workers.is_empty():
+		return
+	if not FishZoneService.has_fish_work_area(game_data):
+		for worker in workers:
+			_report_command_rejection(worker, tr("command_bar_fish_no_zone_tooltip"))
+		return
+	_pickup_dialog_work_area_workers = []
+	_hunt_dialog_hunters = []
+	_fish_dialog_workers = workers
+	pickup_choice_dialog.popup_anchor = _popup_anchor
+	_sync_butcher_destination_button()
+	var opened := pickup_choice_dialog.open_hunt_dialog(
+		tr("fish_order_dialog_title"), tr("fish_order_dialog_message"), FishZoneService.TARGET_OPTIONS,
+		UserOptions.fish_zone_target, true
+	)
+	if not opened:
+		_fish_dialog_workers = []
+
+
+# Conferma del dialog della Pesca: valore ricordato, destinazione condivisa della carne, poi la zona come per la caccia —
+# automatica (per ciascuno) o scelta a mano tra le zone con un punto di pesca disponibile.
+func _on_fish_order_confirmed(target: int, butcher_destination: String = "") -> void:
+	UserOptions.fish_zone_target = target
+	UserOptions.save_to_disk()
+	if butcher_destination == "":
+		butcher_destination = ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)
+	game_data.last_butcher_destination = butcher_destination
+	var workers: Array[HumanIndividual] = []
+	for worker in _fish_dialog_workers:
+		if human_individuals.has(worker):
+			workers.append(worker)
+	_fish_dialog_workers = []
+	if workers.is_empty() or not FishZoneService.has_fish_work_area(game_data):
+		return
+	if UserOptions.work_area_auto_zone:
+		var effects := GameEffects.new()
+		FishCommandService.assign_auto_zone_fish(_game_context(), workers, target, butcher_destination, effects)
+		_apply_effects(effects)
+		return
+	var valid_ids := FishCommandService.fish_pick_area_ids(_game_context(), workers)
+	if valid_ids.is_empty():
+		for worker in workers:
+			_report_command_rejection(worker, tr("work_area_fish_no_spot"))
+		return
+	_enter_work_area_pick_mode(workers, {
+		"job": FishZoneService.FISH_JOB, "target": target, "butcher_destination": butcher_destination,
+	}, valid_ids)
+
+
+# Pesca successiva della serie di pesca in zona (2026-10-31 — WorkFollowUpService.continue_fish_series).
+func _on_fish_zone_series_continue_requested(worker: HumanIndividual, series: Dictionary) -> void:
+	var effects := GameEffects.new()
+	WorkFollowUpService.continue_fish_series(_game_context(), worker, series, effects)
 	_apply_effects(effects)
 
 
@@ -4434,6 +4525,13 @@ func _handle_work_area_pick_input(event: InputEvent) -> bool:
 				elif String(order.get("job", "")) == CutZoneService.CUT_JOB:
 					# Taglio in zona (2026-10-06): serie di "count" tagli, il primo sulla pianta scelta.
 					_assign_work_area_cut(worker, area, int(order.get("count", CutZoneService.COUNT_DEFAULT)))
+				elif String(order.get("job", "")) == FishZoneService.FISH_JOB:
+					# Pesca in zona (2026-10-31): serie fino a "target" pesci, la prima sessione sul punto scelto.
+					var fish_effects := GameEffects.new()
+					FishCommandService.assign_work_area_fish(_game_context(), worker, area, FishZoneService.make_series(
+						area.id, int(order.get("target", FishZoneService.TARGET_DEFAULT)), String(order.get("butcher_destination", ""))
+					), fish_effects)
+					_apply_effects(fish_effects)
 				else:
 					_assign_work_area_gather(worker, area, order)
 		return true
@@ -5086,6 +5184,43 @@ func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id
 	_apply_effects(effects)
 
 
+# Pesca col clic destro (2026-10-31, FishCommandService): la microcella di ruscello sotto il mouse, se ha pesci.
+func _stream_fish_at_click() -> Dictionary:
+	var hit := _resolve_microcell_at_click()
+	if hit.is_empty():
+		return {}
+	var cell: LiveMacroCell = live_cells.get(hit["macro_coords"])
+	var lot: Vector2i = hit["lot"]
+	if cell == null or cell.macro_state == null or not cell.stream_positions.has(lot):
+		return {}
+	if StreamFishService.get_fish(cell.macro_state, cell.stream_positions, cell.macro_x, cell.macro_y, lot, game_data.get_absolute_day()) <= 0:
+		return {}
+	return {"macro_coords": hit["macro_coords"], "position": lot}
+
+
+func _right_click_fish(targets: RightClickTargets) -> bool:
+	var effects := GameEffects.new()
+	FishCommandService.assign_fish(_game_context(), individual, targets.stream_fish, effects)
+	_apply_effects(effects)
+	return true
+
+
+func _has_fish_step(task: Task) -> bool:
+	for step in task.steps:
+		if step is FishAction:
+			return true
+	return false
+
+
+# Pesce preso (FishAction.stream_fish_caught, 2026-10-31): ridisegno dei pesciolini della cella.
+func _on_stream_fish_caught(macro_coords: Vector2i, _fish_position: Vector2i) -> void:
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	if cell == null or cell.renderer == null:
+		return
+	cell.renderer.set_stream_fish_counts(StreamFishService.get_fish_counts(
+		cell.macro_state, cell.stream_positions, cell.macro_x, cell.macro_y, game_data.get_absolute_day()))
+
+
 # Pipottino che ha già in lavoro uno step per cui `matches` è vero (2026-10-24, 5B.3 —
 # ExtractionCommandService.find_target_holder).
 func _find_target_holder(matches: Callable) -> HumanIndividual:
@@ -5488,13 +5623,28 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 	var rock_present: bool = cell != null and RockStoneService.is_standing_rock(cell.macro_state, lot)
 
 	var lines: Array[String] = []
+	# Acqua della microcella (2026-10-31, pesca): ruscello con i suoi pesci (StreamFishService) o fascia del fiume, prima
+	# di tutto il resto — prima il ruscello finiva in "Cella senza risorse".
+	var water_lines: Array[String] = []
+	if cell != null and cell.stream_positions.has(lot):
+		water_lines.append(tr("microcell_inspection_stream"))
+		# Solo la quantità, come le altre risorse dell'ispezione (2026-10-31, richiesta utente: il massimo non è scritto altrove).
+		var fish := StreamFishService.get_fish(cell.macro_state, cell.stream_positions, cell.macro_x, cell.macro_y, lot, current_absolute_day)
+		if fish > 0:
+			water_lines.append(tr("microcell_inspection_stream_fish").format({"count": fish}))
+		else:
+			water_lines.append(tr("microcell_inspection_stream_no_fish"))
+	elif cell != null and cell.river_positions.has(lot):
+		water_lines.append(tr("microcell_inspection_river"))
+	lines.append_array(water_lines)
 	if lot_candidates.is_empty() and not rock_present and not tree_present and not shrub_present and grass_present:
 		# Solo erba, nessuna risorsa raccoglibile (richiesta esplicita utente) — messaggio unico,
 		# sostituisce la doppia sezione risorse/vegetazione sotto (sarebbe stata "Risorse: (nessuna)"
 		# + "Vegetazione: Erba", più rumoroso del necessario per il caso più comune di tutti).
 		lines.append(tr("microcell_inspection_only_grass"))
 	elif lot_candidates.is_empty() and not rock_present and not tree_present and not shrub_present and not grass_present:
-		lines.append(tr("microcell_inspection_empty"))
+		if water_lines.is_empty():
+			lines.append(tr("microcell_inspection_empty"))
 	else:
 		# Vegetazione PRIMA delle risorse raccoglibili (2026-09-17, richiesta utente) — "cosa c'è"
 		# prima di "cosa raccolgo", ordine invertito rispetto al passo precedente.
@@ -9224,12 +9374,15 @@ func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
 func _sync_drawer_cut_available() -> void:
 	if _task_assignment_panel == null or not is_instance_valid(_task_assignment_panel):
 		return
-	for order_type in [DrawerOrderService.TYPE_CUT, DrawerOrderService.TYPE_QUARRY, DrawerOrderService.TYPE_GATHER, DrawerOrderService.TYPE_HUNT]:
+	for order_type in [DrawerOrderService.TYPE_CUT, DrawerOrderService.TYPE_QUARRY, DrawerOrderService.TYPE_GATHER, DrawerOrderService.TYPE_HUNT, DrawerOrderService.TYPE_FISH]:
 		var is_quarry: bool = order_type == DrawerOrderService.TYPE_QUARRY
 		# Caccia (2026-10-09): una zona con la caccia attiva e qualcuno in età da caccia con il coltello (cintura o zaino).
-		if order_type == DrawerOrderService.TYPE_HUNT:
+		# Pesca (2026-10-31): una zona con la pesca e qualcuno con la lenza (addosso o in deposito).
+		if order_type == DrawerOrderService.TYPE_HUNT or order_type == DrawerOrderService.TYPE_FISH:
 			if DrawerOrderService.zone_areas(game_data, order_type).is_empty():
-				_task_assignment_panel.set_zone_order_available(order_type, false, tr("drawer_hunt_no_zone"))
+				_task_assignment_panel.set_zone_order_available(
+					order_type, false, tr("drawer_fish_no_zone" if order_type == DrawerOrderService.TYPE_FISH else "drawer_hunt_no_zone")
+				)
 			elif _zone_order_tool_blocked_reason(order_type) != "":
 				_task_assignment_panel.set_zone_order_available(order_type, false, _zone_order_tool_blocked_reason(order_type))
 			else:
@@ -9291,6 +9444,14 @@ func _on_drawer_zone_order_requested(kind: String) -> void:
 			int(HuntZoneService.MEAT_TARGET_OPTIONS.max()), UserOptions.hunt_zone_meat_target, UserOptions.work_area_auto_zone,
 			[], {}, DRAWER_HUNT_MEAT_STEP
 		)
+	elif kind == DrawerOrderService.TYPE_FISH:
+		# Pesci da portare a casa come nel popup della barra (stessi valori e valore ricordato) e la destinazione del pescato.
+		_sync_butcher_destination_button()
+		_task_assignment_panel.open_zone_order_overlay(
+			kind, tr("drawer_fish_title"), tr("drawer_fish_count_label"), int(FishZoneService.TARGET_OPTIONS.min()),
+			int(FishZoneService.TARGET_OPTIONS.max()), UserOptions.fish_zone_target, UserOptions.work_area_auto_zone,
+			[], {}, DRAWER_HUNT_MEAT_STEP
+		)
 	elif kind == DrawerOrderService.TYPE_GATHER:
 		# La stessa scelta del popup "Raccogli nelle zone di lavoro" (risorse presenti nelle zone con la raccolta), poi i viaggi.
 		_task_assignment_panel.open_zone_order_overlay(
@@ -9349,6 +9510,12 @@ func _on_drawer_zone_order_submitted(kind: String, count: int, zone_id: int) -> 
 		)
 		UserOptions.hunt_zone_meat_target = clamped
 		extra = {"butcher_destination": ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)}
+	elif kind == DrawerOrderService.TYPE_FISH:
+		clamped = clampi(
+			snappedi(count, DRAWER_HUNT_MEAT_STEP), int(FishZoneService.TARGET_OPTIONS.min()), int(FishZoneService.TARGET_OPTIONS.max())
+		)
+		UserOptions.fish_zone_target = clamped
+		extra = {"butcher_destination": ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)}
 	elif kind == DrawerOrderService.TYPE_GATHER:
 		var choice: Dictionary = _task_assignment_panel.get_gather_choice() if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel) else {}
 		if choice.is_empty():
@@ -9405,6 +9572,8 @@ const DIRECT_COMMAND_EXCLUDED_TASK_NAMES: Array[String] = [
 	"task_rest_name", "task_emergency_rest_name", "task_emergency_restock_name", "task_leisure_rest_name",
 	"task_leisure_restock_name", "task_leisure_rite_name", "task_wander_name", "task_play_name", "task_daydream_name",
 	"task_explore_name",
+	# Sete (2026-10-31, richiesta utente): bere e bere urgente sono bisogni, non comandi.
+	ThirstService.DRINK_TASK_NAME, ThirstService.EMERGENCY_DRINK_TASK_NAME,
 ]
 # Rito religioso spontaneo: escluso come gli svaghi tranne che dalle righe "In corso", dove compare come "Automatico".
 const LEISURE_RITE_TASK_NAME := "task_leisure_rite_name"
@@ -9597,7 +9766,10 @@ func _task_creator_text(task: Task) -> String:
 #   - bisogni: la task attiva è un bisogno (riposo, riposo d'emergenza, rifornimento urgente);
 #   - svago: tutti gli altri — task di svago (is_idle_activity, o oziare, rifornirsi, rito spontaneo, passeggiata, gioco,
 #     sogni a occhi aperti, esplorazione) e, se capita, nessuna task (2026-10-09: niente più voce "Liberi").
-const WORKLOAD_NEED_TASK_NAMES: Array[String] = ["task_rest_name", "task_emergency_rest_name", "task_emergency_restock_name"]
+# Bere urgente (2026-10-31) come il rifornimento urgente; il bere normale resta nello svago.
+const WORKLOAD_NEED_TASK_NAMES: Array[String] = [
+	"task_rest_name", "task_emergency_rest_name", "task_emergency_restock_name", ThirstService.EMERGENCY_DRINK_TASK_NAME,
+]
 
 
 func _sync_drawer_workload(_board_jobs: Array[Dictionary], in_progress_entries: Array[Dictionary]) -> void:
@@ -9962,6 +10134,7 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		target.skill_leadership, target.skill_builder, target.skill_management,
 		target.skill_transporter, target.skill_gathering, target.skill_cognition,
 		target.skill_hunting, target.skill_crafting, target.skill_ritual, target.skill_social, target.skill_medicine,
+		target.skill_fishing,
 		queued_task_descriptions
 	)
 	# Titolo header consolidato (2026-09-13, richiesta utente — "perché la riga del center è
@@ -12335,6 +12508,9 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 			occupied_for_fish[pos] = true
 		fish_positions = fish_service.generate_positions(cell.macro_state, occupied_for_fish)
 	cell.renderer.set_fish_positions(fish_positions)
+	# Pesci del ruscello (2026-10-31): il renderer ricostruisce solo se i conteggi sono cambiati.
+	cell.renderer.set_stream_fish_counts(StreamFishService.get_fish_counts(
+		cell.macro_state, cell.stream_positions, cell.macro_x, cell.macro_y, game_data.get_absolute_day()))
 	_veg_timings_ms["3_fish_positions"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
 	_step_start_usec = Time.get_ticks_usec()
@@ -13402,6 +13578,11 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			flora_daily_updates_enabled = not flora_daily_updates_enabled
 			debug_bar.set_slot_toggled(0, flora_daily_updates_enabled)
 			GameSettings.game_scene_flora_updates_enabled = flora_daily_updates_enabled
+		# Sete (2026-10-31, richiesta utente): spenta = niente calo, sorsi, bevute né morte di sete (ThirstService).
+		&"toggle_thirst":
+			if game_data != null:
+				game_data.thirst_enabled = not game_data.thirst_enabled
+				debug_bar.set_thirst_enabled(game_data.thirst_enabled)
 		&"world_debug":
 			_on_world_debug_pressed()
 		&"macro_cell_debug":
@@ -14091,6 +14272,10 @@ func _toggle_warehouse_drawer() -> void:
 			game_data.stock_excess_meat_destination = destination
 			_sync_excess_meat_destination()
 		)
+		_warehouse_panel.excess_fish_destination_changed.connect(func(destination: String) -> void:
+			game_data.stock_excess_fish_destination = destination
+			_sync_excess_meat_destination()
+		)
 		# Regola del combustibile negli edifici (2026-10-16): dato della partita, ordini da FuelStockService.
 		_warehouse_panel.set_fuel_rule(game_data.stock_fuel_rule_enabled, FuelStockService.get_rule_rows(game_data, human_folk.completed_ideas))
 		_warehouse_panel.fuel_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_fuel_rule_enabled = enabled)
@@ -14487,6 +14672,8 @@ func _order_command(action_id: StringName, members: Array[HumanIndividual]) -> v
 			_order_quarry(members)
 		CommandBar.CUT_ACTION:
 			_order_cut(members)
+		CommandBar.FISH_ACTION:
+			_order_fish(members)
 
 
 func _is_work_areas_tool_available() -> bool:
@@ -15319,6 +15506,9 @@ func _reconnect_build_task_signals(step: Action) -> void:
 		# Task Quarry (2026-10-05): l'estrazione vera avviene in QuarryAction.on_complete, qui solo il ridisegno dei sassi e
 		# del pannello della roccia (_on_rock_quarried).
 		(step as QuarryAction).rock_quarried.connect(_on_rock_quarried)
+	elif step is FishAction:
+		# Task Fish (2026-10-31): la presa vera avviene in FishAction, qui solo il ridisegno dei pesciolini.
+		(step as FishAction).stream_fish_caught.connect(_on_stream_fish_caught)
 
 
 # Ricollega i segnali persi dalla ricostruzione da salvataggio (2026-09-11, richiesta utente —
@@ -15348,6 +15538,9 @@ func _reconnect_loaded_task_signals() -> void:
 			_connect_material_supply_step_appended(queued_task, member)
 			if queued_task.context.has(ButcherAction.CONTEXT_PILE_TRIPS):
 				_connect_butcher_step_appended(queued_task, member)
+			# Pesca (2026-10-31): la consegna nasce dopo la presa, i suoi scarichi passano da step_appended.
+			if _has_fish_step(queued_task):
+				_wire_pickup_task(queued_task, member)
 			# Raccolta su zona non ancora partita (2026-09-27, es. ripetizione in coda): il PickUp nascerà dalla
 			# ricerca, i suoi segnali passano da step_appended.
 			if _haul_zone_task_awaits_search(queued_task):
@@ -15370,6 +15563,8 @@ func _reconnect_loaded_task_signals() -> void:
 		_connect_material_supply_step_appended(member.current_task, member)
 		if member.current_task.context.has(ButcherAction.CONTEXT_PILE_TRIPS):
 			_connect_butcher_step_appended(member.current_task, member)
+		if _has_fish_step(member.current_task):
+			_wire_pickup_task(member.current_task, member)
 		# Conteggio SOLO per il log di conferma sotto (2026-09-11, richiesta utente — "verificare che
 		# la riconnessione funzioni davvero, prima di procedere oltre") — nessuna logica di
 		# ricollegamento qui: quella resta interamente dentro _reconnect_build_task_signals/
@@ -16612,6 +16807,7 @@ func _setup_clock() -> void:
 	individual_action_service.hunt_zone_series_ended.connect(_on_hunt_zone_series_ended)
 	individual_action_service.quarry_zone_series_continue_requested.connect(_on_quarry_zone_series_continue_requested)
 	individual_action_service.cut_zone_series_continue_requested.connect(_on_cut_zone_series_continue_requested)
+	individual_action_service.fish_zone_series_continue_requested.connect(_on_fish_zone_series_continue_requested)
 	individual_action_service.site_cut_requested.connect(_on_site_cut_requested)
 	individual_action_service.site_debris_requested.connect(_on_site_debris_requested)
 	# Essiccatoio pieno durante una macellazione (2026-10-03, essiccazione passo 5).

@@ -27,6 +27,7 @@ const GATHER_ACTION := &"command_gather"
 const HUNT_ACTION := &"command_hunt"
 const QUARRY_ACTION := &"command_quarry"
 const CUT_ACTION := &"command_cut"
+const FISH_ACTION := &"command_fish"
 # Azioni del gruppo "Azioni" (2026-10-04, richiesta utente): UNICA fonte per la barra e per i pulsanti sulle righe della
 # lista degli abitanti (HumanPopulationInfoPanel) — un'azione aggiunta qui compare in entrambi i posti. Indice = slot
 # della barra. "icon" = chiave di IconRegistry.get_command_button_icon_node; "tooltip_key" = nome del comando.
@@ -40,7 +41,7 @@ const CUT_ACTION := &"command_cut"
 # (WorkAreaTypes.is_job_unlocked) e l'esistenza di una zona con quel lavoro decidono se il bottone è acceso; senza una
 # zona il tooltip è "no_zone_tooltip_key". I posti della barra e i bottoni delle righe degli abitanti nascono da questo
 # elenco, nell'ordine: un comando nuovo si aggiunge solo qui (più il suo smistamento in GameScene).
-# Ordine (2026-10-06, richiesta utente): Raccogli, Caccia, Taglia, Estrai.
+# Ordine (2026-10-06, richiesta utente): Raccogli, Caccia, Taglia, Estrai; Pesca in coda (2026-10-31).
 const ACTIONS: Array[Dictionary] = [
 	{
 		"id": GATHER_ACTION, "icon": "pickup", "tooltip_key": "command_bar_gather_tooltip", "key": GATHER_KEY,
@@ -65,6 +66,12 @@ const ACTIONS: Array[Dictionary] = [
 		"job": "quarry", "no_zone_tooltip_key": "command_bar_quarry_no_zone_tooltip",
 		"tool_categories": DrawerOrderService.QUARRY_TOOL_CATEGORIES,
 	},
+	# Pesca nelle zone (2026-10-31, richiesta utente — pesca nelle aree di lavoro, passo 2): lenza (FISHING), lavoro "fish".
+	{
+		"id": FISH_ACTION, "icon": "fish", "tooltip_key": "command_bar_fish_tooltip", "key": FISH_KEY,
+		"job": "fish", "no_zone_tooltip_key": "command_bar_fish_no_zone_tooltip",
+		"tool_categories": DrawerOrderService.FISH_TOOL_CATEGORIES,
+	},
 ]
 
 
@@ -80,6 +87,7 @@ const GATHER_KEY := KEY_Q
 const HUNT_KEY := KEY_C
 const QUARRY_KEY := KEY_J
 const CUT_KEY := KEY_K
+const FISH_KEY := KEY_N
 const AUTO_ZONE_KEY := KEY_V
 
 # Stesso lato degli slot di IconButtonRow.

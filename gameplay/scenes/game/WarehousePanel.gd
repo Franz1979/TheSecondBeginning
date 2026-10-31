@@ -67,6 +67,9 @@ signal min_food_days_changed(days: int)
 # (ButcherDestinationButton). Stato e opzioni li passa GameScene (set_excess_meat_destination), la scelta esce con
 # excess_meat_destination_changed. Aperta o chiusa resta per la sessione (_rules_open).
 signal excess_meat_destination_changed(destination: String)
+# Regola "Pesce in eccesso" (2026-10-31): come quella della carne, per le pesche del magazzino
+# (GameData.stock_excess_fish_destination), con il pulsante in modalità pesce (ButcherDestinationPair.set_fish_mode).
+signal excess_fish_destination_changed(destination: String)
 # Inventario (2026-10-11): riga in cima al cassetto con il prossimo inventario (o chi lo sta facendo), dati da GameScene
 # (set_inventory_info); i numeri del cassetto sono quelli dell'ultimo inventario, non in tempo reale. Frequenza nelle
 # Regole di stoccaggio (ore tra un inventario e l'altro), esce con inventory_interval_changed.
@@ -146,6 +149,8 @@ var _rules_toggle: Button = null
 var _excess_meat_button: ButcherDestinationPair = null
 # Ultimo stato ricevuto prima che il pulsante esistesse (set_excess_meat_destination prima di _ready).
 var _excess_meat_state: Array = []
+var _excess_fish_button: ButcherDestinationPair = null
+var _excess_fish_state: Array = []
 
 var _tab_bar: TabBar = null
 var _list_box: VBoxContainer = null
@@ -218,7 +223,11 @@ func refresh_stock(stock: Dictionary, daily_calorie_need: float, storage_fill: A
 	if _list_box == null:
 		return
 	var names := _visible_resource_names()
-	if names != _shown_names:
+	# Livelli spenti (2026-10-31, richiesta utente — prodotti senza la loro postazione completa): righe rifatte quando
+	# cambiano (un edificio finito o demolito).
+	var locks := _level_locks(names)
+	if names != _shown_names or locks != _shown_locks:
+		_shown_locks = locks
 		_rebuild_rows(names)
 	_last_stock = stock
 	_last_in_use = in_use
@@ -379,6 +388,9 @@ func _open_rule_popup(anchor: Control, title_key: String, empty_key: String, row
 	var margins := style.get_minimum_size() if style != null else Vector2.ZERO
 	var screen_height := int(get_viewport().get_visible_rect().size.y)
 	var width := int(get_global_rect().size.x) - 2 * TOOLKIT_POPUP_INSET
+	# Larghezza vera prima di misurare (2026-10-31): senza, le Label che vanno a capo (il messaggio "vuoto") misurano una
+	# riga per parola e il popup veniva alto quanto lo schermo.
+	box.custom_minimum_size.x = maxf(width - margins.x, 0.0)
 	var height := mini(int(ceilf(box.get_combined_minimum_size().y + margins.y)), screen_height - 2 * TOOLKIT_POPUP_INSET)
 	var x := int(get_global_rect().position.x) + TOOLKIT_POPUP_INSET
 	var y := clampi(int(anchor.get_global_rect().position.y) - height - 4, 0, maxi(screen_height - height, 0))
@@ -496,6 +508,13 @@ func set_excess_meat_destination(is_shown: bool, current: Dictionary, options: A
 		_excess_meat_button.set_destination(is_shown, current, options)
 
 
+# Stato del pulsante della regola "Pesce in eccesso" (stessi argomenti di set_excess_meat_destination).
+func set_excess_fish_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
+	_excess_fish_state = [is_shown, current, options]
+	if _excess_fish_button != null:
+		_excess_fish_button.set_destination(is_shown, current, options)
+
+
 # Regola "Frequenza dell'inventario" (2026-10-11): ogni 6 h, 12 h, 1, 2, 3 o 5 giorni.
 func _build_inventory_interval_row() -> Control:
 	var row := HBoxContainer.new()
@@ -589,9 +608,28 @@ func _build_rules_section() -> void:
 	_excess_meat_button.tooltip_key = "warehouse_rule_excess_meat_button_tooltip"
 	_excess_meat_button.destination_chosen.connect(func(destination: String) -> void: excess_meat_destination_changed.emit(destination))
 	row.add_child(_excess_meat_button)
+	var fish_row := HBoxContainer.new()
+	fish_row.add_theme_constant_override("separation", 6)
+	fish_row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_excess_fish_tooltip"))
+	var fish_label := Label.new()
+	fish_label.text = tr("warehouse_rule_excess_fish")
+	fish_label.tooltip_text = TooltipText.wrap(fish_row.tooltip_text)
+	fish_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	fish_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	fish_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	fish_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fish_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	fish_row.add_child(fish_label)
+	_excess_fish_button = ButcherDestinationPair.new()
+	_excess_fish_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_excess_fish_button.tooltip_key = "warehouse_rule_excess_fish_button_tooltip"
+	_excess_fish_button.set_fish_mode(true)
+	_excess_fish_button.destination_chosen.connect(func(destination: String) -> void: excess_fish_destination_changed.emit(destination))
+	fish_row.add_child(_excess_fish_button)
 	# Frequenza dell'inventario per prima (2026-10-17, richiesta utente), voci divise da un tratteggio.
 	DashedSeparator.add_item(_rules_box, _build_inventory_interval_row())
 	DashedSeparator.add_item(_rules_box, row)
+	DashedSeparator.add_item(_rules_box, fish_row)
 	DashedSeparator.add_item(_rules_box, _build_workstation_food_rule_row())
 	DashedSeparator.add_item(_rules_box, _build_fuel_rule_rows())
 	DashedSeparator.add_item(_rules_box, _build_toolkit_rule_rows())
@@ -600,6 +638,10 @@ func _build_rules_section() -> void:
 		var options: Array[Dictionary] = []
 		options.assign(_excess_meat_state[2])
 		_excess_meat_button.set_destination(bool(_excess_meat_state[0]), _excess_meat_state[1], options)
+	if _excess_fish_state.size() == 3:
+		var fish_options: Array[Dictionary] = []
+		fish_options.assign(_excess_fish_state[2])
+		_excess_fish_button.set_destination(bool(_excess_fish_state[0]), _excess_fish_state[1], fish_options)
 
 
 # Apre e chiude lo strato delle regole: aperto, elenco velato e linguette attenuate e senza mouse (come gli strati
@@ -999,8 +1041,9 @@ func _rebuild_rows(names: Array[String]) -> void:
 	_apply_quantities()
 
 
-# Intestazione delle colonne (2026-10-18): "Qtà", "Min", "Max" allineate ai campi delle righe.
-func _build_column_header() -> Control:
+# Intestazione delle colonne (2026-10-18): "Qtà", "Min", "Max" allineate ai campi delle righe. Senza with_levels (2026-10-31,
+# sezione con solo carne e pesce crudi) "Min" e "Max" restano colonne vuote, così "Qtà" resta allineata.
+func _build_column_header(with_levels: bool = true) -> Control:
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 6)
 	var spacer := Control.new()
@@ -1010,13 +1053,43 @@ func _build_column_header() -> Control:
 			["warehouse_column_min", LEVEL_COMPACT_COLUMN_WIDTH, HORIZONTAL_ALIGNMENT_CENTER],
 			["warehouse_column_max", LEVEL_COMPACT_COLUMN_WIDTH, HORIZONTAL_ALIGNMENT_CENTER]]:
 		var label := Label.new()
-		label.text = tr(String(column[0]))
+		label.text = tr(String(column[0])) if with_levels or String(column[0]) == "warehouse_column_quantity" else ""
 		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 1)
 		label.custom_minimum_size = Vector2(float(column[1]), 0.0)
 		label.horizontal_alignment = column[2]
 		label.modulate = COLUMN_HEADER_COLOR
 		header.add_child(label)
 	return header
+
+
+# Nome -> motivo per le righe con il livello spento (WarehouseManagerService.level_lock_reason).
+var _shown_locks: Dictionary = {}
+
+
+func _level_locks(names: Array[String]) -> Dictionary:
+	var locks: Dictionary = {}
+	for resource_name in names:
+		var reason := WarehouseManagerService.level_lock_reason(GameSettings.active_world, GameSettings.active_human_folk, resource_name)
+		if reason != "":
+			locks[resource_name] = reason
+	return locks
+
+
+# Campo Min o Max spento: non si scrive, pulsanti spenti, più chiaro, motivo nel tooltip. Il valore salvato resta.
+func _lock_level_field(field: Control, reason: String) -> void:
+	field.modulate = Color(1, 1, 1, 0.45)
+	field.tooltip_text = TooltipText.wrap(reason)
+	var stack: Array[Node] = [field]
+	while not stack.is_empty():
+		var node: Node = stack.pop_back()
+		if node is LineEdit:
+			(node as LineEdit).editable = false
+			(node as LineEdit).focus_mode = Control.FOCUS_NONE
+			(node as LineEdit).tooltip_text = TooltipText.wrap(reason)
+		elif node is Button:
+			(node as Button).disabled = true
+			(node as Button).tooltip_text = TooltipText.wrap(reason)
+		stack.append_array(node.get_children())
 
 
 func _build_row(resource_name: String) -> Control:
@@ -1045,11 +1118,17 @@ func _build_row(resource_name: String) -> Control:
 	if not _quantity_labels.has(resource_name):
 		_quantity_labels[resource_name] = []
 	(_quantity_labels[resource_name] as Array).append(quantity_label)
-	var tooltip_key := "warehouse_min_level_auto_tooltip" if StockRequestService.source_kind_for(resource_name) != "" else "warehouse_min_level_tooltip"
-	# Carne cruda (2026-10-16, richiesta utente): livello proprio, la riserva in più oltre al fabbisogno dei prodotti
-	# (StockRequestService.DERIVED_LEVEL_RESOURCES); tooltip suo.
+	# Carne e pesce crudi (2026-10-31, richiesta utente): niente Min e Max, solo la quantità — si procurano per i prodotti che
+	# li usano (StockRequestService.DERIVED_LEVEL_RESOURCES); spazi vuoti al posto dei campi, per le colonne.
 	if StockRequestService.DERIVED_LEVEL_RESOURCES.has(resource_name):
-		tooltip_key = "warehouse_meat_level_tooltip"
+		quantity_label.tooltip_text = TooltipText.wrap(tr("warehouse_raw_derived_tooltip"))
+		quantity_label.mouse_filter = Control.MOUSE_FILTER_STOP
+		for _column in range(2):
+			var spacer := Control.new()
+			spacer.custom_minimum_size.x = LEVEL_COMPACT_COLUMN_WIDTH
+			row.add_child(spacer)
+		return row
+	var tooltip_key := "warehouse_min_level_auto_tooltip" if StockRequestService.source_kind_for(resource_name) != "" else "warehouse_min_level_tooltip"
 	var on_change := func(level: int) -> void: _on_resource_level_changed(resource_name, level)
 	var field := _build_level_field(int(_min_levels.get(resource_name, 0)), on_change, tooltip_key, 1, 0, true)
 	row.add_child(field)
@@ -1065,6 +1144,9 @@ func _build_row(resource_name: String) -> Control:
 	if not _max_edits.has(resource_name):
 		_max_edits[resource_name] = []
 	(_max_edits[resource_name] as Array).append(max_field.get_child(0))
+	if _shown_locks.has(resource_name):
+		_lock_level_field(field, String(_shown_locks[resource_name]))
+		_lock_level_field(max_field, String(_shown_locks[resource_name]))
 	return row
 
 
@@ -1087,7 +1169,10 @@ func _add_food_ingredients_section(box: VBoxContainer, names: Array[String]) -> 
 	note.custom_minimum_size.x = 0.0
 	note.modulate = ZERO_QUANTITY_COLOR
 	box.add_child(note)
-	box.add_child(_build_column_header())
+	var with_levels := false
+	for resource_name in ingredients:
+		with_levels = with_levels or not StockRequestService.DERIVED_LEVEL_RESOURCES.has(resource_name)
+	box.add_child(_build_column_header(with_levels))
 	for resource_name in ingredients:
 		box.add_child(_build_row(resource_name))
 

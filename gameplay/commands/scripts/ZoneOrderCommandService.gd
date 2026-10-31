@@ -55,6 +55,15 @@ static func assign_drawer_zone_job(ctx: GameContext, worker: HumanIndividual, jo
 		)
 		series[DrawerOrderService.SERIES_KEY] = order_id
 		HuntCommandService.assign_work_area_hunt(ctx, worker, area, series, true, not fetch_plan.is_empty(), effects)
+	elif order_type == DrawerOrderService.TYPE_FISH:
+		# Pesca (2026-10-31, passo 4): punto scelto dall'ordine, pesci che restano, destinazione salvata nell'ordine.
+		# Pesche del gestore scorte (2026-10-31): la destinazione del gestore, letta adesso.
+		var fish_destination := String(order.get("butcher_destination", ""))
+		if order.has(StockRequestService.ORDER_KEY):
+			fish_destination = WarehouseManagerService.stock_fish_destination(ctx)
+		series = FishZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1), fish_destination)
+		series[DrawerOrderService.SERIES_KEY] = order_id
+		FishCommandService.assign_fish(ctx, worker, pick["spot"], effects, area.id, series, true, not fetch_plan.is_empty())
 	elif order_type == DrawerOrderService.TYPE_QUARRY:
 		series = QuarryZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
 		series[DrawerOrderService.SERIES_KEY] = order_id
@@ -83,7 +92,9 @@ static func assign_drawer_zone_job(ctx: GameContext, worker: HumanIndividual, jo
 			# insegue la preda). Serie di raccolta: "stessi viaggi, più roba" (ogni viaggio porta di più, il numero non
 			# cambia). Ipotesi b, per il futuro: un viaggio col travois conta come più viaggi in proporzione al carico,
 			# così la serie finisce prima.
-			if order_type != DrawerOrderService.TYPE_HUNT and int(order.get("count", 1)) > 1:
+			# Pesca esclusa anche lei: il pescato torna in un solo viaggio, nello zaino.
+			if order_type != DrawerOrderService.TYPE_HUNT and order_type != DrawerOrderService.TYPE_FISH \
+					and int(order.get("count", 1)) > 1:
 				start_towed_fetch(ctx, worker, order_id, effects)
 			return
 

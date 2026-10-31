@@ -39,6 +39,12 @@ const SOURCE_HUNT := "hunt"
 const HUNT_GROUP_KEY := "meat"
 const HUNT_MEAT_STEP: int = 5
 const STOCK_HUNT_MAX_MEAT: int = 10
+# Pesca (2026-10-31, richiesta utente — pesca nel gestore scorte, passo 1): il pesce crudo si procura pescando, come la carne
+# cacciando (WarehouseManagerService._request_fish). Ordini "fish" da 5 a STOCK_FISH_MAX pesci, a passi di HUNT_MEAT_STEP
+# (snap_hunt_count), chiave FISH_GROUP_KEY.
+const SOURCE_FISH := "fish"
+const FISH_GROUP_KEY := "fish_meat"
+const STOCK_FISH_MAX: int = 10
 # Produzione (2026-10-11): prodotti con ricetta (non ad avanzamento automatico), ordini "Produci" del cassetto. Gli ordini
 # NON procurano mai i propri ingredienti: la catena la organizza il giocatore con i livelli delle materie prime.
 const SOURCE_PRODUCE := "produce"
@@ -54,8 +60,9 @@ const FOOD_DAYS_KEY := "food_days_order"
 # Unica eccezione alla regola "la catena la organizza il giocatore" (2026-10-11, richiesta utente): il fabbisogno di queste
 # risorse nasce anche dai livelli dei prodotti che le usano (la carne cruda: carne cotta, affumicata ed essiccata —
 # WarehouseManagerService._derived_meat_breakdown). Dal 2026-10-16 hanno anche un livello proprio, che si somma: la riserva in più (es. per
-# i banchetti), riempita dopo le lavorazioni. Il cassetto Scorte le mostra in "Da cucinare o lavorare".
-const DERIVED_LEVEL_RESOURCES: Array[String] = ["meat"]
+# i banchetti), riempita dopo le lavorazioni. Il cassetto Scorte le mostra in "Da cucinare o lavorare". Il pesce crudo dal
+# 2026-10-31 (pesce cotto, affumicato ed essiccato): deperibile come la carne.
+const DERIVED_LEVEL_RESOURCES: Array[String] = ["meat", FISH_GROUP_KEY]
 
 
 # Come si procura la risorsa: SOURCE_GATHER (raccoglibile a terra, lot_source), SOURCE_CUT (resa del taglio di un
@@ -75,6 +82,8 @@ static func source_kind_for(resource_name: String) -> String:
 		return SOURCE_GATHER
 	if rules.category != SecondaryResourceTypes.Category.RAW_MATERIAL:
 		return ""
+	if resource_name == FISH_GROUP_KEY:
+		return SOURCE_FISH
 	if rules.generation_source == SecondaryResourceTypes.GenerationSource.ANIMAL_DERIVED:
 		return SOURCE_HUNT if get_meat_per_unit(resource_name) > 0.0 else ""
 	if rules.lot_source != SecondaryResourceTypes.LotSource.NONE:
@@ -130,6 +139,8 @@ static func get_series_max(source_kind: String) -> int:
 			return QuarryZoneService.COUNT_MAX
 		SOURCE_HUNT:
 			return STOCK_HUNT_MAX_MEAT
+		SOURCE_FISH:
+			return STOCK_FISH_MAX
 	return 0
 
 

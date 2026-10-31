@@ -580,6 +580,10 @@ var skill_social: float = 0.0
 # semina iniziale. Cresce somministrando rimedi (task heal) e producendo alla capanna del guaritore
 # (BuildingRules.production_skill); accelera solo i tempi, mai l'effetto del rimedio.
 var skill_medicine: float = 0.0
+# fishing (2026-10-31, richiesta utente — 12a skill, pesca con la lenza): stesso trattamento/default delle altre, inclusa
+# nella semina iniziale. Cresce a ogni sessione di pesca completata (task_completion_effects.tres); alza la probabilità di
+# presa (SkillEffectService, chiave "fish"), come la caccia alza quella di colpire.
+var skill_fishing: float = 0.0
 
 
 # Nomi di TUTTE le property skill_* dell'istanza, raccolti via reflection (2026-09-13, richiesta
