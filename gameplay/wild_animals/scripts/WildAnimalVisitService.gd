@@ -70,7 +70,7 @@ const YOUNG_POINTS_SHARE: float = 0.5
 # L'inseguimento finisce quando la persona è al riparo, sparisce o muore, dopo MAX_BITES_PER_CHARGE morsi o
 # MAX_CHARGE_DAYS; poi il branco se ne va. In ogni caso la visita è "con attacco".
 const DANGER_PROFILE: String = "predator"
-const ATTACK_BASE_CHANCE: float = 0.5
+const ATTACK_BASE_CHANCE: float = 0.3
 const ATTACK_CHANCE_CAP: float = 0.9
 const WEAK_PERSON_STRENGTH: float = 0.5
 const CUB_MAX_AGE_YEARS: int = 1
@@ -1065,36 +1065,22 @@ static func _start_leaving(visit: WildAnimalVisit, world: World) -> void:
 # Stesso calcolo di VisitorService._ensure_path: percorso del centro ricalcolato al cambio di meta o di blocchi della
 # macrocella; senza griglia o con meta irraggiungibile si va in linea retta.
 static func _ensure_path(visit: WildAnimalVisit) -> void:
-	var cell := PathfindingService.get_live_cell(visit.macro_coords)
-	var block_version: int = cell.path_block_version if cell != null else -1
+	var block_version := PathfindingService.get_block_version(visit.macro_coords)
 	if visit.path_planned and visit.path_target == visit.target_point and visit.path_block_version == block_version:
 		return
 	visit.path.clear()
 	visit.path_planned = true
-	visit.path_target = visit.target_point
 	visit.path_block_version = block_version
-	if cell == null or cell.path_grid == null:
-		return
-	var from := Vector2i(visit.position.floor())
-	var to := Vector2i(visit.target_point.floor())
-	if not PathfindingService._in_bounds(from) or not PathfindingService._in_bounds(to) or from == to:
-		return
 	# Meta irraggiungibile (2026-10-30, richiesta utente: la Fossa dentro un recinto chiuso) — prima si andava in linea
 	# retta, attraverso la palizzata: la meta diventa la microcella libera più vicina nella regione del gruppo, e la
-	# sosta si fa lì (rivolti sempre alla Fossa, look_point).
-	if not PathfindingService.is_reachable(cell, from, to):
-		var region := PathfindingService.get_region(cell, from)
-		var nearest := PathfindingService.find_open_microcell(cell, to, 0, region) \
-			if region >= 0 else PathfindingService.NO_POCKET_EXIT
-		if nearest == PathfindingService.NO_POCKET_EXIT or nearest == from:
-			return
-		print("[WILD ANIMAL VISITS] %s: meta %s irraggiungibile, si fermano a %s" % [visit.species, to, nearest])
-		to = nearest
-		visit.target_point = Vector2(nearest) + Vector2(0.5, 0.5)
-		visit.path_target = visit.target_point
-	var cells := PathfindingService.find_path(cell, from, to)
-	for i in range(1, cells.size() - 1):
-		visit.path.append(Vector2(cells[i]) + Vector2(0.5, 0.5))
+	# sosta si fa lì (rivolti sempre alla Fossa, look_point). Regola in PathfindingService.plan_waypoints (2026-10-31).
+	var plan := PathfindingService.plan_waypoints(visit.macro_coords, visit.position, visit.target_point)
+	if bool(plan["redirected"]):
+		print("[WILD ANIMAL VISITS] %s: meta %s irraggiungibile, si fermano a %s" % [
+			visit.species, Vector2i(visit.target_point.floor()), Vector2i((plan["target"] as Vector2).floor())])
+		visit.target_point = plan["target"]
+	visit.path_target = visit.target_point
+	visit.path.append_array(plan["path"])
 
 
 # DEBUG — riga per il tooltip della DebugBar: fase e animali presenti.

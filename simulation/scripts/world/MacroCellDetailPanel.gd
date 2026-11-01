@@ -108,6 +108,10 @@ func _ready() -> void:
 	fauna_2_title_label.text = tr("tab_fauna_2")
 	fauna_3_title_label.text = tr("tab_fauna_3")
 	subsistence_title_label.text = tr("tab_subsistence")
+	# Fauna ad hoc (2026-10-31, passo 6): mandrie e predatori del mondo non esistono più, le due tab restano nascoste.
+	if SimulationSettings.WILD_FAUNA_AD_HOC:
+		tab_container.set_tab_hidden(TAB_FAUNA_2, true)
+		tab_container.set_tab_hidden(TAB_FAUNA_3, true)
 
 	clear()
 

@@ -265,8 +265,9 @@ func _set_extra_tabs_hidden(hidden: bool) -> void:
 	tab_container.set_tab_hidden(TAB_VEGETAZIONE, hidden)
 	tab_container.set_tab_hidden(TAB_RISORSE, hidden)
 	tab_container.set_tab_hidden(TAB_FAUNA_1, hidden)
-	tab_container.set_tab_hidden(TAB_FAUNA_2, hidden)
-	tab_container.set_tab_hidden(TAB_FAUNA_3, hidden)
+	# Fauna ad hoc (2026-10-31, passo 6): mandrie e predatori del mondo non esistono più, le due tab restano nascoste.
+	tab_container.set_tab_hidden(TAB_FAUNA_2, hidden or SimulationSettings.WILD_FAUNA_AD_HOC)
+	tab_container.set_tab_hidden(TAB_FAUNA_3, hidden or SimulationSettings.WILD_FAUNA_AD_HOC)
 
 
 func _on_tab_changed(tab_idx: int) -> void:

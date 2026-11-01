@@ -404,6 +404,43 @@ static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> Arra
 	return simplify_path(cell, path)
 
 
+# Percorso a punti per un animale (2026-10-31, motore unico degli animali passo 7a — prima solo in
+# WildAnimalVisitService._ensure_path): punti intermedi (centri di microcella, senza partenza e arrivo) da
+# `from_point` a `to_point` nella cella viva `macro_coords`. Meta irraggiungibile (es. dentro un recinto chiuso):
+# la meta diventa la microcella libera più vicina nella regione di partenza. Ritorna {"path": Array[Vector2],
+# "target": Vector2 (la meta, forse spostata), "redirected": bool}. Cella senza griglia, o partenza = arrivo:
+# percorso vuoto (si va in linea retta).
+static func plan_waypoints(macro_coords: Vector2i, from_point: Vector2, to_point: Vector2) -> Dictionary:
+	var path: Array[Vector2] = []
+	var result := {"path": path, "target": to_point, "redirected": false}
+	var cell := get_live_cell(macro_coords)
+	if cell == null or cell.path_grid == null:
+		return result
+	var from := Vector2i(from_point.floor())
+	var to := Vector2i(to_point.floor())
+	if not _in_bounds(from) or not _in_bounds(to) or from == to:
+		return result
+	if not is_reachable(cell, from, to):
+		var region := get_region(cell, from)
+		var nearest := find_open_microcell(cell, to, 0, region) if region >= 0 else NO_POCKET_EXIT
+		if nearest == NO_POCKET_EXIT or nearest == from:
+			return result
+		to = nearest
+		result["target"] = Vector2(nearest) + Vector2(0.5, 0.5)
+		result["redirected"] = true
+	var cells := find_path(cell, from, to)
+	for i in range(1, cells.size() - 1):
+		path.append(Vector2(cells[i]) + Vector2(0.5, 0.5))
+	return result
+
+
+# Versione dei blocchi della cella viva (cambia quando cambiano edifici/ostacoli): -1 senza cella viva. Serve a chi
+# tiene un percorso per sapere quando ripianificarlo.
+static func get_block_version(macro_coords: Vector2i) -> int:
+	var cell := get_live_cell(macro_coords)
+	return cell.path_block_version if cell != null else -1
+
+
 # Semplificazione del percorso (2026-09-27, lisciatura): da ogni punto tenuto si salta al punto più lontano del percorso
 # raggiungibile in linea retta (dal centro al centro delle microcelle) passando SOLO da microcelle libere, senza
 # tagliare spigoli di microcelle bloccate (un passaggio esatto per un angolo richiede libere entrambe le celle ai lati)

@@ -109,8 +109,13 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 11
 text = "🐺-"
 
-[node name="ExterminateButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
+[node name="VSeparatorThirst" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
+layout_mode = 2
+
+[node name="ThirstButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
 custom_minimum_size = Vector2(32, 32)
 layout_mode = 2
+toggle_mode = true
+button_pressed = true
 theme_override_font_sizes/font_size = 11
-text = "☠"
+text = "💧"

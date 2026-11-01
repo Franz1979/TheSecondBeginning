@@ -47,11 +47,26 @@ const CLUSTER_AVOID_STEER_RATE: float = 3.0
 const CLUSTER_BUILDING_AVOID_MULTIPLIER: float = 3.0
 # Velocità della spinta fuori dalla zona, in microcelle per giorno di gioco (circa 3 volte il vagare dei centri).
 const CLUSTER_BUILDING_PUSH_SPEED: float = 80.0
+
 # Tentativi di estrazione di un punto fuori dalla zona per un nuovo centro.
 const CLUSTER_SPAWN_MAX_ATTEMPTS: int = 20
 
 # Durata della fuga in giorni di gioco: 0.2 = 1.6 s reali a 1x (coniglio: ~7.6 microcelle a hop_speed 38).
 const FLEE_DURATION_DAYS: float = 0.1
+
+# Ferito più lento (2026-10-31, richiesta utente): velocità del singolo × (MIN + (1 - MIN) × salute/salute massima),
+# solo per lui, non per il suo gruppetto. 1.0 a salute piena, 0.75 a metà, verso WOUNDED_SPEED_MIN quasi morto.
+const WOUNDED_SPEED_MIN: float = 0.5
+
+# Comportamenti (2026-10-31, motore unico passo 7a, vedi AnimalVisualGroup.Behavior). Distanze in microcelle.
+# GO_TO arrivato entro questa distanza dalla meta; CHASE fermo (a contatto) entro questa dal bersaglio.
+const GO_TO_REACH_DISTANCE: float = 0.3
+const CHASE_CONTACT_DISTANCE: float = 0.3
+# STAND_AROUND: punto dell'anello raggiunto entro questa distanza; tentativi per trovarne uno su microcella libera;
+# scarto casuale della direzione a ogni balzo (radianti), come il fiutare dei lupi in visita.
+const STAND_REACH_DISTANCE: float = 0.3
+const STAND_POINT_ATTEMPTS: int = 6
+const STAND_HEADING_JITTER: float = 0.4
 
 const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer
 const BODY_SEGMENTS: int = 16 # risoluzione del ventaglio del corpo, condivisa da tutte le specie
@@ -990,6 +1005,14 @@ func _max_health_for(age_band: GameTypes.AgeBand) -> float:
 	return _adult_max_health * age_scale
 
 
+# Fattore di velocità del ferito (vedi WOUNDED_SPEED_MIN). Salute massima 0 (specie senza salute) = sano.
+func _wounded_speed_factor(group: AnimalVisualGroup) -> float:
+	var max_health := _max_health_for(group.age_band)
+	if max_health <= 0.0:
+		return 1.0
+	return WOUNDED_SPEED_MIN + (1.0 - WOUNDED_SPEED_MIN) * clampf(group.health / max_health, 0.0, 1.0)
+
+
 func _random_point_near_cluster(cluster_index: int) -> Vector2:
 	var center: Vector2 = _clusters[cluster_index].position
 	var offset := Vector2.RIGHT.rotated(randf_range(0.0, TAU)) * cluster_comfort_radius * sqrt(randf())
@@ -1107,8 +1130,12 @@ func _process(real_delta: float) -> void:
 		if group.flee_timer > 0.0:
 			group.flee_timer -= delta
 			group.direction = group.flee_direction
-			_move_with_collision(group, group.direction * hop_speed * delta)
+			_move_with_collision(group, group.direction * hop_speed * _wounded_speed_factor(group) * delta)
 			group.flee_direction = group.direction
+			_write_instance_transform(i, group)
+			continue
+		if group.behavior != AnimalVisualGroup.Behavior.WANDER:
+			_step_behavior(group, delta)
 			_write_instance_transform(i, group)
 			continue
 		group.direction = group.direction.rotated(randf_range(-turn_rate, turn_rate) * delta)
@@ -1117,7 +1144,7 @@ func _process(real_delta: float) -> void:
 		# ogni balzo, dentro _update_group_phase (_apply_avoidance_on_hop).
 		_update_group_phase(group, delta)
 		if group.macro_phase == AnimalVisualGroup.MacroPhase.MOVING and group.micro_phase == AnimalVisualGroup.MicroPhase.HOPPING:
-			_move_with_collision(group, group.direction * hop_speed * delta)
+			_move_with_collision(group, group.direction * hop_speed * _wounded_speed_factor(group) * delta)
 		_write_instance_transform(i, group)
 
 	if _is_timing_enabled():
@@ -1361,6 +1388,170 @@ func _record_process_timing(usec: int) -> void:
 	_timing_check_usec = 0
 	_timing_start_frame = Engine.get_process_frames()
 	_timing_last_print_msec = now_msec
+
+
+# --- Comportamenti (2026-10-31, motore unico degli animali passo 7a) ---
+# Chi regge il copione di un animale (oggi nessuno: la fauna resta WANDER) gli assegna un comportamento per id. Un
+# nuovo comportamento riparte da capo (percorso, fasi, arrivo); tornando a WANDER le fasi ripartono a caso come alla
+# nascita. `point` = meta (GO_TO), centro (STAND_AROUND) o bersaglio (CHASE). false se l'id non è di questo renderer.
+func set_individual_behavior(individual_id: int, behavior: AnimalVisualGroup.Behavior, point: Vector2 = Vector2.ZERO,
+		ring_min: float = 0.0, ring_max: float = 0.0) -> bool:
+	var group := get_individual_by_id(individual_id)
+	if group == null:
+		return false
+	group.behavior = behavior
+	group.behavior_point = point
+	group.behavior_ring_min = ring_min
+	group.behavior_ring_max = maxf(ring_max, ring_min)
+	group.behavior_arrived = false
+	group.behavior_path.clear()
+	group.behavior_path_planned = false
+	if behavior == AnimalVisualGroup.Behavior.WANDER:
+		_randomize_group_phase(group)
+	elif behavior == AnimalVisualGroup.Behavior.STAND_AROUND:
+		_start_stand_walk(group)
+	else:
+		_start_hop_cycle(group)
+	return true
+
+
+# Sposta il punto del comportamento in corso senza farlo ripartire: il bersaglio di CHASE che si muove, o una nuova
+# meta di GO_TO (il percorso si ripianifica da sé al cambio di meta).
+func set_individual_behavior_point(individual_id: int, point: Vector2) -> void:
+	var group := get_individual_by_id(individual_id)
+	if group != null:
+		group.behavior_point = point
+
+
+# GO_TO arrivato alla meta, CHASE a contatto col bersaglio. false se l'id non è di questo renderer.
+func has_individual_arrived(individual_id: int) -> bool:
+	var group := get_individual_by_id(individual_id)
+	return group != null and group.behavior_arrived
+
+
+func _step_behavior(group: AnimalVisualGroup, delta: float) -> void:
+	match group.behavior:
+		AnimalVisualGroup.Behavior.GO_TO:
+			_step_go_to(group, delta)
+		AnimalVisualGroup.Behavior.STAND_AROUND:
+			_step_stand_around(group, delta)
+		AnimalVisualGroup.Behavior.CHASE:
+			_step_chase(group, delta)
+
+
+# Solo l'alternanza balzo/pausa (hop_duration_*/hop_pause_*), sempre in movimento: GO_TO e CHASE non si riposano.
+func _start_hop_cycle(group: AnimalVisualGroup) -> void:
+	group.macro_phase = AnimalVisualGroup.MacroPhase.MOVING
+	group.micro_phase = AnimalVisualGroup.MicroPhase.HOPPING
+	group.micro_phase_timer = randf_range(hop_duration_min, hop_duration_max)
+
+
+# Avanza balzo/pausa di un frame; true se in questo frame comincia un balzo.
+func _advance_hop_cycle(group: AnimalVisualGroup, delta: float) -> bool:
+	group.micro_phase_timer -= delta
+	if group.micro_phase_timer > 0.0:
+		return false
+	if group.micro_phase == AnimalVisualGroup.MicroPhase.HOPPING:
+		group.micro_phase = AnimalVisualGroup.MicroPhase.HOP_PAUSE
+		group.micro_phase_timer = randf_range(hop_pause_min, hop_pause_max)
+		return false
+	group.micro_phase = AnimalVisualGroup.MicroPhase.HOPPING
+	group.micro_phase_timer = randf_range(hop_duration_min, hop_duration_max)
+	return true
+
+
+# Un balzo lungo `direction`, al massimo per `distance`: hop_speed della specie (rallentato se ferito) con la
+# collisione di sempre. Nella pausa non si muove.
+func _hop_toward(group: AnimalVisualGroup, distance: float, delta: float) -> void:
+	if group.micro_phase != AnimalVisualGroup.MicroPhase.HOPPING or distance <= 0.0:
+		return
+	_move_with_collision(group, group.direction * minf(hop_speed * _wounded_speed_factor(group) * delta, distance))
+
+
+# GO_TO: segue il percorso A* (PathfindingService.plan_waypoints, ripianificato se cambiano meta o blocchi della
+# cella), a balzi; arrivato entro GO_TO_REACH_DISTANCE dalla meta si ferma con behavior_arrived.
+func _step_go_to(group: AnimalVisualGroup, delta: float) -> void:
+	if group.behavior_arrived:
+		return
+	var block_version := PathfindingService.get_block_version(macro_coords)
+	if not group.behavior_path_planned or group.behavior_path_target != group.behavior_point \
+			or group.behavior_path_block_version != block_version:
+		var plan := PathfindingService.plan_waypoints(macro_coords, group.position, group.behavior_point)
+		group.behavior_point = plan["target"]
+		group.behavior_path.assign(plan["path"])
+		group.behavior_path_planned = true
+		group.behavior_path_target = group.behavior_point
+		group.behavior_path_block_version = block_version
+	while not group.behavior_path.is_empty() \
+			and group.position.distance_to(group.behavior_path[0]) <= PathfindingService.WAYPOINT_REACH_DISTANCE:
+		group.behavior_path.pop_front()
+	var goal: Vector2 = group.behavior_path[0] if not group.behavior_path.is_empty() else group.behavior_point
+	var to_goal := goal - group.position
+	var distance := to_goal.length()
+	if group.behavior_path.is_empty() and distance <= GO_TO_REACH_DISTANCE:
+		group.behavior_arrived = true
+		return
+	if distance > 0.000001:
+		group.direction = to_goal / distance
+	_advance_hop_cycle(group, delta)
+	_hop_toward(group, distance, delta)
+
+
+# CHASE: dritto verso il bersaglio (behavior_point, aggiornato dal copione), a balzi e pause, con la collisione; a
+# contatto (CHASE_CONTACT_DISTANCE) resta fermo con behavior_arrived finché il bersaglio non si allontana.
+func _step_chase(group: AnimalVisualGroup, delta: float) -> void:
+	var to_target := group.behavior_point - group.position
+	var distance := to_target.length()
+	group.behavior_arrived = distance <= CHASE_CONTACT_DISTANCE
+	if distance > 0.000001:
+		group.direction = to_target / distance
+	if group.behavior_arrived:
+		return
+	_advance_hop_cycle(group, delta)
+	_hop_toward(group, distance - CHASE_CONTACT_DISTANCE, delta)
+
+
+# STAND_AROUND: va a balzi verso un punto dell'anello attorno a behavior_point (direzione ripresa a ogni balzo, con un
+# piccolo scarto e la spinta del disagio verso umani ed edifici come nel vagare); arrivato, o finita la fase di
+# movimento (movement_phase_duration_*), si ferma rivolto al centro per una fase di riposo (rest_phase_duration_*),
+# poi sceglie un altro punto.
+func _step_stand_around(group: AnimalVisualGroup, delta: float) -> void:
+	group.macro_phase_timer -= delta
+	if group.macro_phase == AnimalVisualGroup.MacroPhase.RESTING:
+		if group.macro_phase_timer <= 0.0:
+			_start_stand_walk(group)
+		return
+	var to_point := group.behavior_stand_point - group.position
+	var distance := to_point.length()
+	if distance <= STAND_REACH_DISTANCE or group.macro_phase_timer <= 0.0:
+		group.macro_phase = AnimalVisualGroup.MacroPhase.RESTING
+		group.macro_phase_timer = randf_range(rest_phase_duration_min, rest_phase_duration_max)
+		var to_center := group.behavior_point - group.position
+		if to_center.length_squared() > 0.000001:
+			group.direction = to_center.normalized()
+		return
+	if _advance_hop_cycle(group, delta):
+		group.direction = Vector2.from_angle(to_point.angle() + randf_range(-1.0, 1.0) * STAND_HEADING_JITTER)
+		_apply_avoidance_on_hop(group)
+	_hop_toward(group, distance, delta)
+
+
+# Nuovo punto dell'anello su una microcella libera (STAND_POINT_ATTEMPTS tentativi; nessuno = resta dov'è) e fase di
+# movimento; il primo balzo parte subito.
+func _start_stand_walk(group: AnimalVisualGroup) -> void:
+	group.behavior_stand_point = group.position
+	for attempt in range(STAND_POINT_ATTEMPTS):
+		var point := group.behavior_point + Vector2.RIGHT.rotated(randf() * TAU) \
+			* randf_range(group.behavior_ring_min, group.behavior_ring_max)
+		point = point.clamp(Vector2.ZERO, Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001))
+		if blocked_test.is_valid() and bool(blocked_test.call(Vector2i(point.floor()))):
+			continue
+		group.behavior_stand_point = point
+		break
+	group.macro_phase = AnimalVisualGroup.MacroPhase.MOVING
+	group.macro_phase_timer = randf_range(movement_phase_duration_min, movement_phase_duration_max)
+	group.micro_phase = AnimalVisualGroup.MicroPhase.HOP_PAUSE
+	group.micro_phase_timer = 0.0
 
 
 # Spostamento di un singolo individuo con collisione (2026-09-27, pathfinding step 4 — balzi e fuga, tutte le

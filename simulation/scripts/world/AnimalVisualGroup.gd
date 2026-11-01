@@ -54,6 +54,34 @@ var avoid_weight: float = 0.0
 var flee_timer: float = 0.0
 var flee_direction: Vector2 = Vector2.ZERO
 
+# Comportamento (2026-10-31, motore unico degli animali passo 7a): cosa vuole fare adesso l'individuo, assegnato da chi
+# ne regge il copione (AnimalGroupRenderer.set_individual_behavior). Transitorio, mai salvato. La fuga resta
+# un'interruzione sopra a qualsiasi comportamento (flee_timer sopra), finita la quale il comportamento riprende.
+#   WANDER: il vagare a balzi di sempre attorno al proprio gruppetto (default, la fauna anonima resta così);
+#   GO_TO: va a behavior_point a balzi seguendo un percorso A* (behavior_path), poi behavior_arrived;
+#   STAND_AROUND: gira attorno a behavior_point, su punti dell'anello behavior_ring_min..max, fermandosi rivolto al
+#     centro (annusare);
+#   CHASE: insegue behavior_point, che il copione aggiorna a ogni frame (un bersaglio che si muove), a balzi e pause;
+#     behavior_arrived quando è a contatto.
+enum Behavior { WANDER, GO_TO, STAND_AROUND, CHASE }
+var behavior: Behavior = Behavior.WANDER
+var behavior_point: Vector2 = Vector2.ZERO
+var behavior_ring_min: float = 0.0
+var behavior_ring_max: float = 0.0
+var behavior_arrived: bool = false
+# GO_TO: punti intermedi del percorso (PathfindingService.plan_waypoints) e per quale meta/versione dei blocchi.
+var behavior_path: Array[Vector2] = []
+var behavior_path_planned: bool = false
+var behavior_path_target: Vector2 = Vector2.ZERO
+var behavior_path_block_version: int = -1
+# STAND_AROUND: punto dell'anello verso cui sta andando.
+var behavior_stand_point: Vector2 = Vector2.ZERO
+
+# Identità facoltativa (2026-10-31, passo 7a): 0 = animale anonimo della fauna. Per un animale seguito per individuo
+# (il branco, WildAnimalGroup/WildAnimal) gli id del gruppo e dell'animale.
+var wild_group_id: int = 0
+var wild_animal_id: int = 0
+
 # Macchina a stati a due livelli per il movimento a balzi (vedi AnimalGroupRenderer). Rilevante
 # solo per i gruppi disegnati, ignorata quando l'istanza è usata come centro-cluster (stesso
 # trattamento di cluster_index sopra) — i centri-cluster vagano in modo continuo, non a balzi.

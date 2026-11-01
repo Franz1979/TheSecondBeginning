@@ -946,6 +946,8 @@ func _ready() -> void:
 		push_warning("Nessun game_data condiviso: creo un anno locale di riserva.")
 		game_data = GameData.new()
 	sim.game_data = game_data
+	# Slot 💧 della barra di debug (2026-10-31): stato della sete di questa partita (GameData.thirst_enabled).
+	debug_bar.set_thirst_enabled(game_data.thirst_enabled)
 	sim.world = macro_world
 	sim.live_cells = live_cells
 	# Pavimento delle zone (2026-10-01) su tutte le memorie con zone, anche di macrocelle non vive: prune_stale gira su
@@ -13612,11 +13614,11 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			flora_daily_updates_enabled = not flora_daily_updates_enabled
 			debug_bar.set_slot_toggled(0, flora_daily_updates_enabled)
 			GameSettings.game_scene_flora_updates_enabled = flora_daily_updates_enabled
-		# Stermina (2026-10-31, richiesta utente — prova del passo 3b): via le mandrie che stanno nelle celle vive.
-		&"exterminate_herds":
+		# Sete (2026-10-31, richiesta utente): spenta = niente calo, sorsi, bevute né morte di sete (ThirstService).
+		&"toggle_thirst":
 			if game_data != null:
-				for coords in live_cells:
-					WildFaunaService.exterminate_in_cell(game_data, coords)
+				game_data.thirst_enabled = not game_data.thirst_enabled
+				debug_bar.set_thirst_enabled(game_data.thirst_enabled)
 		&"world_debug":
 			_on_world_debug_pressed()
 		&"macro_cell_debug":

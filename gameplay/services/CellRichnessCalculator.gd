@@ -56,7 +56,7 @@ const _SOURCE_PRIMARY_TYPE := {
 # per l'intero batch, non ripetute per ogni candidata — stesso principio gia' seguito da
 # FirstStartMacroCellSelectionService._collect_predator_territory_cells.
 func evaluate_richness_batch(world: World, positions: Array[Vector2i]) -> Dictionary:
-	var animal_calories_by_cell := _collect_animal_calories_by_cell(world, positions)
+	var animal_calories_by_cell := _estimate_herd_calories_by_cell(world, positions) 		if SimulationSettings.WILD_FAUNA_AD_HOC else _collect_animal_calories_by_cell(world, positions)
 	var vegetal_rules := _load_source_rules(VEGETAL_SOURCES)
 	var hybrid_rules := _load_source_rules(HYBRID_SOURCES)
 
@@ -134,6 +134,41 @@ func _sum_max_seasonal_calories(rules_by_source: Dictionary, cell: MacroCellData
 				best = calories
 		total += best
 	return total
+
+
+# Fauna ad hoc (2026-10-31, passo 6): le mandrie si tirano a sorte solo entrando nelle celle, quindi qui si stima dall'
+# habitat. Per ogni specie con mandria adatta alla cella: calorie medie per capo (size_multiplier_by_age pesato con
+# initial_age_ratio) × herd_size_max ÷ celle del riquadro — quanto ne passa in media da una sua cella. La quota di
+# partenza e la probabilità di presenza sono uguali per tutte le specie e si annullano nella normalizzazione sul massimo.
+func _estimate_herd_calories_by_cell(world: World, positions: Array[Vector2i]) -> Dictionary:
+	var per_species: Array = []
+	for species in WildFaunaService.herd_species():
+		var rules := AnimalCalculator.get_animal_rules(species)
+		if rules == null:
+			continue
+		var weight_sum := 0.0
+		var size_sum := 0.0
+		for age_band in [GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD]:
+			var weight: float = float(rules.initial_age_ratio.get(age_band, 1.0)) if not rules.initial_age_ratio.is_empty() else 1.0
+			var size_mult := rules.size_multiplier_by_age[age_band] if age_band < rules.size_multiplier_by_age.size() else 1.0
+			weight_sum += weight
+			size_sum += weight * size_mult
+		var mean_size := size_sum / weight_sum if weight_sum > 0.0 else 1.0
+		var side := WildFaunaService.region_side(rules)
+		per_species.append([rules, rules.prey_calories * mean_size * rules.herd_size_max / float(side * side)])
+
+	var calories_by_cell: Dictionary = {}
+	for pos in positions:
+		var cell := world.get_cell_at(pos.x, pos.y)
+		if cell == null or cell.terrain_base == GameTypes.TerrainBase.WATER:
+			continue
+		var total := 0.0
+		for entry in per_species:
+			if (entry[0] as AnimalRules).is_suitable_for(cell.biome, cell.terrain_base):
+				total += float(entry[1])
+		if total > 0.0:
+			calories_by_cell[pos] = total
+	return calories_by_cell
 
 
 # Calorie-animali per cella: solo popolazioni ERBIVORE (rules is NOT PredatorRules — un branco

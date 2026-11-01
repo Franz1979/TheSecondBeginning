@@ -180,6 +180,9 @@ func _ready() -> void:
 	predator_exclusion_label.text = tr("predator_exclusion_label")
 	predator_exclusion_check_button.button_pressed = false
 	_update_toggle_color(predator_exclusion_check_button, false)
+	# Fauna ad hoc (2026-10-31, passo 6): non ci sono più branchi di predatori seminati nel mondo, l'opzione non fa
+	# niente e non si mostra (resta false).
+	predator_exclusion_panel.visible = not SimulationSettings.WILD_FAUNA_AD_HOC
 
 	animal_presence_label.text = tr("animal_presence_label")
 	animal_presence_check_button.button_pressed = false
