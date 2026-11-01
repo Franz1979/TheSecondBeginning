@@ -31,6 +31,9 @@ var last_hunted_day: int = -1
 # (-1 nessuna) e primo giorno in cui si può tirare di nuovo il dado.
 var last_visit_end_day: int = -1
 var next_visit_day: int = -1
+# Gruppo sterminato (2026-11-01, WildAnimalGroupService._is_waiting_for_new_pack): giorno assoluto in cui ne arriva uno
+# nuovo, -1 se non sta aspettando.
+var new_pack_day: int = -1
 # Messaggi al giocatore già dati (2026-11-01, WildAnimalVisitService._notify_group): prima visita, prima visita tranquilla
 # alla Fossa, soglia più bassa di aggressività media già annunciata (100 = nessuna).
 var notified_first_visit: bool = false
@@ -54,7 +57,7 @@ func to_save_data() -> Dictionary:
 		"last_litter_year": last_litter_year, "pending_domestication_points": pending_domestication_points,
 		"driven_off_count": driven_off_count, "last_driven_off_day": last_driven_off_day,
 		"hunted_count": hunted_count, "last_hunted_day": last_hunted_day,
-		"last_visit_end_day": last_visit_end_day, "next_visit_day": next_visit_day,
+		"last_visit_end_day": last_visit_end_day, "next_visit_day": next_visit_day, "new_pack_day": new_pack_day,
 		"notified_first_visit": notified_first_visit, "notified_first_quiet_pit": notified_first_quiet_pit,
 		"notified_calm_below": notified_calm_below}
 
@@ -74,6 +77,7 @@ static func from_save_data(data: Dictionary) -> WildAnimalGroup:
 	group.last_hunted_day = int(data.get("last_hunted_day", -1))
 	group.last_visit_end_day = int(data.get("last_visit_end_day", -1))
 	group.next_visit_day = int(data.get("next_visit_day", -1))
+	group.new_pack_day = int(data.get("new_pack_day", -1))
 	group.notified_first_visit = bool(data.get("notified_first_visit", false))
 	group.notified_first_quiet_pit = bool(data.get("notified_first_quiet_pit", false))
 	group.notified_calm_below = int(data.get("notified_calm_below", 100))

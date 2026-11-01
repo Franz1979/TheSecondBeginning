@@ -131,7 +131,7 @@ static func tick_day(ctx: GameContext) -> void:
 		return
 	var today := ctx.game_data.get_absolute_day()
 	for group in ctx.game_data.wild_animal_groups:
-		if find_visit(ctx.game_data, group.id) != null or today < group.next_visit_day:
+		if group.animals.is_empty() or find_visit(ctx.game_data, group.id) != null or today < group.next_visit_day:
 			continue
 		var faces := visit_dice_faces(ctx.world, ctx.individuals.size())
 		if faces > 0.0 and randf() * faces < 1.0:
@@ -1064,6 +1064,8 @@ static func _start_leaving(visit: WildAnimalVisit, world: World) -> void:
 # DEBUG — riga per il tooltip della DebugBar: giorni dall'ultima visita, attesa e dado delle visite spontanee.
 static func debug_dice_line(game_data: GameData, world: World, group: WildAnimalGroup, villagers: int) -> String:
 	var today := game_data.get_absolute_day()
+	if group.animals.is_empty():
+		return "Visite: nessun animale, nuovo gruppo tra %d giorni" % (group.new_pack_day - today)
 	var last_text := "ultima %d giorni fa" % (today - group.last_visit_end_day) if group.last_visit_end_day >= 0 else "nessuna finita"
 	var faces := visit_dice_faces(world, villagers)
 	var dice_text := "dado da %.1f facce (%.1f%% al giorno)" % [faces, 100.0 / faces] if faces > 0.0 else "nessun dado (%d abitanti)" % villagers

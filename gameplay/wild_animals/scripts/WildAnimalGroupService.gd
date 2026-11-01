@@ -115,8 +115,8 @@ static func _add_animal(group: WildAnimalGroup, is_male: bool, today: int, age_y
 
 
 # Giornaliero (GameSimulation.tick_day, dopo ensure_groups), richiesta utente 2026-10-27. Per ogni gruppo, in ordine:
-# morti per vecchiaia → rimpiazzo della coppia → cucciolata (primo giorno della stagione delle nascite) → partenze
-# oltre il tetto. Pochi animali per gruppo: il giro giornaliero non costa nulla.
+# morti per vecchiaia → attesa se il gruppo è vuoto → rimpiazzo della coppia → cucciolata (primo giorno della stagione
+# delle nascite) → partenze oltre il tetto. Pochi animali per gruppo: il giro giornaliero non costa nulla.
 static func tick_day(ctx: GameContext) -> void:
 	if ctx.game_data == null:
 		return
@@ -127,6 +127,8 @@ static func tick_day(ctx: GameContext) -> void:
 			continue
 		var today := ctx.game_data.get_absolute_day()
 		_remove_dead_of_old_age(group, wild_rules, today)
+		if _is_waiting_for_new_pack(group, today):
+			continue
 		_ensure_breeding_pair(group, rules, wild_rules, today)
 		_give_birth_if_season(ctx.game_data, group, rules, wild_rules, today)
 		_disperse_over_cap(group, rules, wild_rules, today)
@@ -140,6 +142,22 @@ static func _remove_dead_of_old_age(group: WildAnimalGroup, wild_rules: AnimalRu
 			group.animals.erase(animal)
 			print("[WILD ANIMAL GROUPS] %s #%d morto di vecchiaia (%d anni)" % [
 				group.species, animal.id, animal.get_age_years(today)])
+
+
+# Gruppo sterminato (2026-11-01, richiesta utente: prima una coppia nuova compariva il giorno dopo): per un anno nessun
+# animale, poi _ensure_breeding_pair ingloba due solitari con l'aggressività iniziale. I punti addomesticazione restano.
+static func _is_waiting_for_new_pack(group: WildAnimalGroup, today: int) -> bool:
+	if not group.animals.is_empty():
+		group.new_pack_day = -1
+		return false
+	if group.new_pack_day < 0:
+		group.new_pack_day = today + GameData.DAYS_PER_YEAR
+		print("[WILD ANIMAL GROUPS] %s: gruppo sterminato, nuovo gruppo il giorno %d" % [group.species, group.new_pack_day])
+	if today < group.new_pack_day:
+		return true
+	group.new_pack_day = -1
+	print("[WILD ANIMAL GROUPS] %s: arriva un nuovo gruppo, giorno %d" % [group.species, today])
+	return false
 
 
 # Manca un riproduttore: lo rimpiazza l'adulto (o vecchio) più giovane dello stesso sesso, per coppie più stabili; se
