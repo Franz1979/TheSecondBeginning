@@ -124,6 +124,9 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 	else:
 		context.erase(HuntService.CONTEXT_WEAPON_DROP)
 	AnimalGroupRenderer.trigger_flee(animal.macro_coords, animal.position, individual.home_macro_coords, individual.position)
+	# Animale di un branco in visita (2026-11-01, lupi L7): basta il tiro, anche a vuoto, perché il branco se ne vada.
+	if animal.wild_group_id != 0:
+		WildAnimalVisitService.on_member_shot_at(GameSettings.active_game_data, animal.wild_group_id)
 	HuntService.log_event(individual, "%s di %s su %s (distanza %.2f): gli animali entro il raggio di fuga scappano." % [
 		"colpo in mischia" if melee else ("lancio" if weapon_thrown else "tiro"), weapon_display, combat_target.describe(), distance
 	])

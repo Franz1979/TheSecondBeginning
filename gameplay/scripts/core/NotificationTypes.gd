@@ -73,4 +73,7 @@ enum NotificationPopupType {
 	# Acqua nel corpo (e nell'otre) finita: comincia la disidratazione (2026-10-30, ThirstService). Stile "alert" giallo,
 	# come BODY_RESERVE_IN_USE per la fame. Aggiunto IN CODA.
 	THIRST_ZERO,
+	# Cosa sta succedendo col branco in visita (2026-11-01, WildAnimalVisitService._notify_group): prima visita, si abitua,
+	# cacciato, ucciso. Stile di default. Aggiunto IN CODA.
+	WILD_ANIMAL_GROUP_NEWS,
 }

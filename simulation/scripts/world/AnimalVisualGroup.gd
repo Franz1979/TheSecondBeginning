@@ -69,18 +69,28 @@ var behavior_point: Vector2 = Vector2.ZERO
 var behavior_ring_min: float = 0.0
 var behavior_ring_max: float = 0.0
 var behavior_arrived: bool = false
+# Andatura (2026-11-01, passo 7b.1): fattore su hop_speed e, per GO_TO, di corsa senza pause tra i balzi.
+var behavior_speed_scale: float = 1.0
+var behavior_run: bool = false
 # GO_TO: punti intermedi del percorso (PathfindingService.plan_waypoints) e per quale meta/versione dei blocchi.
 var behavior_path: Array[Vector2] = []
 var behavior_path_planned: bool = false
 var behavior_path_target: Vector2 = Vector2.ZERO
 var behavior_path_block_version: int = -1
-# STAND_AROUND: punto dell'anello verso cui sta andando.
+# STAND_AROUND: punto dell'anello verso cui sta andando e punto verso cui si gira da fermo (di norma il centro).
 var behavior_stand_point: Vector2 = Vector2.ZERO
+var behavior_look_point: Vector2 = Vector2.ZERO
 
 # Identità facoltativa (2026-10-31, passo 7a): 0 = animale anonimo della fauna. Per un animale seguito per individuo
 # (il branco, WildAnimalGroup/WildAnimal) gli id del gruppo e dell'animale.
 var wild_group_id: int = 0
 var wild_animal_id: int = 0
+# Mandria che cambia cella (2026-11-01, passo 7c, AnimalGroupRenderer.start_herd_walk_in/start_herd_leaving): a piedi dal
+# bordo o verso il bordo con GO_TO. Giorni di attesa prima di partire e giorni dopo cui la camminata finisce comunque.
+enum HerdWalk { NONE, ENTERING, LEAVING }
+var herd_walk: HerdWalk = HerdWalk.NONE
+var herd_walk_delay: float = 0.0
+var herd_walk_timer: float = 0.0
 
 # Macchina a stati a due livelli per il movimento a balzi (vedi AnimalGroupRenderer). Rilevante
 # solo per i gruppi disegnati, ignorata quando l'istanza è usata come centro-cluster (stesso
@@ -91,6 +101,8 @@ var macro_phase: MacroPhase = MacroPhase.MOVING
 var macro_phase_timer: float = 0.0
 var micro_phase: MicroPhase = MicroPhase.HOPPING
 var micro_phase_timer: float = 0.0
+# Questo periodo di movimento è uno scatto di corsa invece del passo (AnimalRules.run_phase_chance).
+var running_phase: bool = false
 
 func _init(_position: Vector2, _direction: Vector2) -> void:
 	position = _position

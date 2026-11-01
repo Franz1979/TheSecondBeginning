@@ -324,7 +324,7 @@ hunt_order_dialog_stop_suffix,di carne
 work_area_hunt_needs_knife,{name} non può cacciare nelle zone: serve un coltello.
 work_area_hunt_no_zone,{name}: nessuna zona di lavoro con la caccia abilitata.
 hunt_no_weapon_left,"{name}: nessuna arma da caccia rimasta, la caccia si interrompe."
-hunt_no_knife_carcass_left,"{name}: nessun coltello, la carcassa resterà a terra"
+hunt_no_knife_carcass_left,"{name}: nessun coltello, la carcassa va macellata"
 work_area_pick_banner_text,Scegli la zona (Esc per annullare)
 work_area_gather_dialog_title,Raccogli nelle zone di lavoro
 work_area_gather_dialog_message,Cosa raccogliere? La zona si sceglie in automatico.
@@ -1213,7 +1213,6 @@ drawer_order_hunt_progress_row,Caccia · {done}/{total}
 task_assignment_kind_hunt,Caccia
 pending_hunt_no_prey,Caccia: nessuna preda in {zone}
 pending_hunt_order_ended,Caccia finita: nessuna preda nelle zone ({done}/{total} carne portate)
-pending_carcass_not_butchered,Carcassa non macellata
 task_assignment_cargo_return,Riporta il carico
 task_assignment_cargo_return_tooltip,Riporta al magazzino il carico del lavoro annullato (premi H di nuovo per posarlo a terra)
 task_assignment_cargo_generic,Carico
@@ -1558,6 +1557,8 @@ rubble_origin_village,Rifiuti del villaggio
 job_site_cut,"Taglio · Cantiere {building}"
 job_site_cut_cell,"Taglio · Cantiere {building} (cella {index}/{count})"
 task_assignment_kind_site_cut,Taglio per i cantieri
+job_butcher,"Macellazione · {species}"
+task_assignment_kind_butcher,Macellazione
 job_postponed_site_cut,"Rimandato da {name}: in attesa del taglio"
 site_cut_command_needs_axe,"Cantiere in attesa del taglio: serve qualcuno con l'ascia"
 building_awaiting_site_cut,"In attesa del taglio: {cells} celle con piante"
@@ -1677,6 +1678,11 @@ danger_predator,Predatore
 wound_bite,morso
 illness_wound_infection,infezione
 notification_wild_animal_driven_off,"{species}: scacciati da {names}"
+notification_wild_first_visit_wolf,"Dei lupi si aggirano attorno al villaggio."
+notification_wild_first_quiet_pit_wolf,"I lupi hanno frugato nella Fossa e se ne sono andati senza far danni."
+notification_wild_calmer_wolf,"I lupi sembrano meno diffidenti: si stanno abituando a noi."
+notification_wild_hunted_wolf,"Qualcuno ha tentato di cacciare un lupo: il branco è fuggito e sarà più ostile."
+notification_wild_killed_wolf,"Un lupo è stato ucciso: nel branco ne restano {count}."
 task_drive_off_name,Scaccia il pericolo
 task_drive_off_step_run,Corre contro il pericolo
 task_drive_off_step_wait,Grida e agita le braccia

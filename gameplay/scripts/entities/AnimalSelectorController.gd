@@ -23,11 +23,11 @@ const SELECT_RADIUS_MICROCELLS: float = 0.8
 # `required_button` (2026-09-26, caccia step 2): sinistro per la selezione, destro per il comando di
 # caccia (GameScene._try_assign_hunt_command_on_right_click) — stesso parametro del selettore edifici.
 #
-# Seconda sorgente (2026-10-28, lupi passo L1b): `wild_visit_views` (id del gruppo -> WildAnimalVisitView), gli animali
-# selvatici seguiti per individuo in visita. Un loro hit ha in più "wild_group_id" (id del WildAnimalGroup) e
+# Seconda sorgente (2026-10-28, lupi passo L1b): `wild_visit_renderers` (id del gruppo -> AnimalGroupRenderer dei corpi),
+# gli animali selvatici seguiti per individuo in visita. Un loro hit ha in più "wild_group_id" (id del WildAnimalGroup) e
 # "individual_id" è l'id del WildAnimal; vince comunque il più vicino tra tutte le sorgenti.
 func try_select(event: InputEvent, live_cells: Dictionary, required_button: int = MOUSE_BUTTON_LEFT,
-		wild_visit_views: Dictionary = {}) -> Dictionary:
+		wild_visit_renderers: Dictionary = {}) -> Dictionary:
 	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != required_button:
 		return {}
 
@@ -53,20 +53,23 @@ func try_select(event: InputEvent, live_cells: Dictionary, required_button: int 
 						"individual_id": individual.id,
 						"distance": distance,
 					}
-	for group_id in wild_visit_views:
-		var view = wild_visit_views[group_id]
-		if not is_instance_valid(view) or view.visit == null:
+	for group_id in wild_visit_renderers:
+		var renderer_node = wild_visit_renderers[group_id]
+		if not is_instance_valid(renderer_node) or not renderer_node.are_animals_shown():
 			continue
-		var view_mouse: Vector2 = view.get_local_mouse_position()
-		for entry in view.get_selectable_animals():
-			var distance: float = view_mouse.distance_to(entry["position"] * CELL_SIZE)
+		var visit_mouse: Vector2 = renderer_node.get_local_mouse_position()
+		for individual in renderer_node.get_individuals():
+			if not renderer_node.is_individual_visible(individual):
+				continue
+			var distance: float = visit_mouse.distance_to(individual.position * CELL_SIZE)
 			if distance < best_distance:
 				best_distance = distance
 				best = {
-					"macro_coords": view.visit.macro_coords,
-					"species": view.visit.species,
-					"individual_id": int(entry["id"]),
+					"macro_coords": renderer_node.macro_coords,
+					"species": individual.species_name,
+					"individual_id": individual.wild_animal_id,
 					"wild_group_id": int(group_id),
+					"body_id": individual.id,
 					"distance": distance,
 				}
 	return best

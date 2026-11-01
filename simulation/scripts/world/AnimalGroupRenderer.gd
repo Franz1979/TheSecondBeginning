@@ -67,6 +67,21 @@ const CHASE_CONTACT_DISTANCE: float = 0.3
 const STAND_REACH_DISTANCE: float = 0.3
 const STAND_POINT_ATTEMPTS: int = 6
 const STAND_HEADING_JITTER: float = 0.4
+# Mandria che cambia cella (2026-11-01, passo 7c): con 1-3 giorni di soggiorno e circa 25-40 microcelle al giorno entra
+# solo per un tratto (microcelle dal bordo, zona larga WALK_IN_AREA_RADIUS) ed esce a velocità doppia. Partono scaglionati
+# entro WALK_STAGGER_DAYS (fila, e i percorsi A* non cadono nello stesso fotogramma), sparsi di WALK_BORDER_SPREAD lungo il
+# bordo. Dopo i giorni massimi (bloccati, o mai arrivati) la camminata finisce comunque.
+const WALK_IN_DEPTH_MIN: float = 15.0
+const WALK_IN_DEPTH_MAX: float = 25.0
+const WALK_IN_AREA_RADIUS: float = 8.0
+const WALK_STAGGER_DAYS: float = 0.25
+const WALK_BORDER_SPREAD: float = 4.0
+const WALK_OUT_SPEED_SCALE: float = 2.0
+const WALK_IN_MAX_DAYS: float = 2.0
+const WALK_OUT_MAX_DAYS: float = 3.0
+# Reazioni agli edifici (vedi building_push): forza dell'attrazione, costante, e distanza entro cui si annulla.
+const ATTRACTION_WEIGHT: float = 0.5
+const ATTRACTION_STOP_DISTANCE: float = 2.0
 
 const CELL_SIZE: int = 10 # stesso fattore pixel/microcella di MicroCellRenderer
 const BODY_SEGMENTS: int = 16 # risoluzione del ventaglio del corpo, condivisa da tutte le specie
@@ -404,6 +419,9 @@ var cluster_attraction_strength: float = 12.0 # tasso per giorno di gioco della 
 # solo per il vagare continuo dei centri-cluster invisibili. TEMPO DI GIOCO: hop_speed in
 # microcelle/giorno di gioco, tutte le durate in giorni di gioco (vedi AnimalRules e _process).
 var hop_speed: float = 0.0
+# Andature quando vaga (AnimalRules.walk_speed_fraction, run_phase_chance).
+var walk_speed_fraction: float = 1.0
+var run_phase_chance: float = 0.0
 var movement_phase_duration_min: float = 0.25
 var movement_phase_duration_max: float = 0.625
 var rest_phase_duration_min: float = 0.375
@@ -492,6 +510,17 @@ var _cluster_avoid_buildings: Array = []
 # Reattività della specie al disagio (AnimalRules.avoidance_strength, risolta in configure): frazione per
 # balzo usata da _apply_avoidance_on_hop. Default AVOID_BIAS_PER_HOP per le specie che non la dichiarano.
 var avoidance_strength: float = AVOID_BIAS_PER_HOP
+# Reazioni a edifici precisi (2026-11-01, passo 7b.2; dati: AnimalRules.building_reactions), per chi ne ha: posizione
+# (microcelle) e raggio col segno (+ respinge, − attira), stessi indici. Agiscono su STAND_AROUND. Oggi li passa solo il
+# copione di una visita (WildAnimalVisitService.spawn_bodies): la fauna del mondo resta col disagio di sempre.
+var reaction_points: Array[Vector2] = []
+var reaction_radii: Array[float] = []
+# Zone in cui CHASE non entra (centri in microcelle e raggio): chi insegue si ferma al bordo.
+var chase_no_enter_points: Array[Vector2] = []
+var chase_no_enter_radius: float = 0.0
+# Mandria che sta uscendo dalla cella (start_herd_leaving), e chi è arrivato al bordo in questo fotogramma.
+var _herd_leaving: bool = false
+var _herd_exited_ids: Dictionary = {}
 # Secondi reali al prossimo controllo: parte da un valore casuale così i renderer di celle e specie
 # diverse non controllano tutti nello stesso frame.
 var _behavior_check_timer: float = 0.0
@@ -523,6 +552,8 @@ func configure(params: Dictionary) -> void:
 	cluster_comfort_radius = float(params.get("cluster_comfort_radius", 5.0))
 	cluster_attraction_strength = float(params.get("cluster_attraction_strength", 12.0))
 	hop_speed = float(params.get("hop_speed", 48.0))
+	walk_speed_fraction = float(params.get("walk_speed_fraction", 1.0))
+	run_phase_chance = float(params.get("run_phase_chance", 0.0))
 	movement_phase_duration_min = float(params.get("movement_phase_duration_min", 0.25))
 	movement_phase_duration_max = float(params.get("movement_phase_duration_max", 0.625))
 	rest_phase_duration_min = float(params.get("rest_phase_duration_min", 0.375))
@@ -1072,6 +1103,7 @@ func _update_group_phase(group: AnimalVisualGroup, delta: float) -> void:
 		if group.macro_phase_timer <= 0.0:
 			group.macro_phase = AnimalVisualGroup.MacroPhase.MOVING
 			group.macro_phase_timer = randf_range(movement_phase_duration_min, movement_phase_duration_max)
+			group.running_phase = randf() < run_phase_chance
 			group.micro_phase = AnimalVisualGroup.MicroPhase.HOPPING
 			group.micro_phase_timer = randf_range(hop_duration_min, hop_duration_max)
 			_apply_avoidance_on_hop(group)
@@ -1144,8 +1176,15 @@ func _process(real_delta: float) -> void:
 		# ogni balzo, dentro _update_group_phase (_apply_avoidance_on_hop).
 		_update_group_phase(group, delta)
 		if group.macro_phase == AnimalVisualGroup.MacroPhase.MOVING and group.micro_phase == AnimalVisualGroup.MicroPhase.HOPPING:
-			_move_with_collision(group, group.direction * hop_speed * _wounded_speed_factor(group) * delta)
+			var gait_speed := hop_speed if group.running_phase else hop_speed * walk_speed_fraction
+			_move_with_collision(group, group.direction * gait_speed * _wounded_speed_factor(group) * delta)
 		_write_instance_transform(i, group)
+
+	# Usciti dal bordo: tolti dopo il giro, che scorre _groups per indice.
+	if not _herd_exited_ids.is_empty():
+		_remove_individuals_by_id(_herd_exited_ids)
+		_herd_exited_ids = {}
+		_refresh_instances()
 
 	if _is_timing_enabled():
 		_record_process_timing(Time.get_ticks_usec() - timing_start_usec)
@@ -1395,7 +1434,7 @@ func _record_process_timing(usec: int) -> void:
 # nuovo comportamento riparte da capo (percorso, fasi, arrivo); tornando a WANDER le fasi ripartono a caso come alla
 # nascita. `point` = meta (GO_TO), centro (STAND_AROUND) o bersaglio (CHASE). false se l'id non è di questo renderer.
 func set_individual_behavior(individual_id: int, behavior: AnimalVisualGroup.Behavior, point: Vector2 = Vector2.ZERO,
-		ring_min: float = 0.0, ring_max: float = 0.0) -> bool:
+		ring_min: float = 0.0, ring_max: float = 0.0, speed_scale: float = 1.0, run: bool = false) -> bool:
 	var group := get_individual_by_id(individual_id)
 	if group == null:
 		return false
@@ -1403,6 +1442,9 @@ func set_individual_behavior(individual_id: int, behavior: AnimalVisualGroup.Beh
 	group.behavior_point = point
 	group.behavior_ring_min = ring_min
 	group.behavior_ring_max = maxf(ring_max, ring_min)
+	group.behavior_look_point = point
+	group.behavior_speed_scale = speed_scale
+	group.behavior_run = run
 	group.behavior_arrived = false
 	group.behavior_path.clear()
 	group.behavior_path_planned = false
@@ -1413,6 +1455,114 @@ func set_individual_behavior(individual_id: int, behavior: AnimalVisualGroup.Beh
 	else:
 		_start_hop_cycle(group)
 	return true
+
+
+# Come set_individual_behavior, per id, senza conoscere il renderer (il copione di una visita, WildAnimalVisitService).
+static func set_live_behavior(individual_id: int, behavior: AnimalVisualGroup.Behavior, point: Vector2 = Vector2.ZERO,
+		ring_min: float = 0.0, ring_max: float = 0.0, speed_scale: float = 1.0, run: bool = false) -> void:
+	var renderer = _live_individual_renderers.get(individual_id, null)
+	if renderer != null and is_instance_valid(renderer):
+		renderer.set_individual_behavior(individual_id, behavior, point, ring_min, ring_max, speed_scale, run)
+
+
+# --- Mandria che cambia cella (2026-11-01, passo 7c): la decide GameScene._refresh_animal_individuals ---
+
+# Gli individui da `first_index` in poi (appena nati, in coda a _groups) partono dal bordo e camminano fin dove stavano
+# per nascere. Se è entrata tutta la mandria (first_index 0) la sua zona si sposta prima a un tratto dal bordo.
+func start_herd_walk_in(first_index: int, border_point: Vector2) -> void:
+	var cluster_shifts: Dictionary = {}
+	if first_index == 0:
+		var inward := (Vector2(World.WIDTH, World.HEIGHT) * 0.5 - border_point).normalized()
+		var area_center := border_point + inward * randf_range(WALK_IN_DEPTH_MIN, WALK_IN_DEPTH_MAX)
+		for c in range(_clusters.size()):
+			var moved := area_center + Vector2.from_angle(randf() * TAU) * randf() * WALK_IN_AREA_RADIUS
+			cluster_shifts[c] = moved - _clusters[c].position
+			_clusters[c].position = moved
+	for i in range(first_index, _groups.size()):
+		var body: AnimalVisualGroup = _groups[i]
+		var shift: Vector2 = cluster_shifts.get(body.cluster_index, Vector2.ZERO)
+		var target := _clamp_to_cell(body.position + shift)
+		body.position = _herd_border_spot(border_point)
+		set_individual_behavior(body.id, AnimalVisualGroup.Behavior.GO_TO, target)
+		_begin_herd_walk(body, AnimalVisualGroup.HerdWalk.ENTERING, WALK_IN_MAX_DAYS)
+	_refresh_instances()
+
+
+# Tutti verso il punto del bordo, dove spariscono uno a uno. Il renderer vuoto lo toglie la riconciliazione successiva.
+func start_herd_leaving(border_point: Vector2) -> void:
+	_herd_leaving = true
+	for body in _groups:
+		set_individual_behavior(body.id, AnimalVisualGroup.Behavior.GO_TO, _herd_border_spot(border_point), 0.0, 0.0,
+			WALK_OUT_SPEED_SCALE)
+		_begin_herd_walk(body, AnimalVisualGroup.HerdWalk.LEAVING, WALK_OUT_MAX_DAYS)
+
+
+func is_herd_leaving() -> bool:
+	return _herd_leaving
+
+
+# La mandria è tornata mentre usciva: chi è ancora dentro si gira e resta.
+func cancel_herd_leaving() -> void:
+	_herd_leaving = false
+	for body in _groups:
+		if body.herd_walk == AnimalVisualGroup.HerdWalk.LEAVING:
+			body.herd_walk = AnimalVisualGroup.HerdWalk.NONE
+			set_individual_behavior(body.id, AnimalVisualGroup.Behavior.WANDER)
+
+
+func _begin_herd_walk(body: AnimalVisualGroup, walk: AnimalVisualGroup.HerdWalk, max_days: float) -> void:
+	body.herd_walk = walk
+	body.herd_walk_delay = randf() * WALK_STAGGER_DAYS
+	body.herd_walk_timer = max_days
+
+
+func _finish_herd_walk(body: AnimalVisualGroup) -> void:
+	if body.herd_walk == AnimalVisualGroup.HerdWalk.LEAVING:
+		_herd_exited_ids[body.id] = true
+		return
+	body.herd_walk = AnimalVisualGroup.HerdWalk.NONE
+	set_individual_behavior(body.id, AnimalVisualGroup.Behavior.WANDER)
+
+
+func _clamp_to_cell(point: Vector2) -> Vector2:
+	return point.clamp(Vector2(0.5, 0.5), Vector2(World.WIDTH - 0.5, World.HEIGHT - 0.5))
+
+
+# Un punto attorno a quello scelto sul bordo, se libero; altrimenti quello.
+func _herd_border_spot(border_point: Vector2) -> Vector2:
+	var spot := _clamp_to_cell(border_point + Vector2(randf_range(-WALK_BORDER_SPREAD, WALK_BORDER_SPREAD),
+		randf_range(-WALK_BORDER_SPREAD, WALK_BORDER_SPREAD)))
+	if blocked_test.is_valid() and bool(blocked_test.call(Vector2i(spot.floor()))):
+		return border_point
+	return spot
+
+
+# Toglie un individuo per id, senza conoscere il renderer (chi è uscito dal bordo in una visita).
+static func remove_live_individual(individual_id: int) -> void:
+	var renderer = _live_individual_renderers.get(individual_id, null)
+	if renderer != null and is_instance_valid(renderer):
+		renderer.remove_individual(individual_id)
+
+
+# Corpo con identità (2026-11-01, passo 7b.1): un animale seguito per individuo (il branco) in questo renderer, nel punto
+# dato, senza gruppetto. Lo governa chi regge il suo copione: non conta per le quote di set_population_by_age, quindi va
+# in un renderer che non ne riceve (GameScene._sync_wild_animal_visit_bodies).
+func add_identified_individual(age_band: GameTypes.AgeBand, at_position: Vector2, group_id: int, animal_id: int) -> AnimalVisualGroup:
+	var individual := _make_random_group(age_band)
+	individual.id = _next_individual_id
+	_next_individual_id += 1
+	individual.species_name = species_name
+	individual.cluster_index = -1
+	individual.position = at_position
+	individual.health = _max_health_for(age_band)
+	individual.macro_coords = macro_coords
+	individual.wild_group_id = group_id
+	individual.wild_animal_id = animal_id
+	_live_individuals[individual.id] = individual
+	_live_individual_renderers[individual.id] = self
+	_groups.append(individual)
+	_refresh_instances()
+	return individual
 
 
 # Sposta il punto del comportamento in corso senza farlo ripartire: il bersaglio di CHASE che si muove, o una nuova
@@ -1465,12 +1615,21 @@ func _advance_hop_cycle(group: AnimalVisualGroup, delta: float) -> bool:
 func _hop_toward(group: AnimalVisualGroup, distance: float, delta: float) -> void:
 	if group.micro_phase != AnimalVisualGroup.MicroPhase.HOPPING or distance <= 0.0:
 		return
-	_move_with_collision(group, group.direction * minf(hop_speed * _wounded_speed_factor(group) * delta, distance))
+	var speed := hop_speed * group.behavior_speed_scale * _wounded_speed_factor(group)
+	_move_with_collision(group, group.direction * minf(speed * delta, distance))
 
 
 # GO_TO: segue il percorso A* (PathfindingService.plan_waypoints, ripianificato se cambiano meta o blocchi della
 # cella), a balzi; arrivato entro GO_TO_REACH_DISTANCE dalla meta si ferma con behavior_arrived.
 func _step_go_to(group: AnimalVisualGroup, delta: float) -> void:
+	if group.herd_walk != AnimalVisualGroup.HerdWalk.NONE:
+		group.herd_walk_timer -= delta
+		if group.herd_walk_timer <= 0.0:
+			_finish_herd_walk(group)
+			return
+		if group.herd_walk_delay > 0.0:
+			group.herd_walk_delay -= delta
+			return
 	if group.behavior_arrived:
 		return
 	var block_version := PathfindingService.get_block_version(macro_coords)
@@ -1490,10 +1649,13 @@ func _step_go_to(group: AnimalVisualGroup, delta: float) -> void:
 	var distance := to_goal.length()
 	if group.behavior_path.is_empty() and distance <= GO_TO_REACH_DISTANCE:
 		group.behavior_arrived = true
+		if group.herd_walk != AnimalVisualGroup.HerdWalk.NONE:
+			_finish_herd_walk(group)
 		return
 	if distance > 0.000001:
 		group.direction = to_goal / distance
-	_advance_hop_cycle(group, delta)
+	if not group.behavior_run:
+		_advance_hop_cycle(group, delta)
 	_hop_toward(group, distance, delta)
 
 
@@ -1508,7 +1670,17 @@ func _step_chase(group: AnimalVisualGroup, delta: float) -> void:
 	if group.behavior_arrived:
 		return
 	_advance_hop_cycle(group, delta)
+	var from_position := group.position
 	_hop_toward(group, distance - CHASE_CONTACT_DISTANCE, delta)
+	if _in_chase_no_enter(group.position) and not _in_chase_no_enter(from_position):
+		group.position = from_position
+
+
+func _in_chase_no_enter(point: Vector2) -> bool:
+	for zone_center in chase_no_enter_points:
+		if zone_center.distance_to(point) <= chase_no_enter_radius:
+			return true
+	return false
 
 
 # STAND_AROUND: va a balzi verso un punto dell'anello attorno a behavior_point (direzione ripresa a ogni balzo, con un
@@ -1526,28 +1698,65 @@ func _step_stand_around(group: AnimalVisualGroup, delta: float) -> void:
 	if distance <= STAND_REACH_DISTANCE or group.macro_phase_timer <= 0.0:
 		group.macro_phase = AnimalVisualGroup.MacroPhase.RESTING
 		group.macro_phase_timer = randf_range(rest_phase_duration_min, rest_phase_duration_max)
-		var to_center := group.behavior_point - group.position
-		if to_center.length_squared() > 0.000001:
-			group.direction = to_center.normalized()
+		var to_look := group.behavior_look_point - group.position
+		if to_look.length_squared() > 0.000001:
+			group.direction = to_look.normalized()
 		return
 	if _advance_hop_cycle(group, delta):
 		group.direction = Vector2.from_angle(to_point.angle() + randf_range(-1.0, 1.0) * STAND_HEADING_JITTER)
 		_apply_avoidance_on_hop(group)
+		_apply_building_reactions_on_hop(group)
 	_hop_toward(group, distance, delta)
 
 
-# Nuovo punto dell'anello su una microcella libera (STAND_POINT_ATTEMPTS tentativi; nessuno = resta dov'è) e fase di
-# movimento; il primo balzo parte subito.
+# All'inizio di un balzo la direzione si piega verso la spinta degli edifici, con la forza della specie, come il disagio.
+func _apply_building_reactions_on_hop(group: AnimalVisualGroup) -> void:
+	if reaction_points.is_empty():
+		return
+	var push := building_push(group.position, reaction_points, reaction_radii)
+	if push.length_squared() > 0.000001:
+		group.direction = Vector2.from_angle(lerp_angle(group.direction.angle(), push.angle(),
+			clampf(push.length() * avoidance_strength, 0.0, 1.0)))
+
+
+# Spinta degli edifici su un animale in `from_position` (microcelle): somma dei contributi entro il raggio di ciascuno.
+# Raggio positivo = respinge, con la curva del disagio (AVOID_CURVE_EXPONENT: 0 al bordo, 1 a contatto); negativo = attira,
+# ATTRACTION_WEIGHT costante, nullo entro ATTRACTION_STOP_DISTANCE (saltato con include_attraction false). Direzione =
+# verso della somma, intensità = sua lunghezza (massimo 1).
+static func building_push(from_position: Vector2, points: Array[Vector2], radii: Array[float],
+		include_attraction: bool = true) -> Vector2:
+	var push := Vector2.ZERO
+	for i in range(points.size()):
+		var offset := from_position - points[i]
+		var distance := offset.length()
+		var radius := absf(radii[i])
+		if distance > radius:
+			continue
+		if radii[i] > 0.0:
+			var away: Vector2 = offset / distance if distance > 0.001 else Vector2.RIGHT.rotated(randf() * TAU)
+			push += away * pow(1.0 - distance / radius, AVOID_CURVE_EXPONENT)
+		elif include_attraction and distance > ATTRACTION_STOP_DISTANCE:
+			push -= offset / distance * ATTRACTION_WEIGHT
+	return push.limit_length(1.0)
+
+
+# Nuovo punto dell'anello su una microcella libera: tra STAND_POINT_ATTEMPTS tentativi il meno spinto dagli edifici che
+# respingono (il fuoco); nessuno libero = resta dov'è. Poi fase di movimento; il primo balzo parte subito.
 func _start_stand_walk(group: AnimalVisualGroup) -> void:
 	group.behavior_stand_point = group.position
+	var best_repulsion := INF
 	for attempt in range(STAND_POINT_ATTEMPTS):
 		var point := group.behavior_point + Vector2.RIGHT.rotated(randf() * TAU) \
 			* randf_range(group.behavior_ring_min, group.behavior_ring_max)
 		point = point.clamp(Vector2.ZERO, Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001))
 		if blocked_test.is_valid() and bool(blocked_test.call(Vector2i(point.floor()))):
 			continue
-		group.behavior_stand_point = point
-		break
+		var repulsion := building_push(point, reaction_points, reaction_radii, false).length()
+		if repulsion < best_repulsion:
+			group.behavior_stand_point = point
+			best_repulsion = repulsion
+			if repulsion <= 0.0:
+				break
 	group.macro_phase = AnimalVisualGroup.MacroPhase.MOVING
 	group.macro_phase_timer = randf_range(movement_phase_duration_min, movement_phase_duration_max)
 	group.micro_phase = AnimalVisualGroup.MicroPhase.HOP_PAUSE
@@ -1630,7 +1839,7 @@ func _is_visible_now(position: Vector2) -> bool:
 # due copie della stessa formula che potrebbero disallinearsi in futuro.
 # Sagoma di una specie con le sue proporzioni e il suo colore (2026-10-28, richiesta utente): unico punto che sceglie
 # la mesh per specie, usato dalla configurazione dei renderer della fauna (GameScene) e dalle visite degli animali seguiti
-# per individuo (WildAnimalVisitView). null per una specie senza sagoma.
+# per individuo (GameScene._sync_wild_animal_visit_bodies). null per una specie senza sagoma.
 static func build_species_mesh(species: String) -> ArrayMesh:
 	match species:
 		"rabbit":

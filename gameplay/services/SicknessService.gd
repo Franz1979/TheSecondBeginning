@@ -27,10 +27,6 @@ static func on_bedridden(ctx: GameContext, individual: HumanIndividual, effects:
 	if individual == null or not individual.is_sick():
 		return
 	var closing_current := _has_work_in_progress(individual)
-	var dropped_tasks: Array = individual.task_queue.duplicate()
-	if closing_current:
-		dropped_tasks.append(individual.current_task)
-	_note_unbutchered_carcasses(ctx.game_data, dropped_tasks)
 	_cancel_organized_social_rites(ctx, individual)
 	_drop_towed(ctx, individual)
 	# Zaino a terra in ogni caso (2026-10-25, richiesta utente): mucchio dov'è, lo riporta la lista dei mucchi. Con lo zaino
@@ -83,18 +79,6 @@ static func has_open_shelter_job(game_data: GameData, world: World) -> bool:
 					return true
 				break
 	return false
-
-
-# Macellazioni tolte con la carcassa ancora intera: avviso "In sospeso", il giocatore la riassegna a mano.
-static func _note_unbutchered_carcasses(game_data: GameData, tasks: Array) -> void:
-	for raw_task in tasks:
-		var task := raw_task as Task
-		if task == null:
-			continue
-		for step in task.steps:
-			var butcher := step as ButcherAction
-			if butcher != null and not GroundPileService.find_carcass(game_data, butcher.pile_macro_coords, butcher.pile_microcell, butcher.carcass_id).is_empty():
-				WorkFollowUpService.note_unbutchered_carcass(game_data, butcher.pile_macro_coords, butcher.pile_microcell, butcher.carcass_id)
 
 
 # Rito sociale organizzato da `individual`: annullato come allo scadere dell'attesa (stop_tasks false — le task dei

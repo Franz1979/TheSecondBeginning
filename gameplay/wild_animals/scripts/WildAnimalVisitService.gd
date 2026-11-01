@@ -2,29 +2,37 @@ class_name WildAnimalVisitService
 extends RefCounted
 
 # Visite dei gruppi di animali selvatici al villaggio (2026-10-28, richiesta utente — lupi passo L1). Stateless, come
-# VisitorService, di cui riusa ingresso/uscita dal bordo (find_border_point) e lo schema di movimento. Per ora la visita
-# parte solo a comando (debug); a fine sosta dà punti addomesticazione e calma (apply_visit_outcome, L3). Niente
-# attacchi né visite spontanee (passi L2, L4-L5).
+# VisitorService, di cui riusa ingresso/uscita dal bordo (find_border_point) e lo schema di movimento. La visita parte da
+# sola (tick_day, L2) o a comando (debug); a fine sosta dà punti addomesticazione e calma (apply_visit_outcome, L3).
 #
 # Ciclo:
 #   ARRIVING  entra dal bordo più vicino alla meta e ci cammina: la Fossa più piena della macrocella del villaggio, o
-#             un punto appena fuori dagli edifici del villaggio se non c'è una Fossa.
-#   STAYING   per una durata a caso ognuno va ad annusare punti attorno alla meta, fermandosi rivolto alla Fossa (o al
-#             centro del villaggio).
+#             il magazzino se non c'è una Fossa (2026-11-01, richiesta utente: ai margini non si vedevano).
+#   STAYING   per una durata a caso ognuno va ad annusare punti attorno alla meta, fermandosi rivolto a lei.
 #   LEAVING   torna al bordo più vicino e sparisce.
 
+# Visite spontanee (lupi L2, 2026-11-01, regole dell'utente): sotto MIN_VILLAGERS_FOR_VISITS abitanti nessuna visita; con una
+# visita in corso o durante l'attesa dopo l'uscita nessun tiro; poi un dado al giorno, con facce VISIT_DICE_*_BASE / abitanti
+# (mai meno di VISIT_DICE_*_MIN): più gente attira di più. L'aggressività non c'entra.
+const MIN_VILLAGERS_FOR_VISITS: int = 10
+const VISIT_DICE_PIT_BASE: float = 300.0
+const VISIT_DICE_PIT_MIN: float = 5.0
+const VISIT_DICE_STORAGE_BASE: float = 600.0
+const VISIT_DICE_STORAGE_MIN: float = 20.0
+# Giorni di attesa dall'uscita dei lupi: se scacciati o cacciati nell'ultima visita, altrimenti (vale la più lunga).
+const WAIT_DAYS_AFTER_HUNTED: int = 20
+const WAIT_DAYS_AFTER_DRIVEN_OFF: int = 10
+const WAIT_DAYS_AFTER_VISIT: int = 5
+# TEMPORANEO: vedi _debug_log_leaving.
+static var _debug_leaving_log_day: Dictionary = {}
 # Chi viene: ogni animale con questa probabilità (cuccioli compresi), almeno MIN_PARTICIPANTS, sempre un riproduttore.
 const PARTICIPATION_CHANCE: float = 0.7
 const MIN_PARTICIPANTS: int = 2
 # Sosta in giorni di gioco (2026-10-29: 1-2 giorni, 8-16 secondi a 1x; con 0.25-0.5 ripartivano quasi subito).
 const STAY_DAYS_MIN: float = 1.0
 const STAY_DAYS_MAX: float = 2.0
-# Distanza dalla Fossa a cui il gruppo si ferma (microcelle).
+# Distanza dalla meta (Fossa o magazzino) a cui il gruppo si ferma (microcelle).
 const PIT_ARRIVAL_RADIUS: float = 2.0
-# Punto ai margini: distanza oltre l'edificio del villaggio più lontano dal centro (microcelle).
-const VILLAGE_EDGE_DISTANCE: float = 6.0
-const VILLAGE_EDGE_ATTEMPTS: int = 8
-const BORDER_MARGIN: float = 3.0
 # Ingresso e uscita (2026-10-31, richiesta utente): tra BORDER_CANDIDATES punti a caso del bordo il branco prende quello
 # il cui tragitto in linea retta passa vicino a meno edifici del villaggio (entro BORDER_BUILDING_CLEARANCE microcelle):
 # arriva dalla parte libera invece di attraversare le case.
@@ -37,21 +45,16 @@ const CLUSTER_PLACEMENT_ATTEMPTS: int = 12
 # Reazioni agli edifici in sosta (2026-10-29): richiamo di un edificio che attira, costante entro il suo raggio (una
 # spinta che cresce avvicinandosi risucchierebbe l'animale dentro l'edificio) e nullo entro ATTRACTION_STOP_DISTANCE
 # microcelle, dove l'animale ci gironzola attorno. Più debole della repulsione a contatto, così il fuoco vince da vicino.
-const ATTRACTION_WEIGHT: float = 0.5
-const ATTRACTION_STOP_DISTANCE: float = 2.0
 # Sosta (2026-10-30, richiesta utente: "annusare" la Fossa invece di girare a caso): ognuno sceglie un punto su un
-# anello attorno alla meta (microcelle), ci va a balzi e lì si ferma rivolto alla meta, poi un altro punto. Il punto è
-# il meno spinto dagli edifici che respingono tra SNIFF_POINT_ATTEMPTS tentati su microcelle libere.
+# anello attorno alla meta (microcelle), ci va a balzi e lì si ferma rivolto alla meta, poi un altro punto
+# (comportamento STAND_AROUND del renderer).
 const SNIFF_RING_MIN: float = 1.5
 const SNIFF_RING_MAX: float = 3.5
-const SNIFF_POINT_ATTEMPTS: int = 6
-const SNIFF_REACH_DISTANCE: float = 0.3
-# Scarto casuale della direzione a ogni balzo verso il punto (radianti), per non andare dritti come su un binario.
-const SNIFF_HEADING_JITTER: float = 0.4
 # Esito di una visita tranquilla (lupi L3, 2026-10-30, richiesta utente): punti addomesticazione per animale presente —
-# pieni se la meta è una Fossa piena almeno PIT_FULL_RATIO, metà con una Fossa meno piena o senza Fossa (una sola Fossa
-# conta, quella della visita) — e calo dell'aggressività di ogni presente.
-const PIT_FULL_RATIO: float = 0.5
+# pieni se la meta è una Fossa, metà se è il magazzino — e calo dell'aggressività di ogni presente.
+# Una Fossa attira da PIT_ATTRACTION_WASTE rifiuti in su (2026-11-01, richiesta utente: col 50% della capienza un villaggio
+# piccolo non ci arrivava mai); sotto, il branco va al magazzino.
+const PIT_ATTRACTION_WASTE: int = 300
 const POINTS_PER_ANIMAL_FULL_PIT: float = 1.0
 const POINTS_PER_ANIMAL_OTHERWISE: float = 0.5
 const AGGRESSION_DROP_PER_VISIT: float = 1.0
@@ -70,7 +73,7 @@ const YOUNG_POINTS_SHARE: float = 0.5
 # L'inseguimento finisce quando la persona è al riparo, sparisce o muore, dopo MAX_BITES_PER_CHARGE morsi o
 # MAX_CHARGE_DAYS; poi il branco se ne va. In ogni caso la visita è "con attacco".
 const DANGER_PROFILE: String = "predator"
-const ATTACK_BASE_CHANCE: float = 0.3
+const ATTACK_BASE_CHANCE: float = 0.4
 const ATTACK_CHANCE_CAP: float = 0.9
 const WEAK_PERSON_STRENGTH: float = 0.5
 const CUB_MAX_AGE_YEARS: int = 1
@@ -84,8 +87,14 @@ const MAX_BITES_PER_CHARGE: int = 3
 # (finita la loro corsa, o entro DRIVE_OFF_GIVE_UP_DISTANCE microcelle da un presente) il branco si ferma e, dopo che
 # hanno gridato insieme per DangerProfile.drive_off_shout_days, rinuncia e se ne va di corsa. Niente punti né calma
 # (visita con attacco), aggressività invariata: il branco annota la cacciata
-# (WildAnimalGroup.driven_off_count/last_driven_off_day), che le visite spontanee (L2) useranno.
+# (WildAnimalGroup.driven_off_count/last_driven_off_day).
 const DRIVE_OFF_GIVE_UP_DISTANCE: float = 3.0
+# Caccia al branco (lupi L7, 2026-11-01, regola dell'utente): una volta per visita, al primo tiro, l'aggressività di ogni
+# presente sale di tanto; mai oltre AGGRESSION_MAX.
+const AGGRESSION_RISE_WHEN_HUNTED: float = 1.0
+const AGGRESSION_MAX: float = 100.0
+# Soglie di aggressività media del branco annunciate al giocatore (_notify_calmer), dalla più bassa.
+const CALM_NOTICE_THRESHOLDS: Array[int] = [25, 50, 75]
 # Tra due nuove scelte della fuga allo scoperto (giorni: 1 ora), così chi è chiuso contro il bordo o non trova un posto
 # non ci riprova a ogni fotogramma.
 const REDIRECT_COOLDOWN_DAYS: float = 1.0 / 24.0
@@ -107,16 +116,6 @@ const ATTACK_LINE_STEP: float = 0.5
 # (ProduceAction.get_required_position, NeedTaskAssignmentService.resolve_rest_target). Non riparano gli edifici
 # calpestabili (sentieri) e quelli che attirano la specie (AnimalRules.building_reactions negativo: la Fossa, i
 # magazzini), altrimenti chi va alla Fossa sarebbe sempre al sicuro.
-# Velocità di riserva se la specie non ha AnimalRules (microcelle/giorno).
-const DEFAULT_MOVE_SPEED: float = 24.0
-# In viaggio, velocità con cui ognuno torna al suo posto nella formazione (frazione della velocità di marcia).
-const FORMATION_RETURN_RATE: float = 0.5
-# Scia del centro in viaggio (2026-10-30, richiesta utente: in arrivo passavano sopra la palizzata): un punto ogni
-# TRAIL_SPACING microcelle, gli ultimi TRAIL_MAX_POINTS (12 microcelle di strada).
-const TRAIL_SPACING: float = 0.5
-const TRAIL_MAX_POINTS: int = 24
-
-
 static func find_visit(game_data: GameData, group_id: int) -> WildAnimalVisit:
 	for visit in game_data.wild_animal_visits:
 		if visit.group_id == group_id:
@@ -126,6 +125,47 @@ static func find_visit(game_data: GameData, group_id: int) -> WildAnimalVisit:
 
 # Fa partire una visita del gruppo. null (e un log) se il gruppo è già in visita, non c'è un magazzino o un
 # ingresso dal bordo.
+# Giro giornaliero (GameSimulation.tick_day): il dado delle visite spontanee di ogni gruppo.
+static func tick_day(ctx: GameContext) -> void:
+	if ctx.game_data == null or ctx.world == null:
+		return
+	var today := ctx.game_data.get_absolute_day()
+	for group in ctx.game_data.wild_animal_groups:
+		if find_visit(ctx.game_data, group.id) != null or today < group.next_visit_day:
+			continue
+		var faces := visit_dice_faces(ctx.world, ctx.individuals.size())
+		if faces > 0.0 and randf() * faces < 1.0:
+			print("[WILD ANIMAL VISITS] %s: visita spontanea, giorno %d (dado da %.1f facce, %d abitanti)" % [
+				group.species, today, faces, ctx.individuals.size()])
+			start_visit(ctx.game_data, ctx.world, group)
+
+
+# Facce del dado giornaliero (vedi MIN_VILLAGERS_FOR_VISITS); 0 = nessuna visita possibile (pochi abitanti, nessun magazzino).
+static func visit_dice_faces(world: World, villagers: int) -> float:
+	var center := WildAnimalGroupService.find_anchor_storage(world)
+	if center == null or villagers < MIN_VILLAGERS_FOR_VISITS:
+		return 0.0
+	if _find_fullest_pit(world, Vector2i(center.macro_x, center.macro_y)) != null:
+		return maxf(VISIT_DICE_PIT_BASE / float(villagers), VISIT_DICE_PIT_MIN)
+	return maxf(VISIT_DICE_STORAGE_BASE / float(villagers), VISIT_DICE_STORAGE_MIN)
+
+
+# I lupi sono usciti, o sono morti tutti i presenti: da qui parte l'attesa prima del prossimo tiro.
+static func _note_visit_ended(visit: WildAnimalVisit, game_data: GameData) -> void:
+	var group := _find_group(game_data, visit.group_id)
+	if group == null:
+		return
+	var wait_days := WAIT_DAYS_AFTER_VISIT
+	if visit.hunted:
+		wait_days = WAIT_DAYS_AFTER_HUNTED
+	elif visit.driven_off:
+		wait_days = WAIT_DAYS_AFTER_DRIVEN_OFF
+	group.last_visit_end_day = game_data.get_absolute_day()
+	group.next_visit_day = group.last_visit_end_day + wait_days
+	print("[WILD ANIMAL VISITS] %s: visita finita il giorno %d, prossimo tiro dal giorno %d" % [
+		group.species, group.last_visit_end_day, group.next_visit_day])
+
+
 static func start_visit(game_data: GameData, world: World, group: WildAnimalGroup) -> WildAnimalVisit:
 	if group == null or group.animals.is_empty():
 		return null
@@ -141,39 +181,30 @@ static func start_visit(game_data: GameData, world: World, group: WildAnimalGrou
 	visit.group_id = group.id
 	visit.species = group.species
 	visit.macro_coords = Vector2i(center.macro_x, center.macro_y)
-	var center_point := VisitorService.get_building_point(center)
 	var pit := _find_fullest_pit(world, visit.macro_coords)
 	if pit != null:
 		visit.target_kind = WildAnimalVisit.TargetKind.PIT
 		visit.pit_building_id = pit.id
-		visit.target_point = VisitorService.get_building_point(pit)
 	else:
-		visit.target_kind = WildAnimalVisit.TargetKind.VILLAGE_EDGE
-		visit.target_point = _find_village_edge_point(world, visit.macro_coords, center_point)
-	visit.look_point = visit.target_point if pit != null else center_point
-	var entry: Variant = _pick_quiet_border_point(world, visit.macro_coords, visit.target_point, -1 if pit == null else pit.id)
+		visit.target_kind = WildAnimalVisit.TargetKind.STORAGE
+	var target_building := pit if pit != null else center
+	visit.target_point = VisitorService.get_building_point(target_building)
+	visit.look_point = visit.target_point
+	var entry: Variant = _pick_quiet_border_point(world, visit.macro_coords, visit.target_point, target_building.id)
 	if entry == null:
 		print("[WILD ANIMAL VISITS] %s: nessun ingresso dal bordo di %s" % [group.species, visit.macro_coords])
 		return null
 	visit.entry_point = entry
 	visit.position = entry
-	var heading: Vector2 = visit.target_point - visit.position
-	visit.facing_direction = heading.normalized() if heading.length() > 0.0 else Vector2.RIGHT
 	visit.animal_ids = _pick_participants(group)
-	visit.offsets = _cluster_offsets(visit.animal_ids.size())
-	visit.home_offsets = visit.offsets.duplicate()
+	for offset in _cluster_offsets(visit.animal_ids.size()):
+		visit.animal_positions.append((visit.position + offset).clamp(Vector2.ZERO,
+			Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001)))
 	visit.blocked_test = PathfindingService.blocked_test_for(visit.macro_coords)
 	var wild_rules := _wild_rules(group.species)
 	var today := game_data.get_absolute_day()
 	var aggression_sum := 0.0
 	for i in range(visit.animal_ids.size()):
-		visit.headings.append(visit.facing_direction.angle())
-		visit.moving.append(false)
-		visit.phase_timers.append(0.0)
-		# Balzi sfasati fin dall'ingresso, così non pulsano tutti insieme.
-		visit.hopping.append(randf() < 0.5)
-		visit.hop_timers.append(randf_range(0.0, wild_rules.hop_duration_max) if wild_rules != null else 0.0)
-		visit.sniff_points.append(Vector2.ZERO)
 		var animal := group.find_animal(visit.animal_ids[i])
 		var aggression_share := clampf(animal.aggression, 0.0, 100.0) / 100.0 if animal != null else 0.0
 		visit.notice_radii.append(lerpf(MIN_NOTICE_RADIUS, MAX_NOTICE_RADIUS, aggression_share))
@@ -187,7 +218,7 @@ static func start_visit(game_data: GameData, world: World, group: WildAnimalGrou
 	game_data.wild_animal_visits.append(visit)
 	print("[WILD ANIMAL VISITS] %s: arrivano %d animali %s, meta %s" % [
 		group.species, visit.animal_ids.size(), visit.animal_ids,
-		"fossa #%d" % pit.id if pit != null else "margini del villaggio"])
+		"fossa #%d" % pit.id if pit != null else "magazzino #%d" % center.id])
 	return visit
 
 
@@ -228,31 +259,11 @@ static func _find_fullest_pit(world: World, macro_coords: Vector2i) -> Building:
 	for building in world.buildings:
 		if building.macro_x != macro_coords.x or building.macro_y != macro_coords.y:
 			continue
-		if not WasteDisposalService.is_waste_pit(building):
+		if not WasteDisposalService.is_waste_pit(building) or WasteDisposalService.get_pit_fill(building) < PIT_ATTRACTION_WASTE:
 			continue
 		if best == null or WasteDisposalService.get_pit_fill(building) > WasteDisposalService.get_pit_fill(best):
 			best = building
 	return best
-
-
-# Punto appena fuori dal villaggio: in una direzione a caso, VILLAGE_EDGE_DISTANCE oltre l'edificio più lontano dal
-# centro, dentro la cella e su una microcella libera (se la cella è viva); dopo VILLAGE_EDGE_ATTEMPTS l'ultimo provato.
-static func _find_village_edge_point(world: World, macro_coords: Vector2i, center_point: Vector2) -> Vector2:
-	var reach := 0.0
-	for building in world.buildings:
-		if building.macro_x != macro_coords.x or building.macro_y != macro_coords.y or building.is_demolished:
-			continue
-		reach = maxf(reach, VisitorService.get_building_point(building).distance_to(center_point))
-	var live_cell := PathfindingService.get_live_cell(macro_coords)
-	var point := center_point
-	for attempt in range(VILLAGE_EDGE_ATTEMPTS):
-		var direction := Vector2.RIGHT.rotated(randf() * TAU)
-		point = center_point + direction * (reach + VILLAGE_EDGE_DISTANCE)
-		point.x = clampf(point.x, BORDER_MARGIN, float(World.WIDTH) - BORDER_MARGIN)
-		point.y = clampf(point.y, BORDER_MARGIN, float(World.HEIGHT) - BORDER_MARGIN)
-		if live_cell == null or live_cell.path_grid == null or not PathfindingService.is_blocked(live_cell, Vector2i(point.floor())):
-			break
-	return point
 
 
 # Ogni animale al PARTICIPATION_CHANCE; poi almeno MIN_PARTICIPANTS (o tutti, se sono meno) e almeno un riproduttore.
@@ -289,15 +300,7 @@ static func _cluster_offsets(count: int) -> Array[Vector2]:
 
 
 static func get_animal_position(visit: WildAnimalVisit, index: int) -> Vector2:
-	return visit.position + visit.offsets[index].rotated(visit.facing_direction.angle())
-
-
-# Direzione disegnata dell'animale (angolo nel mondo): la sua durante la sosta, quella del gruppo in viaggio.
-static func get_animal_heading(visit: WildAnimalVisit, index: int) -> float:
-	if (visit.phase == WildAnimalVisit.Phase.STAYING or visit.phase == WildAnimalVisit.Phase.CHARGING) \
-			and index < visit.headings.size():
-		return visit.headings[index]
-	return visit.facing_direction.angle()
+	return visit.animal_positions[index]
 
 
 # Fa avanzare tutte le visite di `game_delta` (frazione di giorno; 0 in pausa) e toglie quelle uscite dalla mappa.
@@ -315,6 +318,7 @@ static func advance_all(game_data: GameData, world: World, game_delta: float, fo
 		if advance(visit, world, game_delta, game_data, folk, individuals, effects):
 			departed.append(visit)
 	for visit in departed:
+		_note_visit_ended(visit, game_data)
 		game_data.wild_animal_visits.erase(visit)
 
 
@@ -329,110 +333,257 @@ static func _restore_after_load(visit: WildAnimalVisit, game_data: GameData, wor
 	for i in range(visit.animal_ids.size() - 1, -1, -1):
 		if group.find_animal(visit.animal_ids[i]) != null:
 			continue
-		for per_animal: Array in [visit.animal_ids, visit.offsets, visit.home_offsets, visit.headings, visit.moving,
-				visit.phase_timers, visit.hopping, visit.hop_timers, visit.sniff_points, visit.notice_radii]:
-			if i < per_animal.size():
-				per_animal.remove_at(i)
+		_remove_from_visit_arrays(visit, i)
 	if visit.animal_ids.is_empty():
 		return false
 	visit.blocked_test = PathfindingService.blocked_test_for(visit.macro_coords)
-	visit.path.clear()
-	visit.path_planned = false
-	visit.trail.clear()
 	_collect_reaction_sources(visit, world, _wild_rules(visit.species))
 	print("[WILD ANIMAL VISITS] %s: visita ripresa dal salvataggio (fase %d, %d animali)" % [
 		visit.species, visit.phase, visit.animal_ids.size()])
 	return true
 
 
-# true = la visita è uscita dalla mappa e va tolta.
+# true = la visita è uscita dalla mappa e va tolta. Copione (2026-11-01, passo 7b.1): qui si decidono fasi, tiro d'attacco,
+# morsi e uscita; a muovere gli animali è il renderer, col comportamento assegnato (_assign_behaviors). In una cella non
+# viva non ci sono corpi: non si attacca, e arrivo e uscita sono immediati.
 static func advance(visit: WildAnimalVisit, world: World, game_delta: float, game_data: GameData, folk: Folk,
 		individuals: Array[HumanIndividual], effects: GameEffects) -> bool:
 	var wild_rules := _wild_rules(visit.species)
+	var has_bodies := _read_bodies(visit)
+	# Cella viva ma corpi non ancora creati (GameScene._sync_wild_animal_visit_bodies): si aspetta il prossimo fotogramma.
+	if not has_bodies and PathfindingService.get_live_cell(visit.macro_coords) != null:
+		return false
+	_notify_visit_news(visit, game_data, effects)
+	# Gli hanno tirato (lupi L7): la carica o la sosta finiscono qui, senza esito della visita, e se ne vanno di corsa.
+	if visit.hunted and visit.phase != WildAnimalVisit.Phase.LEAVING:
+		visit.attack_target_id = -1
+		DangerFleeService.end_danger(individuals, visit.group_id)
+		_start_leaving(visit, world)
 	# In arrivo e in sosta (2026-10-31, richiesta utente: il branco che attraversa il villaggio deve poter attaccare per
 	# strada). Una palizzata in mezzo toglie la linea retta (_is_line_clear): chi sta dietro non viene notato.
-	if visit.phase == WildAnimalVisit.Phase.STAYING or visit.phase == WildAnimalVisit.Phase.ARRIVING:
+	if has_bodies and (visit.phase == WildAnimalVisit.Phase.STAYING or visit.phase == WildAnimalVisit.Phase.ARRIVING):
 		var target := _find_attack_target(visit, individuals, game_data)
 		if target != null:
 			_start_charge(visit, target, world, game_data, individuals)
+	if has_bodies and visit.assigned_phase != visit.phase:
+		_assign_behaviors(visit, wild_rules)
 	if visit.phase == WildAnimalVisit.Phase.CHARGING:
 		_charge(visit, wild_rules, game_delta, individuals, game_data, world, folk, effects)
 		return false
 	if visit.phase == WildAnimalVisit.Phase.STAYING:
-		_sniff(visit, wild_rules, game_delta)
+		_settle_arrivals(visit)
 		visit.stay_remaining -= game_delta
 		if visit.stay_remaining <= 0.0:
 			apply_visit_outcome(visit, game_data, world, folk, effects)
 			_start_leaving(visit, world)
 		return false
-	_ensure_path(visit)
-	var stop_distance := PIT_ARRIVAL_RADIUS \
-		if visit.phase == WildAnimalVisit.Phase.ARRIVING and visit.target_kind == WildAnimalVisit.TargetKind.PIT else 0.0
-	while not visit.path.is_empty() and visit.position.distance_to(visit.path[0]) <= PathfindingService.WAYPOINT_REACH_DISTANCE:
-		visit.path.pop_front()
-	var following_waypoint := not visit.path.is_empty()
-	var goal: Vector2 = visit.path[0] if following_waypoint else visit.target_point
-	var to_goal: Vector2 = goal - visit.position
-	var remaining := to_goal.length() - (0.0 if following_waypoint else stop_distance)
-	if remaining <= 0.000001:
-		if following_waypoint:
-			visit.path.pop_front()
-			return false
-		return _on_target_reached(visit, world, wild_rules)
-	var direction := to_goal / to_goal.length()
-	# Scacciati: se ne vanno di corsa, balzi senza pause.
-	var driven_away := visit.driven_off and visit.phase == WildAnimalVisit.Phase.LEAVING and wild_rules != null
-	var speed := wild_rules.hop_speed if driven_away else _travel_speed(wild_rules)
-	var old_positions: Array[Vector2] = []
-	for i in range(visit.offsets.size()):
-		old_positions.append(get_animal_position(visit, i))
-	_turn_formation(visit, direction, speed * game_delta)
-	var step := speed * game_delta
-	if not driven_away:
-		_travel_gait(visit, wild_rules, step, game_delta)
-	var reached := step >= remaining
-	visit.position += direction * (remaining if reached else step)
-	if visit.trail.is_empty() or visit.trail[visit.trail.size() - 1].distance_to(visit.position) >= TRAIL_SPACING:
-		visit.trail.append(visit.position)
-		if visit.trail.size() > TRAIL_MAX_POINTS:
-			visit.trail.pop_front()
-	_follow_with_collision(visit, old_positions, wild_rules, game_delta)
-	if not reached:
+	if not has_bodies:
+		return _on_target_reached(visit)
+	if visit.phase == WildAnimalVisit.Phase.ARRIVING:
+		_note_redirected_target(visit)
+		for body_id in visit.body_ids:
+			if _has_arrived(visit, AnimalGroupRenderer.find_live_individual(body_id)):
+				return _on_target_reached(visit)
 		return false
-	if following_waypoint:
-		visit.path.pop_front()
-		return false
-	return _on_target_reached(visit, world, wild_rules)
+	# In uscita: chi arriva al bordo esce subito; la visita finisce con l'ultimo.
+	var still_here := false
+	for i in range(visit.body_ids.size()):
+		if visit.body_ids[i] == 0:
+			continue
+		if _has_arrived(visit, AnimalGroupRenderer.find_live_individual(visit.body_ids[i])):
+			AnimalGroupRenderer.remove_live_individual(visit.body_ids[i])
+			visit.body_ids[i] = 0
+		else:
+			still_here = true
+	_debug_log_leaving(visit, game_data)
+	return false if still_here else _on_target_reached(visit)
 
 
-# Viaggio con la collisione (2026-10-30, richiesta utente: in arrivo passavano sopra la palizzata). Il centro segue il
-# percorso; ognuno va verso il suo posto nella formazione (balzi e pause compresi, _travel_gait) con la collisione della
-# fauna (PathfindingService.move_with_collision), al massimo a hop_speed. Se il posto è dietro un ostacolo (microcella
-# bloccata o linea non libera) segue invece la scia del centro, il punto più recente che vede: ai cancelli e tra gli
-# edifici passano in fila. Il posto diventa dove l'animale è arrivato davvero; il ritorno in formazione lo riallinea.
-static func _follow_with_collision(visit: WildAnimalVisit, old_positions: Array[Vector2], wild_rules: AnimalRules,
-		delta: float) -> void:
-	if not visit.blocked_test.is_valid():
+# TEMPORANEO (2026-11-01, uscite lente dei lupi: togliere trovata la causa): una riga al giorno per ogni corpo ancora in uscita.
+static func _debug_log_leaving(visit: WildAnimalVisit, game_data: GameData) -> void:
+	var today := game_data.get_absolute_day()
+	if _debug_leaving_log_day.get(visit.group_id, -1) == today:
 		return
-	var max_step := (wild_rules.hop_speed if wild_rules != null else DEFAULT_MOVE_SPEED) * delta
-	var frame_angle := visit.facing_direction.angle()
-	for i in range(visit.offsets.size()):
-		var from_position := old_positions[i]
-		var goal := get_animal_position(visit, i)
-		if bool(visit.blocked_test.call(Vector2i(goal.floor()))) or not _is_line_clear(visit, from_position, goal):
-			goal = _trail_point_in_sight(visit, from_position)
-		var next_position := PathfindingService.move_with_collision(visit.blocked_test, from_position,
-			(goal - from_position).limit_length(max_step), visit.macro_coords)
-		next_position = next_position.clamp(Vector2.ZERO, Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001))
-		visit.offsets[i] = (next_position - visit.position).rotated(-frame_angle)
+	_debug_leaving_log_day[visit.group_id] = today
+	for body_id in visit.body_ids:
+		if body_id == 0:
+			continue
+		var body := AnimalGroupRenderer.find_live_individual(body_id)
+		if body == null:
+			print("[WILD ANIMAL VISITS] uscita g.%d: corpo %d NON TROVATO" % [today, body_id])
+			continue
+		print("[WILD ANIMAL VISITS] uscita g.%d: corpo %d in %s, meta %s (dist %.1f), behavior %d, arrived %s, path %s, salute %.2f, macro %d, micro %d" % [
+			today, body_id, Vector2i(body.position.floor()), Vector2i(body.behavior_point.floor()), body.position.distance_to(body.behavior_point),
+			body.behavior, body.behavior_arrived, body.behavior_path_planned, body.health, body.macro_phase, body.micro_phase])
 
 
-# Punto più recente della scia visibile in linea retta da `from_position`; nessuno = il centro.
-static func _trail_point_in_sight(visit: WildAnimalVisit, from_position: Vector2) -> Vector2:
-	for index in range(visit.trail.size() - 1, -1, -1):
-		if _is_line_clear(visit, from_position, visit.trail[index]):
-			return visit.trail[index]
-	return visit.position
+# Crea un corpo per ogni presente, dove la visita dice che si trova, nel renderer dato (solo per questa visita, vedi
+# GameScene._sync_wild_animal_visit_bodies). Reazioni e zone del fuoco sono gli stessi array della visita, non copie: dopo un
+# caricamento si riempiono dopo (_restore_after_load).
+static func spawn_bodies(visit: WildAnimalVisit, game_data: GameData, renderer: AnimalGroupRenderer) -> void:
+	renderer.reaction_points = visit.reaction_points
+	renderer.reaction_radii = visit.reaction_radii
+	renderer.chase_no_enter_points = visit.safe_points
+	renderer.chase_no_enter_radius = FEAR_SAFE_RADIUS
+	var group := _find_group(game_data, visit.group_id)
+	var wild_rules := _wild_rules(visit.species)
+	var today := game_data.get_absolute_day()
+	visit.body_ids.clear()
+	visit.assigned_phase = -1
+	for i in range(visit.animal_ids.size()):
+		var animal: WildAnimal = group.find_animal(visit.animal_ids[i]) if group != null else null
+		var band: GameTypes.AgeBand = animal.get_age_band(today, wild_rules) if animal != null else GameTypes.AgeBand.ADULT
+		var body := renderer.add_identified_individual(band, visit.animal_positions[i], visit.group_id, visit.animal_ids[i])
+		if i < visit.animal_healths.size() and visit.animal_healths[i] > 0.0:
+			body.health = visit.animal_healths[i]
+		visit.body_ids.append(body.id)
+
+
+# Id del corpo di un animale della visita; 0 se non è in scena.
+static func get_body_id(visit: WildAnimalVisit, animal_id: int) -> int:
+	var index := visit.animal_ids.find(animal_id)
+	return visit.body_ids[index] if index >= 0 and index < visit.body_ids.size() else 0
+
+
+# Il primo tiro di una visita (lupi L7, 2026-11-01, ThrowAction, anche a vuoto): aggressività su per ogni presente, una volta
+# sola, e il branco annota l'episodio; a farlo andare via di corsa è il copione al prossimo advance.
+static func on_member_shot_at(game_data: GameData, group_id: int) -> void:
+	var visit := find_visit(game_data, group_id)
+	var group := _find_group(game_data, group_id)
+	if visit == null or group == null or visit.hunted:
+		return
+	visit.hunted = true
+	visit.assigned_phase = -1
+	for animal_id in visit.animal_ids:
+		var animal := group.find_animal(animal_id)
+		if animal != null:
+			animal.aggression = minf(animal.aggression + AGGRESSION_RISE_WHEN_HUNTED, AGGRESSION_MAX)
+	group.hunted_count += 1
+	group.last_hunted_day = game_data.get_absolute_day()
+	print("[WILD ANIMAL VISITS] %s: gli hanno tirato, se ne vanno di corsa; aggressività +%d a %d presenti (caccia in tutto: %d)" % [
+		visit.species, roundi(AGGRESSION_RISE_WHEN_HUNTED), visit.animal_ids.size(), group.hunted_count])
+
+
+# Un animale del branco ucciso (lupi L7, 2026-11-01, GameScene._on_prey_killed): esce dal branco, dalla visita e dalla scena;
+# la carcassa l'ha già lasciata ThrowAction. Se era l'ultimo presente la visita finisce qui.
+static func on_member_killed(game_data: GameData, body: AnimalVisualGroup, individuals: Array[HumanIndividual], effects: GameEffects) -> void:
+	var group := _find_group(game_data, body.wild_group_id)
+	if group != null:
+		var animal := group.find_animal(body.wild_animal_id)
+		if animal != null:
+			group.animals.erase(animal)
+		print("[WILD ANIMAL VISITS] %s: ucciso #%d, nel branco ne restano %d" % [group.species, body.wild_animal_id, group.animals.size()])
+		_notify_group(effects, "notification_wild_killed_%s" % group.species, {"count": group.animals.size()})
+	var visit := find_visit(game_data, body.wild_group_id)
+	if visit != null:
+		var index := visit.animal_ids.find(body.wild_animal_id)
+		if index >= 0:
+			_remove_from_visit_arrays(visit, index)
+		if visit.animal_ids.is_empty():
+			DangerFleeService.end_danger(individuals, visit.group_id)
+			_note_visit_ended(visit, game_data)
+			game_data.wild_animal_visits.erase(visit)
+	AnimalGroupRenderer.remove_live_individual(body.id)
+
+
+static func _remove_from_visit_arrays(visit: WildAnimalVisit, index: int) -> void:
+	for per_animal: Array in [visit.animal_ids, visit.animal_positions, visit.animal_healths, visit.notice_radii, visit.body_ids]:
+		if index < per_animal.size():
+			per_animal.remove_at(index)
+
+
+# Copia le posizioni dai corpi nella visita, e il centro. false se non ci sono corpi: mai creati, o spariti con la cella
+# (si ricreano da animal_positions se la cella torna viva).
+static func _read_bodies(visit: WildAnimalVisit) -> bool:
+	if visit.body_ids.is_empty():
+		return false
+	var sum := Vector2.ZERO
+	var count := 0
+	visit.animal_healths.resize(visit.body_ids.size())
+	for i in range(visit.body_ids.size()):
+		if visit.body_ids[i] == 0:
+			continue
+		var body := AnimalGroupRenderer.find_live_individual(visit.body_ids[i])
+		if body == null:
+			visit.body_ids.clear()
+			visit.assigned_phase = -1
+			return false
+		visit.animal_positions[i] = body.position
+		visit.animal_healths[i] = body.health
+		sum += body.position
+		count += 1
+	if count > 0:
+		visit.position = sum / float(count)
+	return true
+
+
+# Assegna a ogni corpo il comportamento della fase, una volta per fase (e di nuovo se i corpi sono stati ricreati).
+static func _assign_behaviors(visit: WildAnimalVisit, wild_rules: AnimalRules) -> void:
+	visit.assigned_phase = visit.phase
+	var travel_scale := _travel_speed_scale(wild_rules)
+	var driven_away := (visit.driven_off or visit.hunted) and visit.phase == WildAnimalVisit.Phase.LEAVING
+	for body_id in visit.body_ids:
+		if body_id == 0:
+			continue
+		var body := AnimalGroupRenderer.find_live_individual(body_id)
+		if body == null:
+			continue
+		match visit.phase:
+			WildAnimalVisit.Phase.CHARGING:
+				# Il bersaglio lo aggiorna _charge a ogni mossa; fino ad allora fermo dov'è.
+				AnimalGroupRenderer.set_live_behavior(body_id, AnimalVisualGroup.Behavior.CHASE, body.position)
+			WildAnimalVisit.Phase.STAYING:
+				if body.position.distance_to(visit.target_point) <= _stop_distance(visit):
+					_start_sniffing(visit, body_id)
+				else:
+					# Chi è rimasto indietro arriva col suo percorso (_settle_arrivals).
+					AnimalGroupRenderer.set_live_behavior(body_id, AnimalVisualGroup.Behavior.GO_TO, visit.target_point,
+						0.0, 0.0, travel_scale)
+			_:
+				# In arrivo e in uscita; scacciati: di corsa, senza pause.
+				AnimalGroupRenderer.set_live_behavior(body_id, AnimalVisualGroup.Behavior.GO_TO, visit.target_point,
+					0.0, 0.0, 1.0 if driven_away else travel_scale, driven_away)
+
+
+static func _start_sniffing(visit: WildAnimalVisit, body_id: int) -> void:
+	AnimalGroupRenderer.set_live_behavior(body_id, AnimalVisualGroup.Behavior.STAND_AROUND, visit.target_point,
+		SNIFF_RING_MIN, SNIFF_RING_MAX)
+	# Rivolti alla Fossa o al centro del villaggio, anche se la sosta si fa altrove (meta irraggiungibile).
+	var body := AnimalGroupRenderer.find_live_individual(body_id)
+	if body != null:
+		body.behavior_look_point = visit.look_point
+
+
+# In sosta: chi era rimasto indietro, appena arrivato, comincia ad annusare.
+static func _settle_arrivals(visit: WildAnimalVisit) -> void:
+	for body_id in visit.body_ids:
+		var body := AnimalGroupRenderer.find_live_individual(body_id)
+		if body != null and body.behavior == AnimalVisualGroup.Behavior.GO_TO and _has_arrived(visit, body):
+			_start_sniffing(visit, body_id)
+
+
+# Distanza dalla meta a cui il gruppo è arrivato: attorno all'edificio in arrivo, al punto esatto del bordo in uscita.
+static func _stop_distance(visit: WildAnimalVisit) -> float:
+	return AnimalGroupRenderer.GO_TO_REACH_DISTANCE if visit.phase == WildAnimalVisit.Phase.LEAVING else PIT_ARRIVAL_RADIUS
+
+
+static func _has_arrived(visit: WildAnimalVisit, body: AnimalVisualGroup) -> bool:
+	return body != null and (body.behavior_arrived or body.position.distance_to(body.behavior_point) <= _stop_distance(visit))
+
+
+# Meta irraggiungibile (2026-10-30, richiesta utente: la Fossa dentro un recinto chiuso): il percorso del corpo l'ha
+# spostata sulla microcella libera più vicina (PathfindingService.plan_waypoints), e la sosta si fa lì.
+static func _note_redirected_target(visit: WildAnimalVisit) -> void:
+	if visit.target_redirected:
+		return
+	for body_id in visit.body_ids:
+		var body := AnimalGroupRenderer.find_live_individual(body_id)
+		if body != null and body.behavior_path_planned and body.behavior_point != visit.target_point:
+			print("[WILD ANIMAL VISITS] %s: meta %s irraggiungibile, si fermano a %s" % [
+				visit.species, Vector2i(visit.target_point.floor()), Vector2i(body.behavior_point.floor())])
+			visit.target_point = body.behavior_point
+			visit.target_redirected = true
+			return
 
 
 static func _wild_rules(species: String) -> AnimalRules:
@@ -440,160 +591,21 @@ static func _wild_rules(species: String) -> AnimalRules:
 	return AnimalCalculator.get_animal_rules(rules.wild_species_name) if rules != null else null
 
 
-# Velocità di marcia del centro (2026-10-29): la velocità media con cui un animale della specie si sposta a vista nella
-# fauna (AnimalGroupRenderer: balzi a hop_speed con pause, fasi di movimento alternate a riposi), non move_speed — quella
-# muove i centri invisibili dei gruppetti, di continuo, e in visita rendeva i lupi quasi 3 volte più veloci di un umano.
-static func _travel_speed(wild_rules: AnimalRules) -> float:
-	if wild_rules == null or wild_rules.hop_speed <= 0.0:
-		return DEFAULT_MOVE_SPEED
+# Andatura in viaggio (2026-10-29): la velocità media con cui un animale della specie si sposta a vista nella fauna
+# (balzi a hop_speed con pause, fasi di movimento alternate a riposi), non move_speed, che in visita rendeva i lupi quasi
+# 3 volte più veloci di un umano. In viaggio non si riposano: i balzi vanno a hop_speed × quota del tempo in movimento.
+static func _travel_speed_scale(wild_rules: AnimalRules) -> float:
+	if wild_rules == null:
+		return 1.0
 	var moving := (wild_rules.movement_phase_duration_min + wild_rules.movement_phase_duration_max) * 0.5
 	var resting := (wild_rules.rest_phase_duration_min + wild_rules.rest_phase_duration_max) * 0.5
-	var moving_share := moving / (moving + resting) if moving + resting > 0.0 else 1.0
-	return wild_rules.hop_speed * _hop_share(wild_rules) * moving_share
+	return moving / (moving + resting) if moving + resting > 0.0 else 1.0
 
 
-# Quota di tempo passata in balzo dentro la fase di movimento (durate medie di balzo e pausa della specie).
-static func _hop_share(wild_rules: AnimalRules) -> float:
-	var hop := (wild_rules.hop_duration_min + wild_rules.hop_duration_max) * 0.5
-	var pause := (wild_rules.hop_pause_min + wild_rules.hop_pause_max) * 0.5
-	return hop / (hop + pause) if hop + pause > 0.0 else 1.0
-
-
-# Andatura in viaggio (2026-10-30, richiesta utente: scivolando sembravano volare): il centro avanza a velocità media e
-# ognuno, sfasato dagli altri, alterna balzi e pause come la fauna — nella pausa resta fermo (il suo posto arretra di
-# `step`), nel balzo recupera. In media il posto non cambia; lo scarto residuo lo riassorbe il ritorno in formazione.
-static func _travel_gait(visit: WildAnimalVisit, wild_rules: AnimalRules, step: float, delta: float) -> void:
-	if wild_rules == null:
-		return
-	var hop_share := _hop_share(wild_rules)
-	if hop_share <= 0.0 or hop_share >= 1.0:
-		return
-	for i in range(visit.offsets.size()):
-		visit.hop_timers[i] -= delta
-		if visit.hop_timers[i] <= 0.0:
-			visit.hopping[i] = not visit.hopping[i]
-			visit.hop_timers[i] = randf_range(wild_rules.hop_duration_min, wild_rules.hop_duration_max) \
-				if visit.hopping[i] else randf_range(wild_rules.hop_pause_min, wild_rules.hop_pause_max)
-		# Asse locale +X = direzione di marcia (get_animal_position ruota i posti con facing_direction).
-		visit.offsets[i].x += step * (1.0 / hop_share - 1.0) if visit.hopping[i] else -step
-
-
-# In viaggio: cambio di direzione del gruppo senza far saltare gli animali (i posti si riesprimono nel nuovo
-# riferimento), poi ognuno torna piano verso il suo posto nella formazione (dopo la sosta erano sparsi).
-static func _turn_formation(visit: WildAnimalVisit, direction: Vector2, step: float) -> void:
-	var turn := visit.facing_direction.angle() - direction.angle()
-	visit.facing_direction = direction
-	for i in range(visit.offsets.size()):
-		visit.offsets[i] = visit.offsets[i].rotated(turn).move_toward(visit.home_offsets[i], step * FORMATION_RETURN_RATE)
-
-
-# Sosta (2026-10-30): ognuno va ad annusare un punto attorno alla meta (_pick_sniff_point) a balzi a hop_speed e pause
-# (hop_duration_*/hop_pause_*), come la fauna; arrivato, o finita la fase di movimento (movement_phase_duration_*), si
-# ferma rivolto alla meta per una fase di riposo (rest_phase_duration_*), poi sceglie un altro punto. All'inizio di ogni
-# balzo la direzione punta al punto, con un piccolo scarto, e si piega con la spinta degli edifici. I posti restano nel
-# riferimento del gruppo, fermo durante la sosta.
-static func _sniff(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: float) -> void:
-	if wild_rules == null:
-		return
-	var frame_angle := visit.facing_direction.angle()
-	for i in range(visit.offsets.size()):
-		var from_position := visit.position + visit.offsets[i].rotated(frame_angle)
-		visit.phase_timers[i] -= delta
-		if not visit.moving[i]:
-			if visit.phase_timers[i] > 0.0:
-				continue
-			_start_sniff_walk(visit, i, from_position, wild_rules)
-		var to_point := visit.sniff_points[i] - from_position
-		if to_point.length() <= SNIFF_REACH_DISTANCE or visit.phase_timers[i] <= 0.0:
-			_start_sniffing(visit, i, from_position, wild_rules)
-			continue
-		var hop_started := false
-		visit.hop_timers[i] -= delta
-		if visit.hop_timers[i] <= 0.0:
-			visit.hopping[i] = not visit.hopping[i]
-			visit.hop_timers[i] = randf_range(wild_rules.hop_duration_min, wild_rules.hop_duration_max) \
-				if visit.hopping[i] else randf_range(wild_rules.hop_pause_min, wild_rules.hop_pause_max)
-			hop_started = visit.hopping[i]
-		if not visit.hopping[i]:
-			continue
-		var heading := visit.headings[i]
-		if hop_started:
-			heading = to_point.angle() + randf_range(-1.0, 1.0) * SNIFF_HEADING_JITTER
-			# Edifici (2026-10-29): la direzione si piega verso la spinta, come il disagio della fauna
-			# (AnimalGroupRenderer._apply_avoidance_on_hop), con la forza della specie.
-			if not visit.reaction_points.is_empty():
-				var push := building_push(from_position, visit.reaction_points, visit.reaction_radii)
-				if push.length_squared() > 0.000001:
-					var strength := wild_rules.avoidance_strength if wild_rules.avoidance_strength >= 0.0 else AnimalGroupRenderer.AVOID_BIAS_PER_HOP
-					heading = lerp_angle(heading, push.angle(), clampf(push.length() * strength, 0.0, 1.0))
-		# Collisione: stessa regola della fauna (PathfindingService.move_with_collision), poi dentro la cella.
-		var next_position := PathfindingService.move_with_collision(visit.blocked_test, from_position,
-			Vector2.from_angle(heading) * minf(wild_rules.hop_speed * delta, to_point.length()), visit.macro_coords)
-		next_position = next_position.clamp(Vector2.ZERO, Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001))
-		if next_position == from_position:
-			# Bloccato su entrambi gli assi: per il resto del balzo da un'altra parte, invece di restare incollato.
-			heading = randf() * TAU
-		visit.headings[i] = heading
-		visit.offsets[i] = (next_position - visit.position).rotated(-frame_angle)
-
-
-# Parte verso un nuovo punto da annusare, per al massimo una fase di movimento; il primo balzo parte subito.
-static func _start_sniff_walk(visit: WildAnimalVisit, index: int, from_position: Vector2, wild_rules: AnimalRules) -> void:
-	visit.sniff_points[index] = _pick_sniff_point(visit, from_position)
-	visit.moving[index] = true
-	visit.phase_timers[index] = randf_range(wild_rules.movement_phase_duration_min, wild_rules.movement_phase_duration_max)
-	visit.hopping[index] = false
-	visit.hop_timers[index] = 0.0
-
-
-# Si ferma ad annusare, rivolto alla meta (la Fossa, o il centro del villaggio), per una fase di riposo.
-static func _start_sniffing(visit: WildAnimalVisit, index: int, from_position: Vector2, wild_rules: AnimalRules) -> void:
-	visit.moving[index] = false
-	visit.phase_timers[index] = randf_range(wild_rules.rest_phase_duration_min, wild_rules.rest_phase_duration_max)
-	var to_look := visit.look_point - from_position
-	if to_look.length() > 0.001:
-		visit.headings[index] = to_look.angle()
-
-
-# Punto sull'anello SNIFF_RING_MIN..MAX attorno alla meta (target_point durante la sosta), su una microcella libera; tra
-# SNIFF_POINT_ATTEMPTS tentativi quello meno spinto dagli edifici che respingono (il fuoco). Nessuno libero = resta dov'è.
-static func _pick_sniff_point(visit: WildAnimalVisit, from_position: Vector2) -> Vector2:
-	var best := from_position
-	var best_repulsion := INF
-	for attempt in range(SNIFF_POINT_ATTEMPTS):
-		var point := visit.target_point + Vector2.RIGHT.rotated(randf() * TAU) * randf_range(SNIFF_RING_MIN, SNIFF_RING_MAX)
-		point = point.clamp(Vector2.ZERO, Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001))
-		if visit.blocked_test.is_valid() and bool(visit.blocked_test.call(Vector2i(point.floor()))):
-			continue
-		var repulsion := building_push(point, visit.reaction_points, visit.reaction_radii, false).length()
-		if repulsion < best_repulsion:
-			best = point
-			best_repulsion = repulsion
-			if repulsion <= 0.0:
-				break
-	return best
-
-
-static func _on_target_reached(visit: WildAnimalVisit, world: World, wild_rules: AnimalRules) -> bool:
+static func _on_target_reached(visit: WildAnimalVisit) -> bool:
 	if visit.phase == WildAnimalVisit.Phase.ARRIVING:
 		visit.phase = WildAnimalVisit.Phase.STAYING
 		visit.stay_remaining = randf_range(STAY_DAYS_MIN, STAY_DAYS_MAX)
-		# Metà parte subito verso un punto da annusare, gli altri annusano dove sono per un poco: non si muovono tutti
-		# insieme. Riferimento del gruppo rivolto alla meta; i posti si riesprimono nel nuovo riferimento (niente salti).
-		var old_angle := visit.facing_direction.angle()
-		var to_look := visit.look_point - visit.position
-		if to_look.length() > 0.0:
-			visit.facing_direction = to_look.normalized()
-		var frame_angle := visit.facing_direction.angle()
-		for i in range(visit.animal_ids.size()):
-			visit.offsets[i] = visit.offsets[i].rotated(old_angle - frame_angle)
-			var from_position := visit.position + visit.offsets[i].rotated(frame_angle)
-			visit.headings[i] = frame_angle
-			if wild_rules != null and randf() < 0.5:
-				_start_sniff_walk(visit, i, from_position, wild_rules)
-			else:
-				visit.moving[i] = false
-				visit.phase_timers[i] = randf_range(0.0, 0.3)
 		print("[WILD ANIMAL VISITS] %s: arrivati, restano %.2f giorni" % [visit.species, visit.stay_remaining])
 		return false
 	print("[WILD ANIMAL VISITS] %s: usciti dalla macrocella %s" % [visit.species, visit.macro_coords])
@@ -630,28 +642,6 @@ static func _collect_reaction_sources(visit: WildAnimalVisit, world: World, wild
 			visit.safe_points.append(point)
 	if not visit.reaction_points.is_empty():
 		print("[WILD ANIMAL VISITS] %s: %d edifici a cui reagire" % [visit.species, visit.reaction_points.size()])
-
-
-# Spinta degli edifici su un animale in `from_position` (microcelle): somma dei contributi entro il raggio di ciascuno.
-# Raggio positivo = respinge, con la curva della fauna (AnimalGroupRenderer.AVOID_CURVE_EXPONENT: 0 al bordo, 1 a
-# contatto); negativo = attira, ATTRACTION_WEIGHT costante, nullo entro ATTRACTION_STOP_DISTANCE (saltato con
-# include_attraction false). Direzione = verso della somma, intensità = sua lunghezza (massimo 1). Statica e senza
-# stato: riusabile dal servizio comune della fauna.
-static func building_push(from_position: Vector2, points: Array[Vector2], radii: Array[float],
-		include_attraction: bool = true) -> Vector2:
-	var push := Vector2.ZERO
-	for i in range(points.size()):
-		var offset := from_position - points[i]
-		var distance := offset.length()
-		var radius := absf(radii[i])
-		if distance > radius:
-			continue
-		if radii[i] > 0.0:
-			var away: Vector2 = offset / distance if distance > 0.001 else Vector2.RIGHT.rotated(randf() * TAU)
-			push += away * pow(1.0 - distance / radius, AnimalGroupRenderer.AVOID_CURVE_EXPONENT)
-		elif include_attraction and distance > ATTRACTION_STOP_DISTANCE:
-			push -= offset / distance * ATTRACTION_WEIGHT
-	return push.limit_length(1.0)
 
 
 # Tiro d'attacco della visita (vedi il commento delle costanti d'attacco): fatto una volta sola, appena il branco nota
@@ -762,8 +752,7 @@ static func _find_individual(individuals: Array[HumanIndividual], individual_id:
 	return null
 
 
-# Parte la carica: il riferimento del gruppo resta fermo (come in sosta), ognuno con la sua direzione. La persona
-# caricata scappa (L5a, DangerFleeService, profilo DANGER_PROFILE): il pericolo ha l'id del gruppo (una visita alla volta
+# Parte la carica. La persona caricata scappa (L5a, DangerFleeService, profilo DANGER_PROFILE): il pericolo ha l'id del gruppo (una visita alla volta
 # per gruppo) e arriva dal presente più vicino; i punti sicuri sono le zone del fuoco (safe_points).
 static func _start_charge(visit: WildAnimalVisit, target: HumanIndividual, world: World, game_data: GameData,
 		individuals: Array[HumanIndividual]) -> void:
@@ -774,13 +763,7 @@ static func _start_charge(visit: WildAnimalVisit, target: HumanIndividual, world
 	visit.charge_pause = 0.0
 	visit.bites = 0
 	visit.attacked = true
-	visit.path.clear()
-	visit.path_planned = false
-	var nearest_wolf := visit.position
-	for i in range(visit.animal_ids.size()):
-		var animal_position := get_animal_position(visit, i)
-		if animal_position.distance_to(target.position) < nearest_wolf.distance_to(target.position):
-			nearest_wolf = animal_position
+	var nearest_wolf := _nearest_wolf(visit, target.position)
 	visit.charge_start_distance = nearest_wolf.distance_to(target.position)
 	print("[WILD ANIMAL VISITS] %s: caricano #%d %s da %.1f microcelle" % [
 		visit.species, target.id, target.name, visit.charge_start_distance])
@@ -799,8 +782,8 @@ static func _start_charge(visit: WildAnimalVisit, target: HumanIndividual, world
 	visit.defenders_needed = int(drive_off["needed"]) if not visit.defender_ids.is_empty() else 0
 
 
-# Inseguimento: ognuno va dritto verso la persona alternando balzi a hop_speed e pause (hop_*), come la fauna, con la
-# sua collisione; in media un po' più veloce di chi corre. Il primo che arriva a ATTACK_CONTACT_DISTANCE morde
+# Inseguimento: ognuno va dritto verso la persona (comportamento CHASE) alternando balzi a hop_speed e pause, come la
+# fauna, con la sua collisione; in media un po' più veloce di chi corre. Il primo che arriva a ATTACK_CONTACT_DISTANCE morde
 # (_on_attack_contact), poi tutti fermi per BITE_PAUSE_DAYS. Fine: vedi il commento delle costanti d'attacco.
 static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: float, individuals: Array[HumanIndividual],
 		game_data: GameData, world: World, folk: Folk, effects: GameEffects) -> void:
@@ -820,6 +803,7 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 			_on_driven_off(visit, individuals, game_data, effects)
 			_end_charge(visit, individuals, game_data, world, folk, effects)
 		# Davanti al gruppo che grida il branco resta fermo: niente inseguimento né morsi.
+		_hold_bodies(visit)
 		return
 	elif _in_fear_zone(visit, target.position):
 		end_reason = "persona al sicuro vicino al fuoco"
@@ -840,35 +824,43 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 		_redirect_flight(visit, target, world, game_data)
 	if visit.charge_pause > 0.0:
 		visit.charge_pause -= delta
+		_hold_bodies(visit)
 		return
-	var frame_angle := visit.facing_direction.angle()
-	for i in range(visit.offsets.size()):
-		var from_position := visit.position + visit.offsets[i].rotated(frame_angle)
-		var to_target := target.position - from_position
-		var distance := to_target.length()
+	if visit.body_ids.is_empty():
+		return
+	for i in range(visit.animal_ids.size()):
+		var distance := get_animal_position(visit, i).distance_to(target.position)
 		visit.charge_min_distance = minf(visit.charge_min_distance, distance)
 		if distance <= ATTACK_CONTACT_DISTANCE:
 			_on_attack_contact(visit, target, game_data, effects)
 			visit.charge_pause = BITE_PAUSE_DAYS
+			_hold_bodies(visit)
 			# Morso allo scoperto: approfitta della pausa per scegliere di nuovo dove scappare.
 			if DangerFleeService.needs_new_escape(target, visit.group_id, false):
 				_redirect_flight(visit, target, world, game_data)
 			return
-		visit.hop_timers[i] -= delta
-		if visit.hop_timers[i] <= 0.0:
-			visit.hopping[i] = not visit.hopping[i]
-			visit.hop_timers[i] = randf_range(wild_rules.hop_duration_min, wild_rules.hop_duration_max) 				if visit.hopping[i] else randf_range(wild_rules.hop_pause_min, wild_rules.hop_pause_max)
-		var heading := to_target.angle()
-		visit.headings[i] = heading
-		if not visit.hopping[i]:
-			continue
-		var next_position := PathfindingService.move_with_collision(visit.blocked_test, from_position,
-			Vector2.from_angle(heading) * minf(wild_rules.hop_speed * delta, distance), visit.macro_coords)
-		next_position = next_position.clamp(Vector2.ZERO, Vector2(float(World.WIDTH) - 0.001, float(World.HEIGHT) - 0.001))
-		# Nella zona sicura del fuoco non si entra: ci si ferma al bordo.
-		if _in_fear_zone(visit, next_position) and not _in_fear_zone(visit, from_position):
-			next_position = from_position
-		visit.offsets[i] = (next_position - visit.position).rotated(-frame_angle)
+	for body_id in visit.body_ids:
+		var body := AnimalGroupRenderer.find_live_individual(body_id)
+		if body != null:
+			body.behavior_point = target.position
+
+
+# Tutti fermi dove sono: il bersaglio dell'inseguimento diventa la propria posizione.
+static func _hold_bodies(visit: WildAnimalVisit) -> void:
+	for body_id in visit.body_ids:
+		var body := AnimalGroupRenderer.find_live_individual(body_id)
+		if body != null:
+			body.behavior_point = body.position
+
+
+# Il presente più vicino a `point`.
+static func _nearest_wolf(visit: WildAnimalVisit, point: Vector2) -> Vector2:
+	var nearest := get_animal_position(visit, 0)
+	for i in range(1, visit.animal_ids.size()):
+		var animal_position := get_animal_position(visit, i)
+		if animal_position.distance_to(point) < nearest.distance_to(point):
+			nearest = animal_position
+	return nearest
 
 
 # Morso (L5b): la ferita BITE_CONDITION_ID (si somma a quelle di prima, HealthConditionRules.repeat_adds), log e notifica.
@@ -891,12 +883,7 @@ static func _on_attack_contact(visit: WildAnimalVisit, target: HumanIndividual, 
 # Il caricato sceglie di nuovo dove scappare (DangerFleeService.needs_new_escape), lontano dal presente più vicino.
 static func _redirect_flight(visit: WildAnimalVisit, target: HumanIndividual, world: World, game_data: GameData) -> void:
 	visit.redirect_cooldown = REDIRECT_COOLDOWN_DAYS
-	var nearest_wolf := visit.position
-	for i in range(visit.animal_ids.size()):
-		var animal_position := get_animal_position(visit, i)
-		if animal_position.distance_to(target.position) < nearest_wolf.distance_to(target.position):
-			nearest_wolf = animal_position
-	DangerFleeService.start_flee(target, DANGER_PROFILE, visit.group_id, nearest_wolf, visit.safe_points, world,
+	DangerFleeService.start_flee(target, DANGER_PROFILE, visit.group_id, _nearest_wolf(visit, target.position), visit.safe_points, world,
 		game_data, true)
 
 
@@ -904,7 +891,6 @@ static func _redirect_flight(visit: WildAnimalVisit, target: HumanIndividual, wo
 static func _defenders_arrived(visit: WildAnimalVisit, individuals: Array[HumanIndividual]) -> int:
 	if visit.defender_ids.is_empty():
 		return 0
-	var frame_angle := visit.facing_direction.angle()
 	var arrived := 0
 	for defender_id in visit.defender_ids:
 		var member := _find_individual(individuals, defender_id)
@@ -913,8 +899,8 @@ static func _defenders_arrived(visit: WildAnimalVisit, individuals: Array[HumanI
 		if DangerFleeService.has_reached_danger(member, visit.group_id):
 			arrived += 1
 			continue
-		for i in range(visit.offsets.size()):
-			if (visit.position + visit.offsets[i].rotated(frame_angle)).distance_to(member.position) <= DRIVE_OFF_GIVE_UP_DISTANCE:
+		for i in range(visit.animal_positions.size()):
+			if visit.animal_positions[i].distance_to(member.position) <= DRIVE_OFF_GIVE_UP_DISTANCE:
 				arrived += 1
 				break
 	return arrived
@@ -970,7 +956,7 @@ static func _end_charge(visit: WildAnimalVisit, individuals: Array[HumanIndividu
 # punti addomesticazione alla specie domestica che deriva da questa selvatica (POINTS_PER_ANIMAL_* per adulto presente,
 # YOUNG_POINTS_SHARE per giovane, la parte
 # decimale messa da parte in WildAnimalGroup.pending_domestication_points) e −AGGRESSION_DROP_PER_VISIT a ogni presente.
-# Visita con attacco (L4): niente punti né calma. Qui arriveranno gli altri casi (lupo ferito o ucciso L7).
+# Visita con attacco (L4): niente punti né calma. Una visita in cui gli hanno tirato (L7) non arriva qui.
 static func apply_visit_outcome(visit: WildAnimalVisit, game_data: GameData, world: World, folk: Folk,
 		effects: GameEffects) -> void:
 	if visit.attacked:
@@ -979,8 +965,8 @@ static func apply_visit_outcome(visit: WildAnimalVisit, game_data: GameData, wor
 	var group := _find_group(game_data, visit.group_id)
 	if group == null:
 		return
-	var pit_ratio := _visit_pit_fill_ratio(visit, world)
-	var per_animal := POINTS_PER_ANIMAL_FULL_PIT if pit_ratio >= PIT_FULL_RATIO else POINTS_PER_ANIMAL_OTHERWISE
+	var at_pit := visit.target_kind == WildAnimalVisit.TargetKind.PIT
+	var per_animal := POINTS_PER_ANIMAL_FULL_PIT if at_pit else POINTS_PER_ANIMAL_OTHERWISE
 	var present: Array[WildAnimal] = []
 	for animal_id in visit.animal_ids:
 		var animal := group.find_animal(animal_id)
@@ -1003,22 +989,50 @@ static func apply_visit_outcome(visit: WildAnimalVisit, game_data: GameData, wor
 			DomesticationPointsService.add_points(game_data, folk, domestic_species, whole_points, effects)
 	print("[WILD ANIMAL VISITS] %s: visita tranquilla (%s), %d presenti, %.2f punti (adulto %.1f, giovane metà) -> +%d punti %s (resto %.2f), aggressività -%d a %s" % [
 		group.species,
-		"fossa piena al %d%%" % roundi(pit_ratio * 100.0) if visit.target_kind == WildAnimalVisit.TargetKind.PIT else "senza fossa",
+		"alla fossa" if at_pit else "al magazzino",
 		present.size(), visit_points, per_animal, whole_points, domestic_species, group.pending_domestication_points,
 		roundi(AGGRESSION_DROP_PER_VISIT),
 		", ".join(present.map(func(animal: WildAnimal) -> String: return "#%d (%d)" % [animal.id, roundi(animal.aggression)]))])
+	if at_pit and not group.notified_first_quiet_pit:
+		group.notified_first_quiet_pit = true
+		_notify_group(effects, "notification_wild_first_quiet_pit_%s" % group.species)
+	_notify_calmer(group, effects)
 
 
-# Riempimento (0..1) della Fossa meta della visita; 0 senza Fossa o se nel frattempo non riceve più rifiuti.
-static func _visit_pit_fill_ratio(visit: WildAnimalVisit, world: World) -> float:
-	if visit.target_kind != WildAnimalVisit.TargetKind.PIT or world == null:
-		return 0.0
-	for building in world.buildings:
-		if building.id == visit.pit_building_id:
-			if not WasteDisposalService.is_waste_pit(building):
-				return 0.0
-			return float(WasteDisposalService.get_pit_fill(building)) / float(building.rules.waste_capacity)
-	return 0.0
+# Messaggi al giocatore (2026-11-01, richiesta utente: deve capire che il branco si abitua e che cacciarlo costa). Testi
+# senza numeri né punti; una chiave per specie (notification_wild_<evento>_<specie>). Le visite tranquille normali restano
+# senza messaggio.
+static func _notify_group(effects: GameEffects, text_key: String, values: Dictionary = {}) -> void:
+	if effects != null:
+		effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS, GameContext.tr_text(text_key).format(values))
+
+
+# Prima visita del branco e tentativo di caccia in questa visita (il tiro nasce in ThrowAction, che non ha gli effetti).
+static func _notify_visit_news(visit: WildAnimalVisit, game_data: GameData, effects: GameEffects) -> void:
+	var group := _find_group(game_data, visit.group_id)
+	if group == null:
+		return
+	if not group.notified_first_visit:
+		group.notified_first_visit = true
+		_notify_group(effects, "notification_wild_first_visit_%s" % group.species)
+	if visit.hunted and not visit.hunted_notified:
+		visit.hunted_notified = true
+		_notify_group(effects, "notification_wild_hunted_%s" % group.species)
+
+
+# Aggressività media scesa sotto una soglia nuova, più bassa di quelle già annunciate: se risale e riscende non si ripete.
+static func _notify_calmer(group: WildAnimalGroup, effects: GameEffects) -> void:
+	if group.animals.is_empty():
+		return
+	var total := 0.0
+	for animal in group.animals:
+		total += animal.aggression
+	var average := total / float(group.animals.size())
+	for threshold in CALM_NOTICE_THRESHOLDS:
+		if average < float(threshold) and threshold < group.notified_calm_below:
+			group.notified_calm_below = threshold
+			_notify_group(effects, "notification_wild_calmer_%s" % group.species)
+			return
 
 
 # Specie domestica che deriva dalla selvatica del gruppo (DomesticAnimalRules.wild_species_name: cane ← lupo); "" se
@@ -1035,57 +1049,31 @@ static func _domestic_species_for(group_species: String) -> String:
 
 # Uscita dal bordo più vicino raggiungibile da dove il gruppo si trova; senza un bordo valido, l'ingresso.
 static func _start_leaving(visit: WildAnimalVisit, world: World) -> void:
-	# Dopo la sosta o la carica sono sparsi: il centro passa sull'animale più vicino alla loro media (una microcella
-	# libera, dove qualcuno sta davvero), così chi si è allontanato lo ritrova seguendo la scia; posti riespressi.
-	var frame_angle := visit.facing_direction.angle()
-	var mean := Vector2.ZERO
-	for i in range(visit.offsets.size()):
-		mean += get_animal_position(visit, i)
-	if not visit.offsets.is_empty():
-		mean /= float(visit.offsets.size())
-		var new_center := get_animal_position(visit, 0)
-		for i in range(1, visit.offsets.size()):
-			var animal_position := get_animal_position(visit, i)
-			if animal_position.distance_to(mean) < new_center.distance_to(mean):
-				new_center = animal_position
-		var shift := (new_center - visit.position).rotated(-frame_angle)
-		for i in range(visit.offsets.size()):
-			visit.offsets[i] -= shift
-		visit.position = new_center
-	visit.trail.clear()
+	# Dopo la sosta o la carica sono sparsi: l'uscita si sceglie dall'animale più vicino alla loro media (una microcella
+	# libera, dove qualcuno sta davvero).
+	visit.position = _nearest_wolf(visit, visit.position)
 	# Uscita dalla parte libera come l'ingresso, ma il branco scacciato scappa dal bordo più vicino.
 	var exit: Variant = VisitorService.find_border_point(world, visit.macro_coords, visit.position,
-		Vector2i(visit.position.floor())) if visit.driven_off \
+		Vector2i(visit.position.floor())) if visit.driven_off or visit.hunted \
 		else _pick_quiet_border_point(world, visit.macro_coords, visit.position, visit.pit_building_id)
 	visit.target_point = exit if exit != null else visit.entry_point
 	visit.phase = WildAnimalVisit.Phase.LEAVING
 	print("[WILD ANIMAL VISITS] %s: se ne vanno" % visit.species)
 
 
-# Stesso calcolo di VisitorService._ensure_path: percorso del centro ricalcolato al cambio di meta o di blocchi della
-# macrocella; senza griglia o con meta irraggiungibile si va in linea retta.
-static func _ensure_path(visit: WildAnimalVisit) -> void:
-	var block_version := PathfindingService.get_block_version(visit.macro_coords)
-	if visit.path_planned and visit.path_target == visit.target_point and visit.path_block_version == block_version:
-		return
-	visit.path.clear()
-	visit.path_planned = true
-	visit.path_block_version = block_version
-	# Meta irraggiungibile (2026-10-30, richiesta utente: la Fossa dentro un recinto chiuso) — prima si andava in linea
-	# retta, attraverso la palizzata: la meta diventa la microcella libera più vicina nella regione del gruppo, e la
-	# sosta si fa lì (rivolti sempre alla Fossa, look_point). Regola in PathfindingService.plan_waypoints (2026-10-31).
-	var plan := PathfindingService.plan_waypoints(visit.macro_coords, visit.position, visit.target_point)
-	if bool(plan["redirected"]):
-		print("[WILD ANIMAL VISITS] %s: meta %s irraggiungibile, si fermano a %s" % [
-			visit.species, Vector2i(visit.target_point.floor()), Vector2i((plan["target"] as Vector2).floor())])
-		visit.target_point = plan["target"]
-	visit.path_target = visit.target_point
-	visit.path.append_array(plan["path"])
+# DEBUG — riga per il tooltip della DebugBar: giorni dall'ultima visita, attesa e dado delle visite spontanee.
+static func debug_dice_line(game_data: GameData, world: World, group: WildAnimalGroup, villagers: int) -> String:
+	var today := game_data.get_absolute_day()
+	var last_text := "ultima %d giorni fa" % (today - group.last_visit_end_day) if group.last_visit_end_day >= 0 else "nessuna finita"
+	var faces := visit_dice_faces(world, villagers)
+	var dice_text := "dado da %.1f facce (%.1f%% al giorno)" % [faces, 100.0 / faces] if faces > 0.0 else "nessun dado (%d abitanti)" % villagers
+	var wait_text := ", attesa ancora %d giorni" % (group.next_visit_day - today) if today < group.next_visit_day else ""
+	return "Visite: %s, %s%s" % [last_text, dice_text, wait_text]
 
 
 # DEBUG — riga per il tooltip della DebugBar: fase e animali presenti.
 static func debug_line(visit: WildAnimalVisit) -> String:
 	var phase_names := ["in arrivo", "fermi", "se ne vanno", "caricano"]
 	return "In visita (%s, %s): %s" % [phase_names[visit.phase],
-		"fossa" if visit.target_kind == WildAnimalVisit.TargetKind.PIT else "margini",
+		"fossa" if visit.target_kind == WildAnimalVisit.TargetKind.PIT else "magazzino",
 		", ".join(visit.animal_ids.map(func(animal_id: int) -> String: return "#%d" % animal_id))]

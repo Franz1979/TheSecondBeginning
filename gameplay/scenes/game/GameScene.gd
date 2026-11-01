@@ -383,8 +383,8 @@ var _ground_pile_views: Dictionary = {}  # pile id -> GroundPileView
 # Gruppi di visitatori (2026-09-27, gameplay/visitors/): id del gruppo -> VisitorPartyView. Allineato ogni
 # frame da _sync_visitor_party_views, sullo schema di _ground_pile_views.
 var _visitor_party_views: Dictionary = {}
-# Visite degli animali selvatici (2026-10-28): id del gruppo -> WildAnimalVisitView (_sync_wild_animal_visit_views).
-var _wild_animal_visit_views: Dictionary = {}
+# Visite degli animali selvatici (2026-10-28): id del gruppo -> AnimalGroupRenderer dei corpi (_sync_wild_animal_visit_bodies).
+var _wild_animal_visit_renderers: Dictionary = {}
 # Overlay di debug del pathfinding col tasto N TOLTO il 2026-10-04 (richiesta utente, tasto N liberato): lo stesso
 # disegno (PathfindingDebugOverlay) resta nel layer della mappa "Percorribilità" (MapLayerRegistry, "walkability").
 # Layer della mappa (2026-09-27, richiesta utente — menu "Layer" della barra in alto, MapLayerRegistry): id del layer
@@ -1260,7 +1260,7 @@ func _process(delta: float) -> void:
 	sim.tick_frame(delta, game_delta, clock != null and clock.is_playing, individual, frame_effects)
 	_apply_effects(frame_effects)
 	_sync_visitor_party_views()
-	_sync_wild_animal_visit_views()
+	_sync_wild_animal_visit_bodies()
 	if _active_map_layer_id != MapLayerRegistry.NONE_ID or _map_layer_overlay != null:
 		_sync_map_layer_overlay()
 	_sync_command_bar()
@@ -1450,7 +1450,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Animale (2026-09-25, richiesta utente) — stessa unità (PIXEL locali della cella) e stesso
 	# confronto alla pari di vegetazione/edifici/pietre; solo animali visibili (vedi
 	# AnimalSelectorController), con tolleranza ampia come per gli umani.
-	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_LEFT, _wild_animal_visit_views)
+	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_LEFT, _wild_animal_visit_renderers)
 	_select_timing_mark("ricerca animali")
 	# stick_lot_hit (click SINISTRO) RIMOSSO (2026-09-16, richiesta utente — "va tolto il click
 	# singolo sulla cella"): calcolava il lotto sotto il click SOLO per il ciclo click-ripetuto e il
@@ -2341,9 +2341,10 @@ func _handle_right_click_command(event: InputEvent) -> bool:
 func _collect_right_click_targets(event: InputEvent) -> RightClickTargets:
 	var targets := RightClickTargets.new()
 	targets.body_id = _dead_body_at_click(event)
-	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
+	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT, _wild_animal_visit_renderers)
 	if not animal_hit.is_empty():
-		targets.prey = AnimalGroupRenderer.find_live_individual(int(animal_hit["individual_id"]))
+		# Un lupo in visita (lupi L7) ha l'id del corpo a parte: "individual_id" è quello del WildAnimal.
+		targets.prey = AnimalGroupRenderer.find_live_individual(int(animal_hit.get("body_id", animal_hit["individual_id"])))
 		targets.prey_species = String(animal_hit["species"])
 	targets.carcass_pile = _find_carcass_pile_at_click()
 	targets.plant = vegetation_selector_controller.find_live_at_mouse(live_cells)
@@ -3497,14 +3498,12 @@ func _select_animal(hit: Dictionary) -> void:
 		var cell: LiveMacroCell = live_cells[coords]
 		for renderer_node in cell.animal_renderers.values():
 			renderer_node.clear_selected_individual()
-	for view in _wild_animal_visit_views.values():
-		if is_instance_valid(view):
-			view.clear_selected_animal()
+	for visit_renderer in _wild_animal_visit_renderers.values():
+		if is_instance_valid(visit_renderer):
+			visit_renderer.clear_selected_individual()
 	if hit.has("wild_group_id"):
-		# Animale selvatico seguito per individuo, in visita (2026-10-28, lupi L1b): l'anello lo disegna la sua vista.
-		var visit_view = _wild_animal_visit_views.get(int(hit["wild_group_id"]))
-		if is_instance_valid(visit_view):
-			visit_view.set_selected_animal(int(hit["individual_id"]))
+		# Animale selvatico seguito per individuo, in visita (2026-10-28, lupi L1b): l'anello lo disegna il renderer dei corpi.
+		_select_wild_animal_body(int(hit["wild_group_id"]), int(hit["individual_id"]))
 	else:
 		var hit_cell: LiveMacroCell = live_cells.get(hit["macro_coords"])
 		if hit_cell != null and hit_cell.animal_renderers.has(hit["species"]):
@@ -3531,9 +3530,9 @@ func _clear_animal_selection() -> void:
 	if selected_animal.is_empty():
 		return
 	if selected_animal.has("wild_group_id"):
-		var visit_view = _wild_animal_visit_views.get(int(selected_animal["wild_group_id"]))
-		if is_instance_valid(visit_view):
-			visit_view.clear_selected_animal()
+		var visit_renderer = _wild_animal_visit_renderers.get(int(selected_animal["wild_group_id"]))
+		if is_instance_valid(visit_renderer):
+			visit_renderer.clear_selected_individual()
 	else:
 		var cell: LiveMacroCell = live_cells.get(selected_animal["macro_coords"])
 		if cell != null and cell.animal_renderers.has(selected_animal["species"]):
@@ -3588,6 +3587,14 @@ func _validate_selected_animal() -> void:
 
 # --- Animali selvatici seguiti per individuo (2026-10-28, lupi passo L1b) ---
 # Selezione con "wild_group_id": l'animale è un WildAnimal del gruppo, selezionabile finché è in una visita in corso.
+
+# Anello sul corpo dell'animale della visita, nel renderer dei corpi di quel gruppo.
+func _select_wild_animal_body(group_id: int, animal_id: int) -> void:
+	var visit_renderer = _wild_animal_visit_renderers.get(group_id)
+	var visit := WildAnimalVisitService.find_visit(game_data, group_id)
+	if is_instance_valid(visit_renderer) and visit != null:
+		visit_renderer.set_selected_individual(WildAnimalVisitService.get_body_id(visit, animal_id))
+
 
 # Il WildAnimal selezionato, null se il gruppo non c'è più o l'animale non è (più) in visita.
 func _find_selected_wild_animal() -> WildAnimal:
@@ -6688,45 +6695,6 @@ func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictiona
 	_apply_effects(effects)
 
 
-func _describe_butcher_task_for_carcass(member: HumanIndividual, carcass_id: int) -> String:
-	return WorkFollowUpService.describe_butcher_task_for_carcass(member, carcass_id)
-
-
-# --- Avviso "Carcassa non macellata" (2026-10-10) ---
-# Carcasse uccise in caccia la cui macellazione non è potuta nascere (_on_butcher_after_hunt_requested): {"id",
-# "macro_x", "macro_y", "micro_x", "micro_y"}, in memoria (non salvate, come gli avvisi "nessuna preda"). La riga resta in
-# "In sospeso" finché la carcassa è a terra e nessuno la sta macellando; clic = il mucchio selezionato e centrato.
-
-
-func _note_unbutchered_carcass(macro_coords: Vector2i, microcell: Vector2i, carcass_id: int) -> void:
-	WorkFollowUpService.note_unbutchered_carcass(game_data, macro_coords, microcell, carcass_id)
-
-
-func _collect_unbutchered_carcass_entries() -> Array[Dictionary]:
-	var entries: Array[Dictionary] = []
-	if game_data == null:
-		return entries
-	var unbutchered_alerts: Array[Dictionary] = game_data.job_board_runtime.unbutchered_carcass_alerts
-	for alert in unbutchered_alerts.duplicate():
-		var carcass_id := int(alert["id"])
-		var macro_coords := Vector2i(int(alert["macro_x"]), int(alert["macro_y"]))
-		var microcell := Vector2i(int(alert["micro_x"]), int(alert["micro_y"]))
-		var pile := GroundPileService.find_at(game_data, macro_coords, microcell)
-		var being_butchered := false
-		for member in human_individuals:
-			if _describe_butcher_task_for_carcass(member, carcass_id) != "":
-				being_butchered = true
-				break
-		if pile == null or being_butchered or GroundPileService.find_carcass(game_data, macro_coords, microcell, carcass_id).is_empty():
-			unbutchered_alerts.erase(alert)
-			continue
-		var text := tr("pending_carcass_not_butchered")
-		entries.append(_pending_entry("carcass_not_butchered:%d" % carcass_id, text, {
-			"kind": "ground_pile", "id": pile.id, "macro": macro_coords, "sort": float(carcass_id), "name": text,
-		}))
-	return entries
-
-
 # Voci "<edificio>: danneggiato" della campanella (2026-10-10): una per edificio con Building.is_damaged, centra
 # sull'edificio. Sparisce da sola quando l'Integrità risale al 30% o l'edificio non c'è più (la lista è ricostruita ogni
 # secondo); resta anche durante la riparazione.
@@ -6800,7 +6768,7 @@ func _collect_rubble_entries() -> Array[Dictionary]:
 
 
 func _task_butchers_carcass(task: Task, carcass_id: int) -> bool:
-	return WorkFollowUpService._task_butchers_carcass(task, carcass_id)
+	return WorkFollowUpService.task_butchers_carcass(task, carcass_id)
 
 
 # Mucchio con almeno una carcassa sotto il click (cella viva, entro GROUND_PILE_SELECT_RADIUS_PX dal suo centro,
@@ -7140,9 +7108,12 @@ func _sync_visitor_party_views() -> void:
 		_visitor_party_views.erase(party_id)
 
 
-# Visite degli animali selvatici (2026-10-28, lupi passo L1): una WildAnimalVisitView per visita, stesso schema di
-# _sync_visitor_party_views. Chiave: id del gruppo (un gruppo ha al massimo una visita in corso).
-func _sync_wild_animal_visit_views() -> void:
+# Visite degli animali selvatici (2026-10-28, lupi passo L1; 2026-11-01, passo 7b, motore unico): un AnimalGroupRenderer per
+# visita con un corpo per animale presente (WildAnimalVisitService.spawn_bodies), stesso schema di
+# _sync_visitor_party_views. Chiave: id del gruppo (un gruppo ha al massimo una visita in corso). Non sta in
+# LiveMacroCell.animal_renderers, quindi la fauna, la caccia e il salvataggio degli individui non lo vedono. Senza
+# disturbance_source: ai lupi in visita non importa delle persone, reagiscono agli edifici coi dati della specie.
+func _sync_wild_animal_visit_bodies() -> void:
 	var alive: Dictionary = {}
 	if game_data != null:
 		for visit in game_data.wild_animal_visits:
@@ -7150,29 +7121,22 @@ func _sync_wild_animal_visit_views() -> void:
 			if cell == null:
 				continue
 			alive[visit.group_id] = true
-			var view = _wild_animal_visit_views.get(visit.group_id)
-			if view != null and (not is_instance_valid(view) or view.get_parent() != cell.container or view.visit != visit):
-				if is_instance_valid(view):
-					view.queue_free()
-				view = null
-			if view == null:
-				view = WildAnimalVisitView.new()
-				# Nebbia (2026-10-28, L1b): stesso test del renderer della fauna.
-				if cell.fog_of_war_renderer != null:
-					view.visibility_test = cell.fog_of_war_renderer.is_animal_visible_at
-				cell.container.add_child(view)
-				# Allo stesso livello della fauna (2026-10-30, richiesta utente: sopra alberi ed edifici sembravano volare):
-				# subito dopo l'ultimo renderer degli animali della cella, non in cima al container.
-				var after_index := -1
-				for renderer in cell.animal_renderers.values():
-					if is_instance_valid(renderer) and renderer.get_parent() == cell.container:
-						after_index = maxi(after_index, renderer.get_index())
-				if after_index >= 0:
-					cell.container.move_child(view, after_index + 1)
-				view.setup(visit, game_data)
+			var body_renderer = _wild_animal_visit_renderers.get(visit.group_id)
+			if body_renderer != null and (not is_instance_valid(body_renderer) or body_renderer.get_parent() != cell.container \
+					or visit.body_ids.is_empty()):
+				if is_instance_valid(body_renderer):
+					body_renderer.queue_free()
+				body_renderer = null
+			if body_renderer == null:
+				var visit_rules := WildAnimalGroupService.get_rules(visit.species)
+				var visit_species := visit_rules.wild_species_name if visit_rules != null else visit.species
+				body_renderer = _build_animal_renderer(cell.container, _get_animal_renderer_configs()[visit_species])
+				_setup_animal_renderer(cell, body_renderer)
+				body_renderer.disturbance_source = Callable()
+				WildAnimalVisitService.spawn_bodies(visit, game_data, body_renderer)
+				_wild_animal_visit_renderers[visit.group_id] = body_renderer
 				if selected_animal.get("wild_group_id", -1) == visit.group_id:
-					view.set_selected_animal(int(selected_animal["individual_id"]))
-				_wild_animal_visit_views[visit.group_id] = view
+					_select_wild_animal_body(visit.group_id, int(selected_animal["individual_id"]))
 			# Ululato all'arrivo alla meta (2026-10-29, richiesta utente), non all'ingresso dal bordo.
 			if not visit.arrival_announced and visit.phase == WildAnimalVisit.Phase.STAYING:
 				visit.arrival_announced = true
@@ -7189,13 +7153,13 @@ func _sync_wild_animal_visit_views() -> void:
 			if visit.driven_off and not visit.driven_off_announced:
 				visit.driven_off_announced = true
 				wild_animal_driven_off.emit(cell.container.to_global(visit.position * MicroCellRenderer.CELL_SIZE))
-	for group_id in _wild_animal_visit_views.keys():
+	for group_id in _wild_animal_visit_renderers.keys():
 		if alive.has(group_id):
 			continue
-		var stale = _wild_animal_visit_views[group_id]
+		var stale = _wild_animal_visit_renderers[group_id]
 		if is_instance_valid(stale):
 			stale.queue_free()
-		_wild_animal_visit_views.erase(group_id)
+		_wild_animal_visit_renderers.erase(group_id)
 
 
 # --- Layer della mappa (2026-09-27, richiesta utente — menu "Layer") ---
@@ -7932,8 +7896,6 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 	entries.append_array(WarehouseManagerService.collect_inventory_entries(_game_context(), _job_board_now()))
 	# Ordini di caccia del cassetto senza prede (2026-10-09).
 	entries.append_array(HuntOrderService.collect_no_prey_entries(_game_context(), _job_board_now()))
-	# Carcasse della caccia rimaste senza macellazione (2026-10-10).
-	entries.append_array(_collect_unbutchered_carcass_entries())
 	# Edifici danneggiati (2026-10-10, Building.is_damaged).
 	entries.append_array(_collect_damaged_building_entries())
 	# Materiali che nessuno riesce a portare (2026-10-16, MaterialSupplyService.get_materials_nobody_can_carry).
@@ -8265,6 +8227,18 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel_fields": _pile_job_cancel_fields,
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _site_cut_job_release,
+		})
+		# Macellazione (2026-11-01): una carcassa per lavoro, vedi CarcassJobProvider.
+		_job_board_provider_list.append({
+			"name": "butcher",
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return CarcassJobProvider.collect(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return CarcassJobProvider.rejection(_game_context(), worker, job),
+			"assign": _assign_butcher_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return CarcassJobProvider.workers(_game_context(), job),
+			"cancel_fields": _pile_job_cancel_fields,
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _butcher_job_release,
 		})
 		_job_board_provider_list.append({
 			"name": "pile",
@@ -9010,6 +8984,44 @@ func _site_cut_job_release(job: Dictionary) -> void:
 	_refresh_selected_individual_panel()
 
 
+# Lavoro "Macellazione" preso dalla coda: la lama da prendere in deposito (se serve), poi macella e porta via. La lama nello
+# zaino passa da sola in cintura (ButcherAction, ensure_required_tools).
+func _assign_butcher_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var pile: GroundPile = job["target"]
+	var carcass_id := int(job["carcass_id"])
+	var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
+	if cell == null or cell.macro_state == null or GroundPileService.find_carcass(game_data, pile.macro_coords, pile.microcell, carcass_id).is_empty():
+		return
+	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, CarcassJobProvider.TOOL_CATEGORIES)
+	var task := TaskBuilderService.build_butcher_task(worker, pile, carcass_id, cell.macro_state,
+		ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk))
+	if task == null:
+		return
+	_wire_butcher_task(task, worker)
+	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
+		return
+	var job_keys: Array[String] = [String(job["key"])]
+	_forget_job_board_wait(job_keys)
+	_ensure_step_signals(task)
+	_spawn_command_icon_at_microcell(cell, pile.microcell, "butcher")
+	_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
+
+
+# Rimetti in coda / Blocca di una macellazione: chi la sta facendo smette (salta la lista una volta), le copie in coda
+# vengono tolte. La carcassa è ancora intera, quindi non c'è carico da riportare.
+func _butcher_job_release(job: Dictionary) -> void:
+	var carcass_id := int(job["carcass_id"])
+	for member in CarcassJobProvider.workers(_game_context(), job):
+		for queued in member.task_queue.duplicate():
+			if WorkFollowUpService.task_butchers_carcass(queued, carcass_id):
+				member.task_queue.erase(queued)
+		if WorkFollowUpService.task_butchers_carcass(member.current_task, carcass_id):
+			member.skip_job_board_once = true
+			member.stop(false)
+			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
+	_refresh_selected_individual_panel()
+
+
 func _assign_pile_job(worker: HumanIndividual, job: Dictionary) -> void:
 	if not (job["target"] is GroundPile):
 		return
@@ -9669,6 +9681,8 @@ func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
 		return "costruzione, demolizione o produzione"
 	if BodyBurialService.is_bury_task(task):
 		return "sepoltura"
+	if CarcassJobProvider.is_butchering_task(task):
+		return "macellazione"
 	# Riparazione (2026-10-10): della coda solo se l'edificio ha la riparazione richiesta (col mirino è un comando diretto).
 	if JobWorkScanService.REPAIR_TASK_NAMES.has(task.task_name):
 		for step in task.steps:
@@ -11819,6 +11833,7 @@ func _refresh_debug_domestication() -> void:
 		wolf_lines.insert(1, "Scacciati: %d volte%s" % [wolves.driven_off_count,
 			", l'ultima %d giorni fa" % (game_data.get_absolute_day() - wolves.last_driven_off_day)
 			if wolves.last_driven_off_day >= 0 else ""])
+		wolf_lines.insert(2, WildAnimalVisitService.debug_dice_line(game_data, macro_world, wolves, human_individuals.size()))
 	var wolf_visit := WildAnimalVisitService.find_visit(game_data, wolves.id) if wolves != null else null
 	if wolf_visit != null:
 		wolf_lines.append(WildAnimalVisitService.debug_line(wolf_visit))
@@ -13039,7 +13054,10 @@ func _debug_print_dedicated_space(cell: LiveMacroCell) -> void:
 # animale, poi aggiunge/rimuove per id). Chiamata da _refresh_resource_visuals e, nei giorni in cui
 # cambiano solo gli animali, da _on_day_advanced: economica (nessun rebuild vegetazione), e una
 # chiamata senza variazioni di popolazione è un no-op sugli individui.
-func _refresh_animal_individuals(cell: LiveMacroCell) -> void:
+#
+# `herd_walks` (2026-11-01, passo 7c) solo dal giro di _on_day_advanced, a cella già viva: una mandria appena arrivata entra
+# a piedi dal bordo. Altrove (attivazione della cella, caricamento) chi c'è è già dentro. Chi non c'è più esce a piedi.
+func _refresh_animal_individuals(cell: LiveMacroCell, herd_walks: bool = false) -> void:
 	if cell.macro_cell == null or macro_world == null:
 		return
 	var this_cell := Vector2i(cell.macro_cell.x, cell.macro_cell.y)
@@ -13048,11 +13066,21 @@ func _refresh_animal_individuals(cell: LiveMacroCell) -> void:
 		var herds := WildFaunaService.get_herds_in_cell(game_data, this_cell)
 		for species in cell.animal_renderers.keys():
 			if not herds.has(species):
-				_remove_animal_renderer(cell, String(species))
+				_send_herd_out_of_cell(cell, String(species))
 		for species in herds:
+			var is_arrival: bool = not cell.animal_renderers.has(species)
 			var herd_renderer := _ensure_animal_renderer(cell, String(species))
-			if herd_renderer != null:
-				_set_animal_renderer_age_counts(herd_renderer, herds[species], AnimalCalculator.get_animal_rules(species))
+			if herd_renderer == null:
+				continue
+			if herd_renderer.is_herd_leaving():
+				is_arrival = true
+				herd_renderer.cancel_herd_leaving()
+			var bodies_before := herd_renderer.get_individual_count()
+			_set_animal_renderer_age_counts(herd_renderer, herds[species], AnimalCalculator.get_animal_rules(species))
+			if herd_walks and is_arrival and herd_renderer.get_individual_count() > bodies_before:
+				var entry_point: Variant = WildFaunaService.herd_entry_point(macro_world, game_data, String(species), this_cell)
+				if entry_point != null:
+					herd_renderer.start_herd_walk_in(bodies_before, entry_point)
 		return
 	# Renderer solo per le specie presenti (2026-09-26): specie con quota > 0 in questa cella -> il suo
 	# gruppo (uno per specie per cella: i territori della stessa specie non si sovrappongono).
@@ -13069,6 +13097,21 @@ func _refresh_animal_individuals(cell: LiveMacroCell) -> void:
 		var renderer_node := _ensure_animal_renderer(cell, String(species))
 		if renderer_node != null:
 			_update_animal_renderer_population(renderer_node, present_groups[species], AnimalCalculator.get_animal_rules(species), this_cell)
+
+
+# La mandria non è più in questa cella: gli animali vanno al bordo a piedi, e il renderer rimasto vuoto si toglie al giro
+# successivo. Senza nessuno in scena, o senza un punto del bordo, si toglie subito.
+func _send_herd_out_of_cell(cell: LiveMacroCell, species: String) -> void:
+	var herd_renderer: AnimalGroupRenderer = cell.animal_renderers[species]
+	if herd_renderer.is_herd_leaving() and herd_renderer.get_individual_count() > 0:
+		return
+	var exit_point: Variant = null
+	if herd_renderer.get_individual_count() > 0:
+		exit_point = WildFaunaService.herd_exit_point(macro_world, game_data, species, cell.coords())
+	if exit_point == null:
+		_remove_animal_renderer(cell, species)
+	else:
+		herd_renderer.start_herd_leaving(exit_point)
 
 
 # --- Salvataggio individui animali (step 2) ---
@@ -13297,6 +13340,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": rabbit_rules.cluster_comfort_radius if rabbit_rules != null else 5.0,
 		"cluster_attraction_strength": rabbit_rules.cluster_attraction_strength if rabbit_rules != null else 12.0,
 		"hop_speed": rabbit_rules.hop_speed if rabbit_rules != null else 48.0,
+		"walk_speed_fraction": rabbit_rules.walk_speed_fraction if rabbit_rules != null else 1.0,
+		"run_phase_chance": rabbit_rules.run_phase_chance if rabbit_rules != null else 0.0,
 		"movement_phase_duration_min": rabbit_rules.movement_phase_duration_min if rabbit_rules != null else 0.25,
 		"movement_phase_duration_max": rabbit_rules.movement_phase_duration_max if rabbit_rules != null else 0.625,
 		"rest_phase_duration_min": rabbit_rules.rest_phase_duration_min if rabbit_rules != null else 0.375,
@@ -13318,6 +13363,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": deer_rules.cluster_comfort_radius if deer_rules != null else 6.0,
 		"cluster_attraction_strength": deer_rules.cluster_attraction_strength if deer_rules != null else 12.0,
 		"hop_speed": deer_rules.hop_speed if deer_rules != null else 48.0,
+		"walk_speed_fraction": deer_rules.walk_speed_fraction if deer_rules != null else 1.0,
+		"run_phase_chance": deer_rules.run_phase_chance if deer_rules != null else 0.0,
 		"movement_phase_duration_min": deer_rules.movement_phase_duration_min if deer_rules != null else 0.25,
 		"movement_phase_duration_max": deer_rules.movement_phase_duration_max if deer_rules != null else 0.625,
 		"rest_phase_duration_min": deer_rules.rest_phase_duration_min if deer_rules != null else 0.375,
@@ -13339,6 +13386,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": boar_rules.cluster_comfort_radius if boar_rules != null else 5.0,
 		"cluster_attraction_strength": boar_rules.cluster_attraction_strength if boar_rules != null else 12.0,
 		"hop_speed": boar_rules.hop_speed if boar_rules != null else 48.0,
+		"walk_speed_fraction": boar_rules.walk_speed_fraction if boar_rules != null else 1.0,
+		"run_phase_chance": boar_rules.run_phase_chance if boar_rules != null else 0.0,
 		"movement_phase_duration_min": boar_rules.movement_phase_duration_min if boar_rules != null else 0.25,
 		"movement_phase_duration_max": boar_rules.movement_phase_duration_max if boar_rules != null else 0.625,
 		"rest_phase_duration_min": boar_rules.rest_phase_duration_min if boar_rules != null else 0.375,
@@ -13360,6 +13409,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": tarpan_rules.cluster_comfort_radius if tarpan_rules != null else 5.0,
 		"cluster_attraction_strength": tarpan_rules.cluster_attraction_strength if tarpan_rules != null else 12.0,
 		"hop_speed": tarpan_rules.hop_speed if tarpan_rules != null else 48.0,
+		"walk_speed_fraction": tarpan_rules.walk_speed_fraction if tarpan_rules != null else 1.0,
+		"run_phase_chance": tarpan_rules.run_phase_chance if tarpan_rules != null else 0.0,
 		"movement_phase_duration_min": tarpan_rules.movement_phase_duration_min if tarpan_rules != null else 0.25,
 		"movement_phase_duration_max": tarpan_rules.movement_phase_duration_max if tarpan_rules != null else 0.625,
 		"rest_phase_duration_min": tarpan_rules.rest_phase_duration_min if tarpan_rules != null else 0.375,
@@ -13381,6 +13432,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": aurochs_rules.cluster_comfort_radius if aurochs_rules != null else 5.0,
 		"cluster_attraction_strength": aurochs_rules.cluster_attraction_strength if aurochs_rules != null else 12.0,
 		"hop_speed": aurochs_rules.hop_speed if aurochs_rules != null else 48.0,
+		"walk_speed_fraction": aurochs_rules.walk_speed_fraction if aurochs_rules != null else 1.0,
+		"run_phase_chance": aurochs_rules.run_phase_chance if aurochs_rules != null else 0.0,
 		"movement_phase_duration_min": aurochs_rules.movement_phase_duration_min if aurochs_rules != null else 0.25,
 		"movement_phase_duration_max": aurochs_rules.movement_phase_duration_max if aurochs_rules != null else 0.625,
 		"rest_phase_duration_min": aurochs_rules.rest_phase_duration_min if aurochs_rules != null else 0.375,
@@ -13402,6 +13455,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": wild_donkey_rules.cluster_comfort_radius if wild_donkey_rules != null else 5.0,
 		"cluster_attraction_strength": wild_donkey_rules.cluster_attraction_strength if wild_donkey_rules != null else 12.0,
 		"hop_speed": wild_donkey_rules.hop_speed if wild_donkey_rules != null else 48.0,
+		"walk_speed_fraction": wild_donkey_rules.walk_speed_fraction if wild_donkey_rules != null else 1.0,
+		"run_phase_chance": wild_donkey_rules.run_phase_chance if wild_donkey_rules != null else 0.0,
 		"movement_phase_duration_min": wild_donkey_rules.movement_phase_duration_min if wild_donkey_rules != null else 0.25,
 		"movement_phase_duration_max": wild_donkey_rules.movement_phase_duration_max if wild_donkey_rules != null else 0.625,
 		"rest_phase_duration_min": wild_donkey_rules.rest_phase_duration_min if wild_donkey_rules != null else 0.375,
@@ -13423,6 +13478,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": mouflon_rules.cluster_comfort_radius if mouflon_rules != null else 5.0,
 		"cluster_attraction_strength": mouflon_rules.cluster_attraction_strength if mouflon_rules != null else 12.0,
 		"hop_speed": mouflon_rules.hop_speed if mouflon_rules != null else 48.0,
+		"walk_speed_fraction": mouflon_rules.walk_speed_fraction if mouflon_rules != null else 1.0,
+		"run_phase_chance": mouflon_rules.run_phase_chance if mouflon_rules != null else 0.0,
 		"movement_phase_duration_min": mouflon_rules.movement_phase_duration_min if mouflon_rules != null else 0.25,
 		"movement_phase_duration_max": mouflon_rules.movement_phase_duration_max if mouflon_rules != null else 0.625,
 		"rest_phase_duration_min": mouflon_rules.rest_phase_duration_min if mouflon_rules != null else 0.375,
@@ -13444,6 +13501,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": bezoar_rules.cluster_comfort_radius if bezoar_rules != null else 5.0,
 		"cluster_attraction_strength": bezoar_rules.cluster_attraction_strength if bezoar_rules != null else 12.0,
 		"hop_speed": bezoar_rules.hop_speed if bezoar_rules != null else 48.0,
+		"walk_speed_fraction": bezoar_rules.walk_speed_fraction if bezoar_rules != null else 1.0,
+		"run_phase_chance": bezoar_rules.run_phase_chance if bezoar_rules != null else 0.0,
 		"movement_phase_duration_min": bezoar_rules.movement_phase_duration_min if bezoar_rules != null else 0.25,
 		"movement_phase_duration_max": bezoar_rules.movement_phase_duration_max if bezoar_rules != null else 0.625,
 		"rest_phase_duration_min": bezoar_rules.rest_phase_duration_min if bezoar_rules != null else 0.375,
@@ -13465,6 +13524,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": partridge_rules.cluster_comfort_radius if partridge_rules != null else 5.0,
 		"cluster_attraction_strength": partridge_rules.cluster_attraction_strength if partridge_rules != null else 12.0,
 		"hop_speed": partridge_rules.hop_speed if partridge_rules != null else 48.0,
+		"walk_speed_fraction": partridge_rules.walk_speed_fraction if partridge_rules != null else 1.0,
+		"run_phase_chance": partridge_rules.run_phase_chance if partridge_rules != null else 0.0,
 		"movement_phase_duration_min": partridge_rules.movement_phase_duration_min if partridge_rules != null else 0.25,
 		"movement_phase_duration_max": partridge_rules.movement_phase_duration_max if partridge_rules != null else 0.625,
 		"rest_phase_duration_min": partridge_rules.rest_phase_duration_min if partridge_rules != null else 0.375,
@@ -13486,6 +13547,8 @@ func _build_animal_renderer_configs() -> Dictionary:
 		"cluster_comfort_radius": wolf_rules.cluster_comfort_radius if wolf_rules != null else 5.0,
 		"cluster_attraction_strength": wolf_rules.cluster_attraction_strength if wolf_rules != null else 12.0,
 		"hop_speed": wolf_rules.hop_speed if wolf_rules != null else 48.0,
+		"walk_speed_fraction": wolf_rules.walk_speed_fraction if wolf_rules != null else 1.0,
+		"run_phase_chance": wolf_rules.run_phase_chance if wolf_rules != null else 0.0,
 		"movement_phase_duration_min": wolf_rules.movement_phase_duration_min if wolf_rules != null else 0.25,
 		"movement_phase_duration_max": wolf_rules.movement_phase_duration_max if wolf_rules != null else 0.625,
 		"rest_phase_duration_min": wolf_rules.rest_phase_duration_min if wolf_rules != null else 0.375,
@@ -13608,6 +13671,9 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			for cell in live_cells.values():
 				for r in cell.animal_renderers.values():
 					r.set_animals_visible(animals_visible)
+			for visit_renderer in _wild_animal_visit_renderers.values():
+				if is_instance_valid(visit_renderer):
+					visit_renderer.set_animals_visible(animals_visible)
 			debug_bar.set_slot_toggled(1, animals_visible)
 			GameSettings.game_scene_animals_visible = animals_visible
 		&"toggle_flora_updates":
@@ -15926,6 +15992,15 @@ func _on_target_killed(target_kind: int, target_id: int, label: String, age_band
 # carcassa/carne in questo step.
 func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, prey_macro_coords: Vector2i) -> void:
 	# La carcassa a terra nasce in ThrowAction (colpo letale), che ne tiene il riferimento per la macellazione.
+	# Animale di un branco in visita (lupi L7, 2026-11-01): non è nella fauna della cella, esce dal branco.
+	var prey := AnimalGroupRenderer.find_live_individual(prey_id)
+	if prey != null and prey.wild_group_id != 0:
+		if selected_animal.get("wild_group_id", -1) == prey.wild_group_id and int(selected_animal["individual_id"]) == prey.wild_animal_id:
+			_clear_animal_selection()
+		var kill_effects := GameEffects.new()
+		WildAnimalVisitService.on_member_killed(game_data, prey, human_individuals, kill_effects)
+		_apply_effects(kill_effects)
+		return
 	var cell: LiveMacroCell = live_cells.get(prey_macro_coords)
 	if cell != null and cell.animal_renderers.has(prey_species):
 		cell.animal_renderers[prey_species].remove_individual(prey_id)
@@ -16994,7 +17069,7 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	if animals_changed or game_data.wild_fauna_moved:
 		game_data.wild_fauna_moved = false
 		for cell in live_cells.values():
-			_refresh_animal_individuals(cell)
+			_refresh_animal_individuals(cell, true)
 
 	if not (checkpoint_ran or animals_changed):
 		# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 —

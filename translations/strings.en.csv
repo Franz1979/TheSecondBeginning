@@ -682,7 +682,7 @@ hunt_order_dialog_stop_suffix,meat
 work_area_hunt_needs_knife,{name} can't hunt in work areas: a knife is needed.
 work_area_hunt_no_zone,{name}: no work area with hunting enabled.
 hunt_no_weapon_left,"{name}: no hunting weapon left, the hunt stops."
-hunt_no_knife_carcass_left,"{name}: no knife, the carcass will stay on the ground"
+hunt_no_knife_carcass_left,"{name}: no knife, the carcass needs butchering"
 work_area_pick_banner_text,Choose the area (Esc to cancel)
 work_area_gather_dialog_title,Gather in work areas
 work_area_gather_dialog_message,What to gather? The area is chosen automatically.
@@ -1159,7 +1159,6 @@ drawer_order_hunt_progress_row,Hunt · {done}/{total}
 task_assignment_kind_hunt,Hunting
 pending_hunt_no_prey,Hunt: no prey in {zone}
 pending_hunt_order_ended,Hunt ended: no prey left in the zones ({done}/{total} meat delivered)
-pending_carcass_not_butchered,Carcass not butchered
 task_assignment_cargo_return,Returning cargo
 task_assignment_cargo_return_tooltip,Returning the cancelled job's cargo to storage (press H again to drop it)
 task_assignment_cargo_generic,Cargo
@@ -1504,6 +1503,8 @@ rubble_origin_village,Village waste
 job_site_cut,"Cutting · {building} site"
 job_site_cut_cell,"Cutting · {building} site (cell {index}/{count})"
 task_assignment_kind_site_cut,Site clearing cuts
+job_butcher,"Butchering · {species}"
+task_assignment_kind_butcher,Butchering
 job_postponed_site_cut,"Postponed by {name}: waiting for the trees to be cut"
 site_cut_command_needs_axe,"Site waiting for the trees to be cut: needs someone with an axe"
 building_awaiting_site_cut,"Waiting for the trees to be cut: {cells} cells with plants"
@@ -1623,6 +1624,11 @@ danger_predator,Predator
 wound_bite,bite
 illness_wound_infection,infection
 notification_wild_animal_driven_off,"{species}: driven off by {names}"
+notification_wild_first_visit_wolf,"Wolves are prowling around the village."
+notification_wild_first_quiet_pit_wolf,"The wolves rummaged through the Pit and left without causing harm."
+notification_wild_calmer_wolf,"The wolves seem less wary: they are getting used to us."
+notification_wild_hunted_wolf,"Someone tried to hunt a wolf: the pack fled and will be more hostile."
+notification_wild_killed_wolf,"A wolf was killed: {count} remain in the pack."
 task_drive_off_name,Driving off danger
 task_drive_off_step_run,Running at the danger
 task_drive_off_step_wait,Shouting and waving

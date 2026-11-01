@@ -44,6 +44,10 @@ const START_RATIO_BY_SIZE := {
 }
 # Gruppetto che ricolonizza un riquadro, come quota di herd_size_max (coniglio 30, uro 8).
 const RECOLONIZE_START_RATIO := 0.3
+# Passo 7c: quanto lontano dal centro del lato può cadere il punto di entrata o uscita (microcelle), e tentativi per
+# trovare una microcella libera da cui misurare se il bordo è raggiungibile.
+const BORDER_AIM_SPREAD := 35.0
+const FREE_MICROCELL_ATTEMPTS := 20
 
 # Specie con mandria (tutte tranne i predatori), lette una volta: AnimalCalculator.list_species_names apre la cartella.
 static var _herd_species: Array[String] = []
@@ -154,6 +158,44 @@ static func get_herds_in_cell(game_data: GameData, coords: Vector2i) -> Dictiona
 				and entry.get_total() > 0:
 			herds[species] = entry.age_counts
 	return herds
+
+
+# Punto del bordo da cui la mandria entra in `coords`, dal lato della cella da cui viene (passo 7c). Null se non c'è.
+static func herd_entry_point(world: World, game_data: GameData, species: String, coords: Vector2i) -> Variant:
+	var entry := _region_at(game_data, species, coords)
+	return _border_point_toward(world, coords, entry.previous_cell if entry != null else Vector2i(-1, -1))
+
+
+# Punto del bordo da cui la mandria esce da `coords`, dal lato della cella in cui va (passo 7c). Null se non c'è.
+static func herd_exit_point(world: World, game_data: GameData, species: String, coords: Vector2i) -> Variant:
+	var entry := _region_at(game_data, species, coords)
+	return _border_point_toward(world, coords, entry.current_cell if entry != null else Vector2i(-1, -1))
+
+
+# Punto del bordo sul lato rivolto a `other` (il lato dell'asse più distante, a caso se pari), in un punto a caso del lato;
+# un bordo qualunque se `other` non è una cella diversa. Libero e raggiungibile, se la cella ha la griglia.
+static func _border_point_toward(world: World, coords: Vector2i, other: Vector2i) -> Variant:
+	var center := Vector2(World.WIDTH, World.HEIGHT) * 0.5
+	var reach_from: Variant = _random_free_microcell(coords)
+	if other.x < 0 or other == coords:
+		return VisitorService.find_border_point(world, coords, center, reach_from, true)
+	var offset := other - coords
+	var along_x := absi(offset.x) > absi(offset.y) or (absi(offset.x) == absi(offset.y) and randf() < 0.5)
+	var side := Vector2(signi(offset.x), 0.0) if along_x else Vector2(0.0, signi(offset.y))
+	var aim := center + side * (center.x - 1.0) + side.orthogonal() * randf_range(-BORDER_AIM_SPREAD, BORDER_AIM_SPREAD)
+	return VisitorService.find_border_point(world, coords, aim, reach_from)
+
+
+# Una microcella libera a caso da cui misurare la raggiungibilità del bordo; null senza griglia o se non ne trova.
+static func _random_free_microcell(coords: Vector2i) -> Variant:
+	var live_cell := PathfindingService.get_live_cell(coords)
+	if live_cell == null or live_cell.path_grid == null:
+		return null
+	for attempt in range(FREE_MICROCELL_ATTEMPTS):
+		var microcell := Vector2i(randi_range(0, World.WIDTH - 1), randi_range(0, World.HEIGHT - 1))
+		if not PathfindingService.is_blocked(live_cell, microcell):
+			return microcell
+	return null
 
 
 # Preda uccisa (passo 2, HuntService.apply_prey_kill): un capo in meno nella mandria del riquadro, nella sua fascia
@@ -310,6 +352,7 @@ static func _recolonize(world: World, game_data: GameData, rules: AnimalRules, e
 	entry.extinct_since_day = -1
 	entry.returns = false
 	_roll_herd(game_data, rules, entry, RECOLONIZE_START_RATIO)
+	entry.previous_cell = Vector2i(-1, -1)
 	entry.current_cell = suitable.pick_random()
 	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
 	entry.last_move_day = today
@@ -398,6 +441,7 @@ static func _place(world: World, rules: AnimalRules, entry: WildFaunaRegion, tod
 	if suitable.size() > 1:
 		suitable.erase(entry.current_cell)
 	var from := entry.current_cell
+	entry.previous_cell = from
 	entry.current_cell = suitable.pick_random()
 	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
 	entry.last_move_day = today

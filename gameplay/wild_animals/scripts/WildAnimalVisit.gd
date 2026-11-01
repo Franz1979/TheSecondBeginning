@@ -2,50 +2,48 @@ class_name WildAnimalVisit
 extends RefCounted
 
 # Visita di un gruppo di animali selvatici al villaggio (2026-10-28, richiesta utente — lupi passo L1): una parte del
-# WildAnimalGroup entra dal bordo della macrocella del villaggio, va alla Fossa più piena (o in un punto ai margini del
+# WildAnimalGroup entra dal bordo della macrocella del villaggio, va alla Fossa più piena (o al magazzino del
 # villaggio se non c'è una Fossa), resta un poco ed esce. Dato di partita in GameData.wild_animal_visits, salvato
-# (vedi to_save_data). Movimento in WildAnimalVisitService.advance, disegno in WildAnimalVisitView.
+# (vedi to_save_data). Copione in WildAnimalVisitService.advance; dal 2026-11-01 (passo 7b) gli animali sono corpi di un
+# AnimalGroupRenderer solo per la visita (GameScene._sync_wild_animal_visit_bodies), che li muove col comportamento
+# assegnato dal copione.
 #
 # Coordinate: microcella continue, locali a `macro_coords` (come VisitorParty).
 
 # CHARGING (lupi L4, 2026-10-30): il branco carica una persona entrata nel raggio d'attacco di un presente. In coda.
 enum Phase { ARRIVING, STAYING, LEAVING, CHARGING }
-enum TargetKind { PIT, VILLAGE_EDGE }
+enum TargetKind { PIT, STORAGE }
 
 var group_id: int = 0
 var species: String = ""
 var phase: Phase = Phase.ARRIVING
-var target_kind: TargetKind = TargetKind.VILLAGE_EDGE
-# Fossa meta della visita (id dell'edificio), -1 ai margini del villaggio.
+var target_kind: TargetKind = TargetKind.STORAGE
+# Fossa meta della visita (id dell'edificio), -1 se la meta è il magazzino.
 var pit_building_id: int = -1
 var macro_coords: Vector2i = Vector2i(-1, -1)
-# Centro del gruppo e direzione di marcia.
+# Centro del gruppo: media dei presenti, aggiornata a ogni mossa (suoni, uscita).
 var position: Vector2 = Vector2.ZERO
-var facing_direction: Vector2 = Vector2.RIGHT
 var entry_point: Vector2 = Vector2.ZERO
-# Meta corrente: la Fossa o il punto ai margini in ARRIVING, il bordo in LEAVING.
+# Meta corrente: la Fossa o il magazzino in ARRIVING, il bordo in LEAVING.
 var target_point: Vector2 = Vector2.ZERO
 # Punto da guardare durante la sosta (la Fossa o il centro del villaggio).
 var look_point: Vector2 = Vector2.ZERO
 # Sosta rimasta, in giorni di gioco.
 var stay_remaining: float = 0.0
-# Animali presenti (id dei WildAnimal del gruppo) e loro posto attorno al centro (microcelle, nel riferimento della
-# direzione di marcia), stessi indici.
+# Animali presenti (id dei WildAnimal del gruppo) e loro posizione (microcelle), stessi indici: copiata dai corpi a ogni
+# mossa, è quello che si salva e da dove i corpi ripartono se vengono ricreati.
 var animal_ids: Array[int] = []
-var offsets: Array[Vector2] = []
-# Posto di partenza nella formazione: in viaggio ogni animale ci torna piano (dopo la sosta erano sparsi).
-var home_offsets: Array[Vector2] = []
-# Sosta (2026-10-28): ogni animale gironzola da solo con i dati della specie (AnimalRules: alternanza movimento/riposo,
-# deriva della direzione, raggio di raccolta). Direzione propria (angolo nel mondo), se si muove, tempo rimasto della
-# fase. In viaggio la direzione è quella del gruppo.
-var headings: Array[float] = []
-var moving: Array[bool] = []
-var phase_timers: Array[float] = []
-# Balzo o pausa tra balzi, e tempo rimasto, come la fauna (2026-10-29 in sosta, 2026-10-30 anche in viaggio).
-var hopping: Array[bool] = []
-var hop_timers: Array[float] = []
-# Sosta (2026-10-30): punto attorno alla meta verso cui l'animale va ad annusare (microcelle, nel mondo).
-var sniff_points: Array[Vector2] = []
+var animal_positions: Array[Vector2] = []
+# Salute dei presenti, stessi indici (lupi L7, 2026-11-01): copiata dai corpi come le posizioni, così la ferita resta dopo
+# un salvataggio. Vale solo per questa visita: tra una visita e l'altra il lupo guarisce. Vuoto = tutti sani.
+var animal_healths: Array[float] = []
+# Corpi nel renderer (AnimalVisualGroup.id), stessi indici; vuoto = corpi non ancora creati o cella non viva; 0 = uscito
+# dal bordo. Li crea WildAnimalVisitService.spawn_bodies. Mai salvati.
+var body_ids: Array[int] = []
+# Fase per cui i corpi hanno già il comportamento (-1 nessuna, WildAnimalVisitService._assign_behaviors). Mai salvata.
+var assigned_phase: int = -1
+# Meta irraggiungibile già segnalata nel log. Mai salvato.
+var target_redirected: bool = false
 # Edifici a cui la specie reagisce durante la sosta (2026-10-29, AnimalRules.building_reactions), presi all'arrivo:
 # posizione (microcelle) e raggio col segno (+ respinge, − attira), stessi indici.
 var reaction_points: Array[Vector2] = []
@@ -86,6 +84,10 @@ var redirect_cooldown: float = 0.0
 var defender_ids: Array[int] = []
 var defenders_needed: int = 0
 var driven_off: bool = false
+# Gli hanno tirato (lupi L7, 2026-11-01): il branco se ne va di corsa, senza punti né calma (WildAnimalVisitService.on_member_shot_at).
+var hunted: bool = false
+# Il messaggio "hanno tentato di cacciarlo" di questa visita è già stato dato.
+var hunted_notified: bool = false
 # Tempo (giorni) in cui quanti servono hanno gridato insieme davanti al branco (DangerProfile.drive_off_shout_days).
 var drive_off_shouting: float = 0.0
 # Ringhio della carica già suonato (GameScene.wild_animal_charged): una volta sola.
@@ -93,39 +95,29 @@ var charge_announced: bool = false
 # Grido di chi l'ha scacciato già suonato (GameScene.wild_animal_driven_off): una volta sola.
 var driven_off_announced: bool = false
 var attacked: bool = false
-# Scia del centro in viaggio (2026-10-30): ultimi punti percorsi (microcelle), dal più vecchio al più recente; chi ha
-# il suo posto nella formazione dietro un ostacolo la segue (WildAnimalVisitService._follow_with_collision).
-var trail: Array[Vector2] = []
 # Arrivo già annunciato (ululato alla meta, GameScene.wild_animal_arrived): una volta sola per visita.
 var arrival_announced: bool = false
 
-# Percorso del centro (PathfindingService.find_path), come VisitorParty: ricalcolato al cambio di meta o di blocchi.
-var path: Array[Vector2] = []
-var path_target: Vector2 = Vector2.ZERO
-var path_planned: bool = false
-var path_block_version: int = -1
 # Da ricostruire alla prima mossa dopo il caricamento (WildAnimalVisitService._restore_after_load): collisione, edifici
 # a cui reagire, animali usciti dal branco nel frattempo. Mai salvato.
 var needs_restore: bool = false
 
 
-# Salvataggio (2026-10-30, richiesta utente — visite e fughe salvate): lo stato che non si ricalcola. Collisione,
-# percorso, scia ed edifici (reazioni, ripari, zone del fuoco) si ricostruiscono al caricamento. Vettori come [x, y].
+# Salvataggio (2026-10-30, richiesta utente — visite e fughe salvate): lo stato che non si ricalcola. Collisione, corpi
+# ed edifici (reazioni, ripari, zone del fuoco) si ricostruiscono al caricamento. Vettori come [x, y].
 func to_save_data() -> Dictionary:
 	return {
 		"group_id": group_id, "species": species, "phase": phase, "target_kind": target_kind,
 		"pit_building_id": pit_building_id, "macro_coords": _pair(Vector2(macro_coords)),
-		"position": _pair(position), "facing_direction": _pair(facing_direction), "entry_point": _pair(entry_point),
+		"position": _pair(position), "entry_point": _pair(entry_point),
 		"target_point": _pair(target_point), "look_point": _pair(look_point), "stay_remaining": stay_remaining,
-		"animal_ids": animal_ids, "offsets": offsets.map(_pair), "home_offsets": home_offsets.map(_pair),
-		"headings": headings, "moving": moving, "phase_timers": phase_timers, "hopping": hopping,
-		"hop_timers": hop_timers, "sniff_points": sniff_points.map(_pair), "notice_radii": notice_radii,
+		"animal_ids": animal_ids, "animal_positions": animal_positions.map(_pair), "animal_healths": animal_healths, "notice_radii": notice_radii,
 		"attack_aggression": attack_aggression, "attack_wolves": attack_wolves, "attack_rolled": attack_rolled,
 		"attack_target_id": attack_target_id, "charge_remaining": charge_remaining,
 		"charge_min_distance": charge_min_distance if is_finite(charge_min_distance) else -1.0,
 		"charge_start_distance": charge_start_distance, "charge_pause": charge_pause, "bites": bites,
 		"attacked": attacked, "arrival_announced": arrival_announced,
-		"defender_ids": defender_ids, "defenders_needed": defenders_needed, "driven_off": driven_off, "drive_off_shouting": drive_off_shouting, "driven_off_announced": driven_off_announced, "charge_announced": charge_announced,
+		"defender_ids": defender_ids, "defenders_needed": defenders_needed, "driven_off": driven_off, "hunted": hunted, "hunted_notified": hunted_notified, "drive_off_shouting": drive_off_shouting, "driven_off_announced": driven_off_announced, "charge_announced": charge_announced,
 	}
 
 
@@ -134,33 +126,25 @@ static func from_save_data(data: Dictionary) -> WildAnimalVisit:
 	visit.group_id = int(data.get("group_id", 0))
 	visit.species = String(data.get("species", ""))
 	visit.phase = int(data.get("phase", Phase.ARRIVING)) as Phase
-	visit.target_kind = int(data.get("target_kind", TargetKind.VILLAGE_EDGE)) as TargetKind
+	visit.target_kind = int(data.get("target_kind", TargetKind.STORAGE)) as TargetKind
 	visit.pit_building_id = int(data.get("pit_building_id", -1))
 	visit.macro_coords = Vector2i(_vector(data.get("macro_coords")))
 	visit.position = _vector(data.get("position"))
-	visit.facing_direction = _vector(data.get("facing_direction"))
 	visit.entry_point = _vector(data.get("entry_point"))
 	visit.target_point = _vector(data.get("target_point"))
 	visit.look_point = _vector(data.get("look_point"))
 	visit.stay_remaining = float(data.get("stay_remaining", 0.0))
 	for value in data.get("animal_ids", []):
 		visit.animal_ids.append(int(value))
-	for value in data.get("offsets", []):
-		visit.offsets.append(_vector(value))
-	for value in data.get("home_offsets", []):
-		visit.home_offsets.append(_vector(value))
-	for value in data.get("headings", []):
-		visit.headings.append(float(value))
-	for value in data.get("moving", []):
-		visit.moving.append(bool(value))
-	for value in data.get("phase_timers", []):
-		visit.phase_timers.append(float(value))
-	for value in data.get("hopping", []):
-		visit.hopping.append(bool(value))
-	for value in data.get("hop_timers", []):
-		visit.hop_timers.append(float(value))
-	for value in data.get("sniff_points", []):
-		visit.sniff_points.append(_vector(value))
+	for value in data.get("animal_positions", []):
+		visit.animal_positions.append(_vector(value))
+	# Salvataggi di prima del passo 7b.1: centro + posto nella formazione.
+	if visit.animal_positions.is_empty():
+		var frame_angle := _vector(data.get("facing_direction")).angle()
+		for value in data.get("offsets", []):
+			visit.animal_positions.append(visit.position + _vector(value).rotated(frame_angle))
+	for value in data.get("animal_healths", []):
+		visit.animal_healths.append(float(value))
 	for value in data.get("notice_radii", []):
 		visit.notice_radii.append(float(value))
 	visit.attack_aggression = float(data.get("attack_aggression", 0.0))
@@ -179,6 +163,8 @@ static func from_save_data(data: Dictionary) -> WildAnimalVisit:
 		visit.defender_ids.append(int(value))
 	visit.defenders_needed = int(data.get("defenders_needed", 0))
 	visit.driven_off = bool(data.get("driven_off", false))
+	visit.hunted = bool(data.get("hunted", false))
+	visit.hunted_notified = bool(data.get("hunted_notified", false))
 	visit.drive_off_shouting = float(data.get("drive_off_shouting", 0.0))
 	visit.driven_off_announced = bool(data.get("driven_off_announced", false))
 	visit.charge_announced = bool(data.get("charge_announced", false))

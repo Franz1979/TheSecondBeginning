@@ -72,7 +72,8 @@ extends Resource
 # Reazioni a edifici precisi (2026-10-29, richiesta utente): chiave = nome del file dell'edificio
 # (Building.building_type_name, es. "campfire"), valore = raggio in microcelle col segno: positivo respinge (come
 # building_avoidance_radius), negativo attira, 0 ignora. Gli edifici non elencati valgono building_avoidance_radius.
-# Letto per ora solo dalle visite (WildAnimalVisitService.building_push), non dalla fauna del mondo.
+# Letto per ora solo dalle visite (WildAnimalVisitService._collect_reaction_sources, che le passa al renderer dei corpi),
+# non dalla fauna del mondo.
 @export var building_reactions: Dictionary = {}
 
 @export_group("Visualization")
@@ -109,6 +110,11 @@ extends Resource
 # movimento degli individui disegnati; move_speed resta usato solo per il vagare continuo dei
 # centri-cluster invisibili (vedi AnimalGroupRenderer). Vecchi microcelle/secondo × 8.
 @export var hop_speed: float = 48.0
+# Andature (2026-11-01, richiesta utente: gli animali sembravano correre sempre). hop_speed è la corsa: la fuga e gli scatti.
+# Quando vaga la specie cammina a hop_speed × walk_speed_fraction, e ogni periodo di movimento ha run_phase_chance di essere
+# uno scatto di corsa. Quanto si muove lo dicono movement_phase_duration_* e rest_phase_duration_*.
+@export var walk_speed_fraction: float = 1.0
+@export var run_phase_chance: float = 0.0
 # Moltiplicatore di scala visiva (young, adult, old) applicato da AnimalGroupRenderer a ogni
 # icona disegnata — adult=1.0 è il riferimento a cui le dimensioni base (body_length/body_width,
 # passate da chi istanzia il renderer) sono tarate; young tipicamente <1 (cucciolo più piccolo),

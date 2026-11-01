@@ -5,16 +5,15 @@ extends RefCounted
 # in GameScene): macellazione dopo la caccia, trasporto dei mucchi a terra, prosecuzione delle serie di zona (caccia, cava,
 # taglio), ripetizioni di trasporto e raccolta. La scena resta collegata ai segnali e delega qui, poi applica gli effetti
 # (popup, icone, pannelli, collegamenti dei segnali delle task nuove). Le task si costruiscono con TaskBuilderService e si
-# accodano con TaskQueueService (mai dalle assegnazioni dei comandi). Senza stato: lo stato non salvato (avvisi delle
-# carcasse lasciate a terra) vive in GameData.job_board_runtime.
+# accodano con TaskQueueService (mai dalle assegnazioni dei comandi). Senza stato.
 
 
 # --- macellazione dopo la caccia ---
 
 # Richiesta di macellazione della carcassa appena fatta da `hunter` (HumanIndividualActionService.butcher_after_hunt_requested).
 # Una sola macellazione per carcassa (se qualcuno ce l'ha già, in corso o in coda, non se ne accoda un'altra). Senza lama
-# in cintura, cella o mucchio non disponibili, task non costruibile o età non ammessa, la carcassa resta a terra e compare
-# l'avviso in "In sospeso" (note_unbutchered_carcass). Altrimenti la macellazione si accoda come seguito della caccia,
+# in cintura, cella o mucchio non disponibili, task non costruibile o età non ammessa, la carcassa resta a terra e la
+# macella chi prende il lavoro dalla coda (CarcassJobProvider). Altrimenti la macellazione si accoda come seguito della caccia,
 # anche a coda piena (è un seguito, fuori dal limite), con l'icona sulla carcassa.
 static func butcher_after_hunt(ctx: GameContext, hunter: HumanIndividual, carcass: Dictionary, effects: GameEffects) -> void:
 	var macro_coords := Vector2i(int(carcass.get("macro_x", 0)), int(carcass.get("macro_y", 0)))
@@ -33,7 +32,6 @@ static func butcher_after_hunt(ctx: GameContext, hunter: HumanIndividual, carcas
 	if ToolGateService.find_belt_slot_for(hunter, TaskTypes.ToolCategory.BUTCHERING) == -1:
 		HuntService.log_event(hunter, "macellazione non accodata: nessuna lama in cintura, la carcassa resta a terra.")
 		CommandFeedback.reject(hunter, GameContext.tr_text("hunt_no_knife_carcass_left").format({"name": hunter.name}), effects)
-		note_unbutchered_carcass(ctx.game_data, macro_coords, microcell, carcass_id)
 		return
 	if GroundPileService.find_carcass(ctx.game_data, macro_coords, microcell, carcass_id).is_empty():
 		return
@@ -41,7 +39,6 @@ static func butcher_after_hunt(ctx: GameContext, hunter: HumanIndividual, carcas
 	var pile := GroundPileService.find_at(ctx.game_data, macro_coords, microcell)
 	if cell == null or cell.macro_state == null or pile == null:
 		HuntService.log_event(hunter, "macellazione non accodata: cella o mucchio della carcassa #%d non disponibili, la carcassa resta a terra." % carcass_id)
-		note_unbutchered_carcass(ctx.game_data, macro_coords, microcell, carcass_id)
 		return
 	var task := TaskBuilderService.build_butcher_task(
 		hunter, pile, carcass_id, cell.macro_state, String(carcass.get("butcher_destination",
@@ -50,7 +47,6 @@ static func butcher_after_hunt(ctx: GameContext, hunter: HumanIndividual, carcas
 	)
 	if task == null:
 		HuntService.log_event(hunter, "macellazione non accodata: task non creata, la carcassa #%d resta a terra." % carcass_id)
-		note_unbutchered_carcass(ctx.game_data, macro_coords, microcell, carcass_id)
 		return
 	effects.wire_task(GameEffects.WireKind.BUTCHER, task, hunter)
 	# Caccia di zona (serie a obiettivo di carne): la carne di questa carcassa conta per la serie.
@@ -60,7 +56,6 @@ static func butcher_after_hunt(ctx: GameContext, hunter: HumanIndividual, carcas
 	for step in task.steps:
 		if step.disallowed_age_bands.has(hunter_age_band):
 			HuntService.log_event(hunter, "macellazione non accodata: età non ammessa, la carcassa #%d resta a terra." % carcass_id)
-			note_unbutchered_carcass(ctx.game_data, macro_coords, microcell, carcass_id)
 			return
 	if hunter.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
 		HuntService.log_event(hunter, "macellazione avviata con la coda piena (%d/%d): seguito della caccia, fuori dal limite." % [
@@ -77,32 +72,21 @@ static func butcher_after_hunt(ctx: GameContext, hunter: HumanIndividual, carcas
 # Dove `member` ha già una macellazione della carcassa `carcass_id` (task in corso e/o posizioni in coda); "" se nessuna.
 static func describe_butcher_task_for_carcass(member: HumanIndividual, carcass_id: int) -> String:
 	var places := PackedStringArray()
-	if _task_butchers_carcass(member.current_task, carcass_id):
+	if task_butchers_carcass(member.current_task, carcass_id):
 		places.append("task in corso (istanza %d)" % member.current_task.get_instance_id())
 	for i in range(member.task_queue.size()):
-		if _task_butchers_carcass(member.task_queue[i], carcass_id):
+		if task_butchers_carcass(member.task_queue[i], carcass_id):
 			places.append("in coda posizione %d (istanza %d)" % [i + 1, member.task_queue[i].get_instance_id()])
 	return "; ".join(places)
 
 
-static func _task_butchers_carcass(task: Task, carcass_id: int) -> bool:
+static func task_butchers_carcass(task: Task, carcass_id: int) -> bool:
 	if task == null or task.is_finished():
 		return false
 	for step in task.steps:
 		if step is ButcherAction and (step as ButcherAction).carcass_id == carcass_id:
 			return true
 	return false
-
-
-# Carcassa lasciata a terra senza macellazione: avviso per la scheda "In sospeso", una volta sola per carcassa.
-static func note_unbutchered_carcass(game_data: GameData, macro_coords: Vector2i, microcell: Vector2i, carcass_id: int) -> void:
-	var alerts: Array[Dictionary] = game_data.job_board_runtime.unbutchered_carcass_alerts
-	for alert in alerts:
-		if int(alert["id"]) == carcass_id:
-			return
-	alerts.append({
-		"id": carcass_id, "macro_x": macro_coords.x, "macro_y": macro_coords.y, "micro_x": microcell.x, "micro_y": microcell.y,
-	})
 
 
 # --- mucchi a terra ---
