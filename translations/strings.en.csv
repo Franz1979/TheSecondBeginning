@@ -1549,6 +1549,7 @@ domestic_animal_row,"{name} #{id}, {sex}, age {age}"
 domestic_animal_male,male
 domestic_animal_female,female
 notification_domestic_arrival_dog,"Some wolves no longer leave: they now live in the village. New dogs: {count}."
+notification_domestic_left_dog,"The village cannot support all the dogs: {count} have left."
 discovery_first_domesticated_wolf_title,A wolf that no longer runs
 discovery_first_domesticated_wolf_p1,"For a long time a wolf pack kept coming back to scavenge in the waste pit. Each time it came a little closer, each time it fled a little later."
 discovery_first_domesticated_wolf_p2,"This time one of the young ones stayed. It no longer growls: it follows the villagers at a distance and sleeps near the huts. It is no longer a wolf: it is a dog."

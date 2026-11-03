@@ -39,8 +39,10 @@ extends Resource
 @export var roam_speed_scale: float = 0.5
 
 @export_group("Life")
-# Età a cui l'animale muore di vecchiaia (passo 4).
+# Età a cui l'animale muore di vecchiaia (passo 4), più o meno max_age_variation_years: ognuno ha il suo giorno, così chi è
+# nato insieme non muore insieme.
 @export var max_age_years: int = 0
+@export var max_age_variation_years: int = 0
 # Giorni per guarire da quasi morto a salute piena (passo 4); 0 = non guarisce.
 @export var health_recovery_days: int = 0
 # Cuccioli per cucciolata (passo 5).

@@ -18,6 +18,7 @@ roam_radius_min = 3.0
 roam_radius_max = 9.0
 roam_speed_scale = 0.5
 max_age_years = 12
+max_age_variation_years = 1
 health_recovery_days = 30
 litter_size_min = 1
 litter_size_max = 3

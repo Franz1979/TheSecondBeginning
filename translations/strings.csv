@@ -1603,6 +1603,7 @@ domestic_animal_row,"{name} #{id}, {sex}, età {age}"
 domestic_animal_male,maschio
 domestic_animal_female,femmina
 notification_domestic_arrival_dog,"Alcuni lupi non se ne vanno più: ora vivono al villaggio. Nuovi cani: {count}."
+notification_domestic_left_dog,"Il villaggio non basta per tutti i cani: {count} se ne sono andati."
 discovery_first_domesticated_wolf_title,Un lupo che non fugge più
 discovery_first_domesticated_wolf_p1,"Per lungo tempo un branco di lupi è tornato a frugare nella fossa dei rifiuti. Ogni volta si avvicinava un po' di più, ogni volta fuggiva un po' più tardi."
 discovery_first_domesticated_wolf_p2,"Questa volta uno dei giovani è rimasto. Non ringhia più: segue gli abitanti a distanza, dorme vicino alle capanne. Non è più un lupo: è un cane."

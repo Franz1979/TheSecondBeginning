@@ -456,8 +456,8 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 	WildAnimalGroupService.tick_day(ctx)
 	# Visite spontanee del gruppo (2026-11-01, lupi L2).
 	WildAnimalVisitService.tick_day(ctx)
-	# Vecchiaia e guarigione degli animali domestici (2026-11-03, cane passo 4).
-	DomesticAnimalLifeService.tick_day(ctx.game_data)
+	# Vecchiaia, guarigione, cucciolate e partenze degli animali domestici (2026-11-03, cane passi 4 e 5).
+	DomesticAnimalLifeService.tick_day(ctx, effects)
 	# Mandrie della fauna ad hoc che cambiano cella nel loro riquadro (2026-10-31, piano fauna passo 1b).
 	WildFaunaService.tick_day(ctx)
 	# Crollo a Integrità zero (2026-10-10).
