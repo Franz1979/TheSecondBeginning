@@ -13,6 +13,14 @@ extends Resource
 @export var resource_memory_days: int = 30
 @export var terrain_memory_days: int = 90
 
+# Quanto più a lungo si ricorda grazie alle idee (2026-11-03, richiesta utente — con Insegnamento
+# orale si scorda più tardi): Idea.id -> moltiplicatore dei giorni del tier, applicato quando l'idea
+# è in Folk.completed_ideas (più idee si moltiplicano tra loro). Un tier senza voci resta fisso. Letti
+# solo da FogOfWarCalculator: chi vuole i giorni passa da lì, non dai tre campi qui sopra.
+@export var detail_memory_multiplier_by_idea: Dictionary = {}
+@export var resource_memory_multiplier_by_idea: Dictionary = {}
+@export var terrain_memory_multiplier_by_idea: Dictionary = {}
+
 # Ogni quanti giorni GameScene esegue la pulizia periodica di FogOfWarMemory.last_seen_by_
 # position (vedi GameScene._maybe_prune_fog_of_war_memories/FogOfWarMemory.prune_stale) —
 # scollegato di proposito dal checkpoint stagionale di WorldTimeService (dominio diverso: quello

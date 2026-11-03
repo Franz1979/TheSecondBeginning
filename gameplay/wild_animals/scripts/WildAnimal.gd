@@ -2,7 +2,7 @@ class_name WildAnimal
 extends RefCounted
 
 # Un animale selvatico seguito per individuo, membro di un WildAnimalGroup (2026-10-26, richiesta utente — primo uso: il branco di lupi della
-# fossa, vedi WildAnimalGroup). Dati simulati ma coerenti, non un individuo della fauna selvatica (PopulationGroup).
+# fossa, vedi WildAnimalGroup). Dati simulati ma coerenti, non un capo di una mandria (WildFaunaRegion).
 # L'età non si salva: si calcola da birth_day (giorno assoluto, GameData.get_absolute_day), come per gli umani.
 
 var id: int = 0

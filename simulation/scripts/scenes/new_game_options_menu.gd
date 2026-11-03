@@ -11,7 +11,7 @@ extends Control
 # gia' impostato selected_map_type/selected_map_file prima di arrivare qui — questa scena non li
 # tocca, si limita ad aggiungere GameSettings.selected_world_age_mode/selected_animal_density/
 # selected_population_size/selected_exclude_hostile_start/
-# selected_exclude_predator_territories/selected_resource_richness_preference/
+# selected_resource_richness_preference/
 # selected_group_size_preference/selected_guarantee_animal_presence/
 # selected_guarantee_stone_presence (2026-09-08, richiesta utente — "Presenza sicura roccia": la
 # roccia e' una risorsa preziosa e oggi non c'e' nessun modo di sapere se una macrocella l'avra'
@@ -63,9 +63,6 @@ const DISABLED_PANEL_ALPHA := 0.4
 @onready var hostile_start_label: Label = $RootColumn/MainRow/ScrollContainer/VBoxContainer/HostileStartPanel/MarginContainer/HBoxContainer/HostileStartLabel
 @onready var hostile_start_check_button: CheckButton = $RootColumn/MainRow/ScrollContainer/VBoxContainer/HostileStartPanel/MarginContainer/HBoxContainer/HostileStartCheckButton
 
-@onready var predator_exclusion_panel: PanelContainer = $RootColumn/MainRow/ScrollContainer/VBoxContainer/PredatorExclusionPanel
-@onready var predator_exclusion_label: Label = $RootColumn/MainRow/ScrollContainer/VBoxContainer/PredatorExclusionPanel/MarginContainer/HBoxContainer/PredatorExclusionLabel
-@onready var predator_exclusion_check_button: CheckButton = $RootColumn/MainRow/ScrollContainer/VBoxContainer/PredatorExclusionPanel/MarginContainer/HBoxContainer/PredatorExclusionCheckButton
 
 @onready var animal_presence_panel: PanelContainer = $RootColumn/MainRow/ScrollContainer/VBoxContainer/AnimalPresencePanel
 @onready var animal_presence_label: Label = $RootColumn/MainRow/ScrollContainer/VBoxContainer/AnimalPresencePanel/MarginContainer/HBoxContainer/AnimalPresenceLabel
@@ -133,7 +130,6 @@ var _selected_world_age_mode: String = "OLD"
 var _selected_animal_density: String = "MEDIUM"
 var _selected_population_size: String = "NORMAL"
 var _selected_exclude_hostile_start: bool = false
-var _selected_exclude_predator_territories: bool = false
 var _selected_resource_richness_preference: String = "NORMAL"
 var _selected_group_size_preference: String = "GROUP"
 var _selected_guarantee_animal_presence: bool = false
@@ -177,12 +173,6 @@ func _ready() -> void:
 	hostile_start_check_button.button_pressed = false
 	_update_toggle_color(hostile_start_check_button, false)
 
-	predator_exclusion_label.text = tr("predator_exclusion_label")
-	predator_exclusion_check_button.button_pressed = false
-	_update_toggle_color(predator_exclusion_check_button, false)
-	# Fauna ad hoc (2026-10-31, passo 6): non ci sono più branchi di predatori seminati nel mondo, l'opzione non fa
-	# niente e non si mostra (resta false).
-	predator_exclusion_panel.visible = not SimulationSettings.WILD_FAUNA_AD_HOC
 
 	animal_presence_label.text = tr("animal_presence_label")
 	animal_presence_check_button.button_pressed = false
@@ -235,7 +225,6 @@ func _ready() -> void:
 	dense_button.toggled.connect(_on_population_size_button_toggled.bind("DENSE"))
 
 	hostile_start_check_button.toggled.connect(_on_hostile_start_toggled)
-	predator_exclusion_check_button.toggled.connect(_on_predator_exclusion_toggled)
 	animal_presence_check_button.toggled.connect(_on_animal_presence_toggled)
 	stone_presence_check_button.toggled.connect(_on_stone_presence_toggled)
 
@@ -297,12 +286,6 @@ func _on_hostile_start_toggled(pressed: bool) -> void:
 	_update_difficulty_display()
 
 
-func _on_predator_exclusion_toggled(pressed: bool) -> void:
-	_selected_exclude_predator_territories = pressed
-	_update_toggle_color(predator_exclusion_check_button, pressed)
-	_update_difficulty_display()
-
-
 func _on_animal_presence_toggled(pressed: bool) -> void:
 	_selected_guarantee_animal_presence = pressed
 	_update_toggle_color(animal_presence_check_button, pressed)
@@ -344,8 +327,6 @@ func _update_dependent_panels_enabled() -> void:
 	hostile_start_panel.modulate.a = alpha
 	hostile_start_check_button.disabled = is_classic
 
-	predator_exclusion_panel.modulate.a = alpha
-	predator_exclusion_check_button.disabled = is_classic
 
 	animal_presence_panel.modulate.a = alpha
 	animal_presence_check_button.disabled = is_classic
@@ -381,7 +362,6 @@ func _update_difficulty_display() -> void:
 		_selected_animal_density,
 		_selected_population_size,
 		_selected_exclude_hostile_start,
-		_selected_exclude_predator_territories,
 		_selected_resource_richness_preference,
 		_selected_group_size_preference,
 		_selected_guarantee_animal_presence,
@@ -427,7 +407,6 @@ func _on_start_pressed() -> void:
 	GameSettings.selected_animal_density = _selected_animal_density
 	GameSettings.selected_population_size = _selected_population_size
 	GameSettings.selected_exclude_hostile_start = _selected_exclude_hostile_start
-	GameSettings.selected_exclude_predator_territories = _selected_exclude_predator_territories
 	GameSettings.selected_resource_richness_preference = _selected_resource_richness_preference
 	GameSettings.selected_group_size_preference = _selected_group_size_preference
 	GameSettings.selected_folk_name = folk_name_edit.text.strip_edges()

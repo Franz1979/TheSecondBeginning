@@ -8,10 +8,7 @@ const ENCROACHABLE_TYPES := [
 ]
 
 
-# Step 11 Step 4: browsing_mitigation è l'output di BrowsingMitigationService.compute_browsing_
-# mitigation (Vector2i -> {"species":..., "combined_browsing_factor":...}) — celle assenti dal
-# dizionario (nessuna specie brucante presente) restano a fattore 1.0, encroachment invariato.
-func encroach_resources(world: World, browsing_mitigation: Dictionary) -> Dictionary:
+func encroach_resources(world: World) -> Dictionary:
 	var leftover_surplus: Dictionary = {}
 	# Processing order follows succession_level ascending (grass, then shrub, then trees, ...)
 	# so that when two encroachers target the same weaker resource in the same cell/year,
@@ -29,16 +26,12 @@ func encroach_resources(world: World, browsing_mitigation: Dictionary) -> Dictio
 			continue
 
 		var cell_key := Vector2i(cell.x, cell.y)
-		var browsing_factor: float = 1.0
-		if browsing_mitigation.has(cell_key):
-			browsing_factor = browsing_mitigation[cell_key]["combined_browsing_factor"]
-
 		for resource_type in ordered_types:
 			var surplus := ResourceCalculator.compute_growth_surplus(resource_type, cell, state)
 			if surplus <= 0.0:
 				continue
 
-			var leftover := _encroach_resource_in_cell(cell, state, resource_type, surplus, browsing_factor)
+			var leftover := _encroach_resource_in_cell(cell, state, resource_type, surplus)
 			if leftover > 0.0:
 				_store_leftover(leftover_surplus, cell, resource_type, leftover)
 
@@ -49,8 +42,7 @@ func _encroach_resource_in_cell(
 	cell: MacroCellData,
 	state: MacroCellState,
 	resource_type: GameTypes.WorldObjectType,
-	surplus: float,
-	browsing_factor: float = 1.0
+	surplus: float
 ) -> float:
 	# Rule 1: encroachment only when this resource's desired growth exceeds available
 	# space/density (surplus > 0 is guaranteed by the caller) — same trigger migration uses,
@@ -75,15 +67,6 @@ func _encroach_resource_in_cell(
 	# migration), not to the surplus before efficiency is applied — otherwise a low efficiency
 	# would shrink an already-capped small budget twice and round away to nothing.
 	var remaining_budget: float = float(growth_rules.max_encroachment_per_year)
-	# Step 11 Step 4: remaining_surplus/remaining_budget seguono la catena NON mitigata —
-	# l'encroacher "tenta" la crescita piena esattamente come se non ci fosse fauna brucante,
-	# usando il proprio budget/surplus di conseguenza. browsing_factor entra in gioco SOLO dopo
-	# che budget/potenziale/spazio fisico hanno già determinato quantity_gained (vedi sotto) —
-	# stesso principio della mitigazione natalità (AnimalBirthMitigationService: il moltiplicatore
-	# scala il risultato finale, mai un valore intermedio che un altro vincolo potrebbe rendere
-	# ininfluente). Garantisce una riduzione ≈(1-browsing_factor) uniforme, indipendentemente da
-	# quale dei tre vincoli (budget_annuo/potenziale/spazio_fisico_debole) risulti stringente in
-	# una data cella — confermato empiricamente su un run reale prima di questa pulizia.
 	var remaining_surplus: float = surplus
 
 	# Rule 3: consume the farthest (lowest succession level) target fully before moving closer.
@@ -128,16 +111,8 @@ func _encroach_resource_in_cell(
 		remaining_budget -= applied_quantity_unmitigated
 		remaining_surplus -= applied_quantity_unmitigated
 
-		# Step 11 Step 4 — PUNTO DI APPLICAZIONE del moltiplicatore: dopo che budget/potenziale/
-		# spazio hanno già determinato quantity_gained sopra. browsing_factor=1.0 (default per
-		# celle senza fauna brucante) rende space_taken identico a space_taken_unmitigated,
-		# nessun cambiamento rispetto a prima dello Step 4 in quel caso.
-		var quantity_gained_mitigated: float = quantity_gained * browsing_factor
-		var space_taken: int = min(int(round(quantity_gained_mitigated / own_max_density)), weak_space)
+		var space_taken: int = min(int(round(quantity_gained / own_max_density)), weak_space)
 		if space_taken <= 0:
-			# La mitigazione ha ridotto l'importo sotto una microcella intera: nessuna scrittura
-			# sullo stato, ma budget/surplus sopra sono comunque già stati consumati sull'importo
-			# pieno (vedi commento sopra) — coerente con "l'encroacher tenta comunque".
 			continue
 
 		# Re-derive the applied quantity from the rounded space so quantity stays

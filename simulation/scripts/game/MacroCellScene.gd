@@ -19,17 +19,6 @@ var macro_cell: MacroCellData
 var macro_state: MacroCellState
 var game_data: GameData
 var renderer: MicroCellRenderer
-var rabbit_renderer: AnimalGroupRenderer
-var deer_renderer: AnimalGroupRenderer
-var boar_renderer: AnimalGroupRenderer
-var tarpan_renderer: AnimalGroupRenderer
-var aurochs_renderer: AnimalGroupRenderer
-var wild_donkey_renderer: AnimalGroupRenderer
-var mouflon_renderer: AnimalGroupRenderer
-var bezoar_renderer: AnimalGroupRenderer
-var partridge_renderer: AnimalGroupRenderer
-var wolf_renderer: AnimalGroupRenderer
-var animals_visible: bool = true
 var flora_daily_updates_enabled: bool = true
 var clock: GameClockController
 var _clock_was_playing_before_dialogs: bool = false
@@ -73,7 +62,6 @@ func _ready() -> void:
 	# Ripristina lo stato dei due toggle dalla sessione precedente (vedi GameSettings): senza
 	# questo, uscendo e rientrando in questa scena i toggle tornerebbero sempre al default "attivo",
 	# perdendo silenziosamente la scelta dell'utente.
-	animals_visible = GameSettings.macro_cell_animals_visible
 	flora_daily_updates_enabled = GameSettings.macro_cell_flora_updates_enabled
 
 	# year_title_label.text non più impostato qui (richiesta utente, 2026-09-04): ora mostra l'Era
@@ -87,15 +75,10 @@ func _ready() -> void:
 	save_game_file_dialog.file_selected.connect(_on_save_game_file_selected)
 
 	primary_actions_bar.configure_slot(
-		0, "🐇", tr("toggle_animals_visibility_tooltip"), &"toggle_animals_visibility",
-		tr("toggle_animals_visibility_description")
-	)
-	primary_actions_bar.set_slot_toggled(0, animals_visible)
-	primary_actions_bar.configure_slot(
-		1, "🌱", tr("toggle_flora_updates_tooltip"), &"toggle_flora_updates",
+		0, "🌱", tr("toggle_flora_updates_tooltip"), &"toggle_flora_updates",
 		tr("toggle_flora_updates_description")
 	)
-	primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
+	primary_actions_bar.set_slot_toggled(0, flora_daily_updates_enabled)
 	primary_actions_bar.action_pressed.connect(_on_primary_action_pressed)
 	secondary_actions_bar.configure_slot(0, "☰", tr("menu"), &"menu")
 	# Slot 1 lasciato vuoto apposta: i bottoni di navigazione stanno accostati al bordo destro
@@ -123,21 +106,12 @@ func _ready() -> void:
 	if macro_world != null:
 		macro_cell = macro_world.get_cell_at(GameSettings.selected_macro_cell_x, GameSettings.selected_macro_cell_y)
 
-	# Punto di invocazione per LODOrchestrator (Parte A: classificazione + log diagnostico; Parte B
-	# Punto 2: il risultato viene ora anche conservato su macro_world.lod_focus_state — vedi
-	# World.gd). La "zona a fuoco" è per ora la sola macrocella appena aperta, la scelta più
-	# semplice prima di un eventuale intorno più ampio. macro_world.lod_focus_live_cells viene
-	# salvata insieme al risultato: WorldTimeService la userà per ricalcolare periodicamente
-	# lod_focus_state ad ogni checkpoint stagionale (fix del bug "nuovi gruppi da split mai
-	# classificati"), senza dover ripassarla da qui ogni volta.
+	# Punto di invocazione per LODOrchestrator. La "zona a fuoco" è per ora la sola macrocella appena
+	# aperta, la scelta più semplice prima di un eventuale intorno più ampio.
 	if macro_world != null and macro_cell != null:
 		var focus_live_cells: Dictionary = {Vector2i(macro_cell.x, macro_cell.y): true}
-		var lod_result := LODOrchestrator.new().set_focus_region(
-			macro_world, focus_live_cells, SeasonCalculator.get_season_for_day(game_data.current_day)
-		)
-		LODOrchestrator.print_classification_log(lod_result)
-		macro_world.lod_focus_live_cells = focus_live_cells
-		macro_world.lod_focus_state = lod_result
+		LODOrchestrator.set_focus_region(macro_world, focus_live_cells, SeasonCalculator.get_season_for_day(game_data.current_day))
+		macro_world.lod_focus_active = true
 
 	world = World.new()
 	if macro_cell != null:
@@ -153,326 +127,6 @@ func _ready() -> void:
 	renderer = MicroCellRenderer.new()
 	add_child(renderer)
 	renderer.setup(world)
-
-	rabbit_renderer = AnimalGroupRenderer.new()
-	add_child(rabbit_renderer)
-	var rabbit_rules := AnimalCalculator.get_animal_rules("rabbit")
-	rabbit_renderer.configure({
-		"species_name": "rabbit",
-		"move_speed": rabbit_rules.move_speed if rabbit_rules != null else 24.0,
-		"turn_rate": rabbit_rules.turn_rate if rabbit_rules != null else 12.0,
-		"max_individuals_per_cluster": rabbit_rules.max_individuals_per_cluster if rabbit_rules != null else 1,
-		"cluster_comfort_radius": rabbit_rules.cluster_comfort_radius if rabbit_rules != null else 5.0,
-		"cluster_attraction_strength": rabbit_rules.cluster_attraction_strength if rabbit_rules != null else 12.0,
-		"hop_speed": rabbit_rules.hop_speed if rabbit_rules != null else 48.0,
-		"walk_speed_fraction": rabbit_rules.walk_speed_fraction if rabbit_rules != null else 1.0,
-		"run_phase_chance": rabbit_rules.run_phase_chance if rabbit_rules != null else 0.0,
-		"movement_phase_duration_min": rabbit_rules.movement_phase_duration_min if rabbit_rules != null else 0.25,
-		"movement_phase_duration_max": rabbit_rules.movement_phase_duration_max if rabbit_rules != null else 0.625,
-		"rest_phase_duration_min": rabbit_rules.rest_phase_duration_min if rabbit_rules != null else 0.375,
-		"rest_phase_duration_max": rabbit_rules.rest_phase_duration_max if rabbit_rules != null else 0.875,
-		"hop_duration_min": rabbit_rules.hop_duration_min if rabbit_rules != null else 0.025,
-		"hop_duration_max": rabbit_rules.hop_duration_max if rabbit_rules != null else 0.05,
-		"hop_pause_min": rabbit_rules.hop_pause_min if rabbit_rules != null else 0.0125,
-		"hop_pause_max": rabbit_rules.hop_pause_max if rabbit_rules != null else 0.0375,
-		"size_multiplier_by_age": rabbit_rules.size_multiplier_by_age if rabbit_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_rabbit_mesh(
-			AnimalGroupRenderer.RABBIT_BODY_LENGTH, AnimalGroupRenderer.RABBIT_BODY_WIDTH,
-			AnimalGroupRenderer.RABBIT_EAR_LENGTH, AnimalGroupRenderer.RABBIT_EAR_WIDTH,
-			AnimalGroupRenderer.RABBIT_COLOR
-		),
-	})
-
-
-	# Cervo: stesso schema del coniglio sopra (parametri comportamentali da AnimalRules/deer.tres,
-	# sagoma dedicata via build_deer_mesh — vedi AnimalGroupRenderer per la motivazione della
-	# separazione). Corpo più grande del coniglio (coerente con la specie: ~1.7-1.8x in lunghezza
-	# e larghezza), colore bruno invece del grigio-chiaro del coniglio.
-	deer_renderer = AnimalGroupRenderer.new()
-	add_child(deer_renderer)
-	var deer_rules := AnimalCalculator.get_animal_rules("deer")
-	deer_renderer.configure({
-		"species_name": "deer",
-		"move_speed": deer_rules.move_speed if deer_rules != null else 28.0,
-		"turn_rate": deer_rules.turn_rate if deer_rules != null else 9.6,
-		"max_individuals_per_cluster": deer_rules.max_individuals_per_cluster if deer_rules != null else 1,
-		"cluster_comfort_radius": deer_rules.cluster_comfort_radius if deer_rules != null else 6.0,
-		"cluster_attraction_strength": deer_rules.cluster_attraction_strength if deer_rules != null else 12.0,
-		"hop_speed": deer_rules.hop_speed if deer_rules != null else 48.0,
-		"walk_speed_fraction": deer_rules.walk_speed_fraction if deer_rules != null else 1.0,
-		"run_phase_chance": deer_rules.run_phase_chance if deer_rules != null else 0.0,
-		"movement_phase_duration_min": deer_rules.movement_phase_duration_min if deer_rules != null else 0.25,
-		"movement_phase_duration_max": deer_rules.movement_phase_duration_max if deer_rules != null else 0.625,
-		"rest_phase_duration_min": deer_rules.rest_phase_duration_min if deer_rules != null else 0.375,
-		"rest_phase_duration_max": deer_rules.rest_phase_duration_max if deer_rules != null else 0.875,
-		"hop_duration_min": deer_rules.hop_duration_min if deer_rules != null else 0.025,
-		"hop_duration_max": deer_rules.hop_duration_max if deer_rules != null else 0.05,
-		"hop_pause_min": deer_rules.hop_pause_min if deer_rules != null else 0.0125,
-		"hop_pause_max": deer_rules.hop_pause_max if deer_rules != null else 0.0375,
-		"size_multiplier_by_age": deer_rules.size_multiplier_by_age if deer_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_deer_mesh(
-			AnimalGroupRenderer.DEER_BODY_LENGTH, AnimalGroupRenderer.DEER_BODY_WIDTH,
-			AnimalGroupRenderer.DEER_EAR_LENGTH, AnimalGroupRenderer.DEER_EAR_WIDTH,
-			AnimalGroupRenderer.DEER_COLOR
-		),
-	})
-
-	# Cinghiale: stesso schema di rabbit/deer sopra, inclusi i 4 parametri di Cluster Movement
-	# (data-driven da AnimalRules/boar.tres grazie al refactor che li ha resi generici — nessun
-	# valore hardcoded qui, a differenza di come erano rabbit/deer prima di quel refactor).
-	boar_renderer = AnimalGroupRenderer.new()
-	add_child(boar_renderer)
-	var boar_rules := AnimalCalculator.get_animal_rules("boar")
-	boar_renderer.configure({
-		"species_name": "boar",
-		"move_speed": boar_rules.move_speed if boar_rules != null else 24.0,
-		"turn_rate": boar_rules.turn_rate if boar_rules != null else 12.0,
-		"max_individuals_per_cluster": boar_rules.max_individuals_per_cluster if boar_rules != null else 1,
-		"cluster_comfort_radius": boar_rules.cluster_comfort_radius if boar_rules != null else 5.0,
-		"cluster_attraction_strength": boar_rules.cluster_attraction_strength if boar_rules != null else 12.0,
-		"hop_speed": boar_rules.hop_speed if boar_rules != null else 48.0,
-		"walk_speed_fraction": boar_rules.walk_speed_fraction if boar_rules != null else 1.0,
-		"run_phase_chance": boar_rules.run_phase_chance if boar_rules != null else 0.0,
-		"movement_phase_duration_min": boar_rules.movement_phase_duration_min if boar_rules != null else 0.25,
-		"movement_phase_duration_max": boar_rules.movement_phase_duration_max if boar_rules != null else 0.625,
-		"rest_phase_duration_min": boar_rules.rest_phase_duration_min if boar_rules != null else 0.375,
-		"rest_phase_duration_max": boar_rules.rest_phase_duration_max if boar_rules != null else 0.875,
-		"hop_duration_min": boar_rules.hop_duration_min if boar_rules != null else 0.025,
-		"hop_duration_max": boar_rules.hop_duration_max if boar_rules != null else 0.05,
-		"hop_pause_min": boar_rules.hop_pause_min if boar_rules != null else 0.0125,
-		"hop_pause_max": boar_rules.hop_pause_max if boar_rules != null else 0.0375,
-		"size_multiplier_by_age": boar_rules.size_multiplier_by_age if boar_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_boar_mesh(
-			AnimalGroupRenderer.BOAR_BODY_LENGTH, AnimalGroupRenderer.BOAR_BODY_WIDTH,
-			AnimalGroupRenderer.BOAR_EAR_LENGTH, AnimalGroupRenderer.BOAR_EAR_WIDTH,
-			AnimalGroupRenderer.BOAR_COLOR
-		),
-	})
-
-	# Tarpan: stesso schema di rabbit/deer/boar sopra.
-	tarpan_renderer = AnimalGroupRenderer.new()
-	add_child(tarpan_renderer)
-	var tarpan_rules := AnimalCalculator.get_animal_rules("tarpan")
-	tarpan_renderer.configure({
-		"species_name": "tarpan",
-		"move_speed": tarpan_rules.move_speed if tarpan_rules != null else 24.0,
-		"turn_rate": tarpan_rules.turn_rate if tarpan_rules != null else 12.0,
-		"max_individuals_per_cluster": tarpan_rules.max_individuals_per_cluster if tarpan_rules != null else 1,
-		"cluster_comfort_radius": tarpan_rules.cluster_comfort_radius if tarpan_rules != null else 5.0,
-		"cluster_attraction_strength": tarpan_rules.cluster_attraction_strength if tarpan_rules != null else 12.0,
-		"hop_speed": tarpan_rules.hop_speed if tarpan_rules != null else 48.0,
-		"walk_speed_fraction": tarpan_rules.walk_speed_fraction if tarpan_rules != null else 1.0,
-		"run_phase_chance": tarpan_rules.run_phase_chance if tarpan_rules != null else 0.0,
-		"movement_phase_duration_min": tarpan_rules.movement_phase_duration_min if tarpan_rules != null else 0.25,
-		"movement_phase_duration_max": tarpan_rules.movement_phase_duration_max if tarpan_rules != null else 0.625,
-		"rest_phase_duration_min": tarpan_rules.rest_phase_duration_min if tarpan_rules != null else 0.375,
-		"rest_phase_duration_max": tarpan_rules.rest_phase_duration_max if tarpan_rules != null else 0.875,
-		"hop_duration_min": tarpan_rules.hop_duration_min if tarpan_rules != null else 0.025,
-		"hop_duration_max": tarpan_rules.hop_duration_max if tarpan_rules != null else 0.05,
-		"hop_pause_min": tarpan_rules.hop_pause_min if tarpan_rules != null else 0.0125,
-		"hop_pause_max": tarpan_rules.hop_pause_max if tarpan_rules != null else 0.0375,
-		"size_multiplier_by_age": tarpan_rules.size_multiplier_by_age if tarpan_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_tarpan_mesh(
-			AnimalGroupRenderer.TARPAN_BODY_LENGTH, AnimalGroupRenderer.TARPAN_BODY_WIDTH,
-			AnimalGroupRenderer.TARPAN_EAR_LENGTH, AnimalGroupRenderer.TARPAN_EAR_WIDTH,
-			AnimalGroupRenderer.TARPAN_COLOR
-		),
-	})
-
-	# Aurochs: stesso schema di rabbit/deer/boar/tarpan sopra.
-	aurochs_renderer = AnimalGroupRenderer.new()
-	add_child(aurochs_renderer)
-	var aurochs_rules := AnimalCalculator.get_animal_rules("aurochs")
-	aurochs_renderer.configure({
-		"species_name": "aurochs",
-		"move_speed": aurochs_rules.move_speed if aurochs_rules != null else 24.0,
-		"turn_rate": aurochs_rules.turn_rate if aurochs_rules != null else 12.0,
-		"max_individuals_per_cluster": aurochs_rules.max_individuals_per_cluster if aurochs_rules != null else 1,
-		"cluster_comfort_radius": aurochs_rules.cluster_comfort_radius if aurochs_rules != null else 5.0,
-		"cluster_attraction_strength": aurochs_rules.cluster_attraction_strength if aurochs_rules != null else 12.0,
-		"hop_speed": aurochs_rules.hop_speed if aurochs_rules != null else 48.0,
-		"walk_speed_fraction": aurochs_rules.walk_speed_fraction if aurochs_rules != null else 1.0,
-		"run_phase_chance": aurochs_rules.run_phase_chance if aurochs_rules != null else 0.0,
-		"movement_phase_duration_min": aurochs_rules.movement_phase_duration_min if aurochs_rules != null else 0.25,
-		"movement_phase_duration_max": aurochs_rules.movement_phase_duration_max if aurochs_rules != null else 0.625,
-		"rest_phase_duration_min": aurochs_rules.rest_phase_duration_min if aurochs_rules != null else 0.375,
-		"rest_phase_duration_max": aurochs_rules.rest_phase_duration_max if aurochs_rules != null else 0.875,
-		"hop_duration_min": aurochs_rules.hop_duration_min if aurochs_rules != null else 0.025,
-		"hop_duration_max": aurochs_rules.hop_duration_max if aurochs_rules != null else 0.05,
-		"hop_pause_min": aurochs_rules.hop_pause_min if aurochs_rules != null else 0.0125,
-		"hop_pause_max": aurochs_rules.hop_pause_max if aurochs_rules != null else 0.0375,
-		"size_multiplier_by_age": aurochs_rules.size_multiplier_by_age if aurochs_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_aurochs_mesh(
-			AnimalGroupRenderer.AUROCHS_BODY_LENGTH, AnimalGroupRenderer.AUROCHS_BODY_WIDTH,
-			AnimalGroupRenderer.AUROCHS_EAR_LENGTH, AnimalGroupRenderer.AUROCHS_EAR_WIDTH,
-			AnimalGroupRenderer.AUROCHS_COLOR
-		),
-	})
-
-	# Wild donkey: stesso schema di rabbit/deer/boar/tarpan/aurochs sopra.
-	wild_donkey_renderer = AnimalGroupRenderer.new()
-	add_child(wild_donkey_renderer)
-	var wild_donkey_rules := AnimalCalculator.get_animal_rules("wild_donkey")
-	wild_donkey_renderer.configure({
-		"species_name": "wild_donkey",
-		"move_speed": wild_donkey_rules.move_speed if wild_donkey_rules != null else 24.0,
-		"turn_rate": wild_donkey_rules.turn_rate if wild_donkey_rules != null else 12.0,
-		"max_individuals_per_cluster": wild_donkey_rules.max_individuals_per_cluster if wild_donkey_rules != null else 1,
-		"cluster_comfort_radius": wild_donkey_rules.cluster_comfort_radius if wild_donkey_rules != null else 5.0,
-		"cluster_attraction_strength": wild_donkey_rules.cluster_attraction_strength if wild_donkey_rules != null else 12.0,
-		"hop_speed": wild_donkey_rules.hop_speed if wild_donkey_rules != null else 48.0,
-		"walk_speed_fraction": wild_donkey_rules.walk_speed_fraction if wild_donkey_rules != null else 1.0,
-		"run_phase_chance": wild_donkey_rules.run_phase_chance if wild_donkey_rules != null else 0.0,
-		"movement_phase_duration_min": wild_donkey_rules.movement_phase_duration_min if wild_donkey_rules != null else 0.25,
-		"movement_phase_duration_max": wild_donkey_rules.movement_phase_duration_max if wild_donkey_rules != null else 0.625,
-		"rest_phase_duration_min": wild_donkey_rules.rest_phase_duration_min if wild_donkey_rules != null else 0.375,
-		"rest_phase_duration_max": wild_donkey_rules.rest_phase_duration_max if wild_donkey_rules != null else 0.875,
-		"hop_duration_min": wild_donkey_rules.hop_duration_min if wild_donkey_rules != null else 0.025,
-		"hop_duration_max": wild_donkey_rules.hop_duration_max if wild_donkey_rules != null else 0.05,
-		"hop_pause_min": wild_donkey_rules.hop_pause_min if wild_donkey_rules != null else 0.0125,
-		"hop_pause_max": wild_donkey_rules.hop_pause_max if wild_donkey_rules != null else 0.0375,
-		"size_multiplier_by_age": wild_donkey_rules.size_multiplier_by_age if wild_donkey_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_wild_donkey_mesh(
-			AnimalGroupRenderer.WILD_DONKEY_BODY_LENGTH, AnimalGroupRenderer.WILD_DONKEY_BODY_WIDTH,
-			AnimalGroupRenderer.WILD_DONKEY_EAR_LENGTH, AnimalGroupRenderer.WILD_DONKEY_EAR_WIDTH,
-			AnimalGroupRenderer.WILD_DONKEY_COLOR
-		),
-	})
-
-	# Mouflon: stesso schema di rabbit/deer/boar/tarpan/aurochs/wild_donkey sopra.
-	mouflon_renderer = AnimalGroupRenderer.new()
-	add_child(mouflon_renderer)
-	var mouflon_rules := AnimalCalculator.get_animal_rules("mouflon")
-	mouflon_renderer.configure({
-		"species_name": "mouflon",
-		"move_speed": mouflon_rules.move_speed if mouflon_rules != null else 24.0,
-		"turn_rate": mouflon_rules.turn_rate if mouflon_rules != null else 12.0,
-		"max_individuals_per_cluster": mouflon_rules.max_individuals_per_cluster if mouflon_rules != null else 1,
-		"cluster_comfort_radius": mouflon_rules.cluster_comfort_radius if mouflon_rules != null else 5.0,
-		"cluster_attraction_strength": mouflon_rules.cluster_attraction_strength if mouflon_rules != null else 12.0,
-		"hop_speed": mouflon_rules.hop_speed if mouflon_rules != null else 48.0,
-		"walk_speed_fraction": mouflon_rules.walk_speed_fraction if mouflon_rules != null else 1.0,
-		"run_phase_chance": mouflon_rules.run_phase_chance if mouflon_rules != null else 0.0,
-		"movement_phase_duration_min": mouflon_rules.movement_phase_duration_min if mouflon_rules != null else 0.25,
-		"movement_phase_duration_max": mouflon_rules.movement_phase_duration_max if mouflon_rules != null else 0.625,
-		"rest_phase_duration_min": mouflon_rules.rest_phase_duration_min if mouflon_rules != null else 0.375,
-		"rest_phase_duration_max": mouflon_rules.rest_phase_duration_max if mouflon_rules != null else 0.875,
-		"hop_duration_min": mouflon_rules.hop_duration_min if mouflon_rules != null else 0.025,
-		"hop_duration_max": mouflon_rules.hop_duration_max if mouflon_rules != null else 0.05,
-		"hop_pause_min": mouflon_rules.hop_pause_min if mouflon_rules != null else 0.0125,
-		"hop_pause_max": mouflon_rules.hop_pause_max if mouflon_rules != null else 0.0375,
-		"size_multiplier_by_age": mouflon_rules.size_multiplier_by_age if mouflon_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_mouflon_mesh(
-			AnimalGroupRenderer.MOUFLON_BODY_LENGTH, AnimalGroupRenderer.MOUFLON_BODY_WIDTH,
-			AnimalGroupRenderer.MOUFLON_EAR_LENGTH, AnimalGroupRenderer.MOUFLON_EAR_WIDTH,
-			AnimalGroupRenderer.MOUFLON_COLOR
-		),
-	})
-
-	# Bezoar: stesso schema di rabbit/deer/boar/tarpan/aurochs/wild_donkey/mouflon sopra.
-	bezoar_renderer = AnimalGroupRenderer.new()
-	add_child(bezoar_renderer)
-	var bezoar_rules := AnimalCalculator.get_animal_rules("bezoar")
-	bezoar_renderer.configure({
-		"species_name": "bezoar",
-		"move_speed": bezoar_rules.move_speed if bezoar_rules != null else 24.0,
-		"turn_rate": bezoar_rules.turn_rate if bezoar_rules != null else 12.0,
-		"max_individuals_per_cluster": bezoar_rules.max_individuals_per_cluster if bezoar_rules != null else 1,
-		"cluster_comfort_radius": bezoar_rules.cluster_comfort_radius if bezoar_rules != null else 5.0,
-		"cluster_attraction_strength": bezoar_rules.cluster_attraction_strength if bezoar_rules != null else 12.0,
-		"hop_speed": bezoar_rules.hop_speed if bezoar_rules != null else 48.0,
-		"walk_speed_fraction": bezoar_rules.walk_speed_fraction if bezoar_rules != null else 1.0,
-		"run_phase_chance": bezoar_rules.run_phase_chance if bezoar_rules != null else 0.0,
-		"movement_phase_duration_min": bezoar_rules.movement_phase_duration_min if bezoar_rules != null else 0.25,
-		"movement_phase_duration_max": bezoar_rules.movement_phase_duration_max if bezoar_rules != null else 0.625,
-		"rest_phase_duration_min": bezoar_rules.rest_phase_duration_min if bezoar_rules != null else 0.375,
-		"rest_phase_duration_max": bezoar_rules.rest_phase_duration_max if bezoar_rules != null else 0.875,
-		"hop_duration_min": bezoar_rules.hop_duration_min if bezoar_rules != null else 0.025,
-		"hop_duration_max": bezoar_rules.hop_duration_max if bezoar_rules != null else 0.05,
-		"hop_pause_min": bezoar_rules.hop_pause_min if bezoar_rules != null else 0.0125,
-		"hop_pause_max": bezoar_rules.hop_pause_max if bezoar_rules != null else 0.0375,
-		"size_multiplier_by_age": bezoar_rules.size_multiplier_by_age if bezoar_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_bezoar_mesh(
-			AnimalGroupRenderer.BEZOAR_BODY_LENGTH, AnimalGroupRenderer.BEZOAR_BODY_WIDTH,
-			AnimalGroupRenderer.BEZOAR_EAR_LENGTH, AnimalGroupRenderer.BEZOAR_EAR_WIDTH,
-			AnimalGroupRenderer.BEZOAR_COLOR
-		),
-	})
-
-	# Partridge: stesso schema di rabbit/deer/boar/tarpan/aurochs/wild_donkey/mouflon/bezoar sopra
-	# — prima specie non-mammifero (sagoma con ali ripiegate invece di orecchie/corna, vedi
-	# AnimalGroupRenderer.build_partridge_mesh), stessa pipeline di configurazione, nessuna
-	# differenza di trattamento qui.
-	partridge_renderer = AnimalGroupRenderer.new()
-	add_child(partridge_renderer)
-	var partridge_rules := AnimalCalculator.get_animal_rules("partridge")
-	partridge_renderer.configure({
-		"species_name": "partridge",
-		"move_speed": partridge_rules.move_speed if partridge_rules != null else 24.0,
-		"turn_rate": partridge_rules.turn_rate if partridge_rules != null else 12.0,
-		"max_individuals_per_cluster": partridge_rules.max_individuals_per_cluster if partridge_rules != null else 1,
-		"cluster_comfort_radius": partridge_rules.cluster_comfort_radius if partridge_rules != null else 5.0,
-		"cluster_attraction_strength": partridge_rules.cluster_attraction_strength if partridge_rules != null else 12.0,
-		"hop_speed": partridge_rules.hop_speed if partridge_rules != null else 48.0,
-		"walk_speed_fraction": partridge_rules.walk_speed_fraction if partridge_rules != null else 1.0,
-		"run_phase_chance": partridge_rules.run_phase_chance if partridge_rules != null else 0.0,
-		"movement_phase_duration_min": partridge_rules.movement_phase_duration_min if partridge_rules != null else 0.25,
-		"movement_phase_duration_max": partridge_rules.movement_phase_duration_max if partridge_rules != null else 0.625,
-		"rest_phase_duration_min": partridge_rules.rest_phase_duration_min if partridge_rules != null else 0.375,
-		"rest_phase_duration_max": partridge_rules.rest_phase_duration_max if partridge_rules != null else 0.875,
-		"hop_duration_min": partridge_rules.hop_duration_min if partridge_rules != null else 0.025,
-		"hop_duration_max": partridge_rules.hop_duration_max if partridge_rules != null else 0.05,
-		"hop_pause_min": partridge_rules.hop_pause_min if partridge_rules != null else 0.0125,
-		"hop_pause_max": partridge_rules.hop_pause_max if partridge_rules != null else 0.0375,
-		"size_multiplier_by_age": partridge_rules.size_multiplier_by_age if partridge_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_partridge_mesh(
-			AnimalGroupRenderer.PARTRIDGE_BODY_LENGTH, AnimalGroupRenderer.PARTRIDGE_BODY_WIDTH,
-			AnimalGroupRenderer.PARTRIDGE_EAR_LENGTH, AnimalGroupRenderer.PARTRIDGE_EAR_WIDTH,
-			AnimalGroupRenderer.PARTRIDGE_COLOR
-		),
-	})
-
-	wolf_renderer = AnimalGroupRenderer.new()
-	add_child(wolf_renderer)
-	var wolf_rules := AnimalCalculator.get_animal_rules("wolf")
-	wolf_renderer.configure({
-		"species_name": "wolf",
-		"move_speed": wolf_rules.move_speed if wolf_rules != null else 24.0,
-		"turn_rate": wolf_rules.turn_rate if wolf_rules != null else 12.0,
-		"max_individuals_per_cluster": wolf_rules.max_individuals_per_cluster if wolf_rules != null else 1,
-		"cluster_comfort_radius": wolf_rules.cluster_comfort_radius if wolf_rules != null else 5.0,
-		"cluster_attraction_strength": wolf_rules.cluster_attraction_strength if wolf_rules != null else 12.0,
-		"hop_speed": wolf_rules.hop_speed if wolf_rules != null else 48.0,
-		"walk_speed_fraction": wolf_rules.walk_speed_fraction if wolf_rules != null else 1.0,
-		"run_phase_chance": wolf_rules.run_phase_chance if wolf_rules != null else 0.0,
-		"movement_phase_duration_min": wolf_rules.movement_phase_duration_min if wolf_rules != null else 0.25,
-		"movement_phase_duration_max": wolf_rules.movement_phase_duration_max if wolf_rules != null else 0.625,
-		"rest_phase_duration_min": wolf_rules.rest_phase_duration_min if wolf_rules != null else 0.375,
-		"rest_phase_duration_max": wolf_rules.rest_phase_duration_max if wolf_rules != null else 0.875,
-		"hop_duration_min": wolf_rules.hop_duration_min if wolf_rules != null else 0.025,
-		"hop_duration_max": wolf_rules.hop_duration_max if wolf_rules != null else 0.05,
-		"hop_pause_min": wolf_rules.hop_pause_min if wolf_rules != null else 0.0125,
-		"hop_pause_max": wolf_rules.hop_pause_max if wolf_rules != null else 0.0375,
-		"size_multiplier_by_age": wolf_rules.size_multiplier_by_age if wolf_rules != null else [1.0, 1.0, 1.0],
-		"mesh": AnimalGroupRenderer.build_wolf_mesh(
-			AnimalGroupRenderer.WOLF_BODY_LENGTH, AnimalGroupRenderer.WOLF_BODY_WIDTH,
-			AnimalGroupRenderer.WOLF_EAR_LENGTH, AnimalGroupRenderer.WOLF_EAR_WIDTH,
-			AnimalGroupRenderer.WOLF_COLOR
-		),
-	})
-
-	# Applica lo stato di visibilità ripristinato sopra (default true dei renderer altrimenti
-	# resterebbe visibile anche se l'utente l'aveva disattivato prima di uscire).
-	rabbit_renderer.set_animals_visible(animals_visible)
-	deer_renderer.set_animals_visible(animals_visible)
-	boar_renderer.set_animals_visible(animals_visible)
-	tarpan_renderer.set_animals_visible(animals_visible)
-	aurochs_renderer.set_animals_visible(animals_visible)
-	wild_donkey_renderer.set_animals_visible(animals_visible)
-	mouflon_renderer.set_animals_visible(animals_visible)
-	bezoar_renderer.set_animals_visible(animals_visible)
-	partridge_renderer.set_animals_visible(animals_visible)
-	wolf_renderer.set_animals_visible(animals_visible)
 
 	if macro_cell != null and macro_world != null:
 		renderer.set_neighbors(_get_neighbor_cells(macro_cell), _get_neighbor_states(macro_cell))
@@ -500,16 +154,6 @@ func _ready() -> void:
 			_refresh_resource_visuals()
 
 	_setup_clock()
-	rabbit_renderer.clock = clock
-	deer_renderer.clock = clock
-	boar_renderer.clock = clock
-	tarpan_renderer.clock = clock
-	aurochs_renderer.clock = clock
-	wild_donkey_renderer.clock = clock
-	mouflon_renderer.clock = clock
-	bezoar_renderer.clock = clock
-	partridge_renderer.clock = clock
-	wolf_renderer.clock = clock
 	_update_calendar_display()
 
 
@@ -518,14 +162,11 @@ func _ready() -> void:
 # (_on_system_menu_action_selected), o una futura terza via non ancora scritta: _exit_tree() è il
 # callback nativo di Godot invocato quando il nodo esce dall'albero (change_scene_to_file lo
 # libera sempre), quindi copre ogni caso senza dover ricordare di richiamare l'azzeramento in ogni
-# singolo gestore di bottone. Riporta lod_focus_state a {} = "nessun focus attivo" (vista mondo),
-# lo stesso stato di partenza prima che questa scena venisse mai aperta — WorldScene, che riusa lo
-# stesso macro_world per riferimento, torna quindi a vedere tutti i gruppi allo stesso modo, come
-# oggi.
+# singolo gestore di bottone. Riporta lod_focus_active a false = "nessun focus attivo" (vista mondo),
+# lo stesso stato di partenza prima che questa scena venisse mai aperta.
 func _exit_tree() -> void:
 	if macro_world != null:
-		macro_world.lod_focus_state = {}
-		macro_world.lod_focus_live_cells = {}
+		macro_world.lod_focus_active = false
 
 
 # "occupied" invertito rispetto al solito uso (qui marca ciò che NON è disponibile per FISH,
@@ -635,28 +276,6 @@ func _refresh_resource_visuals() -> void:
 		fish_positions = fish_service.generate_positions(macro_state, occupied_for_fish)
 	renderer.set_fish_positions(fish_positions)
 
-	var this_cell := Vector2i(macro_cell.x, macro_cell.y)
-	var rabbit_group := macro_world.find_population_group("rabbit", this_cell)
-	_update_animal_renderer_population(rabbit_renderer, rabbit_group, AnimalCalculator.get_animal_rules("rabbit"), this_cell)
-	var deer_group := macro_world.find_population_group("deer", this_cell)
-	_update_animal_renderer_population(deer_renderer, deer_group, AnimalCalculator.get_animal_rules("deer"), this_cell)
-	var boar_group := macro_world.find_population_group("boar", this_cell)
-	_update_animal_renderer_population(boar_renderer, boar_group, AnimalCalculator.get_animal_rules("boar"), this_cell)
-	var tarpan_group := macro_world.find_population_group("tarpan", this_cell)
-	_update_animal_renderer_population(tarpan_renderer, tarpan_group, AnimalCalculator.get_animal_rules("tarpan"), this_cell)
-	var aurochs_group := macro_world.find_population_group("aurochs", this_cell)
-	_update_animal_renderer_population(aurochs_renderer, aurochs_group, AnimalCalculator.get_animal_rules("aurochs"), this_cell)
-	var wild_donkey_group := macro_world.find_population_group("wild_donkey", this_cell)
-	_update_animal_renderer_population(wild_donkey_renderer, wild_donkey_group, AnimalCalculator.get_animal_rules("wild_donkey"), this_cell)
-	var mouflon_group := macro_world.find_population_group("mouflon", this_cell)
-	_update_animal_renderer_population(mouflon_renderer, mouflon_group, AnimalCalculator.get_animal_rules("mouflon"), this_cell)
-	var bezoar_group := macro_world.find_population_group("bezoar", this_cell)
-	_update_animal_renderer_population(bezoar_renderer, bezoar_group, AnimalCalculator.get_animal_rules("bezoar"), this_cell)
-	var partridge_group := macro_world.find_population_group("partridge", this_cell)
-	_update_animal_renderer_population(partridge_renderer, partridge_group, AnimalCalculator.get_animal_rules("partridge"), this_cell)
-	var wolf_group := macro_world.find_population_group("wolf", this_cell)
-	_update_animal_renderer_population(wolf_renderer, wolf_group, AnimalCalculator.get_animal_rules("wolf"), this_cell)
-
 	renderer.set_shrub_subtypes(macro_state.shrub_individual_subtype)
 	renderer.set_shrub_age_params(
 		game_data.year, _get_age_params(GameTypes.WorldObjectType.SHRUB), macro_state.shrub_virtual_birth_year
@@ -674,36 +293,6 @@ func _refresh_resource_visuals() -> void:
 	_update_info_panel()
 
 
-# Popola un AnimalGroupRenderer con la quota di QUESTA cella (get_population_by_cell — con
-# territori multi-cella, Step 5, group.population è il totale sull'INTERO territorio, non quanti
-# individui sono realmente qui; stessa fonte di verità già usata da WorldInfoPanel/
-# MacroCellDetailPanel, per rabbit a 1 sola cella degenera nello stesso valore). Se la specie
-# traccia le age band (track_age_bands), la quota viene ulteriormente ripartita per fascia
-# (get_age_composition_in_cell) così il renderer può disegnare Y/A/O a dimensioni diverse
-# (size_multiplier_by_age) — altrimenti passa la quota totale a set_population, scala fissa 1.0.
-func _update_animal_renderer_population(
-	renderer_node: AnimalGroupRenderer, group: PopulationGroup, rules: AnimalRules, coords: Vector2i
-) -> void:
-	var age_aware := rules != null and rules.track_age_bands
-
-	if group == null:
-		if age_aware:
-			renderer_node.set_population_by_age(0, 0, 0)
-		else:
-			renderer_node.set_population(0)
-		return
-
-	if age_aware:
-		var age_composition := group.get_age_composition_in_cell(coords)
-		renderer_node.set_population_by_age(
-			int(age_composition.get(GameTypes.AgeBand.YOUNG, 0)),
-			int(age_composition.get(GameTypes.AgeBand.ADULT, 0)),
-			int(age_composition.get(GameTypes.AgeBand.OLD, 0))
-		)
-	else:
-		renderer_node.set_population(int(group.get_population_by_cell().get(coords, 0)))
-
-
 # I numeri del pannello info leggono macro_state/macro_cell direttamente (nessun rebuild di
 # mesh coinvolto): vanno tenuti aggiornati ogni giorno in cui qualcosa è davvero cambiato,
 # INDIPENDENTEMENTE da flora_daily_updates_enabled — quel toggle riguarda solo quando vale la
@@ -712,7 +301,7 @@ func _update_animal_renderer_population(
 func _update_info_panel() -> void:
 	if macro_state == null:
 		return
-	macro_cell_detail_panel.show_cell(macro_cell, macro_state, SeasonCalculator.get_season_for_day(game_data.current_day), macro_world)
+	macro_cell_detail_panel.show_cell(macro_cell, macro_state, SeasonCalculator.get_season_for_day(game_data.current_day))
 
 
 # Parametri fasce età per ciascun sottotipo di object_type con track_age_bands=true nella
@@ -780,27 +369,9 @@ func _on_save_game_file_selected(path: String) -> void:
 
 func _on_primary_action_pressed(action_id: StringName) -> void:
 	match action_id:
-		&"toggle_animals_visibility":
-			animals_visible = not animals_visible
-			# Un solo toggle per tutta la fauna (rabbit + deer + boar + tarpan + aurochs +
-			# wild_donkey + mouflon + bezoar + partridge + wolf, non uno per specie): nessun caso d'uso reale oggi
-			# per nasconderle separatamente — se servirà un controllo più fine in futuro (es.
-			# gameplay-specifico), lo si introduce allora.
-			rabbit_renderer.set_animals_visible(animals_visible)
-			deer_renderer.set_animals_visible(animals_visible)
-			boar_renderer.set_animals_visible(animals_visible)
-			tarpan_renderer.set_animals_visible(animals_visible)
-			aurochs_renderer.set_animals_visible(animals_visible)
-			wild_donkey_renderer.set_animals_visible(animals_visible)
-			mouflon_renderer.set_animals_visible(animals_visible)
-			bezoar_renderer.set_animals_visible(animals_visible)
-			partridge_renderer.set_animals_visible(animals_visible)
-			wolf_renderer.set_animals_visible(animals_visible)
-			primary_actions_bar.set_slot_toggled(0, animals_visible)
-			GameSettings.macro_cell_animals_visible = animals_visible
 		&"toggle_flora_updates":
 			flora_daily_updates_enabled = not flora_daily_updates_enabled
-			primary_actions_bar.set_slot_toggled(1, flora_daily_updates_enabled)
+			primary_actions_bar.set_slot_toggled(0, flora_daily_updates_enabled)
 			GameSettings.macro_cell_flora_updates_enabled = flora_daily_updates_enabled
 
 func _on_secondary_action_pressed(action_id: StringName) -> void:
@@ -897,9 +468,9 @@ func _update_play_pause_button() -> void:
 		play_pause_button.text = "▶"
 		play_pause_button.tooltip_text = TooltipText.wrap(tr("play"))
 
-func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
+func _on_day_advanced(checkpoint_ran: bool) -> void:
 	_update_calendar_display()
-	if not (checkpoint_ran or animals_changed):
+	if not checkpoint_ran:
 		return
 
 	# _refresh_resource_visuals già chiama _update_info_panel al suo interno: qui va invocata

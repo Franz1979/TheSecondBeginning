@@ -150,8 +150,8 @@ func setup(world: World) -> void:
 		_base_image.set_pixel(cell.x, cell.y, TerrainColors.get_cell_color(cell))
 
 
-# `live_cells` è un Dictionary[Vector2i, bool] (stesso formato di GameScene.live_cells/
-# World.lod_focus_live_cells, solo le chiavi contano). `player_macro_coords` posiziona il bordo
+# `live_cells` è un Dictionary[Vector2i, bool] (stesso formato di GameScene.live_cells,
+# solo le chiavi contano). `player_macro_coords` posiziona il bordo
 # rosso (_update_player_marker, un Panel separato — non un pixel dell'immagine, così il terreno
 # sottostante resta visibile) sulla macrocella del player — un Vector2i negativo (nessun player
 # ancora posizionato) nasconde il marker.

@@ -7,7 +7,7 @@ extends Node
 # day/year bookkeeping and the yearly simulation pipeline live in
 # WorldTimeService/GameData, not here.
 
-signal day_advanced(checkpoint_ran: bool, animals_changed: bool)
+signal day_advanced(checkpoint_ran: bool)
 # season_ended/year_rolled_over (richiesta utente, 2026-09-05, Opzione A dalla ricognizione
 # GameClockController<->WorldTimeService): stessi due punti di emissione di day_advanced sopra,
 # valorizzati dai campi già propagati da WorldTimeService.advance_day (vedi lì) — nessun nuovo
@@ -131,7 +131,7 @@ func _process(delta: float) -> void:
 		# GameScene/MacroCellScene reagendo al segnale, non di WorldTimeService.
 		var day_wall_clock_start_usec := Time.get_ticks_usec()
 		var result := _time_service.advance_day(_world, _game_data)
-		day_advanced.emit(result["checkpoint_ran"], result["animals_changed"])
+		day_advanced.emit(result["checkpoint_ran"])
 		# Smistamento nei due nuovi segnali classificati (vedi commento alle signal sopra) — letti
 		# dal Dictionary appena tornato, nessun ricalcolo. season_ended solo se una stagione è
 		# davvero terminata oggi (sentinel -1 di WorldTimeService._run_seasonal_checkpoints).
@@ -161,7 +161,7 @@ func set_speed(new_speed: Speed) -> void:
 func force_advance_to_year_end() -> void:
 	_time_service.force_advance_to_year_end(_world, _game_data)
 	_day_progress = 0.0
-	day_advanced.emit(true, false)
+	day_advanced.emit(true)
 	# year_rolled_over sempre vero qui: questo salto avanza sempre di esattamente
 	# GameData.DAYS_PER_YEAR giorni da qualunque punto dell'anno, quindi attraversa sempre
 	# esattamente un confine annuale. season_ended invece NON viene emesso apposta: a differenza

@@ -91,8 +91,7 @@ extends Resource
 # disponibile, nessun requisito). Consultato SOLO da TerrainScatteredResourceService.
 # is_resource_locked (usato a sua volta da get_available e da GameScene._resolve_pickup_candidates
 # per popup di raccolta/ispezione microcella) — MAI dal rendering (i puntini su arbusti/alberi
-# restano disegnati come sempre, indipendentemente dal blocco) né da AnimalConsumptionService (la
-# fauna continua a consumare secondary_resource_stock indipendentemente dalle idee umane).
+# restano disegnati come sempre, indipendentemente dal blocco).
 # Impostato oggi su medicinal_herbs.tres ("plant_lore"), fish_meat.tres ("fishing", idea non ancora creata: resta
 # bloccata finché non esisterà la pesca) e forage.tres ("placeholder_unavailable", id segnaposto che non corrisponde a
 # nessuna idea: è l'erba da pascolo della fauna, materia prima non commestibile per gli umani; tornerà con l'allevamento); ogni altra risorsa resta sempre

@@ -14,7 +14,7 @@ extends RefCounted
 
 # `spot`: {"macro_coords", "position"} della microcella di ruscello (RightClickTargets.stream_fish o FishZoneService).
 # `work_area_id` / `series`: zona e serie della pesca nelle zone (-1 / {} col clic destro); la destinazione del pesce è
-# quella della serie, altrimenti quella della carne della caccia diretta, letta ora.
+# quella della serie, altrimenti quella del pulsante del pesce (GameData.last_fish_destination), letta ora.
 # Ordine del cassetto (2026-10-31, passo 4): `silent` = niente messaggi né X (la presa dalla coda);
 # `tools_from_storage` = la lenza la va a prendere in deposito (ZoneOrderCommandService), niente controllo della lenza qui.
 static func assign_fish(
@@ -110,8 +110,8 @@ static func fish_pick_area_ids(ctx: GameContext, workers: Array[HumanIndividual]
 	return valid_ids
 
 
-# Task Fish sul punto, con destinazione del pesce (quella della serie, altrimenti quella della carne della caccia diretta,
-# letta ora), zona e serie nel context. Condivisa dal comando e dalla pesca successiva della serie
+# Task Fish sul punto, con destinazione del pesce (quella della serie, altrimenti quella del pulsante del pesce, letta
+# ora), zona e serie nel context. Condivisa dal comando e dalla pesca successiva della serie
 # (WorkFollowUpService.continue_fish_series).
 static func build_task(
 	ctx: GameContext, worker: HumanIndividual, macro_coords: Vector2i, fish_position: Vector2i, work_area_id: int, series: Dictionary
@@ -121,7 +121,7 @@ static func build_task(
 		return null
 	var destination := String(series.get("butcher_destination", ""))
 	if destination == "":
-		destination = ButcherDestinationService.resolve_default(ctx.game_data.last_butcher_destination, ctx.world, ctx.folk)
+		destination = ButcherDestinationService.resolve_default(ctx.game_data.last_fish_destination, ctx.world, ctx.folk)
 	task.context[ButcherDestinationService.CONTEXT_KEY] = destination
 	if work_area_id != -1:
 		task.context[FishZoneService.CONTEXT_WORK_AREA_ID] = work_area_id

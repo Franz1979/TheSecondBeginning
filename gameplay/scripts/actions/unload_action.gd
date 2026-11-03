@@ -667,8 +667,8 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 
 
 # Persistenza (2026-09-09, richiesta utente; ESTESA 2026-09-10 per costo/durata E per deposit_kind)
-# — target_building via building.id (l'unico identificatore stabile/serializzabile, stesso
-# principio di PopulationGroup.id: Building stesso non è mai serializzato per riferimento diretto,
+# — target_building via building.id (l'unico identificatore stabile/serializzabile:
+# Building stesso non è mai serializzato per riferimento diretto,
 # JSON non trasporta riferimenti a oggetti vivi) PIÙ duration/elapsed/total_stamina_cost (2026-09-10,
 # stesso motivo di PickUpAction/ThinkAction: senza, un salvataggio a metà deposito fisico perderebbe
 # silenziosamente il progresso già maturato, ripartendo da 0 al reload — vedi _restored_from_save).

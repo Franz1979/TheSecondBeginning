@@ -56,6 +56,10 @@ const BODY_RESTORE_DURATION_PER_CALORIE: float = 0.001
 enum SourceKind { BUILDING, BACKPACK }
 const CONTEXT_PENDING_WAREHOUSE_RESTOCK := "pending_warehouse_restock"
 
+# Tetto delle provviste mangiando dallo zaino, in giorni di autonomia (2026-11-03, richiesta utente — "se lo magna" senza
+# finirsi il carico): la riserva corporea si riempie comunque, il resto del carico prosegue con la task.
+const BACKPACK_MEAL_AUTONOMY_DAYS: float = 5.0
+
 
 # Emesso da on_complete() SOLO quando un rifornimento reale e' avvenuto (almeno un'unita' davvero
 # prelevata) - stesso principio di RetrieveAction.resource_retrieved: chi crea la Task decide se/come
@@ -79,6 +83,9 @@ var _restored_from_save: bool = false
 
 
 var source_kind: SourceKind = SourceKind.BUILDING
+# Pasto dentro un'altra task (2026-11-03, HumanIndividualActionService._queue_eat_from_backpack): a fine step non si
+# valuta il viaggio al magazzino, la task prosegue. Persistito.
+var inline_meal: bool = false
 
 
 func _init(p_target_building: Building = null, p_source_kind: int = SourceKind.BUILDING) -> void:
@@ -96,7 +103,9 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	var body_deficit: float = maxf(individual.body_calories_capacity - individual.body_calories, 0.0)
 	# Tetto in giorni di autonomia (2026-10-03, richiesta utente): le provviste ricevono calorie solo fino al tetto,
 	# oltre al limite di spazio. La riserva corporea (body_deficit) resta fuori dal tetto e si aggiunge.
-	_pouch_calorie_cap = HumanIndividualActionService.get_restock_pouch_calorie_cap(individual)
+	_pouch_calorie_cap = HumanIndividualActionService.get_restock_pouch_calorie_cap(
+		individual, BACKPACK_MEAL_AUTONOMY_DAYS if source_kind == SourceKind.BACKPACK else -1.0
+	)
 	var pouch_calorie_room: float = INF if is_inf(_pouch_calorie_cap) else maxf(_pouch_calorie_cap - individual.food_calories_held, 0.0)
 	if source_kind == SourceKind.BACKPACK:
 		_selection = FoodSelectionService.select_food_from_entries(
@@ -156,7 +165,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var body_before: float = individual.body_calories
 	var happiness_before: float = individual.current_happiness
 	var health_before: float = individual.current_health
-	if source_kind == SourceKind.BACKPACK:
+	if source_kind == SourceKind.BACKPACK and not inline_meal:
 		# Il viaggio al magazzino si valuta comunque dopo lo zaino (anche se lo zaino non ha dato nulla).
 		context[CONTEXT_PENDING_WAREHOUSE_RESTOCK] = true
 	var has_source: bool = source_kind == SourceKind.BACKPACK or target_building != null
@@ -267,6 +276,7 @@ func get_save_data() -> Dictionary:
 		"elapsed": _elapsed,
 		"total_stamina_cost": _total_stamina_cost,
 		"source_kind": int(source_kind),
+		"inline_meal": inline_meal,
 	}
 	if not is_inf(_pouch_calorie_cap):
 		data["pouch_calorie_cap"] = _pouch_calorie_cap

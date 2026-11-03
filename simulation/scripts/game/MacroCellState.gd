@@ -59,41 +59,9 @@ var rock_stone_cache_built: bool = false
 # vuoto (nessuna logica li genera); letto da PathfindingService. Salvato come stone_positions (chiave assente se vuoto).
 var ford_positions: Array = []
 # LOD0 (2026-08-30): true dal primo momento in cui questa macrocella entra nel set di celle vive
-# VERE (LODOrchestrator.set_focus_region, vedi world.lod_focus_live_cells) — MAI più rimesso a
-# false, stesso principio "fatto storico permanente" di has_ever_grown sopra. È l'UNICO dato che
-# guida il livello LOD di ogni PopulationGroup il cui territorio include questa cella (LEVEL_0 se
-# NESSUNA cella del territorio ha mai questo flag a true, LEVEL_1 se almeno una ce l'ha ma nessuna
-# è viva ORA, LEVEL_2 se almeno una è viva ORA) — DELIBERATAMENTE mai marcato da altro (vedi
-# vegetation_feeding_active sotto per il perché): se bastasse "una cella qualunque del mio
-# territorio è comunque diventata nota" per salire a LEVEL_1, un gruppo il cui territorio si
-# sovrappone per puro caso a quello di un erbivoro attivo salirebbe a LEVEL_1 senza aver MAI
-# toccato lui stesso una cella viva — un contagio scoperto in sessione (LEVEL_1 deve restare
-# raggiungibile SOLO per retrocessione da LEVEL_2, mai per "prossimità" ad altri).
+# (LODOrchestrator.set_focus_region) — MAI più rimesso a false, stesso principio "fatto storico
+# permanente" di has_ever_grown sopra. Una cella mai scoperta ha la vegetazione congelata.
 var has_ever_been_discovered: bool = false
-# LOD0 (2026-08-30), SEPARATO da has_ever_been_discovered sopra apposta — vedi lì per il perché
-# della separazione. True quando questa cella fa parte del territorio di un erbivoro (mai un
-# predatore: la caccia legge population/get_population_by_cell, mai dedicated_space, non le serve
-# vegetazione attiva) che diventa LEVEL_2 — marca l'INTERO territorio dell'erbivoro (fino a decine
-# di celle, es. aurochs), non solo la cella viva vera, altrimenti le altre celle del suo territorio
-# (dove comunque mangia ogni giorno, vedi AnimalConsumptionService._consume_group che itera tutto
-# occupied_macrocells) resterebbero congelate per sempre — niente ricrescita, fame reale senza
-# scampo. Consultato SOLO da LODOrchestrator.is_vegetation_frozen (mai dalla classificazione
-# popolazioni sopra): governa se la vegetazione può crescere qui, non se qualcuno è "scoperto".
-# MAI più rimesso a false, stesso principio "fatto storico permanente" degli altri due flag.
-var vegetation_feeding_active: bool = false
-# LOD0/consumo (2026-09-05, richiesta utente): "fotografia" di dedicated_space[GRASS] catturata la
-# PRIMA volta che questa cella, pur congelata (is_vegetation_frozen), entra a far parte del
-# territorio di una popolazione erbivora Livello 1/2 attiva — vedi WorldTimeService (checkpoint di
-# inizio stagione, PRIMA del consumo aggregato: in quel momento il valore coincide sempre con
-# quello di semina, perché il consumo Livello 1 è solo a checkpoint, mai giornaliero, quindi nulla
-# può averlo eroso prima). -1 = mai catturato (sentinella, stesso idioma di altri campi "non ancora
-# valorizzato" nel progetto). Serve a "far ricrescere" il grass una volta l'anno (checkpoint di
-# crescita, fine primavera) SENZA calcolare la vera crescita nella cella (resta congelata per
-# quello): il consumo stagionale continua a intaccare dedicated_space[GRASS] per davvero (fame/
-# mortalità/split restano sensibili alla scarsità reale), ma ogni anno la cella torna a questo
-# valore invece di restare erosa per sempre — altrimenti forage diventerebbe un pareggio
-# indefinito verso zero senza mai recuperare, dato che qui la vera crescita non gira.
-var grass_seed_baseline: int = -1
 # Vector3i (x, y lotto + indice individuo locale) -> {"origin_type": GameTypes.WorldObjectType,
 # "cut_year": int}. Fatto storico reale (non ricalcolabile), stesso principio di stone_positions:
 # a differenza di GRASS/SHRUB/TREE aggregati (mai persistiti, rigenerati da zero ad ogni apertura/
@@ -338,14 +306,12 @@ var eggs_harvested_by_lot: Dictionary = {}
 # resta qui: entrambi vivono ora nei due Dictionary generici sopra.
 # Debito frazionario di spazio GRASS da rimuovere per consumo animale: il consumo giornaliero
 # convertito in "spazio equivalente" (unità/densità) è quasi sempre < 1 unità intera — invece
-# di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0 (vedi
-# AnimalConsumptionService), momento in cui dedicated_space[GRASS] viene davvero decrementato.
+# di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0, momento in cui dedicated_space[GRASS] viene davvero decrementato.
 var pending_grass_space_debt: float = 0.0
 # Stesso meccanismo di pending_grass_space_debt sopra, sul pesce (water_dedicated_space[FISH]) e
 # sugli uccelli (terrestrial_dedicated_space[BIRDS]) consumati dagli animali. Campi separati (non
 # un Dictionary unico) per restare coerenti con lo schema già in uso per GRASS — nessun
-# consumatore reale li tocca ancora (vedi AnimalConsumptionService._consume_fish_meat/
-# _consume_bird_meat). Dal 2026-10-31 fish_meat è pesce crudo per gli umani: il pesce si toglie
+# consumatore reale li tocca ancora. Dal 2026-10-31 fish_meat è pesce crudo per gli umani: il pesce si toglie
 # alla pesca, non quando lo si mangia, quindi questo debito non riguarda il cibo umano.
 var pending_fish_space_debt: float = 0.0
 var pending_bird_space_debt: float = 0.0

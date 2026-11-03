@@ -5,7 +5,7 @@ extends Node
 # salvata reale (stesso WorldLoadService.load_world_from_json usato dal menu "Scegli scenario",
 # vedi new_game_menu.gd/_on_open_scenario_file_selected), la popola con
 # InitialResourceSetupService.populate_resources come una nuova partita, NON crea alcun
-# PopulationGroup, poi fa avanzare la simulazione per YEARS_TO_RUN anni tramite
+# animale, poi fa avanzare la simulazione per YEARS_TO_RUN anni tramite
 # WorldTimeService.force_advance_to_year_end (lo stesso metodo usato in game dal bottone debug
 # "+1"), campionando ogni anno — per una cella rappresentativa di ogni combinazione bioma x
 # terreno effettivamente presente sulla mappa caricata — la SATURAZIONE COMPLESSIVA dello

@@ -27,10 +27,6 @@ extends Resource
 @export var hostile_start_excluded_multiplier: float = 0.9
 @export var hostile_start_included_multiplier: float = 1.0
 
-# Stesso trattamento della coppia sopra, per "Escludi partenza vicino ai predatori".
-@export var predator_territory_excluded_multiplier: float = 0.9
-@export var predator_territory_included_multiplier: float = 1.0
-
 # Stesso trattamento delle due coppie sopra, per "Presenza sicura animali" — a differenza delle
 # altre due (dove ESCLUDERE qualcosa e' la scelta piu' facile, 0.9), qui e' l'opposto: GARANTIRE
 # la presenza e' la scelta piu' facile (0.8, non 0.9 — un vantaggio piu' marcato, e' una garanzia
@@ -39,7 +35,7 @@ extends Resource
 @export var animal_presence_guaranteed_multiplier: float = 0.8
 @export var animal_presence_not_guaranteed_multiplier: float = 1.0
 
-# Stesso trattamento di hostile_start_*/predator_territory_* sopra (2026-09-08, richiesta utente,
+# Stesso trattamento di hostile_start_* sopra (2026-09-08, richiesta utente,
 # opzione "Presenza sicura roccia") — GARANTIRE la presenza di roccia nella macrocella di partenza
 # è la scelta più facile (0.9, stesso valore delle altre due coppie "escludi/garantisci", non
 # 0.8 come animal_presence: la roccia è un solo criterio geografico, non un'esclusione composta

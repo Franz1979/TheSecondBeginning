@@ -49,7 +49,6 @@ var starting_world_age_mode: String = ""
 var starting_animal_density: String = ""
 var starting_population_size: String = ""
 var starting_exclude_hostile_start: bool = false
-var starting_exclude_predator_territories: bool = false
 var starting_resource_richness_preference: String = ""
 # A differenza dei campi sopra (puramente statistici), questo e' predisposto per un consumo
 # FUTURO reale: quando esistera' un punto che deve sapere con quanti individui il player inizia
@@ -61,7 +60,7 @@ var starting_group_size_preference: String = ""
 var starting_folk_name: String = ""
 # A differenza dei campi puramente statistici sopra, questo alimenta DAVVERO
 # FirstStartMacroCellSelectionService (vedi GameScene._ready()), esattamente come
-# starting_exclude_hostile_start/starting_exclude_predator_territories/
+# starting_exclude_hostile_start/
 # starting_resource_richness_preference — non e' solo una statistica.
 var starting_guarantee_animal_presence: bool = false
 # Stesso trattamento di starting_guarantee_animal_presence sopra (2026-09-08, richiesta utente) —
@@ -253,7 +252,7 @@ var expired_objects: Array[Dictionary] = []
 
 # Prossimo id progressivo da assegnare a un HumanIndividual appena creato (fondatore o, in
 # futuro, neonato di un BirthService) — vedi allocate_human_id sotto. A differenza di
-# World.next_population_group_id/next_building_id (mai salvati come campo a sé, ricalcolati da
+# World.next_building_id (mai salvato come campo a sé, ricalcolato da
 # GameLoadService come max(id ancora presenti nel save)+1), questo campo va salvato e ricaricato
 # COSÌ COM'È (GameSaveService/GameLoadService, stesso trattamento di is_pregnant): un
 # HumanIndividual morto sparisce dal roster vivo ma il suo id resta referenziato altrove
@@ -445,6 +444,10 @@ var buildings_revision: int = 0
 # salvata con la partita): proposta all'apertura del dialog e usata dalla caccia diretta. Dal 2026-10-19 coppia carne/pelli;
 # un valore di prima si legge come coppia. "" = mai scelta.
 var last_butcher_destination: String = ""
+# Ultima destinazione del pescato (2026-11-03, richiesta utente — pulsante del pesce nella barra): separata da quella della
+# carne, stessa coppia (conta la parte della carne), usata dalla pesca col clic destro e dagli ordini del giocatore.
+# "" = mai scelta.
+var last_fish_destination: String = ""
 # Ordinamento dell'elenco dei pipottini nella scheda popolazione (2026-10-04, salvato con la partita): id di
 # HumanPopulationInfoPanel.SORT_OPTIONS ("age", "name", "house"). Un id sconosciuto ricade sul predefinito.
 var population_list_sort: String = "age"

@@ -12,16 +12,6 @@ const COLOR_PAINT_FLASH := Color(1.0, 1.0, 1.0, 1.0)
 const STREAM_LINE_WIDTH: float = 1.5 # i fiumi occupano ~4.5 px su 10
 const STREAM_SPRING_RADIUS: float = 1.8
 const PAINT_FLASH_DURATION: float = 0.35 # secondi, feedback visivo di una cella appena dipinta nel map editor
-# Etichetta ID sopra ciascun territorio evidenziato da highlight_group_territories sotto — colore
-# fisso (non dipende dal colore del territorio, deve restare leggibile su qualunque tinta) con un
-# alone scuro sotto per contrasto anche su territori chiari.
-const COLOR_SPECIES_OVERLAY_LABEL := Color(1.0, 1.0, 1.0, 1.0)
-const COLOR_SPECIES_OVERLAY_LABEL_OUTLINE := Color(0.0, 0.0, 0.0, 0.9)
-# Dimensione FISSA in pixel schermo (non locali/CELL_SIZE) — usata così com'è, senza alcuna
-# contro-scala: vedi _draw_species_territory_overlay_labels per come il disegno esce dal sistema
-# di coordinate locale/zoom per renderla davvero costante e nitida.
-const SPECIES_OVERLAY_LABEL_SCREEN_FONT_SIZE: int = 14
-
 const RENDERED_EVENT_TYPES := [
 	GameTypes.NaturalEventType.FIRE,
 	GameTypes.NaturalEventType.DROUGHT,
@@ -36,18 +26,8 @@ var selected_cell: MacroCellData = null
 # Vector2i -> {"remaining": float, "duration": float}: "duration" è la durata TOTALE con cui la
 # cella è stata flashata (serve a normalizzare il fade dell'alpha in _draw, vedi flash_time /
 # flash_duration sotto) — non più un unico float fisso (PAINT_FLASH_DURATION), da quando
-# flash_cell/flash_cells accettano una durata esplicita (highlight population più lungo del
-# feedback-pennello del map editor, ma stesso identico meccanismo di fade).
+# flash_cell accetta una durata esplicita.
 var flashing_cells: Dictionary = {}
-
-# Vista "Mostra tutti i territori di una specie" (WorldInfoPanel, tab Fauna 2) — parallela e
-# indipendente da flashing_cells sopra, mai la tocca: quella resta l'evidenziazione a singolo
-# gruppo (bordo bianco lampeggiante), questa mostra PIÙ territori insieme, ciascuno col proprio
-# colore e un'etichetta ID al baricentro. Stesso schema di fade (remaining/duration).
-# Vector2i -> {"color": Color, "remaining": float, "duration": float}
-var _species_territory_overlay_cells: Dictionary = {}
-# Array di {"cell": Vector2i, "text": String, "remaining": float, "duration": float}
-var _species_territory_overlay_labels: Array = []
 
 func set_selected_cell(cell: MacroCellData) -> void:
 	selected_cell = cell
@@ -56,35 +36,6 @@ func set_selected_cell(cell: MacroCellData) -> void:
 func flash_cell(x: int, y: int, duration: float = PAINT_FLASH_DURATION) -> void:
 	flashing_cells[Vector2i(x, y)] = {"remaining": duration, "duration": duration}
 
-
-# Comodità per evidenziare più celle insieme con la stessa durata (es. tutte le celle del
-# territorio di un PopulationGroup) senza dover far iterare a ogni chiamante flash_cell singola.
-func flash_cells(coords_list: Array, duration: float = PAINT_FLASH_DURATION) -> void:
-	for coords in coords_list:
-		flash_cell(coords.x, coords.y, duration)
-
-
-# Vista "Mostra tutti" (WorldInfoPanel): `entries` è un Array di Dictionary generici, uno per
-# territorio da evidenziare — {"cells": Array[Vector2i], "color": Color, "label_text": String,
-# "label_cell": Vector2i}. WorldRenderer resta agnostico di PopulationGroup/Territory (stesso
-# principio di flash_cells sopra): il chiamante decide già colore/etichetta/baricentro, qui si
-# limita a disegnarli. Sovrascrive sempre l'evidenziazione precedente (nessun accumulo tra una
-# chiamata e l'altra — "Mostra tutti" premuto due volte di fila non deve sommare vecchie e nuove
-# celle/etichette).
-func highlight_group_territories(entries: Array, duration: float) -> void:
-	_species_territory_overlay_cells.clear()
-	_species_territory_overlay_labels.clear()
-	for entry in entries:
-		var color: Color = entry["color"]
-		for coords in entry["cells"]:
-			_species_territory_overlay_cells[coords] = {
-				"color": color, "remaining": duration, "duration": duration
-			}
-		_species_territory_overlay_labels.append({
-			"cell": entry["label_cell"], "text": entry["label_text"],
-			"remaining": duration, "duration": duration
-		})
-	queue_redraw()
 
 # game_data is optional: MapEditorScene has no calendar/simulation, so it calls setup(world)
 # and event markers simply never draw there (guarded in _draw_event_markers).
@@ -95,11 +46,7 @@ func setup(_world: World, _game_data: GameData = null) -> void:
 
 
 func _process(delta: float) -> void:
-	# Le due strutture scadono indipendentemente (early return solo se ENTRAMBE sono vuote):
-	# highlight_group_territories può restare attivo anche quando flashing_cells è già vuoto
-	# (es. dopo un click su "⌖" singolo, seguito da "Mostra tutti" con durata diversa), e
-	# viceversa.
-	if flashing_cells.is_empty() and _species_territory_overlay_cells.is_empty() and _species_territory_overlay_labels.is_empty():
+	if flashing_cells.is_empty():
 		return
 
 	var expired_flash: Array = []
@@ -110,20 +57,6 @@ func _process(delta: float) -> void:
 			expired_flash.append(pos)
 	for pos in expired_flash:
 		flashing_cells.erase(pos)
-
-	var expired_overlay_cells: Array = []
-	for pos in _species_territory_overlay_cells.keys():
-		var entry: Dictionary = _species_territory_overlay_cells[pos]
-		entry["remaining"] -= delta
-		if entry["remaining"] <= 0.0:
-			expired_overlay_cells.append(pos)
-	for pos in expired_overlay_cells:
-		_species_territory_overlay_cells.erase(pos)
-
-	for i in range(_species_territory_overlay_labels.size() - 1, -1, -1):
-		_species_territory_overlay_labels[i]["remaining"] -= delta
-		if _species_territory_overlay_labels[i]["remaining"] <= 0.0:
-			_species_territory_overlay_labels.remove_at(i)
 
 	queue_redraw()
 
@@ -161,85 +94,10 @@ func _draw() -> void:
 			flash_color.a = clamp(flash_time / float(flash_entry["duration"]), 0.0, 1.0)
 			draw_rect(rect, flash_color, false, 3.0)
 
-		# Vista "Mostra tutti" (highlight_group_territories): riempimento nel colore del gruppo
-		# (già scelto dal chiamante, alpha propria) + bordo pieno nella stessa tinta per un
-		# confine ben visibile — entrambi sfumano insieme col fade standard remaining/duration.
-		var overlay_entry: Dictionary = _species_territory_overlay_cells.get(Vector2i(cell.x, cell.y), {})
-		var overlay_time: float = overlay_entry.get("remaining", -1.0)
-		if overlay_time > 0.0:
-			var fade: float = clamp(overlay_time / float(overlay_entry["duration"]), 0.0, 1.0)
-			var overlay_color: Color = overlay_entry["color"]
-			overlay_color.a *= fade
-			draw_rect(rect, overlay_color)
-			draw_rect(rect, Color(overlay_color.r, overlay_color.g, overlay_color.b, fade), false, 2.0)
-
 	# Ruscelli in un secondo giro: il tratto che entra in una cella-fiume a est/sud verrebbe
 	# coperto dal terreno di quella cella, disegnata dopo nel ciclo sopra.
 	for cell in world.cells:
 		_draw_stream(cell, Rect2(cell.x * CELL_SIZE, cell.y * CELL_SIZE, CELL_SIZE, CELL_SIZE))
-
-	_draw_species_territory_overlay_labels()
-
-
-# Etichette ID (una per territorio evidenziato da highlight_group_territories), disegnate DOPO
-# il ciclo principale sopra — sono poche (una per gruppo, non una per cella), non vale la pena
-# infilarle nel ciclo delle 10000 celle. Alone scuro (4 offset diagonali) sotto il testo per
-# restare leggibile sopra qualunque colore di territorio/terreno.
-#
-# Due tentativi precedenti (contro-scalare font_size in base allo zoom, sia via camera.zoom che
-# via get_canvas_transform().get_scale()) erano entrambi strutturalmente sbagliati, non solo nel
-# segno: draw_string rasterizza il glifo alla dimensione LOCALE passata, e SOLO DOPO il canvas
-# transform (zoom) la ridimensiona per lo schermo — quindi qualunque font_size locale più
-# piccolo (necessario per compensare uno zoom-in) produce un bitmap rasterizzato piccolo e poi
-# STIRATO in ingrandimento, cioè sfocato, oltre a non annullarsi correttamente. L'unico modo di
-# ottenere testo realmente a dimensione fissa E nitido è uscire dal sistema di coordinate
-# locale/mondo per la durata di questo disegno: get_global_transform_with_canvas() è la
-# trasformazione COMPLETA che il motore applica a questo canvas item per arrivare ai pixel finali
-# di schermo (nodo + tutti gli antenati + camera/zoom inclusi); impostare draw_set_transform_
-# matrix() alla sua INVERSA annulla quella trasformazione per i draw_string successivi, cosicché
-# le coordinate passate a draw_string vengono interpretate come pixel-schermo VERI — a quel punto
-# font_size può tornare una costante fissa (rasterizzato direttamente alla risoluzione finale,
-# niente stiramento). Le posizioni-cella (in coordinate locali/mondo) vanno quindi convertite
-# esplicitamente in pixel-schermo con la stessa trasformazione (ambient_transform * center) prima
-# di calcolare text_pos — restare nel sistema locale qui produrrebbe etichette ancorate al punto
-# schermo sbagliato. Trasformazione ripristinata all'identità in fondo (difensivo: questa è
-# l'ultima chiamata di _draw(), ma non deve lasciare uno stato anomalo per eventuali disegni
-# futuri aggiunti dopo di essa).
-func _draw_species_territory_overlay_labels() -> void:
-	if _species_territory_overlay_labels.is_empty():
-		return
-	var font := ThemeDB.fallback_font
-	var font_size := SPECIES_OVERLAY_LABEL_SCREEN_FONT_SIZE
-	var ambient_transform := get_global_transform_with_canvas()
-	draw_set_transform_matrix(ambient_transform.affine_inverse())
-
-	for label_entry in _species_territory_overlay_labels:
-		var remaining: float = label_entry["remaining"]
-		var duration: float = label_entry["duration"]
-		if remaining <= 0.0:
-			continue
-		var fade: float = clamp(remaining / duration, 0.0, 1.0)
-		var text: String = label_entry["text"]
-		var cell: Vector2i = label_entry["cell"]
-		var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size)
-		var world_center := Vector2(
-			cell.x * CELL_SIZE + CELL_SIZE / 2.0, cell.y * CELL_SIZE + CELL_SIZE / 2.0
-		)
-		var center: Vector2 = ambient_transform * world_center
-		var text_pos := center - text_size / 2.0 + Vector2(0.0, text_size.y * 0.35)
-
-		var outline_color := COLOR_SPECIES_OVERLAY_LABEL_OUTLINE
-		outline_color.a *= fade
-		for offset in [Vector2(-1, -1), Vector2(1, -1), Vector2(-1, 1), Vector2(1, 1)]:
-			draw_string(
-				font, text_pos + offset, text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, outline_color
-			)
-
-		var label_color := COLOR_SPECIES_OVERLAY_LABEL
-		label_color.a *= fade
-		draw_string(font, text_pos, text, HORIZONTAL_ALIGNMENT_CENTER, -1, font_size, label_color)
-
-	draw_set_transform_matrix(Transform2D.IDENTITY)
 
 
 const COLOR_STONE_OVERLAY := Color(0.35, 0.35, 0.35, 0.85)

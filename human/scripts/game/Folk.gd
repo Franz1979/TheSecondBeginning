@@ -6,7 +6,7 @@ extends RefCounted
 # bilanciamento caricati da .tres), un Folk è un'entità di PARTITA — esiste dal momento in cui
 # viene creato in una sessione di gioco, ha un id progressivo, e andrà salvato/caricato come dato
 # di partita quando arriverà la persistenza (mai come .tres) — stesso principio già seguito da
-# PopulationGroup/Building lato animale/edifici.
+# Building.
 #
 # Solo il minimo per ora: nessun era_rules_ref/name_rules ancora, non collegati a nulla in questo
 # passo.

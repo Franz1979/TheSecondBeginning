@@ -471,6 +471,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				restock_target_building = _find_building_by_id(world, int(step_data["target_building_id"]))
 			# Sorgente (2026-09-26, rifornirsi dal proprio zaino): BUILDING per i save precedenti.
 			step = RestockPouchAction.new(restock_target_building, int(step_data.get("source_kind", RestockPouchAction.SourceKind.BUILDING)))
+			# Qui e non in load_save_data: un pasto ancora da fare non è lo step corrente (false per i save precedenti).
+			(step as RestockPouchAction).inline_meal = bool(step_data.get("inline_meal", false))
 		TaskTypes.ActionType.RUN:
 			# 1 argomento (target: Vector2), stesso schema di WALK sopra (target_x/target_y già
 			# coperti genericamente da serialize_task, vedi la nota in testa al file).

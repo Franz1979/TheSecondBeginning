@@ -31,7 +31,7 @@ func grow_fauna(world: World) -> void:
 		if state == null:
 			continue
 		# LOD0 (2026-08-30, richiesta utente: FISH/BIRDS trattati come vegetazione — sono campi
-		# macrocella, non PopulationGroup): macrocella mai scoperta dentro una sessione con focus
+		# macrocella): macrocella mai scoperta dentro una sessione con focus
 		# attivo — congelata, nessuna crescita finché il player non ci arriva.
 		if LODOrchestrator.is_vegetation_frozen(world, state):
 			continue

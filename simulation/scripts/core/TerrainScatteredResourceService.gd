@@ -97,7 +97,7 @@ static func consume(macro_state: MacroCellState, resource_name: String, position
 # debug _debug_test_haul_resource_task) e da GameScene._resolve_pickup_candidates (popup di scelta
 # al tasto destro + ispezione microcella al doppio click sinistro, stessa fonte condivisa). MAI
 # consultato da consume/dal rendering (MicroCellRenderer continua a disegnare i puntini come sempre,
-# richiesta esplicita utente) né da AnimalConsumptionService (percorso separato, mai toccato).
+# richiesta esplicita utente).
 # resource_rules == null (nome non risolvibile) o required_idea_id == "" (nessun requisito) ->
 # false, mai bloccata per un motivo diverso da un'idea mancante. GameSettings.active_human_folk
 # assente (nessuna partita/folk attiva) -> true (bloccata): un requisito impostato non può mai
@@ -120,9 +120,8 @@ static func is_resource_locked(resource_name: String, rules: SecondaryResourceRu
 # risorse secondarie a stock aggregato (consuming_depletes_primary = false) ripartite tra i lotti
 # TREE/SHRUB di un dato sottotipo a frutto, DELIBERATAMENTE senza un pool per-lotto persistente
 # come stick/plant_fiber sopra: secondary_resource_stock[resource_name] (MacroCellState,
-# alimentato/consumato ogni stagione da CaloricCalculator.update_secondary_resource_stock e ogni
-# giorno dal consumo animale, vedi AnimalConsumptionService) resta l'UNICA fonte di verità,
-# condivisa tra umani e fauna — è esattamente il punto: se esistesse un secondo contatore per lotto
+# alimentato/consumato ogni stagione da CaloricCalculator.update_secondary_resource_stock) resta
+# l'UNICA fonte di verità — è esattamente il punto: se esistesse un secondo contatore per lotto
 # (tipo *_quantities), andrebbe tenuto sincrono a mano con lo stock ogni volta che l'uno o l'altro
 # consumatore agisce, rischiando un drift silenzioso tra "quanto pensa di avere il lotto" e "quanto
 # ne resta davvero in cella" — a differenza di stick/plant_fiber che non hanno un consumatore

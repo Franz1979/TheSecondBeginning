@@ -1,23 +1,11 @@
-[gd_resource type="Resource" script_class="PredatorRules" format=3 uid="uid://dwolf3lapq2sx"]
+[gd_resource type="Resource" script_class="AnimalRules" format=3 uid="uid://dwolf3lapq2sx"]
 
-[ext_resource type="Script" uid="uid://vejvoic1i001" path="res://simulation/scripts/core/PredatorRules.gd" id="1_wolf"]
+[ext_resource type="Script" uid="uid://b5f2blfpeff0h" path="res://simulation/scripts/core/AnimalRules.gd" id="1_wolf"]
 
 [resource]
 script = ExtResource("1_wolf")
-prey_compatibility = {
-"aurochs": 0.15,
-"bezoar": 0.5,
-"boar": 0.5,
-"deer": 0.45,
-"mouflon": 0.6,
-"partridge": 0.55,
-"rabbit": 0.7,
-"tarpan": 0.3,
-"wild_donkey": 0.4
-}
-max_pack_hunting_efficiency = 8.0
 species_name = "wolf"
-daily_caloric_requirement = 6.0
+has_wild_herds = false
 prey_calories = 120.0
 max_health = 22.0
 hit_chance_scale = 0.8
@@ -53,8 +41,6 @@ cluster_comfort_radius = 6.5
 cluster_attraction_strength = 12.8
 track_age_bands = true
 old_duration_years = 4
-mortality_share_by_age = Array[float]([0.4, 0.2, 0.4])
-caloric_multiplier_by_age = Array[float]([0.5, 1.0, 1.0])
 base_birth_rate = 0.4
 initial_age_ratio = {
 0: 0.0,
@@ -62,7 +48,3 @@ initial_age_ratio = {
 2: 0.0
 }
 dispersal_share_by_age = Array[float]([0.2, 0.6, 0.2])
-max_days_without_food = 20
-min_territory_cells = 150
-max_territory_cells = 300
-max_density_per_cell = 0.05

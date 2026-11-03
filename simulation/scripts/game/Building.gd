@@ -3,18 +3,18 @@ extends RefCounted
 
 # Istanza runtime di un edificio piazzato — stato di PARTITA (salvato/caricato da GameSaveService/
 # GameLoadService, sezione "world.buildings", mai come .tres: i parametri di TIPO restano su
-# BuildingRules, stesso schema di PopulationGroup/AnimalRules). Nessun controllo di
+# BuildingRules). Nessun controllo di
 # sovrapposizione/spazio libero ancora scritto qui — solo il dato.
 
 # ID progressivo assegnato UNA volta alla creazione (vedi World.allocate_building_id), mai
-# ricalcolato — stesso principio di PopulationGroup.id: resta stabile per tutta la vita
+# ricalcolato: resta stabile per tutta la vita
 # dell'edificio, indipendente da quanti altri ne esistono o vengono distrutti nel frattempo.
 var id: int = 0
 
 # Nome file/tipo (es. "hut", per BuildingCalculator.get_building_rules) — NON la chiave tr() di
 # BuildingRules.building_name (es. "building_hut"), sono stringhe diverse. Serve a ricaricare
 # `rules` da GameLoadService: `rules` stesso non viene mai serializzato (è dato statico di tipo,
-# stesso principio di PopulationGroup che salva species_name e non l'AnimalRules).
+# si salva solo il nome).
 var building_type_name: String = ""
 var rules: BuildingRules = null
 

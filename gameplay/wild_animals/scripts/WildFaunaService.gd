@@ -1,8 +1,7 @@
 class_name WildFaunaService
 extends RefCounted
 
-# Fauna selvatica "ad hoc" (2026-10-31, richiesta utente — piano fauna, passo 1a; acceso da
-# SimulationSettings.WILD_FAUNA_AD_HOC): niente popolazioni simulate in tutto il mondo. Ogni specie divide la mappa in
+# Fauna selvatica "ad hoc" (2026-10-31, richiesta utente — piano fauna, passo 1a): niente popolazioni simulate in tutto il mondo. Ogni specie divide la mappa in
 # riquadri fissi di lato AnimalRules.herd_region_side macrocelle (coniglio 1×1, cinghiale 2×2, uro 5×5); ogni riquadro
 # ha al più una mandria, sempre tutta insieme in una sola macrocella. Un riquadro si crea la prima volta che una sua
 # cella diventa viva (ensure_cell) e poi si riprende soltanto: habitat sbagliato -> "mai", altrimenti un tiro con la
@@ -49,7 +48,12 @@ const RECOLONIZE_START_RATIO := 0.3
 const BORDER_AIM_SPREAD := 35.0
 const FREE_MICROCELL_ATTEMPTS := 20
 
-# Specie con mandria (tutte tranne i predatori), lette una volta: AnimalCalculator.list_species_names apre la cartella.
+# Prede piccole garantite sulla cella di partenza con "presenza sicura animali". SMALL_PREY_HABITAT_SPECIES è la specie il
+# cui habitat fa da criterio di scelta della cella (FirstStartMacroCellSelectionService): coniglio e pernice hanno lo stesso.
+const SMALL_PREY_SPECIES: Array[String] = ["rabbit", "partridge"]
+const SMALL_PREY_HABITAT_SPECIES := "rabbit"
+
+# Specie con mandria (AnimalRules.has_wild_herds), lette una volta: AnimalCalculator.list_species_names apre la cartella.
 static var _herd_species: Array[String] = []
 
 
@@ -57,7 +61,7 @@ static func herd_species() -> Array[String]:
 	if _herd_species.is_empty():
 		for species in AnimalCalculator.list_species_names():
 			var rules := AnimalCalculator.get_animal_rules(species)
-			if rules != null and not rules is PredatorRules:
+			if rules != null and rules.has_wild_herds:
 				_herd_species.append(species)
 	return _herd_species
 
@@ -69,8 +73,19 @@ static func region_side(rules: AnimalRules) -> int:
 # Taglia del menu: solo con quanti animali parte una mandria, come quota del suo massimo fisso (herd_size_max). Il
 # massimo non cambia mai: lo split lo fa sempre rispettare.
 static func herd_start_ratio(game_data: GameData) -> float:
-	var size := AnimalSeedingService.population_size_from_string(game_data.starting_population_size)
+	var size := population_size_from_string(game_data.starting_population_size)
 	return START_RATIO_BY_SIZE.get(size, START_RATIO_BY_SIZE[GameTypes.PopulationSize.NORMAL])
+
+
+# Taglia scelta nel menu (stringa di GameData.starting_population_size) -> enum. Valore sconosciuto -> NORMAL.
+static func population_size_from_string(value: String) -> GameTypes.PopulationSize:
+	match value:
+		"SPARSE":
+			return GameTypes.PopulationSize.SPARSE
+		"DENSE":
+			return GameTypes.PopulationSize.DENSE
+		_:
+			return GameTypes.PopulationSize.NORMAL
 
 
 static func region_key(species: String, region: Vector2i) -> String:
@@ -250,7 +265,7 @@ static func _region_at(game_data: GameData, species: String, coords: Vector2i) -
 # Giro giornaliero (1b, GameSimulation.tick_day): solo le mandrie dei riquadri che contengono una cella viva, una volta
 # ciascuna. Finito il soggiorno, la mandria passa a un'altra cella adatta del riquadro.
 static func tick_day(ctx: GameContext) -> void:
-	if not SimulationSettings.WILD_FAUNA_AD_HOC or ctx.game_data == null or ctx.world == null:
+	if ctx.game_data == null or ctx.world == null:
 		return
 	var today := ctx.game_data.get_absolute_day()
 	var done: Dictionary = {}

@@ -249,7 +249,7 @@ const BEZOAR_TAIL_RADIUS: float = 0.45
 const BEZOAR_TAIL_ANCHOR_RATIO: float = 0.95
 
 # --- Sagoma WOLF (build_wolf_mesh) ---
-# Prima specie PREDATRICE (PredatorRules, non AnimalRules) a ricevere una sagoma dedicata — la
+# Prima specie PREDATRICE a ricevere una sagoma dedicata — la
 # pipeline di forma (_get_silhouette_geometry/_build_mesh_from_geometry) è comunque generica
 # rispetto a prede/predatori, nessun adattamento richiesto. Corpo da canide: taper testa/coda più
 # marcato di deer (0.8/1.05) ma meno estremo del muso a goccia di rabbit (0.55/1.25) — un lupo si
@@ -631,7 +631,7 @@ func set_population(total_population: int) -> void:
 
 
 # Specie con track_age_bands=true: la quota della cella arriva già ripartita per fascia
-# (chiamante: GameScene/MacroCellScene, via PopulationGroup.get_age_composition_in_cell). Ogni
+# (chiamante: GameScene, dalla mandria del riquadro). Ogni
 # fascia è riconciliata INDIPENDENTEMENTE dalle altre — _groups resta un unico array misto: il
 # movimento/cluster restano indifferenti alla fascia, solo l'aspetto (scala per age_band in
 # _write_instance_transform) cambia. Alla prima chiamata dopo l'attivazione della cella (_groups

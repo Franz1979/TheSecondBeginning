@@ -106,7 +106,7 @@ var terrain_memory_days: int = 90
 # cambio di giorno sale una volta per ogni cella davvero uscita (_log_memory_exits), non più sempre. Un chiamante che memorizza il
 # valore letto al momento del suo ultimo calcolo sa che, se e' ancora lo stesso, il risultato di
 # compute_visible_positions e' identico. Assume resource_memory_days/visibility_radius costanti tra due
-# letture (oggi lo sono: nessuno li modifica a runtime).
+# letture: i giorni cambiano solo con refresh_memory_days, che alza anche questa versione.
 var visible_set_version: int = 0
 
 # ELENCO DELLE MICROCELLE ENTRATE IN VISTA E USCITE (2026-10-04, richiesta utente — disponibilità di bastoni/sassi/
@@ -469,17 +469,14 @@ var _debug_source_context: Array = []
 # p_debug_macro_coords/p_debug_created_from: DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Parametri
 # opzionali (default innocuo, nessun cambio per chi non li passa) usati solo per popolare
 # _debug_macro_coords/_debug_created_from sopra e stampare il log di creazione sotto.
-func setup(p_fog_of_war_memory: FogOfWarMemory, p_debug_macro_coords: Vector2i = Vector2i(999999, 999999), p_debug_created_from: String = "?") -> void:
+func setup(p_fog_of_war_memory: FogOfWarMemory, folk: Folk, p_debug_macro_coords: Vector2i = Vector2i(999999, 999999), p_debug_created_from: String = "?") -> void:
 	fog_of_war_memory = p_fog_of_war_memory
 	# Ri-letta ad ogni setup() (non solo alla creazione del nodo): FogOfWarCalculator cachea già il
 	# caricamento, quindi rileggere qui è economico e garantisce che un cambio del .tres a runtime
-	# (o un futuro moltiplicatore da tech, vedi FogOfWarRules) si propaghi senza bisogno di un
-	# canale di aggiornamento a parte.
-	var rules := FogOfWarCalculator.get_fog_of_war_rules()
-	if rules != null:
-		detail_memory_days = rules.detail_memory_days
-		resource_memory_days = rules.resource_memory_days
-		terrain_memory_days = rules.terrain_memory_days
+	# o le idee già completate dal popolo (vedi FogOfWarRules) arrivino a ogni cella che si attiva.
+	detail_memory_days = FogOfWarCalculator.get_detail_memory_days(folk)
+	resource_memory_days = FogOfWarCalculator.get_resource_memory_days(folk)
+	terrain_memory_days = FogOfWarCalculator.get_terrain_memory_days(folk)
 	_radius_squared = visibility_radius * visibility_radius
 	_setup_fog_texture_nodes()
 	# _first_draw_deferred parte già true dalla dichiarazione del campo (2026-09-18, richiesta
@@ -626,6 +623,25 @@ func set_building_visible_positions(positions: Dictionary) -> void:
 func invalidate_visible_set() -> void:
 	visible_set_version += 1
 	_reset_newly_visible_log()
+
+
+# Il popolo ha completato un'idea mentre questa cella è viva (2026-11-03, richiesta utente — con Insegnamento orale si
+# scorda più tardi): rilegge i giorni e, se sono cambiati, ricalcola velo e insieme visibile come a un cambio di giorno.
+# Le celle viste entro i giorni nuovi tornano ricordate (scelta dell'utente). Niente da fare per le altre idee.
+func refresh_memory_days(folk: Folk) -> void:
+	var detail_days := FogOfWarCalculator.get_detail_memory_days(folk)
+	var resource_days := FogOfWarCalculator.get_resource_memory_days(folk)
+	var terrain_days := FogOfWarCalculator.get_terrain_memory_days(folk)
+	if detail_days == detail_memory_days and resource_days == resource_memory_days and terrain_days == terrain_memory_days:
+		return
+	detail_memory_days = detail_days
+	resource_memory_days = resource_days
+	terrain_memory_days = terrain_days
+	_cell_color_cache = {}
+	_full_flush_pending = true
+	_animal_visible_cache_valid = false
+	invalidate_visible_set()
+	queue_redraw()
 
 
 func mark_positions_dirty(positions: Array[Vector2i]) -> void:

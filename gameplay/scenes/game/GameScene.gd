@@ -973,28 +973,17 @@ func _ready() -> void:
 			var chosen := FirstStartMacroCellSelectionService.new().select_starting_cell(
 				macro_world,
 				game_data.starting_exclude_hostile_start,
-				game_data.starting_exclude_predator_territories,
 				game_data.starting_resource_richness_preference,
 				game_data.starting_guarantee_animal_presence,
 				game_data.starting_guarantee_stone_presence
 			)
 			game_data.player_macro_cell_x = chosen.x
 			game_data.player_macro_cell_y = chosen.y
-			# "Presenza sicura animali": garantisce una preda piccola (conigli e/o pernici) sulla cella
-			# di partenza DEFINITIVA, seminandola se manca — vedi AnimalSeedingService.
-			# ensure_small_prey_at. Solo qui (prima apertura di una partita nuova, dopo il seeding
-			# normale di WorldScene), mai per un salvataggio caricato. Esclusa CLASSIC, che per scelta
-			# non semina animali. Prima di qualunque _activate_live_cell sotto, così gli individui
-			# animali della cella di partenza includono già la preda al primo frame.
-			# Fauna ad hoc (2026-10-31, passo 1c): niente PopulationGroup; i riquadri di coniglio e pernice della cella
-			# di partenza nascono qui con la mandria certa, le altre specie col tiro normale.
+			# "Presenza sicura animali" (2026-10-31, passo 1c): i riquadri di coniglio e pernice della cella di partenza
+			# nascono qui con la mandria certa, le altre specie col tiro normale. Solo a partita nuova, esclusa CLASSIC, e prima
+			# di qualunque _activate_live_cell sotto, così gli animali della cella ci sono già al primo frame.
 			if game_data.starting_guarantee_animal_presence and game_data.starting_world_age_mode != "CLASSIC":
-				if SimulationSettings.WILD_FAUNA_AD_HOC:
-					WildFaunaService.ensure_cell(macro_world, game_data, chosen, AnimalSeedingService.SMALL_PREY_SPECIES)
-				else:
-					AnimalSeedingService.new().ensure_small_prey_at(
-						macro_world, chosen, AnimalSeedingService.population_size_from_string(game_data.starting_population_size)
-					)
+				WildFaunaService.ensure_cell(macro_world, game_data, chosen, WildFaunaService.SMALL_PREY_SPECIES)
 
 	# Popolo: seminato per una partita nuova, oppure riusato così com'è (salvataggio appena caricato o ritorno da
 	# WorldScene/MacroCellScene) — GameSimulation.setup_population. human_rules a path fisso: un solo Folk per ora.
@@ -3794,10 +3783,12 @@ func _setup_command_bar() -> void:
 	panel.visible = false
 	command_bar.action_requested.connect(_on_command_bar_action_requested)
 	command_bar.butcher_destination_chosen.connect(_on_command_bar_butcher_destination_chosen)
+	command_bar.fish_destination_chosen.connect(_on_fish_destination_chosen)
 	# Dialog del comando Caccia (2026-10-01): il dialog di Raccogli in modalità caccia, selettore "Carne" della serie.
 	pickup_choice_dialog.hunt_choice_made.connect(_on_hunt_order_confirmed)
 	# Pulsante della destinazione anche nel popup della caccia (2026-10-09): stessa impostazione della barra.
 	pickup_choice_dialog.butcher_destination_chosen.connect(_on_command_bar_butcher_destination_chosen)
+	pickup_choice_dialog.fish_destination_chosen.connect(_on_fish_destination_chosen)
 
 
 # Comando "Caccia" nelle zone (2026-10-01, passo 2a — ricalca "Raccogli"). Per ogni pipottino selezionato: idoneità
@@ -4042,12 +4033,18 @@ func _sync_butcher_destination_button() -> void:
 	var current := _butcher_destination_entry(
 		ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)
 	)
-	command_bar.set_butcher_destination(
-		ButcherDestinationService.has_alternative_processing_destination(macro_world, human_folk), current, options
+	# Pesce (2026-11-03): stesse opzioni e stesse condizioni, valore suo (GameData.last_fish_destination).
+	var fish_current := _butcher_destination_entry(
+		ButcherDestinationService.resolve_default(game_data.last_fish_destination, macro_world, human_folk)
 	)
+	var bar_shown := ButcherDestinationService.has_alternative_processing_destination(macro_world, human_folk)
+	command_bar.set_butcher_destination(bar_shown, current, options)
+	command_bar.set_fish_destination(bar_shown, fish_current, options)
 	pickup_choice_dialog.set_butcher_destination(true, current, options)
+	pickup_choice_dialog.set_fish_destination(true, fish_current, options)
 	if drawer_panel_open:
 		_task_assignment_panel.set_butcher_destination(true, current, options)
+		_task_assignment_panel.set_fish_destination(true, fish_current, options)
 	_sync_excess_meat_destination()
 
 
@@ -4084,6 +4081,12 @@ func _butcher_destination_entry(destination: String) -> Dictionary:
 func _on_command_bar_butcher_destination_chosen(destination: String) -> void:
 	game_data.last_butcher_destination = destination
 	# Subito su entrambi i pulsanti (barra e popup della caccia), anche con la barra nascosta.
+	_sync_butcher_destination_button()
+
+
+# Scelta dal pulsante del pesce (2026-11-03: barra, popup della Pesca, cassetto): vale per le pesche ordinate da adesso.
+func _on_fish_destination_chosen(destination: String) -> void:
+	game_data.last_fish_destination = destination
 	_sync_butcher_destination_button()
 
 
@@ -4249,14 +4252,14 @@ func _order_fish(selected: Array[HumanIndividual]) -> void:
 		_fish_dialog_workers = []
 
 
-# Conferma del dialog della Pesca: valore ricordato, destinazione condivisa della carne, poi la zona come per la caccia —
+# Conferma del dialog della Pesca: valore ricordato, destinazione del pesce, poi la zona come per la caccia —
 # automatica (per ciascuno) o scelta a mano tra le zone con un punto di pesca disponibile.
 func _on_fish_order_confirmed(target: int, butcher_destination: String = "") -> void:
 	UserOptions.fish_zone_target = target
 	UserOptions.save_to_disk()
 	if butcher_destination == "":
-		butcher_destination = ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)
-	game_data.last_butcher_destination = butcher_destination
+		butcher_destination = ButcherDestinationService.resolve_default(game_data.last_fish_destination, macro_world, human_folk)
+	game_data.last_fish_destination = butcher_destination
 	var workers: Array[HumanIndividual] = []
 	for worker in _fish_dialog_workers:
 		if human_individuals.has(worker):
@@ -9534,7 +9537,7 @@ func _on_drawer_zone_order_submitted(kind: String, count: int, zone_id: int) -> 
 			snappedi(count, DRAWER_HUNT_MEAT_STEP), int(FishZoneService.TARGET_OPTIONS.min()), int(FishZoneService.TARGET_OPTIONS.max())
 		)
 		UserOptions.fish_zone_target = clamped
-		extra = {"butcher_destination": ButcherDestinationService.resolve_default(game_data.last_butcher_destination, macro_world, human_folk)}
+		extra = {"butcher_destination": ButcherDestinationService.resolve_default(game_data.last_fish_destination, macro_world, human_folk)}
 	elif kind == DrawerOrderService.TYPE_GATHER:
 		var choice: Dictionary = _task_assignment_panel.get_gather_choice() if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel) else {}
 		if choice.is_empty():
@@ -10549,6 +10552,9 @@ func _on_human_stillbirth(mother: HumanIndividual) -> void:
 func _on_idea_completed(idea_id: String, granting_hint: DiscoveryHintRules = null) -> void:
 	# Pannello della zona aperto (2026-10-01): un'idea come work_areas_advanced cambia i filtri proponibili.
 	work_area_info_panel.refresh()
+	# Un'idea può allungare la memoria della nebbia (2026-11-03): le celle che si attivano dopo la leggono già in setup.
+	for cell: LiveMacroCell in live_cells.values():
+		cell.fog_of_war_renderer.refresh_memory_days(human_folk)
 	var hints := _take_discovery_hints(DiscoveryTypes.TriggerType.IDEA_COMPLETED, {"idea_id": idea_id})
 	_pending_discovery_close_actions[DiscoveryTypes.CloseAction.OPEN_TECH_TREE] = true
 	var completed_idea := IdeaCalculator.get_idea(idea_id)
@@ -11449,8 +11455,7 @@ func _apply_natural_mortality_visuals(cell: LiveMacroCell) -> void:
 	# is_terrain_fresh: quel tier copre solo il tipo di terreno/bioma, troppo grezzo per "quali
 	# piante c'erano") ha bisogno del giorno corrente e della soglia — letti una sola volta qui,
 	# non per ogni object_type sotto.
-	var fog_rules := FogOfWarCalculator.get_fog_of_war_rules()
-	var resource_memory_days: int = fog_rules.resource_memory_days if fog_rules != null else 30
+	var resource_memory_days := FogOfWarCalculator.get_resource_memory_days(human_folk)
 	var current_absolute_day := game_data.get_absolute_day()
 	for object_type in NaturalMortalityVisualService.MORTAL_INDIVIDUAL_TYPES:
 		var dying: Array = NaturalMortalityVisualService.select_dying_individuals(
@@ -11470,8 +11475,7 @@ func _exit_tree() -> void:
 	# la scena — se si esce con la modalità attiva, senza questo resterebbe il cerchietto rosso nei menu.
 	Input.set_custom_mouse_cursor(null, Input.CURSOR_ARROW)
 	if macro_world != null:
-		macro_world.lod_focus_state = {}
-		macro_world.lod_focus_live_cells = {}
+		macro_world.lod_focus_active = false
 
 
 # ============================================================================================
@@ -11541,7 +11545,7 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	# fog_of_war_renderer, il solo ordine dei figli le metterebbe sopra di lui, sbagliato).
 	cell.container.add_child(cell.fog_of_war_renderer)
 	cell.fog_of_war_renderer.z_index = 2
-	cell.fog_of_war_renderer.setup(cell.fog_of_war_memory, Vector2i(mx, my), p_debug_source)
+	cell.fog_of_war_renderer.setup(cell.fog_of_war_memory, human_folk, Vector2i(mx, my), p_debug_source)
 	# Popola subito source_positions con le posizioni VERE (Step 4 FoW multi-sorgente, 2026-09-02
 	# — RIMPIAZZA il vecchio binding a un placeholder + correzione successiva via
 	# _rebind_fog_bindings): questa cella, centro o vicino che sia, non ha mai bisogno di essere
@@ -11551,7 +11555,7 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Vedi il call site gemello in _process sopra.
 	cell.fog_of_war_renderer.set_debug_source_context(_debug_source_context_for_cell(cell))
 	# Fauna ad hoc (2026-10-31, passo 1a): riquadri delle specie che contengono la cella, creati la prima volta.
-	if SimulationSettings.WILD_FAUNA_AD_HOC and cell.macro_cell != null:
+	if cell.macro_cell != null:
 		WildFaunaService.ensure_cell(macro_world, game_data, coords)
 	# Individui da un salvataggio appena caricato (step 2) — PRIMA del _refresh_resource_visuals
 	# sotto, la cui riconciliazione con la popolazione è così un no-op invece di una rigenerazione.
@@ -11624,12 +11628,10 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 # di debug doveva produrre (vedi Building.gd — "misurare il rischio di esplosione di individui da
 # visibilità permanente da edifici" prima di ridisegnare l'architettura). Il rischio collaterale
 # scoperto inizialmente (LODOrchestrator.set_focus_region riceveva un Rect2i bounding-box di
-# TUTTE le celle vive, quindi un edificio lontano ingrossava il rettangolo inglobando ogni
-# popolazione animale sul percorso player<->edificio, non solo quelle vicine a una cella VERA) è
-# stato risolto lo stesso giorno: ora si passa l'insieme delle singole coordinate vive, vedi
-# _refresh_lod_focus_region/World.lod_focus_live_cells. Il costo che resta da osservare con questo
-# esperimento è quindi di nuovo solo quello reale: vegetazione a individui per ogni macrocella-
-# edificio, e popolazioni animali davvero adiacenti a una di esse.
+# TUTTE le celle vive, quindi un edificio lontano ingrossava il rettangolo) è stato risolto lo stesso
+# giorno: ora si passa l'insieme delle singole coordinate vive, vedi _refresh_lod_focus_region. Il costo
+# che resta da osservare con questo esperimento è quindi di nuovo solo quello reale: vegetazione a
+# individui per ogni macrocella-edificio.
 func _activate_all_building_cells() -> void:
 	if macro_world == null:
 		return
@@ -11787,15 +11789,7 @@ func _reposition_live_cells() -> void:
 		cell.container.position = Vector2(coords.x - center_macro_coords.x, coords.y - center_macro_coords.y) * MACRO_CELL_PIXELS
 
 
-# Ricalcola il focus LOD (LODOrchestrator) coprendo TUTTE le celle vive attuali, non solo il
-# centro — un vicino vivo è visivamente presente quanto il centro, quindi le sue popolazioni
-# animali restano Livello 2 (simulazione piena) esattamente come oggi fa il centro da solo,
-# nessuna nuova categoria di LOD necessaria: set_focus_region riclassifica sempre TUTTE le
-# popolazioni del mondo da zero, quindi una cella che esce dal set vivo torna candidata a
-# Livello 1 automaticamente. Passa l'insieme delle SINGOLE coordinate vive (mai un Rect2i che ne
-# faccia il bounding box, vedi World.lod_focus_live_cells) — fix 2026-08-30: con
-# _activate_all_building_cells le celle vive possono essere anche molto distanti tra loro, e un
-# bounding box avrebbe trattato come "a fuoco" pure tutto lo spazio vuoto in mezzo.
+# Ricalcola il focus LOD (LODOrchestrator) coprendo TUTTE le celle vive attuali: le segna come scoperte.
 func _refresh_lod_focus_region() -> void:
 	if macro_world == null or live_cells.is_empty():
 		return
@@ -11804,12 +11798,8 @@ func _refresh_lod_focus_region() -> void:
 	for coords in live_cells:
 		focus_live_cells[coords] = true
 
-	var lod_result := LODOrchestrator.new().set_focus_region(
-		macro_world, focus_live_cells, SeasonCalculator.get_season_for_day(game_data.current_day)
-	)
-	LODOrchestrator.print_classification_log(lod_result)
-	macro_world.lod_focus_live_cells = focus_live_cells
-	macro_world.lod_focus_state = lod_result
+	LODOrchestrator.set_focus_region(macro_world, focus_live_cells, SeasonCalculator.get_season_for_day(game_data.current_day))
+	macro_world.lod_focus_active = true
 	minimap_panel.update_visibility(focus_live_cells, center_macro_coords)
 
 
@@ -11851,8 +11841,8 @@ func _on_debug_bar_expanded_changed(expanded: bool) -> void:
 
 
 # DEBUG — riepilogo animali della macrocella del giocatore (center_macro_coords) in DebugBar:
-# per ogni specie con quota > 0 nella cella, quota della cella (PopulationGroup.
-# get_population_by_cell, stessa fonte di _refresh_animal_individuals) contro individui
+# per ogni specie con quota > 0 nella cella, quota della cella (mandria, stessa fonte di
+# _refresh_animal_individuals) contro individui
 # effettivamente istanziati dal renderer di quella specie. Chiamata dal timer di debug in _process
 # (via _refresh_debug_summaries: solo a barra aperta, ogni DEBUG_SUMMARY_REFRESH_INTERVAL_SEC secondi reali), così segue sia i cambi di cella del
 # giocatore sia i cambi di popolazione senza agganci dedicati.
@@ -11860,17 +11850,11 @@ func _refresh_debug_animal_summary() -> void:
 	var entries: Array = []
 	var cell: LiveMacroCell = live_cells.get(center_macro_coords)
 	if cell != null and macro_world != null:
-		var herds := WildFaunaService.get_herds_in_cell(game_data, center_macro_coords) \
-			if SimulationSettings.WILD_FAUNA_AD_HOC else {}
+		var herds := WildFaunaService.get_herds_in_cell(game_data, center_macro_coords)
 		for species in cell.animal_renderers:
 			var quota := 0
-			if SimulationSettings.WILD_FAUNA_AD_HOC:
-				for count in herds.get(species, {}).values():
-					quota += int(count)
-			else:
-				var group := macro_world.find_population_group(species, center_macro_coords)
-				if group != null:
-					quota = int(group.get_population_by_cell().get(center_macro_coords, 0))
+			for count in herds.get(species, {}).values():
+				quota += int(count)
 			if quota <= 0:
 				continue
 			# Non tipizzata: un renderer già liberato (es. subito dopo un caricamento) darebbe errore all'assegnazione.
@@ -12305,10 +12289,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 	# stagionale è nella GENERAZIONE posizioni (VegetationPositionService, indipendente dal FoW,
 	# non beneficerebbe di un filtro per visibilità) o nel REBUILD MultiMesh
 	# (MicroCellRenderer.set_vegetation_positions/set_*_subtypes/set_*_age_params, che invece
-	# potrebbe saltare le posizioni coperte da nero pieno). Include anche il costo di
-	# _update_animal_renderer_population (find_population_group è O(popolazioni totali) per
-	# specie per cella — non c'entra col FoW, ma vale la pena isolarlo comunque visto che vive
-	# nella stessa funzione).
+	# potrebbe saltare le posizioni coperte da nero pieno).
 	var _veg_timings_ms: Dictionary = {}
 	_veg_timings_ms["0_fog_visible_set"] = _fog_visible_set_ms
 	_veg_timings_ms["0b_lot_capacity_refresh"] = _lot_capacity_ms
@@ -13063,41 +13044,24 @@ func _refresh_animal_individuals(cell: LiveMacroCell, herd_walks: bool = false) 
 		return
 	var this_cell := Vector2i(cell.macro_cell.x, cell.macro_cell.y)
 	# Fauna ad hoc (2026-10-31, passo 2): le mandrie dei riquadri che stanno ora in questa cella.
-	if SimulationSettings.WILD_FAUNA_AD_HOC:
-		var herds := WildFaunaService.get_herds_in_cell(game_data, this_cell)
-		for species in cell.animal_renderers.keys():
-			if not herds.has(species):
-				_send_herd_out_of_cell(cell, String(species))
-		for species in herds:
-			var is_arrival: bool = not cell.animal_renderers.has(species)
-			var herd_renderer := _ensure_animal_renderer(cell, String(species))
-			if herd_renderer == null:
-				continue
-			if herd_renderer.is_herd_leaving():
-				is_arrival = true
-				herd_renderer.cancel_herd_leaving()
-			var bodies_before := herd_renderer.get_individual_count()
-			_set_animal_renderer_age_counts(herd_renderer, herds[species], AnimalCalculator.get_animal_rules(species))
-			if herd_walks and is_arrival and herd_renderer.get_individual_count() > bodies_before:
-				var entry_point: Variant = WildFaunaService.herd_entry_point(macro_world, game_data, String(species), this_cell)
-				if entry_point != null:
-					herd_renderer.start_herd_walk_in(bodies_before, entry_point)
-		return
-	# Renderer solo per le specie presenti (2026-09-26): specie con quota > 0 in questa cella -> il suo
-	# gruppo (uno per specie per cella: i territori della stessa specie non si sovrappongono).
-	var present_groups: Dictionary = {}
-	for group in macro_world.get_population_groups_at(this_cell):
-		if int(group.get_population_by_cell().get(this_cell, 0)) > 0:
-			present_groups[group.species_name] = group
-	# Specie sparite dalla cella: renderer rimosso (i suoi individui escono dal registro dei vivi).
+	var herds := WildFaunaService.get_herds_in_cell(game_data, this_cell)
 	for species in cell.animal_renderers.keys():
-		if not present_groups.has(species):
-			_remove_animal_renderer(cell, String(species))
-	# Specie presenti: renderer creato se è appena arrivata, poi riconciliazione individui/popolazione.
-	for species in present_groups:
-		var renderer_node := _ensure_animal_renderer(cell, String(species))
-		if renderer_node != null:
-			_update_animal_renderer_population(renderer_node, present_groups[species], AnimalCalculator.get_animal_rules(species), this_cell)
+		if not herds.has(species):
+			_send_herd_out_of_cell(cell, String(species))
+	for species in herds:
+		var is_arrival: bool = not cell.animal_renderers.has(species)
+		var herd_renderer := _ensure_animal_renderer(cell, String(species))
+		if herd_renderer == null:
+			continue
+		if herd_renderer.is_herd_leaving():
+			is_arrival = true
+			herd_renderer.cancel_herd_leaving()
+		var bodies_before := herd_renderer.get_individual_count()
+		_set_animal_renderer_age_counts(herd_renderer, herds[species], AnimalCalculator.get_animal_rules(species))
+		if herd_walks and is_arrival and herd_renderer.get_individual_count() > bodies_before:
+			var entry_point: Variant = WildFaunaService.herd_entry_point(macro_world, game_data, String(species), this_cell)
+			if entry_point != null:
+				herd_renderer.start_herd_walk_in(bodies_before, entry_point)
 
 
 # La mandria non è più in questa cella: gli animali vanno al bordo a piedi, e il renderer rimasto vuoto si toglie al giro
@@ -13172,30 +13136,7 @@ func _restore_saved_animal_individuals(cell: LiveMacroCell) -> void:
 	_pending_saved_animal_individuals.erase(coords)
 
 
-func _update_animal_renderer_population(
-	renderer_node: AnimalGroupRenderer, group: PopulationGroup, rules: AnimalRules, coords: Vector2i
-) -> void:
-	var age_aware := rules != null and rules.track_age_bands
-
-	if group == null:
-		if age_aware:
-			renderer_node.set_population_by_age(0, 0, 0)
-		else:
-			renderer_node.set_population(0)
-		return
-
-	if age_aware:
-		var age_composition := group.get_age_composition_in_cell(coords)
-		renderer_node.set_population_by_age(
-			int(age_composition.get(GameTypes.AgeBand.YOUNG, 0)),
-			int(age_composition.get(GameTypes.AgeBand.ADULT, 0)),
-			int(age_composition.get(GameTypes.AgeBand.OLD, 0))
-		)
-	else:
-		renderer_node.set_population(int(group.get_population_by_cell().get(coords, 0)))
-
-
-# Stessa riconciliazione di _update_animal_renderer_population, dai conteggi per fascia di una mandria (fauna ad hoc).
+# Riconcilia gli individui del renderer con i conteggi per fascia di una mandria (fauna ad hoc).
 func _set_animal_renderer_age_counts(renderer_node: AnimalGroupRenderer, age_counts: Dictionary, rules: AnimalRules) -> void:
 	var young := int(age_counts.get(GameTypes.AgeBand.YOUNG, 0))
 	var adult := int(age_counts.get(GameTypes.AgeBand.ADULT, 0))
@@ -14634,6 +14575,7 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.zone_order_submitted.connect(_on_drawer_zone_order_submitted)
 		# Pulsante della destinazione nello strato "Caccia" (2026-10-09): stessa impostazione della barra.
 		_task_assignment_panel.butcher_destination_chosen.connect(_on_command_bar_butcher_destination_chosen)
+		_task_assignment_panel.fish_destination_chosen.connect(_on_fish_destination_chosen)
 		# Priorità (2026-10-08): valori della partita (GameData), applicati subito; le righe "In coda" si riordinano.
 		_task_assignment_panel.set_priority_settings(JobBoardService.get_priority_mode(game_data), JobBoardService.get_kind_order(game_data))
 		_task_assignment_panel.priority_mode_changed.connect(func(mode: String) -> void:
@@ -16009,7 +15951,7 @@ func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, pre
 	var cell: LiveMacroCell = live_cells.get(prey_macro_coords)
 	if cell != null and cell.animal_renderers.has(prey_species):
 		cell.animal_renderers[prey_species].remove_individual(prey_id)
-	HuntService.apply_prey_kill(macro_world, game_data, prey_species, prey_age_band, prey_macro_coords)
+	HuntService.apply_prey_kill(game_data, prey_species, prey_age_band, prey_macro_coords)
 	if not selected_animal.is_empty() and not selected_animal.has("wild_group_id") and int(selected_animal["individual_id"]) == prey_id:
 		_clear_animal_selection()
 
@@ -16961,7 +16903,7 @@ func _check_encountered_wild_species() -> void:
 				DomesticationEncounterService.mark_encountered(game_data, species)
 
 
-func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
+func _on_day_advanced(checkpoint_ran: bool) -> void:
 	# Giro giornaliero della simulazione: anche riallineamento della produzione e cantieri maturati (blocco 5e).
 	_tick_simulation_day()
 	# TEMPORANEO (diagnostica lentezza, vedi GameClockController._process/[DAY TOTAL]) — questo
@@ -16974,7 +16916,7 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 	var _debug_day_advanced_start_usec := Time.get_ticks_usec()
 
 	_update_calendar_display()
-	# Cadenza propria, scollegata da checkpoint_ran/animals_changed sopra e dal checkpoint
+	# Cadenza propria, scollegata da checkpoint_ran sopra e dal checkpoint
 	# stagionale di WorldTimeService (vedi _maybe_prune_fog_of_war_memories per il perché) — gira
 	# quindi anche nei giorni "vuoti" in cui il resto di questa funzione farebbe early-return sotto.
 	_maybe_prune_fog_of_war_memories()
@@ -17057,24 +16999,19 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 				debug_member.current_stamina, str(debug_member.carried_resources)
 			])
 
-	# Individui animali step 1: la riconciliazione degli individui con la popolazione della cella
-	# non deve dipendere dal rebuild vegetazione sotto (che nei giorni con solo animals_changed e
-	# flora_daily_updates_enabled=false non gira) — altrimenti gli individui resterebbero indietro
-	# rispetto alla popolazione fino al prossimo refresh da movimento/checkpoint. Tutte le celle vive,
-	# non solo quelle di prossimità: costo trascurabile, nessun MultiMesh vegetazione coinvolto.
-	# Fauna ad hoc (passo 2): anche quando una mandria ha cambiato cella nel giro di oggi (GameSimulation.tick_day sopra).
-	if animals_changed or game_data.wild_fauna_moved:
+	# Fauna ad hoc (passo 2): quando una mandria ha cambiato cella nel giro di oggi (GameSimulation.tick_day sopra).
+	if game_data.wild_fauna_moved:
 		game_data.wild_fauna_moved = false
 		for cell in live_cells.values():
 			_refresh_animal_individuals(cell, true)
 
-	if not (checkpoint_ran or animals_changed):
+	if not checkpoint_ran:
 		# Filtrato ai soli dintorni di un checkpoint stagionale (richiesta utente, 2026-09-05 —
 		# stesso motivo/helper di WorldTimeService.advance_day/GameClockController._process: un log
 		# per ogni giorno era troppo rumoroso).
 		if DebugLogging.SHOW_DAILY_TIMING_LOGS and SeasonCalculator.is_near_seasonal_checkpoint(game_data.current_day):
 			var elapsed_ms: float = (Time.get_ticks_usec() - _debug_day_advanced_start_usec) / 1000.0
-			print("[GAMESCENE DAY] _on_day_advanced (nessun rebuild vegetazione: checkpoint_ran=no, animals_changed=no) = %.1fms" % elapsed_ms)
+			print("[GAMESCENE DAY] _on_day_advanced (nessun rebuild vegetazione: checkpoint_ran=no) = %.1fms" % elapsed_ms)
 		return
 
 	if checkpoint_ran or flora_daily_updates_enabled:
@@ -17141,8 +17078,8 @@ func _maybe_prune_fog_of_war_memories() -> void:
 
 	# Soglia = il massimo ATTUALMENTE conosciuto, mai un tetto teorico futuro (vedi
 	# FogOfWarCalculator.get_max_known_memory_days per il perché) — letto una sola volta per
-	# l'intera passata, non per ogni FogOfWarMemory, dato che è lo stesso per tutta la partita oggi.
-	var max_known_memory_days := FogOfWarCalculator.get_max_known_memory_days()
+	# l'intera passata, non per ogni FogOfWarMemory, dato che è lo stesso per tutte le macrocelle.
+	var max_known_memory_days := FogOfWarCalculator.get_max_known_memory_days(human_folk)
 	for coords in fog_of_war_memories:
 		var memory: FogOfWarMemory = fog_of_war_memories[coords]
 		# Una macrocella del tutto dimenticata non perde più le sue piante (2026-10-24, progetto B fase 1, scelta

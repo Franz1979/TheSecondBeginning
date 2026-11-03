@@ -22,6 +22,9 @@ signal auto_zone_changed(enabled: bool)
 # Destinazione dei prodotti della caccia scelta dal pulsante (2026-10-03, ButcherDestinationService): GameScene la
 # scrive in GameData.last_butcher_destination.
 signal butcher_destination_chosen(destination: String)
+# Destinazione del pescato scelta dal suo pulsante (2026-11-03, richiesta utente): GameScene la scrive in
+# GameData.last_fish_destination; vale per la pesca col clic destro e per gli ordini di pesca.
+signal fish_destination_chosen(destination: String)
 
 const GATHER_ACTION := &"command_gather"
 const HUNT_ACTION := &"command_hunt"
@@ -107,6 +110,8 @@ var _row: IconButtonRow = null
 # Pulsante della destinazione dei prodotti della caccia (2026-10-03; dal 2026-10-09 classe a sé, ButcherDestinationButton,
 # riusata uguale nel popup della Caccia nelle zone). Stato deciso da GameScene (set_butcher_destination).
 var _destination_button: ButcherDestinationPair = null
+# Pulsante del pesce (2026-11-03): stessa coppia in modalità pesce, stessa condizione di quello della caccia.
+var _fish_destination_button: ButcherDestinationPair = null
 # Gruppi con etichetta (2026-10-04, richiesta utente — torna la disposizione del 2026-10-03 pomeriggio, commit 997e6a9):
 # a sinistra "Azioni" (Raccogli, Caccia nelle zone: CommandBar.ACTIONS), un separatore, a destra "Opzioni" (destinazione
 # dei prodotti della caccia; la zona automatica non c'è più dal 2026-10-09). Tutta la barra compare solo con l'idea delle
@@ -157,6 +162,11 @@ func _ready() -> void:
 	_destination_button = ButcherDestinationPair.new()
 	_destination_button.destination_chosen.connect(func(destination: String) -> void: butcher_destination_chosen.emit(destination))
 	_options_row.add_child(_destination_button)
+
+	_fish_destination_button = ButcherDestinationPair.new()
+	_fish_destination_button.set_fish_mode(true)
+	_fish_destination_button.destination_chosen.connect(func(destination: String) -> void: fish_destination_chosen.emit(destination))
+	_options_row.add_child(_fish_destination_button)
 
 	_refresh_groups()
 	visible = false
@@ -237,6 +247,11 @@ func _slot_of(action_id: StringName) -> int:
 func set_butcher_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
 	if _destination_button.set_destination(is_shown, current, options):
 		_refresh_groups()
+
+
+# Pulsante del pesce (2026-11-03): stessi argomenti, `current` = destinazione che la pesca userebbe adesso.
+func set_fish_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
+	_fish_destination_button.set_destination(is_shown, current, options)
 
 
 func _on_action_pressed(action_id: StringName) -> void:

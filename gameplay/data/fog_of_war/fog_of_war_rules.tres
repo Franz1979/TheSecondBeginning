@@ -7,4 +7,10 @@ script = ExtResource("1_fow")
 detail_memory_days = 20
 resource_memory_days = 60
 terrain_memory_days = 180
+resource_memory_multiplier_by_idea = {
+"oral_teaching": 1.5
+}
+terrain_memory_multiplier_by_idea = {
+"oral_teaching": 1.5
+}
 prune_interval_days = 21

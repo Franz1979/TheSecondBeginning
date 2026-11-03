@@ -25,7 +25,7 @@ const NEIGHBOR_RESERVED_PENALTY: float = 6.0
 #   {"work_area_id": int, "target": int, "delivered": int (pesci consegnati, contati allo scarico: add_delivered_fish),
 #    "in_hand": int (pesci presi e non ancora consegnati, portati da un punto all'altro), "butcher_destination": String,
 #    "stop_reason": String (solo se la serie si deve fermare dopo il viaggio in corso, motivo tradotto)}.
-# La destinazione è quella della carne (ButcherDestinationService): il pesce si comporta come la carne.
+# Destinazione: stesse scelte della carne (ButcherDestinationService), ma valore suo (GameData.last_fish_destination).
 # Pesca di fila (passo 3, richiesta utente): nella serie la FishAction non ha il tempo della sessione; pesca finché ha in
 # mano i pesci che mancano, lo zaino è pieno, il punto si svuota (si passa a un altro punto della zona senza consegnare) o
 # la lenza si rompe senza ricambio; poi un solo viaggio di consegna. Alla fine della Task (HumanIndividualActionService.

@@ -5,59 +5,6 @@ class_name DebugLogging
 # senza scommentare riga per riga nei singoli servizi.
 const ENABLED := true
 
-# Filtro aggiuntivo per i log di ciclo vita (ANIMAL BIRTHS, ANIMAL AGING, ANIMAL OLD AGE DEATHS,
-# BIRTH MITIGATION/TERRITORY DYNAMICS, ANIMAL HUNGER SUMMARY/ANIMAL HUNGER dettaglio,
-# POPULATION SPLIT): con ENABLED sopra a true stampano sia erbivori che predatori, troppo rumoroso
-# mentre si valida la sola natalità/mortalità/territorio dei lupi. A false: quei log restano
-# visibili solo per le specie PredatorRules (ANIMAL HUNGER non stampa mai nulla in questo caso,
-# visto che quel service processa solo erbivori per costruzione); gli erbivori continuano ad
-# essere processati normalmente (nessun comportamento di simulazione cambia, solo il print viene
-# soppresso). Rimetti a true per riavere subito tutti i log come prima, senza toccare i singoli
-# servizi.
-const SHOW_HERBIVORE_LIFECYCLE_LOGS := false
-
-# Filtro dedicato per gli STESSI log di ciclo vita ([ANIMAL AGING]/[ANIMAL BIRTHS]/[ANIMAL OLD AGE
-# DEATHS]/[STOCHASTIC ROUND] con label AGING/BIRTHS/OLD AGE DEATHS), ma sul lato PREDATORI — che
-# a differenza di SHOW_HERBIVORE_LIFECYCLE_LOGS sopra restavano SEMPRE visibili indipendentemente
-# da quel flag (era così per design, quando l'attenzione era sulla sola natalità/mortalità/
-# territorio dei lupi — vedi project memory). A false: nessun comportamento di simulazione
-# cambia, solo il print viene soppresso — rimetti a true per riavere il dettaglio dei predatori.
-const SHOW_PREDATOR_LIFECYCLE_LOGS := false
-
-# Filtro dedicato per [LOD] Popolazioni totali/LEVEL_2/LEVEL_1 (LODOrchestrator.
-# print_classification_log) — stampato ad ogni ricalcolo della focus region (attivazione/
-# disattivazione di un vicino in streaming, vedi GameScene._refresh_lod_focus_region), quindi
-# spesso durante l'esplorazione. A false: nessun comportamento di simulazione cambia, solo il
-# print viene soppresso.
-#
-# RINOMINATO in SHOW_LOD_LOGS (2026-09-16, richiesta utente — riordino dei log di debug per
-# categoria): stesso identico consumatore/comportamento, solo il nome allineato alla categoria
-# "LOD" del nuovo schema in fondo a questo file (vedi blocco "CATEGORIE" sotto) — nessun secondo
-# flag separato da tenere sincronizzato.
-const SHOW_LOD_LOGS := false
-
-# Filtro dedicato per i log GIORNALIERI di PredationService ([PREDATION]/[PREDATION ATTEMPT]/
-# [PREDATION STARVATION]): a differenza di SHOW_HERBIVORE_LIFECYCLE_LOGS sopra (che filtra gli
-# erbivori lasciando sempre visibili i predatori), qui il filtro copre i predatori stessi — troppo
-# rumoroso (una riga per branco per OGNI giorno, "silenzio compreso") ora che l'attenzione è sul
-# nuovo riepilogo stagionale di AnimalHungerMortalityAggregateService. A false: nessun comportamento
-# di simulazione cambia, solo il print viene soppresso — rimetti a true per riavere il dettaglio
-# giornaliero delle cacce.
-const SHOW_PREDATION_DAILY_LOGS := false
-
-# Filtro dedicato per [HUNGER MORTALITY DIAGNOSTICS] (AnimalHungerMortalityAggregateService) — il
-# blocco terreno/bioma/fonti caloriche per cella stampato per ogni gruppo Livello 1 che muore di
-# fame aggregata. A false: nessun comportamento di simulazione cambia, solo il print viene
-# soppresso — il riepilogo [HUNGER MORTALITY AGGREGATE SUMMARY] resta comunque visibile (gated
-# solo da ENABLED, non da questo flag), è solo il dettaglio diagnostico per cella a sparire.
-const SHOW_HUNGER_MORTALITY_DIAGNOSTICS_LOGS := false
-
-# Filtro dedicato per [TERRITORY DYNAMICS] dei SOLI predatori (TerritoryDynamicsService) — a
-# differenza di SHOW_HERBIVORE_LIFECYCLE_LOGS sopra (che filtra gli erbivori lasciando sempre
-# visibili i predatori), qui è il verso opposto: filtra i predatori stessi. A false: nessun
-# comportamento di simulazione cambia, solo il print viene soppresso.
-const SHOW_PREDATOR_TERRITORY_DYNAMICS_LOGS := false
-
 # Filtro dedicato per i log diagnostici di seeding/crescita/migrazione di FISH e BIRDS
 # (ParametricResourceSetupService.populate_fish/populate_birds, FaunaGrowthService,
 # FaunaMigrationService) — mostra il calcolo (capacità, presence_chance, densità, spazio/
@@ -279,9 +226,6 @@ const SHOW_LOT_CAPACITY_LOGS := false
 # solo quando serve, stesso principio di ogni altro flag in questo file.
 const SHOW_BERRY_HARVEST_LOGS := false
 
-# LOD — [LOD] (LODOrchestrator.print_classification_log — vedi SHOW_LOD_LOGS più sopra, stesso
-# flag, questo commento resta qui solo per l'elenco delle categorie).
-
 # RECONNECT_FACTORY — [RECONNECT DEBUG]/[DBG_PICKUP] (GameScene, ricollegamento segnali dopo
 # reload), [TASKFACTORY DEBUG] (task_factory.gd), [CENTER DEBUG] (GameScene), [PICKUP CMD DEBUG]
 # (GameScene, comando debug raccolta).
@@ -436,7 +380,7 @@ const SHOW_CLEAR_LOGS := false
 
 # Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
-const SHOW_JOB_BOARD_LOGS := true
+const SHOW_JOB_BOARD_LOGS := false
 
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per

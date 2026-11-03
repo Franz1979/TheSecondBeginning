@@ -2,32 +2,8 @@ class_name AnimalRules
 extends Resource
 
 @export var species_name: String = ""
-@export var daily_caloric_requirement: float = 0.0
-# resource_name (chiave di SecondaryResourceRules.secondary_resource_name) -> moltiplicatore di
-# edibilità, usato da AnimalConsumptionService per ripartire il fabbisogno giornaliero tra le
-# fonti compatibili, pesato per calorie disponibili × questo moltiplicatore. 0 (o chiave
-# assente) esclude la fonte del tutto.
-@export var diet_compatibility: Dictionary = {}
-
-# Master switch per la mitigazione dell'encroachment da brucatura (vedi
-# BrowsingMitigationService): true se la specie, per la sola presenza fisica (calpestio/
-# brucatura di nuovi germogli legnosi SHRUB/TREE), riduce la loro sopravvivenza —
-# indipendentemente dalla disponibilità calorica, già coperta altrove (diet_compatibility sopra
-# per il consumo, fame/mortalità per la scarsità). Deliberatamente indipendente da
-# diet_compatibility: una specie potrebbe avere una dieta caloricamente concentrata su fonti non
-# vegetali e comunque brucare (o viceversa), quindi non va derivato implicitamente da lì. Nessun
-# default implicito "vero" per specie erbivore: ogni specie deve dichiararlo esplicitamente nel
-# proprio .tres (oggi true per rabbit e deer).
-@export var is_browsing_species: bool = false
-
-# Calorie fornite da un individuo ADULTO quando catturato da un predatore (vedi il futuro
-# PredationService) — scalate per le altre fasce d'età tramite size_multiplier_by_age (Age Bands
-# sotto: adult=1.0 è il riferimento a cui questo valore è tarato, young tipicamente <1, old libero
-# di essere >1, stesso principio già usato da quel campo per la resa visiva). Proprietà della PREDA
-# in sé — ogni erbivoro può potenzialmente essere cacciato da un futuro predatore — non del
-# predatore, per questo vive qui su AnimalRules e non su PredatorRules. Nessun default: ogni specie
-# lo dichiara esplicitamente nel proprio .tres, stesso principio già seguito da
-# min_territory_cells/max_days_without_food sotto. Nessuna logica lo legge ancora.
+# Calorie di un individuo ADULTO, scalate per le altre fasce con size_multiplier_by_age: stima della ricchezza di una
+# cella alla scelta della partenza (CellRichnessCalculator).
 @export var prey_calories: float
 
 # Resistenza di un individuo ADULTO della specie (2026-09-26, richiesta utente — caccia, step 1: solo
@@ -149,101 +125,43 @@ extends Resource
 # logiche sotto viene mai letta per questa specie (nessuna specie futura la eredita per
 # sbaglio). true solo per rabbit oggi.
 @export var track_age_bands: bool = false
-# Stagione di fine-checkpoint in cui gira la maturazione annuale delle age band per QUESTA
-# specie (vedi WorldTimeService._run_animal_lifecycle_checkpoint / AnimalAgeBandService) — a
-# differenza della vegetazione, che matura sempre a fine primavera, ogni specie animale ha la
-# propria stagione di "nascita" e quindi il proprio momento di invecchiamento annuale.
+# Stagione delle nascite della specie (vedi WildFaunaService): a differenza della vegetazione, che
+# matura sempre a fine primavera, ogni specie animale ha la propria.
 @export var birth_season: GameTypes.Season = GameTypes.Season.SPRING
 # Anni interi: durata PROPRIA di ciascuna fascia, indipendente dalle altre (non soglie
-# cumulative di età dalla nascita) — quanti cicli di maturazione (vedi birth_season sopra) un
-# individuo trascorre in YOUNG prima di passare ad ADULT (youth_duration_years), e quanti in
-# ADULT prima di passare a OLD (adult_duration_years). Transizione frazionaria 1/N per anno,
-# stessa semantica di SubtypeRules.youth_duration_years/adult_duration_years.
+# cumulative di età dalla nascita) — quanti anni un individuo trascorre in YOUNG prima di passare
+# ad ADULT (youth_duration_years), e quanti in ADULT prima di passare a OLD (adult_duration_years).
 @export var youth_duration_years: int = 2
 @export var adult_duration_years: int = 6
 # Durata PROPRIA della fascia OLD (stesso principio di youth_duration_years/adult_duration_years
 # sopra, non un'età cumulativa dalla nascita): quanti anni un individuo trascorre OLD prima di
 # morire di vecchiaia — vita attesa totale = youth_duration_years + adult_duration_years +
-# old_duration_years. NON ancora usato da nessuna logica (mortalità per vecchiaia è un prompt
-# futuro): solo campo dati per ora. Per le piante questo parametro non serve (la mortalità è
-# già coperta da fill_ratio/competizione spaziale), ma gli animali non hanno un equivalente del
-# fill_ratio, quindi serve un limite di età reale.
+# old_duration_years.
 @export var old_duration_years: int = 10
-# Quota (young, adult, old) del totale perso per fame/vecchiaia attribuita a ciascuna fascia —
-# NON ancora usato da nessuna logica (prompt futuro). Stesso schema di
-# SubtypeRules.mortality_share_by_age: convenzionalmente somma a 1.0, non validato a runtime.
-@export var mortality_share_by_age: Array[float] = [0.34, 0.33, 0.33]
-# Moltiplicatore (young, adult, old) applicato a daily_caloric_requirement nel calcolo del
-# fabbisogno totale per cella (vedi AnimalConsumptionService._get_total_daily_requirement):
-# adult=1.0 è il valore di riferimento a cui daily_caloric_requirement è tarato, young
-# tipicamente <1 (cucciolo, mangia meno). Letto SOLO quando track_age_bands=true — altrimenti
-# il fabbisogno resta la vecchia formula flat population × daily_caloric_requirement.
-@export var caloric_multiplier_by_age: Array[float] = [1.0, 1.0, 1.0]
 # Moltiplicatore (young, adult, old) di fertilità per fascia — coefficiente, non un gate
 # binario "solo adult": una fascia a 0.0 semplicemente non contribuisce alle nascite, ma resta
 # configurabile per una fertilità parziale futura (es. young/old parzialmente fertili). Usato
-# da AnimalBirthService insieme a base_birth_rate, stesso schema di caloric_multiplier_by_age.
+# da WildFaunaService insieme a base_birth_rate.
 @export var fertility_multiplier_by_age: Array[float] = [0.0, 1.0, 0.0]
 # Coefficiente di natalità annuale per la specie: nascite = (young×fert[Y] + adult×fert[A] +
 # old×fert[O]) × base_birth_rate, stesso principio della crescita logistica vegetale (un
 # coefficiente che moltiplica la popolazione di riferimento, nessuna curva/modulazione per
-# ora). Letto SOLO quando track_age_bands=true (vedi AnimalBirthService).
+# ora).
 @export var base_birth_rate: float = 0.0
-# Ripartizione (young, adult, old) usata SOLO dal seeding/reseeding manuale della popolazione
-# (oggi il pulsante debug "set rabbit population" in WorldScene.gd, vedi
-# PopulationGroup.set_age_composition) — mai durante la simulazione a regime. Assente o
+# Ripartizione (young, adult, old) di una mandria appena creata (WildFaunaService). Assente o
 # tutto a 0 => pesi uguali, stesso fallback di SubtypeRules.initial_age_ratio.
 @export var initial_age_ratio: Dictionary = {}
 
 @export_group("Dispersal")
-# Quota (young, adult, old) di chi si stacca in una scissione di gruppo (PopulationSplitService,
-# Step 9 del refactoring fauna) per fondare un nuovo PopulationGroup altrove — stesso schema di
-# mortality_share_by_age sopra (pesi, non un gate binario), usato con
-# MacroCellState._split_by_weight_capped così una fascia senza abbastanza individui per la propria
-# quota non blocca lo split: il mancante si riproporziona sulle fasce con capienza residua. Young
+# Quota (young, adult, old) di chi si stacca per fondare una mandria altrove (WildFaunaService) —
+# pesi, non un gate binario, così una fascia senza abbastanza individui per la propria quota non
+# blocca la partenza: il mancante si riproporziona sulle fasce con capienza residua. Young
 # tipicamente più propenso a disperdersi (in natura è la fascia che lascia il branco natale in
 # cerca di un proprio territorio), old meno (mobilità/spinta a fondare un nuovo areale minori).
 @export var dispersal_share_by_age: Array[float] = [0.34, 0.33, 0.33]
-# Durata (anni) della rampa di recupero della mitigazione natalità post-scissione applicata al
-# gruppo di ORIGINE di uno split (Step 10 del refactoring fauna, vedi
-# TerritoryDynamicsService._get_post_split_multiplier/PopulationGroup.years_since_last_split) —
-# rampa lineare da 0.5 (anno 0, appena scisso) a 1.0 (neutro, raggiunto a questo numero di anni).
-# Nessun default: ogni specie deve dichiararlo esplicitamente nel proprio .tres, stesso principio
-# di min_territory_cells/max_days_without_food sopra (rabbit=5, deer=10 — recupero
-# proporzionalmente più lento per la specie a riproduzione più lenta, stesso rapporto già usato
-# altrove tra le due specie).
-@export var post_split_recovery_years: int = 0
-
-@export_group("Hunger")
-# Soglia di specie (giorni CONSECUTIVI in cui un individuo non riceve fabbisogno calorico
-# sufficiente, vedi AnimalHungerService) oltre la quale l'individuo muore per digiuno prolungato —
-# indipendente da mortality_share_by_age sopra (quello pesa COME distribuire le morti tra le fasce
-# d'età, non SE/QUANDO scattano). Nessun default: ogni specie deve dichiararlo esplicitamente nel
-# proprio .tres, stesso principio di min_territory_cells/max_territory_cells sotto (rabbit=5,
-# metabolismo alto/riserve minime; deer=30, corpo grande/riserve adipose reali — il rapporto 6x
-# non rispecchia il rapporto 15x di daily_caloric_requirement: la tolleranza al digiuno non scala
-# linearmente col fabbisogno calorico).
-@export var max_days_without_food: int = 0
-
-@export_group("Territory")
-# Home range minimo e massimo di specie, in numero di macrocelle — indipendenti da
-# popolazione/risorse locali (es. rabbit: 1/1, deer: 3/20). Campi DORMIENTI per ora: dichiarati
-# qui e nei .tres di ciascuna specie, ma nessuna logica li legge ancora — verranno usati
-# quando il Territory diventerà multi-cella (Step 5+ del refactoring fauna, espansione/
-# restringimento territorio). Nessun default: ogni specie deve dichiararli esplicitamente nel
-# proprio .tres.
-@export var min_territory_cells: int = 1
-@export var max_territory_cells: int = 1
-# Limite etologico/comportamentale di quanti individui della specie possono convivere in una
-# singola macrocella, indipendentemente dalle risorse disponibili — un tetto di densità sociale,
-# non di carrying capacity (quello resta implicito nel fabbisogno calorico/risorse). Campo
-# DORMIENTE per ora (Step 5 del refactoring fauna): dichiarato ma non ancora letto da nessuna
-# logica di distribuzione/espansione territorio. Nessun default: ogni specie deve dichiararlo
-# esplicitamente nel proprio .tres (rabbit=999, di fatto senza vincolo dato il suo territorio
-# sempre a 1 cella; deer=18, un branco realistico).
-@export var max_density_per_cell: float = 999.0
-
 @export_group("Wild herd")
+# false: la specie non ha mandrie nei riquadri (il lupo, che esiste solo come branco del villaggio, WildAnimalGroup).
+@export var has_wild_herds: bool = true
 # Fauna ad hoc (2026-10-31, piano fauna — WildFaunaService): lato in macrocelle del riquadro fisso in cui vive al più una
 # mandria della specie (1 = stanziale nella cella). Più è grande, più di rado la mandria passa da una data cella.
 @export var herd_region_side: int = 1
@@ -261,21 +179,13 @@ extends Resource
 
 @export_group("Suitability")
 # Stessa forma e stessa semantica di SubtypeRules.suitable_biomes/suitable_terrains (vedi
-# SubtypeRules.gd) — vuoto = nessuna restrizione, altrimenti lista bianca. Letto da
-# AnimalSeedingService._is_suitable_cell (cella di partenza al seeding) e da
-# TerritoryBuilderService.build_territory/find_nearest_free_cell (espansione multi-cella e split,
-# vedi lì) — quest'ultimo collegamento è recente: prima ne restava fuori, e una specie poteva
-# quindi finire con parte (o, per una specie a territorio mono-cella come partridge, la totalità)
-# del proprio territorio in un bioma/terreno non idoneo pur essendo nata in una cella corretta
-# (casi reali osservati: mouflon con 1 cella su 3 in deserto, partridge scisso più volte dentro
-# una sacca di deserto).
+# SubtypeRules.gd) — vuoto = nessuna restrizione, altrimenti lista bianca.
 @export var suitable_biomes: Array[GameTypes.Biome] = []
 @export var suitable_terrains: Array[GameTypes.TerrainBase] = []
 
 
 # Stessa logica di SubtypeRules.is_suitable_for: array vuoto = sempre idoneo su quell'asse,
-# altrimenti richiede l'appartenenza alla lista. Chiamato da AnimalSeedingService e
-# TerritoryBuilderService (vedi nota sopra).
+# altrimenti richiede l'appartenenza alla lista.
 func is_suitable_for(biome: GameTypes.Biome, terrain: GameTypes.TerrainBase) -> bool:
 	if not suitable_biomes.is_empty() and not suitable_biomes.has(biome):
 		return false

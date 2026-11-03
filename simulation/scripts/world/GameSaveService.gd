@@ -35,6 +35,8 @@ func save_game_to_json(
 			"current_era_name": game_data.current_era_name,
 			# Ultima destinazione della macellazione scelta nell'ordine di caccia (2026-10-03).
 			"last_butcher_destination": game_data.last_butcher_destination,
+			# Ultima destinazione del pescato (2026-11-03).
+			"last_fish_destination": game_data.last_fish_destination,
 			# Ordinamento dell'elenco dei pipottini nella scheda popolazione (2026-10-04).
 			"population_list_sort": game_data.population_list_sort,
 			"era_effective_age_band_durations_male": game_data.era_effective_age_band_durations_male,
@@ -44,7 +46,6 @@ func save_game_to_json(
 			"starting_animal_density": game_data.starting_animal_density,
 			"starting_population_size": game_data.starting_population_size,
 			"starting_exclude_hostile_start": game_data.starting_exclude_hostile_start,
-			"starting_exclude_predator_territories": game_data.starting_exclude_predator_territories,
 			"starting_resource_richness_preference": game_data.starting_resource_richness_preference,
 			"starting_group_size_preference": game_data.starting_group_size_preference,
 			"starting_guarantee_animal_presence": game_data.starting_guarantee_animal_presence,
@@ -124,8 +125,7 @@ func save_game_to_json(
 			# HumanIndividual.position poco sotto.
 			"expired_objects": _expired_objects_to_json(game_data.expired_objects),
 			# Allocatore id HumanIndividual (vedi GameData.next_human_id) — salvato COSÌ COM'È, mai
-			# ricalcolato al caricamento (a differenza di World.next_population_group_id/
-			# next_building_id): vedi il commento sul campo per il perché.
+			# ricalcolato al caricamento (a differenza di World.next_building_id): vedi il commento sul campo per il perché.
 			"next_human_id": game_data.next_human_id,
 			# Mucchi a terra (2026-09-26, ground drop): GroundPile.to_save_data è già JSON-nativo.
 			"ground_piles": game_data.ground_piles.map(func(pile: GroundPile) -> Dictionary: return pile.to_save_data()),
@@ -189,7 +189,6 @@ func save_game_to_json(
 			"streams_generated": world.streams_generated,
 			"cells": [],
 			"cell_states": [],
-			"population_groups": [],
 			"buildings": []
 		}
 	}
@@ -231,14 +230,6 @@ func save_game_to_json(
 		# vera).
 		if state.has_ever_been_discovered:
 			state_data["has_ever_been_discovered"] = true
-		if state.vegetation_feeding_active:
-			state_data["vegetation_feeding_active"] = true
-			# Stesso principio "assente = sentinella di default" delle due sopra — grass_seed_baseline
-			# resta -1 (mai catturato) per la stragrande maggioranza delle celle, solo quelle
-			# congelate entrate in un territorio erbivoro attivo ne hanno uno vero (vedi
-			# MacroCellState.grass_seed_baseline).
-			if state.grass_seed_baseline != -1:
-				state_data["grass_seed_baseline"] = state.grass_seed_baseline
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
 		# la chiave resta assente per tutte le altre, per non appesantire il salvataggio.
 		# Guadi (2026-09-27, pathfinding): stesso formato {x,y} di stone_positions, chiave assente se vuoto.
@@ -402,72 +393,7 @@ func save_game_to_json(
 				})
 			state_data["vegetation_death_exceptions"] = death_exceptions_data
 		data["world"]["cell_states"].append(state_data)
-	# Popolazioni animali "vere" (rabbit/deer) — world-level, non più annidate dentro
-	# cell_states (vedi PopulationGroup/World.population_groups). occupied_macrocells è un array
-	# (1+ elementi da Step 5, vedi Territory) invece di una singola coppia x/y.
-	for group in world.population_groups:
-		# Garanzia esplicita AL CONFINE del salvataggio (non solo conseguenza indiretta di
-		# World.remove_extinct_population_groups, che gira a fine di ogni giorno simulato): un
-		# gruppo estinto (population <= 0) non finisce mai nel save, né lui né il suo territorio —
-		# quest'ultimo è scritto solo dentro il record del gruppo (occupied_cells_data sotto), mai
-		# come lista indipendente, quindi saltare il gruppo esclude automaticamente anche le sue
-		# celle occupate.
-		if group.population <= 0:
-			continue
-		var occupied_cells_data: Array = []
-		for coords in group.territory.occupied_macrocells:
-			occupied_cells_data.append({"x": coords.x, "y": coords.y})
-		# hunger_buckets (giorni consecutivi di digiuno -> individui, vedi
-		# AnimalHungerService/PopulationGroup): a differenza di territory_distribution_weights è
-		# storia accumulata reale e va salvata — perderla al caricamento azzererebbe una crisi di
-		# fame già vicina alla soglia di morte. birth_mitigation_multiplier va salvato per lo
-		# stesso motivo di fondo (bug corretto: viene calcolato a inizio birth_season ma consumato
-		# solo a fine — un salvataggio/caricamento nel mezzo lo perdeva, tornando al default 1.0 e
-		# applicando nascite senza alcuna mitigazione). years_since_last_split (Step 10) è storia
-		# reale allo stesso modo — non ricalcolabile da un checkpoint, perderla al caricamento
-		# resetterebbe silenziosamente la recovery post-scissione in corso a "mai scisso".
-		# hunger_split_cooldown_days (Step 11) idem: un countdown a metà perso al caricamento
-		# riaprirebbe silenziosamente la porta a un nuovo split da fame prima del previsto.
-		# patrol_index/patrol_direction (branchi predatori, PredatorPatrolService) sono storia
-		# reale allo stesso modo di hunger_buckets — quanti giorni di percorso il branco ha già
-		# camminato e in che verso, non ricostruibile dalla sola forma del territorio: perderli al
-		# caricamento farebbe silenziosamente ripartire il pattugliamento da zero (vedi TODO ormai
-		# risolto in PopulationGroup.gd). predation_calorie_debt/predation_surplus_carryover
-		# (PredationService) sono il bookkeeping calorico del branco, stesso principio — un
-		# caricamento a metà debito/surplus non deve azzerarlo silenziosamente. patrol_route NON è
-		# salvato (dato derivato da territory + hunting_window_size, sempre ricalcolabile — vedi
-		# GameLoadService/PredatorPatrolService.recompute_route). recent_hunt_log/
-		# yearly_prey_totals (tab Fauna 3, UI — vedi PopulationGroup) sono contenuto informativo
-		# reale mostrato al giocatore, non una cache di ottimizzazione: perderli al caricamento
-		# sarebbe una regressione visibile (lista "ultimi 5 giorni" vuota anche dopo anni di
-		# caccia), quindi salvati per intero come gli altri campi storici sopra. hunger_debt_days
-		# (AnimalHungerMortalityAggregateService) è l'equivalente Livello 1 di hunger_buckets,
-		# stesso principio.
-		data["world"]["population_groups"].append({
-			"id": group.id,
-			"species_name": group.species_name,
-			"population": group.population,
-			"age_composition": group.age_composition,
-			"occupied_macrocells": occupied_cells_data,
-			"hunger_buckets": group.hunger_buckets,
-			"birth_mitigation_multiplier": group.birth_mitigation_multiplier,
-			"birth_mitigation_caloric_ratio": group.birth_mitigation_caloric_ratio,
-			"years_since_last_split": group.years_since_last_split,
-			"hunger_split_cooldown_days": group.hunger_split_cooldown_days,
-			"patrol_index": group.patrol_index,
-			"patrol_direction": group.patrol_direction,
-			"predation_calorie_debt": group.predation_calorie_debt,
-			"predation_surplus_carryover": group.predation_surplus_carryover,
-			"predation_season_calories_obtained": group.predation_season_calories_obtained,
-			"predation_season_calories_required": group.predation_season_calories_required,
-			"hunger_debt_days": group.hunger_debt_days,
-			"recent_hunt_log": group.recent_hunt_log,
-			"yearly_prey_totals": group.yearly_prey_totals,
-			"yearly_prey_totals_year": group.yearly_prey_totals_year
-		})
-
-	# Edifici piazzati (vedi Building.gd/World.buildings) — stesso principio di population_groups
-	# sopra: rules stesso non è mai serializzato (dato statico di tipo), solo building_type_name
+	# Edifici piazzati (vedi Building.gd/World.buildings): rules stesso non è mai serializzato (dato statico di tipo), solo building_type_name
 	# per ricaricarlo via BuildingCalculator al load. stored_resources (2026-09-09: ora resource_name
 	# -> {"quantity","decay_fraction"}, vedi Building.gd — GameLoadService._parse_stored_resources
 	# gestisce la retrocompatibilità col vecchio formato int diretto) salvato COSÌ COM'È, il

@@ -24,23 +24,48 @@ static func get_fog_of_war_rules() -> FogOfWarRules:
 	return _rules_cache
 
 
+# Giorni di memoria di ogni tier per questo popolo (2026-11-03, richiesta utente — con Insegnamento
+# orale si scorda più tardi): i giorni di FogOfWarRules per i moltiplicatori delle idee completate.
+# Unico punto da cui leggerli. Se la risorsa manca, stessi fallback di FogOfWarRenderer; folk null =
+# nessuna idea.
+static func get_detail_memory_days(folk: Folk) -> int:
+	var rules := get_fog_of_war_rules()
+	if rules == null:
+		return 10
+	return _apply_idea_multipliers(rules.detail_memory_days, rules.detail_memory_multiplier_by_idea, folk)
+
+
+static func get_resource_memory_days(folk: Folk) -> int:
+	var rules := get_fog_of_war_rules()
+	if rules == null:
+		return 30
+	return _apply_idea_multipliers(rules.resource_memory_days, rules.resource_memory_multiplier_by_idea, folk)
+
+
+static func get_terrain_memory_days(folk: Folk) -> int:
+	var rules := get_fog_of_war_rules()
+	if rules == null:
+		return 90
+	return _apply_idea_multipliers(rules.terrain_memory_days, rules.terrain_memory_multiplier_by_idea, folk)
+
+
+static func _apply_idea_multipliers(base_days: int, multiplier_by_idea: Dictionary, folk: Folk) -> int:
+	if folk == null:
+		return base_days
+	var multiplier := 1.0
+	for idea_id in multiplier_by_idea:
+		if folk.completed_ideas.has(idea_id):
+			multiplier *= float(multiplier_by_idea[idea_id])
+	return roundi(base_days * multiplier)
+
+
 # "Quanto arriva a ricordare oggi, nel complesso, la percezione del player" — pensata per il
 # pruning di FogOfWarMemory.last_seen_by_position (prossimo step): la soglia oltre cui un'entry è
 # sicuramente troppo vecchia per QUALUNQUE dei tre tier attuali, non il tetto teorico massimo mai
 # raggiungibile in futuro (deciso esplicitamente con l'utente: una scheda di memoria più grande
-# non deve "resuscitare" foto già cancellate — vedi la discussione sul pruning). Oggi ha una sola
-# fonte (le tre soglie di FogOfWarRules), quindi il massimo coincide sempre con terrain_memory_days
-# (il più alto dei tre per design) — ma è una funzione DERIVATA apposta, non un alias diretto di
-# terrain_memory_days: ogni chiamante che ha bisogno di "il massimo oggi conosciuto" deve passare
-# da qui, mai leggere terrain_memory_days direttamente, proprio per il motivo sotto.
-#
-# TODO evoluzione stadio_di_memorizzazione: nessun secondo stadio di percezione/memorizzazione
-# esiste ancora (nessuna tech/popolazione che allunga la memoria oltre FogOfWarRules) — quando ne
-# verrà progettato uno (vedi conversazione 2026-08-29/30 su un futuro PopulationRules/enum di
-# tier in GameTypes, mai implementato), il suo contributo va sommato/moltiplicato QUI dentro,
-# in un solo punto, non propagato a mano in ogni chiamante.
-static func get_max_known_memory_days() -> int:
-	var rules := get_fog_of_war_rules()
-	if rules == null:
-		return 90 # stesso fallback di FogOfWarRenderer.terrain_memory_days se la risorsa manca
-	return max(rules.detail_memory_days, max(rules.resource_memory_days, rules.terrain_memory_days))
+# non deve "resuscitare" foto già cancellate — vedi la discussione sul pruning). Il massimo di solito
+# coincide con il tier del terreno (il più alto dei tre per design) — ma è una funzione DERIVATA
+# apposta, non un alias diretto: ogni chiamante che ha bisogno di "il massimo oggi conosciuto" deve
+# passare da qui.
+static func get_max_known_memory_days(folk: Folk) -> int:
+	return max(get_detail_memory_days(folk), max(get_resource_memory_days(folk), get_terrain_memory_days(folk)))

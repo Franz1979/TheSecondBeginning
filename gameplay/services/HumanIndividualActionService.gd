@@ -143,6 +143,9 @@ const FOOD_AUTONOMY_EMERGENCY_DAYS: float = 1.0
 # calorie scendono per sottrazioni ripetute, quindi "esattamente 1 giorno" puo' risultare 1.0000000002.
 # Senza tolleranza il confronto <= mancherebbe proprio il caso che deve scattare.
 const FOOD_AUTONOMY_EPSILON: float = 0.001
+# Haul di cibo con la fame addosso (2026-11-03, richiesta utente — _can_eat_from_harvest): si prosegue fino alla raccolta
+# solo con la riserva corporea almeno a questa frazione; sotto, l'interruzione di sempre.
+const FOOD_HAUL_MIN_RESERVE_RATIO: float = 0.5
 
 # `world` (2026-09-09, richiesta utente — nato per il re-routing UnloadAction su magazzino pieno,
 # poi GENERALIZZATO alla ricerca magazzino post-PickUp, vedi _handle_pending_warehouse_search
@@ -345,6 +348,7 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 	_handle_pending_thought_target_search(individual, task, world)
 	_handle_pending_warehouse_restock(individual, task, world, game_data)
 	_handle_pending_walk_away(task)
+	_eat_after_pickup_if_hungry(individual, task, action, game_data)
 	# Caccia (2026-09-26): recupero dell'arma scagliata e riavvicinamento chiesti da AimAction/ThrowAction/
 	# RecoverWeaponAction (step aggiunti subito dopo quello corrente), poi chiusura anticipata chiesta da uno
 	# step o dal tetto dei riavvicinamenti.
@@ -1599,10 +1603,66 @@ static func _queue_eat_from_backpack(individual: HumanIndividual, task: Task, re
 		var next_step := task.steps[next_index] as RestockPouchAction
 		if next_step != null and next_step.source_kind == RestockPouchAction.SourceKind.BACKPACK:
 			return true
-	var new_steps: Array[Action] = [RestockPouchAction.new(null, RestockPouchAction.SourceKind.BACKPACK)]
+	var meal := RestockPouchAction.new(null, RestockPouchAction.SourceKind.BACKPACK)
+	meal.inline_meal = true
+	var new_steps: Array[Action] = [meal]
 	var descriptions: Array[String] = ["task_restock_step_backpack"]
 	task.insert_steps_after_current(new_steps, descriptions)
 	return true
+
+
+# Pasto a raccolta finita (2026-11-03, richiesta utente — "prende da quello che sta raccogliendo e se lo magna"): con la
+# soglia di emergenza attiva e cibo nello zaino mangia sul posto, prima del cammino verso il magazzino o la cella
+# successiva. Chiamata dopo le ricerche di fine step, che possono aver appena accodato quel cammino.
+func _eat_after_pickup_if_hungry(individual: HumanIndividual, task: Task, action: Action, game_data: GameData) -> void:
+	if not action is PickUpAction or game_data == null or task.context.has(CONTEXT_PENDING_TASK_ABORT):
+		return
+	if _active_food_need_priority(individual, _resolve_age_band(individual, game_data)) != INTERRUPT_PRIORITY_EMERGENCY_RESTOCK:
+		return
+	for resource_name in individual.carried_resources.keys():
+		if _queue_eat_from_backpack(individual, task, String(resource_name)):
+			if DebugLogging.should_log_restock(individual.id):
+				print("[RESTOCK] #%d %s: fame a raccolta finita, mangia dallo zaino (calorie=%.1f)." % [individual.id, individual.name, individual.food_calories_held])
+			return
+
+
+# true se `task` può proseguire fino alla raccolta invece di interrompersi per il magazzino (2026-11-03): lavoro normale,
+# riserva corporea almeno a FOOD_HAUL_MIN_RESERVE_RATIO e cibo tra ciò che raccoglierà (il pasto è _eat_after_pickup_if_hungry).
+static func _can_eat_from_harvest(individual: HumanIndividual, task: Task) -> bool:
+	if task.interrupt_priority != -1 or individual.body_calories_capacity <= 0.0:
+		return false
+	if individual.body_calories < FOOD_HAUL_MIN_RESERVE_RATIO * individual.body_calories_capacity:
+		return false
+	return _will_collect_food(task)
+
+
+# Prossima raccolta della task: con un PickUp già in programma conta il cibo davvero presente nella sua microcella; alla
+# ricerca iniziale nella zona, che non ha ancora una cella, conta se l'ordine ammette del cibo.
+static func _will_collect_food(task: Task) -> bool:
+	for i in range(task.current_step_index, task.steps.size()):
+		var pickup := task.steps[i] as PickUpAction
+		if pickup == null:
+			continue
+		for candidate in pickup._build_candidates():
+			if float(candidate["density"]) > 0.0:
+				return true
+		return false
+	if not task.get_current_action() is SearchHaulZoneAction:
+		return false
+	var zone := HaulZoneService.get_zone(task.context)
+	if zone.is_empty():
+		return false
+	var area := HaulZoneService.resolve_work_area(zone)
+	var names: Array[String] = HaulZoneService.allowed_names(zone, area) if area != null \
+		else PickUpAction.list_candidate_names(HaulZoneService.get_criterion_kind(zone), HaulZoneService.get_resource_name(zone))
+	var is_category: bool = HaulZoneService.get_criterion_kind(zone) == PickUpAction.CriterionKind.CATEGORY
+	for candidate_name in names:
+		var rules := CaloricCalculator.get_caloric_source_rules(candidate_name)
+		if rules == null or rules.calories_per_unit <= 0.0 or rules.space_per_unit <= 0.0:
+			continue
+		if not is_category or int(rules.category) == HaulZoneService.get_criterion_category(zone):
+			return true
+	return false
 
 
 # Consuma task.context["pending_thought_target_search"] (2026-09-10, richiesta utente — handler di
@@ -2257,7 +2317,8 @@ static func _resolve_active_food_need_priority(
 # consumo giornaliero dell'individuo, calcolato come per le soglie di autonomia (_resolve_active_food_need_priority:
 # moltiplicatori per età e sesso, allattamento con le regole dell'era corrente). Regole o partita non risolvibili, o
 # consumo nullo -> INF (nessun tetto, solo lo spazio: il comportamento di prima).
-static func get_restock_pouch_calorie_cap(individual: HumanIndividual) -> float:
+# `autonomy_days` >= 0 sostituisce restock_autonomy_days (2026-11-03, RestockPouchAction.BACKPACK_MEAL_AUTONOMY_DAYS).
+static func get_restock_pouch_calorie_cap(individual: HumanIndividual, autonomy_days: float = -1.0) -> float:
 	var game_data: GameData = GameSettings.active_game_data
 	if individual == null or game_data == null:
 		return INF
@@ -2276,7 +2337,7 @@ static func get_restock_pouch_calorie_cap(individual: HumanIndividual) -> float:
 	)
 	if daily_consumption <= 0.0:
 		return INF
-	return human_rules.restock_autonomy_days * daily_consumption
+	return (autonomy_days if autonomy_days >= 0.0 else human_rules.restock_autonomy_days) * daily_consumption
 
 
 # Priorita' del bisogno di provviste per `individual` risolvendo regole ed era da soli (2026-09-19):
@@ -2323,6 +2384,12 @@ func _handle_food_interrupt(individual: HumanIndividual, task: Task, world: Worl
 	if task.interrupt_priority != -1 and needed_priority >= task.interrupt_priority:
 		return false
 	individual.food_need_last_check_day = today
+	if _can_eat_from_harvest(individual, task):
+		if DebugLogging.should_log_restock(individual.id):
+			print("[RESTOCK] #%d %s: bisogno di provviste di emergenza (calorie=%.1f, riserva=%.1f) - prosegue '%s', mangerà da ciò che raccoglie." % [
+				individual.id, individual.name, individual.food_calories_held, individual.body_calories, task.task_name
+			])
+		return false
 	if DebugLogging.should_log_restock(individual.id):
 		print("[RESTOCK] #%d %s: bisogno di provviste di emergenza (calorie=%.1f) - Task '%s' in corso, provo emergency_restock." % [
 			individual.id, individual.name, individual.food_calories_held, task.task_name

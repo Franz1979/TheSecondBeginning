@@ -1,11 +1,8 @@
 class_name HumanSeedingService
 extends RefCounted
 
-# Seminatore del popolo/insediamento/individui umani a inizio partita — stesso ruolo di
-# AnimalSeedingService lato animale, ma NON un suo consumatore (nessuna dipendenza, solo
-# ispirazione di pattern: stateless, un solo entry point per caso d'uso). find_candidate_start_
-# cells/griglia con jitter di AnimalSeedingService non si applicano qui: un insediamento umano
-# iniziale nasce in UNA cella gia' scelta da FirstStartMacroCellSelectionService (mai toccato da
+# Seminatore del popolo/insediamento/individui umani a inizio partita (stateless, un solo entry
+# point per caso d'uso). Un insediamento umano iniziale nasce in UNA cella gia' scelta da FirstStartMacroCellSelectionService (mai toccato da
 # questa classe), non serve alcuna ricerca di celle candidate su tutta la mappa.
 #
 # DEBITO NOTO: nessuna persistenza reale ancora — Folk/HumanIndividual
@@ -14,7 +11,7 @@ extends RefCounted
 # GameSaveService/GameLoadService per il lato umano, questo andra' rivisto.
 #
 # DEBITO NOTO: Folk restano fissi a id=1 per singola chiamata — nessun
-# allocatore globale ancora (equivalente umano di World.allocate_population_group_id()),
+# allocatore globale ancora,
 # rimandato a quando esistera' un vero "mondo umano" con piu' insediamenti contemporaneamente.
 # HumanIndividual.id INVECE non e' piu' locale (bugfix, 2026-09-06, prerequisito del futuro
 # BirthService): tutti e tre i percorsi sotto (GROUP/FAMILY/COUPLE) chiamano ora
@@ -137,8 +134,7 @@ const SEED_EXCLUDED_SKILLS: Array[String] = []
 # a differenza degli altri campi di GameData, l'id univoco per HumanIndividual non può essere
 # risolto dal chiamante e passato come valore semplice (è un contatore condiviso che deve
 # incrementarsi ad ogni individuo, fondatori di QUESTA chiamata inclusi), quindi questo servizio
-# tocca GameData per quell'unico scopo — non più "stateless" in senso stretto su questo punto,
-# ma stesso principio di AnimalSeedingService che chiama world.allocate_population_group_id().
+# tocca GameData per quell'unico scopo — non più "stateless" in senso stretto su questo punto.
 #
 # effective_age_band_durations_male/female (richiesta utente, 2026-09-04 — bugfix: prima questo
 # file leggeva human_rules.age_band_durations_male/female DIRETTAMENTE, ignorando gli eventuali

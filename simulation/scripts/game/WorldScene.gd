@@ -1,11 +1,5 @@
 extends Node2D
 
-# Durata dell'evidenziazione lampeggiante (WorldRenderer.flash_cells) delle celle del territorio
-# di un PopulationGroup, quando l'utente clicca la sua riga nella tab Fauna del pannello — più
-# lunga del feedback-pennello del map editor (WorldRenderer.PAINT_FLASH_DURATION), qui l'utente
-# deve avere il tempo di individuare le celle sulla mappa, non solo confermare un click.
-const POPULATION_HIGHLIGHT_DURATION: float = 2.0
-
 # Vista principale del player su una singola macrocella (res://gameplay/scenes/game/). Ingresso
 # "vero": _redirect_to_game_scene, chiamato da _ready() subito dopo il seeding di una partita
 # nuova (_load_world -> _populate_new_world). Raggiungibile anche manualmente tramite il bottone
@@ -57,16 +51,11 @@ var _pending_leave_action: StringName = &""
 	GameClockController.Speed.X1: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed1xButton,
 	GameClockController.Speed.X2: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed2xButton,
 	GameClockController.Speed.X4: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed4xButton,
-	# Visibile solo a DebugLogging.ENABLED (vedi _setup_clock) — stesso meccanismo già in uso per
-	# debug_animal_container sopra.
+	# Visibile solo a DebugLogging.ENABLED (vedi _setup_clock).
 	GameClockController.Speed.DEBUG: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/SpeedDebugButton,
 }
 @onready var advance_year_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/CalendarHeaderContainer/AdvanceYearButton
 @onready var season_progress_bar: SeasonProgressBar = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/SeasonProgressBar
-@onready var debug_animal_container: HBoxContainer = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer
-@onready var debug_animal_spin_box: SpinBox = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer/DebugAnimalSpinBox
-@onready var debug_animal_species_option: OptionButton = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer/DebugAnimalSpeciesOption
-@onready var debug_set_animal_button: Button = $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/DebugAnimalContainer/DebugSetAnimalButton
 
 func _ready() -> void:
 	# Ripristina lo stato del toggle dalla sessione precedente (vedi GameSettings): senza questo,
@@ -105,10 +94,6 @@ func _ready() -> void:
 	# ripartiva nell'istante tra la chiusura del menu di sistema e l'apertura di questo file dialog.
 	save_game_file_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(save_game_file_dialog))
 
-	debug_animal_container.visible = DebugLogging.ENABLED
-	for species_name in AnimalCalculator.list_species_names():
-		debug_animal_species_option.add_item(species_name)
-	debug_set_animal_button.pressed.connect(_on_debug_set_animal_pressed)
 
 	var returning_from_macro_cell := GameSettings.returning_to_world_scene
 	var is_new_game := false
@@ -149,8 +134,6 @@ func _ready() -> void:
 	# pannello prima del controllo "cell == null" interno, lasciando il resto del pannello vuoto
 	# come atteso quando non c'è selezione.
 	world_info_panel.show_cell(null, null, world)
-	world_info_panel.population_group_highlight_requested.connect(_on_population_group_highlight_requested)
-	world_info_panel.population_species_highlight_requested.connect(_on_population_species_highlight_requested)
 
 	if returning_from_macro_cell:
 		var cell := world.get_cell_at(GameSettings.selected_macro_cell_x, GameSettings.selected_macro_cell_y)
@@ -221,7 +204,6 @@ func _populate_new_world(target_world: World) -> void:
 	game_data.starting_animal_density = GameSettings.selected_animal_density
 	game_data.starting_population_size = GameSettings.selected_population_size
 	game_data.starting_exclude_hostile_start = GameSettings.selected_exclude_hostile_start
-	game_data.starting_exclude_predator_territories = GameSettings.selected_exclude_predator_territories
 	game_data.starting_resource_richness_preference = GameSettings.selected_resource_richness_preference
 	game_data.starting_group_size_preference = GameSettings.selected_group_size_preference
 	game_data.starting_folk_name = GameSettings.selected_folk_name
@@ -232,7 +214,6 @@ func _populate_new_world(target_world: World) -> void:
 		GameSettings.selected_animal_density,
 		GameSettings.selected_population_size,
 		GameSettings.selected_exclude_hostile_start,
-		GameSettings.selected_exclude_predator_territories,
 		GameSettings.selected_resource_richness_preference,
 		GameSettings.selected_group_size_preference,
 		GameSettings.selected_guarantee_animal_presence,
@@ -252,26 +233,6 @@ func _populate_new_world(target_world: World) -> void:
 		"OLD":
 			age = GameTypes.WorldAge.OLD
 	ParametricResourceSetupService.new().populate_resources(target_world, age)
-
-	# Semina automatica animali SOLO per un mondo non-CLASSIC (vedi guard sopra — un ritorno
-	# anticipato per CLASSIC non arriva mai qui). GameSettings.selected_animal_density e'
-	# ignorato del tutto quando CLASSIC e' scelto, esattamente come da richiesta: in quel caso il
-	# mondo resta popolabile solo a mano via pannello debug, invariato.
-	var density := GameTypes.AnimalDensity.MEDIUM
-	match GameSettings.selected_animal_density:
-		"FEW":
-			density = GameTypes.AnimalDensity.FEW
-		"MEDIUM":
-			density = GameTypes.AnimalDensity.MEDIUM
-		"MANY":
-			density = GameTypes.AnimalDensity.MANY
-	var population_size := AnimalSeedingService.population_size_from_string(GameSettings.selected_population_size)
-
-	# Fauna ad hoc (2026-10-31): niente popolazioni mondiali, gli animali nascono solo nelle celle dove si gioca.
-	if SimulationSettings.WILD_FAUNA_AD_HOC:
-		print("[WILD FAUNA] semina mondiale saltata (SimulationSettings.WILD_FAUNA_AD_HOC)")
-		return
-	AnimalSeedingService.new().populate_animals(target_world, density, population_size)
 
 # Ingresso "vero" per una partita NUOVA appena seminata O per un salvataggio ESISTENTE appena
 # caricato con successo — chiamato da _ready() subito dopo _load_world() quando is_new_game o
@@ -338,8 +299,7 @@ func _setup_clock() -> void:
 	play_pause_button.pressed.connect(_on_play_pause_pressed)
 	for speed in speed_buttons.keys():
 		speed_buttons[speed].pressed.connect(_on_speed_button_pressed.bind(speed))
-	# Pulsante "velocità debug" (richiesta utente, 2026-09-04): stesso flag già usato sopra per
-	# debug_animal_container, nessun meccanismo di debug-mode nuovo introdotto.
+	# Pulsante "velocità debug" (richiesta utente, 2026-09-04).
 	speed_buttons[GameClockController.Speed.DEBUG].visible = DebugLogging.ENABLED
 	_update_play_pause_button()
 	speed_buttons[clock.speed].button_pressed = true
@@ -365,14 +325,6 @@ func _open_macro_cell_scene() -> void:
 	GameSettings.active_clock_is_playing = clock.is_playing
 	GameSettings.active_clock_speed = clock.speed
 	get_tree().change_scene_to_file("res://simulation/scenes/game/MacroCellScene.tscn")
-
-
-func _on_population_group_highlight_requested(cells: Array) -> void:
-	renderer.flash_cells(cells, POPULATION_HIGHLIGHT_DURATION)
-
-
-func _on_population_species_highlight_requested(entries: Array) -> void:
-	renderer.highlight_group_territories(entries, WorldInfoPanel.SPECIES_TERRITORY_HIGHLIGHT_DURATION)
 
 
 func _on_cell_selected(cell: MacroCellData, state: MacroCellState) -> void:
@@ -484,15 +436,14 @@ func _update_play_pause_button() -> void:
 		play_pause_button.text = "▶"
 		play_pause_button.tooltip_text = TooltipText.wrap(tr("play"))
 
-func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
+func _on_day_advanced(checkpoint_ran: bool) -> void:
 	_update_calendar_display()
-	if not (checkpoint_ran or animals_changed):
+	if not checkpoint_ran:
 		return
 	# Il redraw completo di WorldRenderer (griglia 100x100 immediate-mode) è costoso e non serve
-	# tutti i giorni: sempre ai veri checkpoint stagionali (variazioni visibili reali), ma nei
-	# giorni con solo animals_changed (ormai quasi ogni giorno, vedi AnimalConsumptionService/
-	# AnimalHungerService) solo se l'utente ha lasciato attivo il toggle — stesso schema già usato
-	# da MacroCellScene per flora_daily_updates_enabled.
+	# tutti i giorni: sempre ai veri checkpoint stagionali (variazioni visibili reali), negli altri
+	# giorni solo se l'utente ha lasciato attivo il toggle — stesso schema già usato da
+	# MacroCellScene per flora_daily_updates_enabled.
 	if checkpoint_ran or world_daily_redraw_enabled:
 		renderer.queue_redraw()
 	if renderer.selected_cell != null:
@@ -507,60 +458,6 @@ func _on_day_advanced(checkpoint_ran: bool, animals_changed: bool) -> void:
 
 func _on_advance_year_pressed() -> void:
 	clock.force_advance_to_year_end()
-
-# Cella bersaglio per i pulsanti debug sotto: quella attualmente selezionata sulla mappa (singolo
-# click, vedi renderer.selected_cell/set_selected_cell) — così l'utente sceglie dove rilasciare la
-# popolazione invece di un fisso (50,50), e può creare più gruppi della stessa specie in celle
-# diverse (world.find_population_group cerca per specie+cella: celle diverse => gruppi diversi,
-# nessuna fusione). Fallback a (50,50) solo se non è ancora stata selezionata nessuna cella (es.
-# subito dopo l'apertura della scena). Nessun blocco se si preme di nuovo sulla STESSA cella già
-# usata: sovrascrive il gruppo lì esistente, comportamento voluto (vedi find_population_group).
-func _debug_target_coords() -> Vector2i:
-	if renderer.selected_cell != null:
-		return Vector2i(renderer.selected_cell.x, renderer.selected_cell.y)
-	return Vector2i(50, 50)
-
-func _on_debug_set_animal_pressed() -> void:
-	if debug_animal_species_option.item_count == 0:
-		return
-	var species_name := debug_animal_species_option.get_item_text(debug_animal_species_option.selected)
-	var coords := _debug_target_coords()
-	var count := int(debug_animal_spin_box.value)
-
-	var rules := AnimalCalculator.get_animal_rules(species_name)
-	var group := world.find_population_group(species_name, coords)
-	if group == null:
-		group = PopulationGroup.new(species_name, _build_initial_territory(coords, rules, species_name), world.allocate_population_group_id())
-		world.population_groups.append(group)
-		# Branchi predatori (PredatorRules, es. wolf): patrol_route va calcolato SUBITO dopo la
-		# creazione del territorio, non lasciato vuoto — PredationService._process_group non tenta
-		# mai una caccia se group.patrol_route.is_empty() (guard esplicito lì). Solo alla creazione:
-		# il territorio di un gruppo esistente non cambia più da qui (nessuna logica di espansione/
-		# contrazione per predatori ancora, vedi PredatorRules.gd), quindi non serve ricalcolare se
-		# il bottone viene premuto di nuovo sulla stessa specie/cella (branch group == null sopra
-		# non rientra in quel caso).
-		if rules is PredatorRules:
-			PredatorPatrolService.new().recompute_route(group, rules as PredatorRules)
-	group.set_population(count)
-	# Riallinea age_composition al nuovo totale (vedi PopulationGroup.set_age_composition) —
-	# senza questo, la maturazione delle age band non avrebbe mai dati su cui operare finché la
-	# natalità (prompt futuro) non esiste ancora.
-	var age_weights: Dictionary = rules.initial_age_ratio if rules != null else {}
-	group.set_age_composition(count, age_weights)
-	world_info_panel.refresh_world_tabs_if_active()
-	print("[DEBUG] %s population #%d (%d,%d) impostata a %d" % [species_name, group.id, coords.x, coords.y, count])
-
-
-# Territorio iniziale di un gruppo appena creato: una sola cella per specie con
-# min_territory_cells <= 1 (rabbit — comportamento identico a prima di Step 5), altrimenti una
-# BFS di TerritoryBuilderService a partire da coords fino a min_territory_cells celle (deer),
-# escludendo le celle già occupate da un territorio ESISTENTE della stessa specie (species_name —
-# vedi TerritoryBuilderService._collect_species_occupied_cells). La dimensione è fissa da qui in
-# poi: nessuna espansione/restringimento nel tempo (Step 8 futuro).
-func _build_initial_territory(coords: Vector2i, rules: AnimalRules, species_name: String) -> Territory:
-	if rules == null or rules.min_territory_cells <= 1:
-		return Territory.from_single_cell(coords)
-	return TerritoryBuilderService.new().build_territory(world, coords, rules.min_territory_cells, species_name)
 
 func _update_calendar_display() -> void:
 	year_label.text = "Day %d of %d, Year %d" % [game_data.current_day + 1, GameData.DAYS_PER_YEAR, game_data.year]

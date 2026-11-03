@@ -50,13 +50,12 @@ const _SOURCE_PRIMARY_TYPE := {
 
 
 # Valuta un intero gruppo di celle in un colpo solo (invece di una evaluate_richness(world, pos)
-# per cella): sia la componente animale (territori) sia le regole delle fonti caloriche
+# per cella): sia la componente animale sia le regole delle fonti caloriche
 # (SecondaryResourceRules, altrimenti ricaricate ad ogni singola cella x stagione — su ~10.000
 # candidate diventa rapidamente il collo di bottiglia dominante) vengono preparate UNA volta sola
-# per l'intero batch, non ripetute per ogni candidata — stesso principio gia' seguito da
-# FirstStartMacroCellSelectionService._collect_predator_territory_cells.
+# per l'intero batch, non ripetute per ogni candidata.
 func evaluate_richness_batch(world: World, positions: Array[Vector2i]) -> Dictionary:
-	var animal_calories_by_cell := _estimate_herd_calories_by_cell(world, positions) 		if SimulationSettings.WILD_FAUNA_AD_HOC else _collect_animal_calories_by_cell(world, positions)
+	var animal_calories_by_cell := _estimate_herd_calories_by_cell(world, positions)
 	var vegetal_rules := _load_source_rules(VEGETAL_SOURCES)
 	var hybrid_rules := _load_source_rules(HYBRID_SOURCES)
 
@@ -168,42 +167,4 @@ func _estimate_herd_calories_by_cell(world: World, positions: Array[Vector2i]) -
 				total += float(entry[1])
 		if total > 0.0:
 			calories_by_cell[pos] = total
-	return calories_by_cell
-
-
-# Calorie-animali per cella: solo popolazioni ERBIVORE (rules is NOT PredatorRules — un branco
-# predatore presente non e' "cibo disponibile", e' gia' gestito a parte dal toggle "escludi
-# territori predatori", confermato con l'utente). Per ciascun gruppo idoneo, per ciascuna cella
-# del suo territorio in "positions": popolazione della cella per fascia d'eta' (
-# get_age_composition_in_cell) x AnimalRules.prey_calories x size_multiplier_by_age[fascia] —
-# stessa scalatura per eta' gia' documentata su AnimalRules.prey_calories per il futuro
-# PredationService, qui riusata identica.
-func _collect_animal_calories_by_cell(world: World, positions: Array[Vector2i]) -> Dictionary:
-	var positions_set: Dictionary = {}
-	for pos in positions:
-		positions_set[pos] = true
-
-	var calories_by_cell: Dictionary = {}
-	for group in world.population_groups:
-		if group.territory == null:
-			continue
-		var rules := AnimalCalculator.get_animal_rules(group.species_name)
-		if rules == null or rules is PredatorRules:
-			continue
-
-		for coords in group.territory.occupied_macrocells:
-			if not positions_set.has(coords):
-				continue
-
-			var age_composition := group.get_age_composition_in_cell(coords)
-			var cell_calories := 0.0
-			for age_band in age_composition:
-				var count := int(age_composition[age_band])
-				var size_mult := 1.0
-				if age_band >= 0 and age_band < rules.size_multiplier_by_age.size():
-					size_mult = rules.size_multiplier_by_age[age_band]
-				cell_calories += count * rules.prey_calories * size_mult
-
-			calories_by_cell[coords] = float(calories_by_cell.get(coords, 0.0)) + cell_calories
-
 	return calories_by_cell

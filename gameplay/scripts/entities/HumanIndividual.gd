@@ -2,8 +2,8 @@ class_name HumanIndividual
 extends RefCounted
 
 # Stato puro del singolo individuo controllabile in GameScene — nessuna grafica, nessun
-# bisogno/statistica/inventario/IA (scope futuro, deliberatamente escluso qui). Stesso principio
-# di PopulationGroup: RefCounted, non Node — la resa visiva vive solo in HumanIndividualView, che
+# bisogno/statistica/inventario/IA (scope futuro, deliberatamente escluso qui).
+# RefCounted, non Node — la resa visiva vive solo in HumanIndividualView, che
 # legge questo stato ma non viceversa.
 #
 # position/target_position sono in coordinate MICROCELLA continue (float), locali a
@@ -103,8 +103,7 @@ var is_selected: bool = false
 
 # --- Dati anagrafici — solo campi per ora, nessuna logica di riproduzione/formazione coppie ---
 
-# Identificatore stabile assegnato UNA volta alla creazione, mai ricalcolato — stesso principio
-# di PopulationGroup.id lato animale.
+# Identificatore stabile assegnato UNA volta alla creazione, mai ricalcolato.
 var id: int = 0
 var sex: HumanTypes.Sex = HumanTypes.Sex.MALE
 # Anno di nascita virtuale (calendario di gioco) — l'età si ricava sempre al volo altrove come
@@ -130,8 +129,7 @@ var scheduled_death_day: int = -1
 var scheduled_death_cause: DeathTypes.DeathCause = DeathTypes.DeathCause.OLD_AGE
 # Sentinella -1 = genitore/partner sconosciuto o non applicabile (es. un fondatore senza
 # genitori nella partita, o nessun partner ancora assegnato) — stesso principio del sentinella -1
-# già usato altrove nel progetto (es. PopulationGroup.years_since_last_split,
-# Building.construction_started_day) per "non ancora valorizzato/non applicabile".
+# già usato altrove nel progetto (es. Building.construction_started_day) per "non ancora valorizzato/non applicabile".
 var mother_id: int = -1
 var father_id: int = -1
 # Nessuna logica di formazione coppie qui: solo il campo, valorizzato da un futuro service.

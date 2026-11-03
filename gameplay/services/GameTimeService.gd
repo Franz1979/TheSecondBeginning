@@ -152,10 +152,9 @@ func connect_to_clock(
 
 # Step 6 del piano mortalità (2026-09-05): stesso hook giornaliero già esistente usato da
 # GameScene._on_day_advanced per vegetazione/eventi — riusato qui, non un nuovo aggancio, stesso
-# principio già seguito per year_rolled_over allo Step 5. checkpoint_ran/animals_changed non
-# servono a questa applicazione (le morti programmate non dipendono da nessuno dei due), quindi
-# ignorati.
-func _on_day_advanced(_checkpoint_ran: bool, _animals_changed: bool) -> void:
+# principio già seguito per year_rolled_over allo Step 5. checkpoint_ran non serve a questa
+# applicazione (le morti programmate non ne dipendono), quindi ignorato.
+func _on_day_advanced(_checkpoint_ran: bool) -> void:
 	_apply_scheduled_human_deaths()
 	# Validazione giornaliera dei figli a carico (2026-09-19, richiesta utente) - PRIMA del ricalcolo della
 	# stamina, cosi' il malus del figlio a carico sparisce lo stesso giorno in cui il figlio esce da INFANT

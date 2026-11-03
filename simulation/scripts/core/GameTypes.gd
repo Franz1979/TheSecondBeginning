@@ -107,18 +107,7 @@ enum WorldAge {
 	OLD
 }
 
-# Livello di densita' del seeding automatico delle popolazioni animali (vedi
-# AnimalSeedingService) — indipendente da WorldAge sopra: controlla quante popolazioni vengono
-# create tra le celle candidate idonee per specie, non lo stato di maturita' del mondo.
-enum AnimalDensity {
-	FEW,
-	MEDIUM,
-	MANY
-}
-
-# Livello di numerosita' di CIASCUNA popolazione creata dal seeding automatico (vedi
-# AnimalSeedingService) — indipendente da AnimalDensity sopra: quello controlla QUANTE
-# popolazioni vengono create, questo controlla QUANTI individui ciascuna ne contiene.
+# Taglia del menu: con quanti animali parte una mandria (WildFaunaService.START_RATIO_BY_SIZE).
 enum PopulationSize {
 	SPARSE,
 	NORMAL,

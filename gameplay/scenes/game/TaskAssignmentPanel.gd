@@ -74,6 +74,8 @@ signal zone_order_submitted(kind: String, count: int, zone_id: int)
 # Pulsante della destinazione della caccia nello strato "Caccia" (2026-10-09, ButcherDestinationButton condiviso con la
 # barra dei comandi): GameScene la scrive subito in GameData.last_butcher_destination.
 signal butcher_destination_chosen(destination: String)
+# Lo stesso pulsante nello strato "Pesca" (2026-11-03): GameScene la scrive in GameData.last_fish_destination.
+signal fish_destination_chosen(destination: String)
 
 const LIST_FONT_SIZE: int = 11
 const LIST_ICON_SIDE: float = 20.0
@@ -184,6 +186,9 @@ var _hunt_button: Button = null
 var _hunt_destination_row: HBoxContainer = null
 var _hunt_destination_button: ButcherDestinationPair = null
 var _hunt_destination_shown: bool = false
+# Ultimo stato di caccia e pesca (2026-11-03): il pulsante mostra l'uno o l'altro secondo lo strato aperto.
+var _hunt_destination_state: Dictionary = {"shown": false, "current": {}, "options": []}
+var _fish_destination_state: Dictionary = {"shown": false, "current": {}, "options": []}
 var _zone_kind: String = ZONE_KIND_CUT
 var _cut_button: Button = null
 var _quarry_button: Button = null
@@ -1708,7 +1713,12 @@ func _build_cut_overlay(area: Control) -> void:
 	_hunt_destination_row.add_child(destination_label)
 	_hunt_destination_button = ButcherDestinationPair.new()
 	_hunt_destination_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_hunt_destination_button.destination_chosen.connect(func(destination: String) -> void: butcher_destination_chosen.emit(destination))
+	_hunt_destination_button.destination_chosen.connect(func(destination: String) -> void:
+		if _zone_kind == ZONE_KIND_FISH:
+			fish_destination_chosen.emit(destination)
+		else:
+			butcher_destination_chosen.emit(destination)
+	)
 	_hunt_destination_row.add_child(_hunt_destination_button)
 	_cut_box.add_child(_hunt_destination_row)
 	# "Scegli zona in automatico" a sinistra e l'interruttore a destra (2026-10-09, come nel popup della caccia).
@@ -1799,6 +1809,7 @@ func open_zone_order_overlay(kind: String, title: String, count_label: String, m
 	_hunt_destination_row.visible = kind == ZONE_KIND_HUNT or kind == ZONE_KIND_FISH
 	_hunt_destination_label.text = tr("fish_destination_button_label" if kind == ZONE_KIND_FISH else "hunt_destination_button_label")
 	_hunt_destination_button.set_fish_mode(kind == ZONE_KIND_FISH)
+	_apply_destination_state()
 	# Zona automatica: quella dell'opzione (l'interruttore la mostra e la cambia, anche per gli altri posti).
 	_cut_auto_zone = UserOptions.work_area_auto_zone if _cut_auto_zone_toggle != null else auto_zone
 	_cut_zone_id = -1
@@ -1816,9 +1827,23 @@ func open_zone_order_overlay(kind: String, title: String, count_label: String, m
 # compare nella "Caccia", sempre (2026-10-09: anche senza essiccatoio, con le destinazioni non disponibili spente).
 func set_butcher_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
 	_hunt_destination_shown = is_shown
+	_hunt_destination_state = {"shown": is_shown, "current": current, "options": options}
+	_apply_destination_state()
+
+
+# Come set_butcher_destination, per lo strato "Pesca" (2026-11-03).
+func set_fish_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
+	_fish_destination_state = {"shown": is_shown, "current": current, "options": options}
+	_apply_destination_state()
+
+
+func _apply_destination_state() -> void:
 	if _hunt_destination_button == null:
 		return
-	_hunt_destination_button.set_destination(is_shown, current, options)
+	var state := _fish_destination_state if _zone_kind == ZONE_KIND_FISH else _hunt_destination_state
+	var options: Array[Dictionary] = []
+	options.assign(state["options"])
+	_hunt_destination_button.set_destination(bool(state["shown"]), state["current"], options)
 
 
 # Zona scelta sulla mappa (GameScene, dopo zone_pick_requested): `zone_id` -1 = nessuna (scelta annullata).

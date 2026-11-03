@@ -3,10 +3,9 @@ extends RefCounted
 
 # Sceglie SOLO la macrocella di partenza del player — non legge ne' scrive GameData
 # (player_macro_cell_x/y) ne' GameSettings.selected_exclude_hostile_start/
-# selected_exclude_predator_territories/selected_resource_richness_preference/
-# selected_guarantee_animal_presence, quello e' responsabilita' del chiamante (GameScene, alla
-# primissima apertura). Vedi World.gd/MacroCellData.gd/PopulationGroup.gd/Territory.gd per le
-# strutture ispezionate.
+# selected_resource_richness_preference/selected_guarantee_animal_presence, quello e'
+# responsabilita' del chiamante (GameScene, alla primissima apertura). Vedi World.gd/MacroCellData.gd
+# per le strutture ispezionate.
 
 # Numero di celle per fascia (povera/media/ricca) quando il pool di candidate e' abbastanza
 # grande — "le dieci piu' povere/mediane/piu' ricche", non un terzo dell'intero pool: anche su
@@ -18,22 +17,18 @@ const TIER_MIN_CANDIDATES_FOR_FIXED_SIZE := TIER_SAMPLE_SIZE * 3
 
 
 # Criterio base (minimale, da migliorare in futuro): a caso tra le macrocelle che non sono
-# corpi d'acqua. Stessa convenzione gia' stabilita nel resto del codebase (vedi
-# TerritoryBuilderService): "questa macrocella E' acqua" == terrain_base == WATER, e basta —
+# corpi d'acqua. Stessa convenzione gia' stabilita nel resto del codebase: "questa macrocella E' acqua" == terrain_base == WATER, e basta —
 # una cella di terra attraversata da un fiume (water_type == RIVER e/o river_shape != NONE,
 # terrain_base resta PLAIN/HILL) NON viene esclusa, e' un candidato valido come qualunque
 # altra cella di terra.
 #
-# exclude_hostile_zones/exclude_predator_territories/guarantee_animal_presence/
-# guarantee_stone_presence (opzioni "Escludi partenza in zone ostili"/"Escludi partenza vicino ai
-# predatori"/"Presenza sicura animali"/"Presenza sicura roccia" di NewGameOptionsMenu, vedi
+# exclude_hostile_zones/guarantee_animal_presence/guarantee_stone_presence (opzioni "Escludi partenza
+# in zone ostili"/"Presenza sicura animali"/"Presenza sicura roccia" di NewGameOptionsMenu, vedi
 # GameSettings/DifficultyCalculator per i moltiplicatori di difficolta' collegati): quando attivi,
-# scartano ANCHE le celle "ostili" (vedi _is_hostile), e/o quelle occupate dal territorio (TUTTE le
-# celle, non solo il centro della BFS — vedi _collect_predator_territory_cells) di un branco
-# predatore gia' seminato, e/o quelle NON idonee alle prede piccole (habitat del coniglio, che
+# scartano ANCHE le celle "ostili" (vedi _is_hostile), e/o quelle NON idonee alle prede piccole (habitat del coniglio, che
 # coincide con quello della pernice — vedi _is_small_prey_habitat; sostituisce il vecchio criterio
 # "almeno un erbivoro qualunque con quota > 0": la preda viene poi GARANTITA da GameScene con
-# AnimalSeedingService.ensure_small_prey_at sulla cella scelta), e/o quelle SENZA roccia gia' seminata
+# WildFaunaService.ensure_cell sulla cella scelta), e/o quelle SENZA roccia gia' seminata
 # (MacroCellState.get_dedicated_space(ROCK) > 0 — vedi _collect_stone_present_cells; roccia e'
 # generata a livello di macrocella da InitialResourceSetupService/ParametricResourceSetupService
 # ben prima che questo servizio giri, quindi il dato e' gia' disponibile qui), dai candidati
@@ -47,16 +42,12 @@ const TIER_MIN_CANDIDATES_FOR_FIXED_SIZE := TIER_SAMPLE_SIZE * 3
 func select_starting_cell(
 	world: World,
 	exclude_hostile_zones: bool = false,
-	exclude_predator_territories: bool = false,
 	resource_richness_preference: String = "NORMAL",
 	guarantee_animal_presence: bool = false,
 	guarantee_stone_presence: bool = false
 ) -> Vector2i:
-	var predator_cells := (
-		_collect_predator_territory_cells(world) if exclude_predator_territories else {}
-	)
 	var small_prey_rules: AnimalRules = (
-		AnimalCalculator.get_animal_rules(AnimalSeedingService.SMALL_PREY_HABITAT_SPECIES) if guarantee_animal_presence else null
+		AnimalCalculator.get_animal_rules(WildFaunaService.SMALL_PREY_HABITAT_SPECIES) if guarantee_animal_presence else null
 	)
 	var stone_present_cells := (
 		_collect_stone_present_cells(world) if guarantee_stone_presence else {}
@@ -82,8 +73,6 @@ func select_starting_cell(
 
 		if exclude_hostile_zones and _is_hostile(cell):
 			continue
-		if exclude_predator_territories and predator_cells.has(pos):
-			continue
 		if guarantee_animal_presence and not _is_small_prey_habitat(small_prey_rules, cell):
 			continue
 		if guarantee_stone_presence and not stone_present_cells.has(pos):
@@ -92,7 +81,7 @@ func select_starting_cell(
 
 	var chosen: Vector2i
 	var any_filter_active := (
-		exclude_hostile_zones or exclude_predator_territories or guarantee_animal_presence or guarantee_stone_presence
+		exclude_hostile_zones or guarantee_animal_presence or guarantee_stone_presence
 	)
 	var candidates := filtered_candidates if any_filter_active else land_candidates
 	if not candidates.is_empty():
@@ -100,11 +89,11 @@ func select_starting_cell(
 		print(
 			(
 				"FirstStartMacroCellSelectionService: cella di partenza scelta (%d, %d) — "
-				+ "exclude_hostile_zones=%s exclude_predator_territories=%s "
+				+ "exclude_hostile_zones=%s "
 				+ "resource_richness_preference=%s guarantee_animal_presence=%s "
 				+ "guarantee_stone_presence=%s"
 			) % [
-				chosen.x, chosen.y, exclude_hostile_zones, exclude_predator_territories,
+				chosen.x, chosen.y, exclude_hostile_zones,
 				resource_richness_preference, guarantee_animal_presence, guarantee_stone_presence
 			]
 		)
@@ -148,28 +137,9 @@ func _is_hostile(cell: MacroCellData) -> bool:
 	return false
 
 
-# Tutte le celle occupate da un branco predatore gia' seminato (world.population_groups e'
-# gia' popolato quando questo servizio viene chiamato: la creazione del mondo/la semina animali
-# in WorldScene._populate_new_world avviene sempre prima che il player possa raggiungere
-# GameScene). "Predatore" = stesso downcast polimorfico usato ovunque nel resto del codebase
-# (PredationService, WorldInfoPanel._is_predator_species, ecc.): rules is PredatorRules, nessuna
-# lista di nomi hardcoded. group.territory.occupied_macrocells e' l'INTERO territorio, non solo
-# la cella seed della BFS — esattamente quanto richiesto.
-func _collect_predator_territory_cells(world: World) -> Dictionary:
-	var cells: Dictionary = {}
-	for group in world.population_groups:
-		if group.territory == null:
-			continue
-		if not (AnimalCalculator.get_animal_rules(group.species_name) is PredatorRules):
-			continue
-		for pos in group.territory.occupied_macrocells:
-			cells[pos] = true
-	return cells
-
-
 # "Presenza sicura animali": cella idonea alle prede piccole — habitat del coniglio
 # (AnimalRules.is_suitable_for su bioma e terreno), identico a quello della pernice, cosi' la preda
-# che GameScene semina subito dopo sulla cella scelta (AnimalSeedingService.ensure_small_prey_at)
+# che GameScene semina subito dopo sulla cella scelta (WildFaunaService.ensure_cell)
 # ci puo' vivere. Nessun controllo sugli animali gia' presenti: la presenza non e' piu' un requisito
 # della cella, e' garantita per costruzione dalla semina. rules null (specie coniglio non trovata):
 # nessuna cella scartata su quest'asse, stesso trattamento permissivo di un lookup fallito altrove.
@@ -187,8 +157,7 @@ func _is_small_prey_habitat(rules: AnimalRules, cell: MacroCellData) -> bool:
 # ne e' solo la conversione derivata via densita', stessa fonte di verita' gia' usata da
 # StonePositionService.generate_if_needed per contare quante posizioni generare. Nessuna posizione
 # puntuale coinvolta qui (StonePositionService non ha ancora girato per la maggior parte delle
-# macrocelle a questo punto, vedi la sua lazy-generation): un aggregato per macrocella basta,
-# stesso identico livello di granularita' di _collect_predator_territory_cells sopra.
+# macrocelle a questo punto, vedi la sua lazy-generation): un aggregato per macrocella basta.
 func _collect_stone_present_cells(world: World) -> Dictionary:
 	var cells: Dictionary = {}
 	for cell in world.cells:

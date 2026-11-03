@@ -4,7 +4,7 @@ extends Node2D
 # Impronta temporanea dell'influenza di UN edificio (2026-10-02, richiesta utente — bottone "Mostra influenza" del
 # pannello edificio): un cerchio per ogni tipo con raggio > 0 (InfluenceService.get_effective_radius), centrato sul
 # centro della microcella dell'edificio, con riempimento trasparente e bordo nel colore del tipo. Dissolvenza lineare
-# in DURATION secondi, poi il nodo si toglie da solo — stesso principio di WorldRenderer.highlight_group_territories.
+# in DURATION secondi, poi il nodo si toglie da solo.
 #
 # Figlio del container della macrocella dell'edificio (coordinate locali, come gli altri overlay): il cerchio è
 # disegnato intero anche oltre i bordi della macrocella, il disegno di un Node2D non viene ritagliato.

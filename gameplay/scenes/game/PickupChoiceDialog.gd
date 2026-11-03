@@ -44,6 +44,8 @@ signal hunt_choice_made(meat_target: int, butcher_destination: String)
 # Scelta dal pulsante della destinazione (2026-10-09, ButcherDestinationButton: lo stesso della barra dei comandi, stessa
 # impostazione condivisa): GameScene la scrive subito in GameData.last_butcher_destination, come dalla barra.
 signal butcher_destination_chosen(destination: String)
+# Lo stesso pulsante in modalità pesce (2026-11-03): GameScene la scrive in GameData.last_fish_destination.
+signal fish_destination_chosen(destination: String)
 
 @onready var message_label: Label = $MarginContainer/VBoxContainer/MessageLabel
 @onready var choice_list_container: VBoxContainer = $MarginContainer/VBoxContainer/ChoiceScroll/ChoiceListContainer
@@ -111,6 +113,7 @@ var _auto_zone_row: HBoxContainer = null
 var _hunt_destination_row: HBoxContainer = null
 var _hunt_destination_button: ButcherDestinationPair = null
 var _hunt_destination_state: Dictionary = {"shown": false, "current": {}, "options": []}
+var _fish_destination_state: Dictionary = {"shown": false, "current": {}, "options": []}
 
 
 func _ready() -> void:
@@ -354,9 +357,23 @@ func _ensure_trips_row() -> void:
 # insieme a quello della barra; applicato subito se la riga esiste.
 func set_butcher_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
 	_hunt_destination_state = {"shown": is_shown, "current": current, "options": options}
-	if _hunt_destination_button != null:
-		_hunt_destination_button.set_destination(is_shown, current, options)
-		_hunt_destination_row.visible = _hunt_mode and is_shown
+	_apply_destination_state()
+
+
+# Come set_butcher_destination, per il pesce (2026-11-03): il pulsante mostra l'uno o l'altro secondo il dialog aperto.
+func set_fish_destination(is_shown: bool, current: Dictionary, options: Array[Dictionary]) -> void:
+	_fish_destination_state = {"shown": is_shown, "current": current, "options": options}
+	_apply_destination_state()
+
+
+func _apply_destination_state() -> void:
+	if _hunt_destination_button == null:
+		return
+	var state := _fish_destination_state if _fish_mode else _hunt_destination_state
+	var options: Array[Dictionary] = []
+	options.assign(state["options"])
+	_hunt_destination_button.set_destination(bool(state["shown"]), state["current"], options)
+	_hunt_destination_row.visible = _hunt_mode and bool(state["shown"])
 
 
 func _show_hunt_destination_row() -> void:
@@ -378,14 +395,15 @@ func _show_hunt_destination_row() -> void:
 		box.add_child(_hunt_destination_row)
 		box.move_child(_hunt_destination_row, _auto_zone_row.get_index())
 	_hunt_destination_button.set_fish_mode(_fish_mode)
-	var options: Array[Dictionary] = []
-	options.assign(_hunt_destination_state["options"])
-	set_butcher_destination(bool(_hunt_destination_state["shown"]), _hunt_destination_state["current"], options)
+	_apply_destination_state()
 
 
 # Scelta dal pulsante: impostazione condivisa (GameScene), vale anche per questa caccia.
 func _on_hunt_destination_button_chosen(destination: String) -> void:
-	butcher_destination_chosen.emit(destination)
+	if _fish_mode:
+		fish_destination_chosen.emit(destination)
+	else:
+		butcher_destination_chosen.emit(destination)
 
 
 func _show_auto_zone_row(shown: bool) -> void:

@@ -15,18 +15,16 @@ var selected_save_file: String = ""
 # quello di sempre, non un livello scelto a caso.
 var selected_world_age_mode: String = "CLASSIC"
 # Stesso trattamento di selected_world_age_mode sopra (dato di flusso runtime, mai persistito nel
-# salvataggio). Valori riconosciuti da AnimalSeedingService/WorldScene._populate_new_world:
-# "FEW"/"MEDIUM"/"MANY" — stessi nomi di GameTypes.AnimalDensity, non le etichette italiane
+# salvataggio). Valori riconosciuti da WildFaunaService (presenza di una mandria nel riquadro):
+# "FEW"/"MEDIUM"/"MANY", non le etichette italiane
 # mostrate in UI ("Pochi"/"Medi"/"Tanti"), stessa scelta gia' fatta per selected_world_age_mode
-# (chiavi = nomi enum, mai il testo mostrato). Ignorato del tutto quando
-# selected_world_age_mode == "CLASSIC" (nessuna semina automatica di animali in quel caso).
+# (chiavi = nomi enum, mai il testo mostrato).
 var selected_animal_density: String = "MEDIUM"
 # Stesso trattamento di selected_animal_density sopra (dato di flusso runtime, mai persistito).
-# Valori riconosciuti da AnimalSeedingService/WorldScene._populate_new_world: "SPARSE"/"NORMAL"/
-# "DENSE" — stessi nomi di GameTypes.PopulationSize, non le etichette italiane mostrate in UI
-# ("Rada"/"Normale"/"Numerosa"). Controlla QUANTI individui per popolazione (vedi
-# AnimalSeedingService), indipendente da selected_animal_density (che controlla QUANTE
-# popolazioni). Ignorato del tutto quando selected_world_age_mode == "CLASSIC".
+# Valori riconosciuti da WildFaunaService: "SPARSE"/"NORMAL"/"DENSE" — stessi nomi di
+# GameTypes.PopulationSize, non le etichette italiane mostrate in UI ("Rada"/"Normale"/"Numerosa").
+# Controlla QUANTI individui per mandria, indipendente da selected_animal_density (che controlla
+# in QUANTI riquadri c'è una mandria).
 var selected_population_size: String = "NORMAL"
 # Stesso trattamento dei tre selected_* sopra (dato di flusso runtime, mai persistito). Letto
 # dalla futura GameScene/FirstStartMacroCellSelectionService per decidere se scartare le celle
@@ -38,7 +36,6 @@ var selected_exclude_hostile_start: bool = false
 # ricadono nel territorio (tutte le celle occupate, non solo il centro) di un branco predatore
 # gia' seminato. Ignorato del tutto quando selected_world_age_mode == "CLASSIC" (nessuna semina
 # automatica di animali, quindi nessun predatore da escludere).
-var selected_exclude_predator_territories: bool = false
 # Stesso trattamento dei selected_* sopra, ma opposto nel verso: "sì" FILTRA i candidati di
 # partenza a sole celle dove FirstStartMacroCellSelectionService trova gia' presenza erbivora
 # reale (population>0 in quella cella, non solo territorio); "no" NON filtra affatto — gli
@@ -120,7 +117,6 @@ var active_clock_speed: int = 0 # GameClockController.Speed.X1 — kept as plain
 # (change_scene_to_file ricrea l'intero albero di nodi), quindi le variabili locali dello script
 # perderebbero lo stato ad ogni uscita/rientro senza salvarlo qui. Persistito solo per la sessione
 # corrente (non nei save su disco), stesso trattamento di active_clock_is_playing sopra.
-var macro_cell_animals_visible: bool = true
 var macro_cell_flora_updates_enabled: bool = true
 # Stessa natura/motivazione della coppia macro_cell_* sopra, ma per GameScene — campi separati
 # (non condivisi con MacroCellScene) per coerenza con la scelta di duplicare, non condividere,
@@ -133,9 +129,7 @@ var game_scene_animals_visible: bool = true
 var game_scene_flora_updates_enabled: bool = false
 # Stesso trattamento del toggle "aggiornamenti flora" sopra, ma per WorldScene: WorldRenderer
 # ridisegna l'INTERA griglia 100x100 immediate-mode (terreno + barre risorse + marker eventi) a
-# ogni queue_redraw() — con la fauna che ormai genera animals_changed quasi ogni giorno (consumo/
-# fame giornalieri), farlo incondizionatamente rendeva WorldScene molto più lenta di MacroCellScene
-# (che questo redraw costoso lo salta già nei giorni non-checkpoint quando disattivato). Persistito
+# ogni queue_redraw(), costoso da fare tutti i giorni. Persistito
 # qui per lo stesso motivo: WorldScene è un'istanza nuova ogni volta che vi si rientra.
 var world_scene_redraw_enabled: bool = true
 
