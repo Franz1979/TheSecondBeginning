@@ -1675,6 +1675,15 @@ func _herd_border_spot(border_point: Vector2) -> Vector2:
 
 
 # Toglie un individuo per id, senza conoscere il renderer (chi è uscito dal bordo in una visita).
+# Salute massima di un individuo vivo di qualunque renderer, 0 se non c'è.
+static func get_live_max_health(individual_id: int) -> float:
+	var individual: AnimalVisualGroup = _live_individuals.get(individual_id, null)
+	var renderer = _live_individual_renderers.get(individual_id, null)
+	if individual == null or renderer == null or not is_instance_valid(renderer):
+		return 0.0
+	return renderer._max_health_for(individual.age_band)
+
+
 static func remove_live_individual(individual_id: int) -> void:
 	var renderer = _live_individual_renderers.get(individual_id, null)
 	if renderer != null and is_instance_valid(renderer):

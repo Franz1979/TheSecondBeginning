@@ -16,6 +16,8 @@ var village_id: int = -1
 # -1 = non ancora sulla mappa: lo piazza vicino al magazzino DomesticAnimalBodyService.
 var macro_coords: Vector2i = Vector2i(-1, -1)
 var position: Vector2 = Vector2(-1.0, -1.0)
+# Salute, 0..1 di quella piena (passo 4): la scrive solo DomesticAnimalLifeService, il corpo ne è una copia.
+var health_ratio: float = 1.0
 # Corpo nel renderer (AnimalVisualGroup.id), 0 = nessuno: mai creato o cella non viva. Mai salvato.
 var body_id: int = 0
 # Era nell'inquadratura al giro prima e ultimo verso per questo motivo (Time.get_ticks_msec, DomesticAnimalBodyService). Mai
@@ -40,7 +42,7 @@ func get_age_band(absolute_day: int, wild_rules: AnimalRules) -> GameTypes.AgeBa
 
 func to_save_data() -> Dictionary:
 	return {"id": id, "species": species, "is_male": is_male, "birth_day": birth_day, "village_id": village_id,
-		"macro_x": macro_coords.x, "macro_y": macro_coords.y, "x": position.x, "y": position.y}
+		"macro_x": macro_coords.x, "macro_y": macro_coords.y, "x": position.x, "y": position.y, "health_ratio": health_ratio}
 
 
 static func from_save_data(data: Dictionary) -> DomesticAnimal:
@@ -52,4 +54,5 @@ static func from_save_data(data: Dictionary) -> DomesticAnimal:
 	animal.village_id = int(data.get("village_id", -1))
 	animal.macro_coords = Vector2i(int(data.get("macro_x", -1)), int(data.get("macro_y", -1)))
 	animal.position = Vector2(float(data.get("x", -1.0)), float(data.get("y", -1.0)))
+	animal.health_ratio = float(data.get("health_ratio", 1.0))
 	return animal

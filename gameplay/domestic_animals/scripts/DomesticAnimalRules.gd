@@ -41,6 +41,8 @@ extends Resource
 @export_group("Life")
 # Età a cui l'animale muore di vecchiaia (passo 4).
 @export var max_age_years: int = 0
+# Giorni per guarire da quasi morto a salute piena (passo 4); 0 = non guarisce.
+@export var health_recovery_days: int = 0
 # Cuccioli per cucciolata (passo 5).
 @export var litter_size_min: int = 0
 @export var litter_size_max: int = 0

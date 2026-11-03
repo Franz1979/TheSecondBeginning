@@ -48,6 +48,7 @@ static func sync_bodies(game_data: GameData, world: World, renderers: Dictionary
 		# Gruppo 0: i corpi delle visite hanno il loro id, questo non è di nessun gruppo selvatico.
 		body = renderer.add_identified_individual(band, animal.position, 0, animal.id)
 		animal.body_id = body.id
+		body.health *= animal.health_ratio
 		AnimalGroupRenderer.set_live_behavior(body.id, AnimalVisualGroup.Behavior.STAND_AROUND, home,
 			rules.roam_radius_min, rules.roam_radius_max, rules.roam_speed_scale)
 

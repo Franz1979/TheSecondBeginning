@@ -47,6 +47,8 @@ signal wild_animal_charged(global_pos: Vector2, species: String)
 signal wild_animal_driven_off(global_pos: Vector2)
 # Animale domestico cliccato o entrato nell'inquadratura (2026-11-03, cane passo 3): verso della specie (AudioEventListener).
 signal domestic_animal_called(global_pos: Vector2, species: String)
+# Quanta salute toglie il pulsante "Ferisci" di debug del pannello animale (cane, passo 4).
+const DEBUG_WOUND_RATIO: float = 0.25
 # Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
 # per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
 # riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
@@ -769,6 +771,8 @@ func _ready() -> void:
 	# stesso principio "componente muto" degli altri.
 	animal_info_panel = ANIMAL_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(animal_info_panel)
+	animal_info_panel.debug_wound_requested.connect(_on_animal_debug_wound)
+	animal_info_panel.debug_add_year_requested.connect(_on_animal_debug_add_year)
 	# terrain_scattered_resource_info_panel (2026-09-08, richiesta utente; rinominato 2026-09-15 da
 	# stick_lot_info_panel, vedi TerrainScatteredResourceInfoPanel.gd) — sesto sibling nella STESSA
 	# SelectionTab, stesso identico principio "componente muto" degli altri cinque.
@@ -3597,6 +3601,8 @@ func _validate_selected_animal() -> void:
 	if selected_animal.has("domestic"):
 		if DomesticAnimalService.find_animal(game_data, int(selected_animal["individual_id"])) == null:
 			_clear_animal_selection()
+		else:
+			_refresh_domestic_animal_panel()
 		return
 	if selected_animal.has("wild_group_id"):
 		if _find_selected_wild_animal() == null:
@@ -3653,9 +3659,25 @@ func _refresh_domestic_animal_panel() -> void:
 		return
 	var today := game_data.get_absolute_day()
 	var band := animal.get_age_band(today, DomesticAnimalCalculator.get_wild_rules(animal.species))
-	animal_info_panel.show_animal(tr(rules.display_name), tr("animal_age_band_" + String(GameTypes.AgeBand.keys()[band]).to_lower()))
-	animal_info_panel.show_domestic_details(animal.is_male, animal.get_age_years(today))
+	animal_info_panel.show_animal(tr(rules.display_name), tr("animal_age_band_" + String(GameTypes.AgeBand.keys()[band]).to_lower()), true)
+	animal_info_panel.show_domestic_details(animal.is_male, animal.get_age_years(today), animal.health_ratio)
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("animal_selection_title")}))
+
+
+# Debug del pannello (cane, passo 4): oggi nulla ferisce un cane e 12 anni sono lunghi da aspettare.
+func _on_animal_debug_wound() -> void:
+	var animal := DomesticAnimalService.find_animal(game_data, int(selected_animal.get("individual_id", -1)))
+	if animal != null:
+		DomesticAnimalLifeService.wound(game_data, animal, DEBUG_WOUND_RATIO)
+	_validate_selected_animal()
+	_refresh_animal_panel()
+
+
+func _on_animal_debug_add_year() -> void:
+	var animal := DomesticAnimalService.find_animal(game_data, int(selected_animal.get("individual_id", -1)))
+	if animal != null:
+		animal.birth_day -= GameData.DAYS_PER_YEAR
+	_refresh_animal_panel()
 
 
 func _refresh_wild_animal_panel() -> void:
@@ -3673,7 +3695,7 @@ func _refresh_wild_animal_panel() -> void:
 	var today := game_data.get_absolute_day()
 	var band := animal.get_age_band(today, AnimalCalculator.get_animal_rules(wild_species))
 	animal_info_panel.show_animal(
-		tr("animal_species_" + wild_species), tr("animal_age_band_" + String(GameTypes.AgeBand.keys()[band]).to_lower())
+		tr("animal_species_" + wild_species), tr("animal_age_band_" + String(GameTypes.AgeBand.keys()[band]).to_lower()), true
 	)
 	animal_info_panel.show_wild_details(
 		animal.is_male, animal.get_age_years(today),
