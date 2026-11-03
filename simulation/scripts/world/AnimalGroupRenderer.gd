@@ -2004,6 +2004,14 @@ static func build_species_mesh(species: String) -> ArrayMesh:
 	return null
 
 
+# Sagoma di una specie domestica: quella della selvatica d'origine, del colore dato (2026-11-03, cane). Oggi solo il lupo;
+# una specie senza un suo caso tiene il colore della selvatica.
+static func build_domestic_mesh(wild_species: String, color: Color) -> ArrayMesh:
+	if wild_species == "wolf":
+		return build_wolf_mesh(WOLF_BODY_LENGTH, WOLF_BODY_WIDTH, WOLF_EAR_LENGTH, WOLF_EAR_WIDTH, color)
+	return build_species_mesh(wild_species)
+
+
 static func build_rabbit_mesh(
 	body_length: float, body_width: float, ear_length: float, ear_width: float, color: Color
 ) -> ArrayMesh:

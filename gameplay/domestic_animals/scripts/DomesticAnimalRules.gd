@@ -29,6 +29,15 @@ extends Resource
 @export var arrival_target_males: int = 0
 @export var arrival_target_females: int = 0
 
+@export_group("Body")
+# Corpo della selvatica, in scala e di questo colore (passo 3).
+@export var body_size_scale: float = 1.0
+@export var body_color: Color = Color.WHITE
+# Da libero gira attorno al magazzino, a questa distanza in microcelle e a questa frazione della velocità.
+@export var roam_radius_min: float = 3.0
+@export var roam_radius_max: float = 9.0
+@export var roam_speed_scale: float = 0.5
+
 @export_group("Life")
 # Età a cui l'animale muore di vecchiaia (passo 4).
 @export var max_age_years: int = 0

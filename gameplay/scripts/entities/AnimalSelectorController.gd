@@ -26,8 +26,11 @@ const SELECT_RADIUS_MICROCELLS: float = 0.8
 # Seconda sorgente (2026-10-28, lupi passo L1b): `wild_visit_renderers` (id del gruppo -> AnimalGroupRenderer dei corpi),
 # gli animali selvatici seguiti per individuo in visita. Un loro hit ha in più "wild_group_id" (id del WildAnimalGroup) e
 # "individual_id" è l'id del WildAnimal; vince comunque il più vicino tra tutte le sorgenti.
+#
+# Terza sorgente (2026-11-03, cane passo 3): `domestic_renderers`, gli animali domestici. Un loro hit ha "domestic" e
+# "individual_id" è l'id del DomesticAnimal. Passati solo col clic sinistro: col destro non si possono cacciare.
 func try_select(event: InputEvent, live_cells: Dictionary, required_button: int = MOUSE_BUTTON_LEFT,
-		wild_visit_renderers: Dictionary = {}) -> Dictionary:
+		wild_visit_renderers: Dictionary = {}, domestic_renderers: Dictionary = {}) -> Dictionary:
 	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != required_button:
 		return {}
 
@@ -69,6 +72,24 @@ func try_select(event: InputEvent, live_cells: Dictionary, required_button: int 
 					"species": individual.species_name,
 					"individual_id": individual.wild_animal_id,
 					"wild_group_id": int(group_id),
+					"body_id": individual.id,
+					"distance": distance,
+				}
+	for renderer_node in domestic_renderers.values():
+		if not is_instance_valid(renderer_node) or not renderer_node.are_animals_shown():
+			continue
+		var domestic_mouse: Vector2 = renderer_node.get_local_mouse_position()
+		for individual in renderer_node.get_individuals():
+			if not renderer_node.is_individual_visible(individual):
+				continue
+			var distance: float = domestic_mouse.distance_to(individual.position * CELL_SIZE)
+			if distance < best_distance:
+				best_distance = distance
+				best = {
+					"macro_coords": renderer_node.macro_coords,
+					"species": "domestic",
+					"individual_id": individual.wild_animal_id,
+					"domestic": true,
 					"body_id": individual.id,
 					"distance": distance,
 				}

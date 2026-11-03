@@ -36,6 +36,8 @@ const EVENTS: Dictionary = {
 	&"wild_animal_arrived:wolf": &"wolf_howl",
 	# Inizio della carica di un gruppo in visita (2026-10-30, lupi L4): evento "wild_animal_charged:<specie>".
 	&"wild_animal_charged:wolf": &"wolf_attack",
+	# Animale domestico cliccato o entrato nell'inquadratura (2026-11-03, cane passo 3): evento "domestic_animal_call:<specie>".
+	&"domestic_animal_call:dog": &"dog_bark",
 	# Branco scacciato da un gruppo di persone (2026-10-30, lupi L6.1): grido di guerra di chi lo scaccia.
 	&"wild_animal_driven_off": &"war_cry",
 	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per

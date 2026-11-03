@@ -34,6 +34,8 @@ func _ready() -> void:
 		game_scene.wild_animal_charged.connect(_on_wild_animal_charged)
 	if game_scene.has_signal(&"wild_animal_driven_off"):
 		game_scene.wild_animal_driven_off.connect(_on_wild_animal_driven_off)
+	if game_scene.has_signal(&"domestic_animal_called"):
+		game_scene.domestic_animal_called.connect(_on_domestic_animal_called)
 	if game_scene.has_signal(&"talk_sound_requested"):
 		game_scene.talk_sound_requested.connect(_on_talk_sound_requested)
 	if game_scene.has_signal(&"world_object_selected"):
@@ -84,6 +86,11 @@ func _on_wild_animal_charged(global_pos: Vector2, species: String) -> void:
 # Branco scacciato in gruppo (2026-10-30, lupi L6.1): grido di guerra posizionale dove era il branco.
 func _on_wild_animal_driven_off(global_pos: Vector2) -> void:
 	AudioManager.play_event(&"wild_animal_driven_off", global_pos)
+
+
+# Animale domestico cliccato o inquadrato (2026-11-03, cane passo 3): verso della specie (il cane abbaia).
+func _on_domestic_animal_called(global_pos: Vector2, species: String) -> void:
+	AudioManager.play_event(StringName("domestic_animal_call:" + species), global_pos)
 
 
 # Talk (2026-10-13): chiamata, risposta e inizio della conversazione, posizionali sul pipottino.

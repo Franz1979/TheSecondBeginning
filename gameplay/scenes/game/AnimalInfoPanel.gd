@@ -37,7 +37,17 @@ func show_wild_details(is_male: bool, age_years: int, is_breeder: bool, aggressi
 	age_years_label.text = tr("animal_age_years_label").format({"years": age_years})
 	breeder_label.text = tr("animal_breeder_label")
 	breeder_label.visible = is_breeder
+	aggression_label.get_parent().visible = true
 	aggression_bar.value = clampf(aggression, 0.0, 100.0)
+
+
+# Animale domestico (2026-11-03, cane passo 3): sesso e anni, niente riproduttore né aggressività.
+func show_domestic_details(is_male: bool, age_years: int) -> void:
+	wild_details.visible = true
+	sex_label.text = tr("animal_sex_label").format({"sex": tr("animal_sex_male" if is_male else "animal_sex_female")})
+	age_years_label.text = tr("animal_age_years_label").format({"years": age_years})
+	breeder_label.visible = false
+	aggression_label.get_parent().visible = false
 
 
 func clear() -> void:

@@ -45,6 +45,8 @@ signal wild_animal_arrived(global_pos: Vector2, species: String)
 signal wild_animal_charged(global_pos: Vector2, species: String)
 # Branco in visita scacciato da un gruppo di persone (2026-10-30, lupi L6.1): grido di guerra (AudioEventListener).
 signal wild_animal_driven_off(global_pos: Vector2)
+# Animale domestico cliccato o entrato nell'inquadratura (2026-11-03, cane passo 3): verso della specie (AudioEventListener).
+signal domestic_animal_called(global_pos: Vector2, species: String)
 # Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
 # per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
 # riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
@@ -383,6 +385,8 @@ var _ground_pile_views: Dictionary = {}  # pile id -> GroundPileView
 var _visitor_party_views: Dictionary = {}
 # Visite degli animali selvatici (2026-10-28): id del gruppo -> AnimalGroupRenderer dei corpi (_sync_wild_animal_visit_bodies).
 var _wild_animal_visit_renderers: Dictionary = {}
+# Corpi degli animali domestici (2026-11-03, cane passo 3 — DomesticAnimalBodyService): specie e macrocella -> renderer.
+var _domestic_animal_renderers: Dictionary = {}
 # Overlay di debug del pathfinding col tasto N TOLTO il 2026-10-04 (richiesta utente, tasto N liberato): lo stesso
 # disegno (PathfindingDebugOverlay) resta nel layer della mappa "Percorribilità" (MapLayerRegistry, "walkability").
 # Layer della mappa (2026-09-27, richiesta utente — menu "Layer" della barra in alto, MapLayerRegistry): id del layer
@@ -1253,6 +1257,11 @@ func _process(delta: float) -> void:
 	_apply_effects(frame_effects)
 	_sync_visitor_party_views()
 	_sync_wild_animal_visit_bodies()
+	if game_data != null:
+		DomesticAnimalBodyService.sync_bodies(game_data, macro_world, _domestic_animal_renderers, _make_domestic_animal_renderer)
+		var camera_view: Rect2 = get_viewport().get_canvas_transform().affine_inverse() * get_viewport_rect()
+		for framed in DomesticAnimalBodyService.collect_newly_framed(game_data, _domestic_animal_renderers, camera_view):
+			domestic_animal_called.emit(framed["position"], framed["species"])
 	if _active_map_layer_id != MapLayerRegistry.NONE_ID or _map_layer_overlay != null:
 		_sync_map_layer_overlay()
 	_sync_command_bar()
@@ -1442,7 +1451,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	# Animale (2026-09-25, richiesta utente) — stessa unità (PIXEL locali della cella) e stesso
 	# confronto alla pari di vegetazione/edifici/pietre; solo animali visibili (vedi
 	# AnimalSelectorController), con tolleranza ampia come per gli umani.
-	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_LEFT, _wild_animal_visit_renderers)
+	var animal_hit := animal_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_LEFT, _wild_animal_visit_renderers,
+		_domestic_animal_renderers)
 	_select_timing_mark("ricerca animali")
 	# stick_lot_hit (click SINISTRO) RIMOSSO (2026-09-16, richiesta utente — "va tolto il click
 	# singolo sulla cella"): calcolava il lotto sotto il click SOLO per il ciclo click-ripetuto e il
@@ -3496,7 +3506,14 @@ func _select_animal(hit: Dictionary) -> void:
 	for visit_renderer in _wild_animal_visit_renderers.values():
 		if is_instance_valid(visit_renderer):
 			visit_renderer.clear_selected_individual()
-	if hit.has("wild_group_id"):
+	DomesticAnimalBodyService.clear_selected(_domestic_animal_renderers)
+	if hit.has("domestic"):
+		DomesticAnimalBodyService.set_selected(_domestic_animal_renderers, int(hit["body_id"]))
+		var clicked_animal := DomesticAnimalService.find_animal(game_data, int(hit["individual_id"]))
+		if clicked_animal != null:
+			domestic_animal_called.emit(DomesticAnimalBodyService.get_global_position(clicked_animal, _domestic_animal_renderers),
+				clicked_animal.species)
+	elif hit.has("wild_group_id"):
 		# Animale selvatico seguito per individuo, in visita (2026-10-28, lupi L1b): l'anello lo disegna il renderer dei corpi.
 		_select_wild_animal_body(int(hit["wild_group_id"]), int(hit["individual_id"]))
 	else:
@@ -3524,7 +3541,9 @@ func _select_animal(hit: Dictionary) -> void:
 func _clear_animal_selection() -> void:
 	if selected_animal.is_empty():
 		return
-	if selected_animal.has("wild_group_id"):
+	if selected_animal.has("domestic"):
+		DomesticAnimalBodyService.clear_selected(_domestic_animal_renderers)
+	elif selected_animal.has("wild_group_id"):
 		var visit_renderer = _wild_animal_visit_renderers.get(int(selected_animal["wild_group_id"]))
 		if is_instance_valid(visit_renderer):
 			visit_renderer.clear_selected_individual()
@@ -3541,7 +3560,7 @@ func _clear_animal_selection() -> void:
 # L'individuo selezionato, ritrovato per id nel renderer della sua specie — null se non esiste più
 # (rimosso dalla riconciliazione con la popolazione, o cella non più viva).
 func _find_selected_animal() -> AnimalVisualGroup:
-	if selected_animal.is_empty() or selected_animal.has("wild_group_id"):
+	if selected_animal.is_empty() or selected_animal.has("wild_group_id") or selected_animal.has("domestic"):
 		return null
 	var cell: LiveMacroCell = live_cells.get(selected_animal["macro_coords"])
 	if cell == null or not cell.animal_renderers.has(selected_animal["species"]):
@@ -3553,6 +3572,9 @@ func _find_selected_animal() -> AnimalVisualGroup:
 # riconciliazione per età ne toglie e ne aggiunge). Se l'individuo non esiste più la selezione si
 # chiude — vedi anche _validate_selected_animal, chiamata dal timer di debug in _process.
 func _refresh_animal_panel() -> void:
+	if selected_animal.has("domestic"):
+		_refresh_domestic_animal_panel()
+		return
 	if selected_animal.has("wild_group_id"):
 		_refresh_wild_animal_panel()
 		return
@@ -3571,6 +3593,10 @@ func _refresh_animal_panel() -> void:
 # appesi a un animale che non c'è più.
 func _validate_selected_animal() -> void:
 	if selected_animal.is_empty():
+		return
+	if selected_animal.has("domestic"):
+		if DomesticAnimalService.find_animal(game_data, int(selected_animal["individual_id"])) == null:
+			_clear_animal_selection()
 		return
 	if selected_animal.has("wild_group_id"):
 		if _find_selected_wild_animal() == null:
@@ -3608,12 +3634,28 @@ func _find_selected_wild_animal() -> WildAnimal:
 
 # Posizione corrente (microcelle) dell'animale selezionato, di qualunque sorgente; null se non c'è.
 func _selected_animal_position() -> Variant:
+	if selected_animal.has("domestic"):
+		var domestic_animal := DomesticAnimalService.find_animal(game_data, int(selected_animal["individual_id"]))
+		return domestic_animal.position if domestic_animal != null else null
 	if selected_animal.has("wild_group_id"):
 		var visit := WildAnimalVisitService.find_visit(game_data, int(selected_animal["wild_group_id"]))
 		var index := visit.animal_ids.find(int(selected_animal["individual_id"])) if visit != null else -1
 		return WildAnimalVisitService.get_animal_position(visit, index) if index >= 0 else null
 	var animal := _find_selected_animal()
 	return animal.position if animal != null else null
+
+
+func _refresh_domestic_animal_panel() -> void:
+	var animal := DomesticAnimalService.find_animal(game_data, int(selected_animal["individual_id"]))
+	var rules := DomesticAnimalCalculator.get_rules(animal.species) if animal != null else null
+	if rules == null:
+		_clear_animal_selection()
+		return
+	var today := game_data.get_absolute_day()
+	var band := animal.get_age_band(today, DomesticAnimalCalculator.get_wild_rules(animal.species))
+	animal_info_panel.show_animal(tr(rules.display_name), tr("animal_age_band_" + String(GameTypes.AgeBand.keys()[band]).to_lower()))
+	animal_info_panel.show_domestic_details(animal.is_male, animal.get_age_years(today))
+	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("animal_selection_title")}))
 
 
 func _refresh_wild_animal_panel() -> void:
@@ -7170,6 +7212,16 @@ func _sync_wild_animal_visit_bodies() -> void:
 		if is_instance_valid(stale):
 			stale.queue_free()
 		_wild_animal_visit_renderers.erase(group_id)
+
+
+# Renderer dei corpi di una specie domestica nella cella (DomesticAnimalBodyService.sync_bodies). Senza disturbance_source:
+# il cane ignora le persone, come i lupi in visita.
+func _make_domestic_animal_renderer(cell: LiveMacroCell, rules: DomesticAnimalRules) -> AnimalGroupRenderer:
+	var config := DomesticAnimalBodyService.build_renderer_config(_get_animal_renderer_configs()[rules.wild_species_name], rules)
+	var body_renderer := _build_animal_renderer(cell.container, config)
+	_setup_animal_renderer(cell, body_renderer)
+	body_renderer.disturbance_source = Callable()
+	return body_renderer
 
 
 # --- Layer della mappa (2026-09-27, richiesta utente — menu "Layer") ---
@@ -13623,6 +13675,9 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			for visit_renderer in _wild_animal_visit_renderers.values():
 				if is_instance_valid(visit_renderer):
 					visit_renderer.set_animals_visible(animals_visible)
+			for domestic_renderer in _domestic_animal_renderers.values():
+				if is_instance_valid(domestic_renderer):
+					domestic_renderer.set_animals_visible(animals_visible)
 			debug_bar.set_slot_toggled(1, animals_visible)
 			GameSettings.game_scene_animals_visible = animals_visible
 		&"toggle_flora_updates":
@@ -15970,7 +16025,8 @@ func _on_prey_killed(prey_id: int, prey_species: String, prey_age_band: int, pre
 	if cell != null and cell.animal_renderers.has(prey_species):
 		cell.animal_renderers[prey_species].remove_individual(prey_id)
 	HuntService.apply_prey_kill(game_data, prey_species, prey_age_band, prey_macro_coords)
-	if not selected_animal.is_empty() and not selected_animal.has("wild_group_id") and int(selected_animal["individual_id"]) == prey_id:
+	if not selected_animal.is_empty() and not selected_animal.has("wild_group_id") and not selected_animal.has("domestic") \
+			and int(selected_animal["individual_id"]) == prey_id:
 		_clear_animal_selection()
 
 

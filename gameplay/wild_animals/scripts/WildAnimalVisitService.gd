@@ -1023,7 +1023,12 @@ static func _release_domestic_arrivals(visit: WildAnimalVisit, group: WildAnimal
 			var leaver := WildAnimalGroupService.pick_calmest_leaver(group, is_male, today, wild_rules, excluded_id)
 			if leaver == null:
 				break
-			DomesticAnimalService.add_animal(game_data, rules.species_name, leaver.is_male, leaver.birth_day, village_id)
+			var arrival := DomesticAnimalService.add_animal(game_data, rules.species_name, leaver.is_male, leaver.birth_day, village_id)
+			# Chi era in visita resta dove si trovava; gli altri li piazza vicino al magazzino DomesticAnimalBodyService.
+			var visit_index := visit.animal_ids.find(leaver.id)
+			if arrival != null and visit_index >= 0:
+				arrival.macro_coords = visit.macro_coords
+				arrival.position = get_animal_position(visit, visit_index)
 			group.animals.erase(leaver)
 			_leave_visit(visit, leaver.id)
 			arrived += 1

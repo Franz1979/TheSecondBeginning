@@ -20,6 +20,13 @@ static func add_animal(game_data: GameData, species: String, is_male: bool, birt
 	return animal
 
 
+static func find_animal(game_data: GameData, animal_id: int) -> DomesticAnimal:
+	for animal in game_data.domestic_animals:
+		if animal.id == animal_id:
+			return animal
+	return null
+
+
 # Quanti animali di quel sesso mancano al numero voluto per gli arrivi (DomesticAnimalRules.arrival_target_*).
 static func missing_for_arrival(game_data: GameData, rules: DomesticAnimalRules, is_male: bool) -> int:
 	var target := rules.arrival_target_males if is_male else rules.arrival_target_females
