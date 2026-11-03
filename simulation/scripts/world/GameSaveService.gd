@@ -28,6 +28,7 @@ func save_game_to_json(
 		"game": {
 			"year": game_data.year,
 			"current_day": game_data.current_day,
+			"vegetation_checkpoint_count": game_data.vegetation_checkpoint_count,
 			# Era corrente + cache delle durate effettive delle age band (vedi GameData) — la cache
 			# è persistita insieme al nome invece di essere ricalcolata al caricamento, stesso
 			# principio "non ricalcolare ciò che è già stato cachato" del resto di GameData.

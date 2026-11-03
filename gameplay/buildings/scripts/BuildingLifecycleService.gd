@@ -447,16 +447,17 @@ static func settle_ground_debris(ctx: GameContext, effects: GameEffects) -> void
 # WasteDisposalService.GROUND_DEBRIS_MERGE_RADIUS fino al tetto (MAX_DEBRIS_PER_RUBBLE), il resto va in macerie nuove
 # (blocchi fino al tetto) sulle microcelle adatte più vicine (GroundPileService.find_rubble_microcell; `leaving_pile` =
 # mucchio che sta per sparire, la sua cella vale). `source_type`/`origin`: edificio e origine delle macerie nuove (di base
-# detriti abbandonati); `marked` = nascono già da sgomberare. Ritorna {"rubbles": macerie toccate, "leftover": detriti
-# senza posto}.
+# detriti abbandonati); `marked` = nascono già da sgomberare; `merge_radius` = fin dove si cerca una maceria da riempire.
+# Ritorna {"rubbles": macerie toccate, "leftover": detriti senza posto}.
 static func put_debris_near(
 	ctx: GameContext, macro: Vector2i, micro: Vector2i, quantity: int, effects: GameEffects, leaving_pile: GroundPile = null,
-	source_type: String = "", origin: String = Building.RUBBLE_ORIGIN_DROPPED, marked: bool = true
+	source_type: String = "", origin: String = Building.RUBBLE_ORIGIN_DROPPED, marked: bool = true,
+	merge_radius: int = WasteDisposalService.GROUND_DEBRIS_MERGE_RADIUS
 ) -> Dictionary:
 	var rubbles: Array[Building] = []
 	var remaining := quantity
 	while remaining > 0:
-		var rubble := WasteDisposalService.find_rubble_near(ctx.world, macro, micro, WasteDisposalService.GROUND_DEBRIS_MERGE_RADIUS)
+		var rubble := WasteDisposalService.find_rubble_near(ctx.world, macro, micro, merge_radius)
 		if rubble != null:
 			var added := mini(remaining, WasteDisposalService.rubble_room(rubble))
 			WasteDisposalService.add_debris(rubble, added)
@@ -497,8 +498,6 @@ static func settle_site_stump_debris(ctx: GameContext, site: Building, builder: 
 	var placed := put_debris_near(
 		ctx, macro, Vector2i(site.micro_x, site.micro_y), debris, effects, null, site.building_type_name, Building.RUBBLE_ORIGIN_STUMPS
 	)
-	# Misura temporanea (2026-10-28, scatto della pulizia del cantiere): no-op fuori da un'azione lenta.
-	HumanIndividualActionService.timing_step("maceria: posto e creazione")
 	var leftover := int(placed["leftover"])
 	# Nessuna cella libera vicina (2026-10-18, richiesta utente — cantiere in mezzo al bosco): i detriti restano nel
 	# cantiere e la costruzione aspetta che vengano portati alla Fossa (BuildAction, lavoro "Sgombero · detriti del
@@ -516,7 +515,6 @@ static func settle_site_stump_debris(ctx: GameContext, site: Building, builder: 
 		if clearing != null:
 			TaskQueueService.push_suspended_task(builder, clearing)
 			effects.wire_storage_task(clearing, builder)
-	HumanIndividualActionService.timing_step("maceria: lavoro di sgombero")
 	BuildingMaintenanceService.request_rubble_check(ctx.game_data)
 	effects.refresh_pending()
 
@@ -558,9 +556,11 @@ static func produce_village_waste(ctx: GameContext, effects: GameEffects) -> voi
 		var dumped := WasteDisposalService.dump_into_pits(ctx.world, center, amount)
 		var leftover := amount - dumped
 		if leftover > 0:
+			# Raggio di ricerca = quello in cui nasce una maceria nuova (2026-11-01, richiesta utente: con le celle attorno al
+			# centro occupate nasceva lontana, il mese dopo non si trovava e ogni mese ne nasceva un'altra).
 			var placed := put_debris_near(
 				ctx, Vector2i(center.macro_x, center.macro_y), Vector2i(center.micro_x, center.micro_y), leftover, effects, null, "",
-				Building.RUBBLE_ORIGIN_VILLAGE
+				Building.RUBBLE_ORIGIN_VILLAGE, true, GroundPileService.MAX_DROP_SEARCH_RADIUS
 			)
 			leftover = int(placed["leftover"])
 		print("[WASTE] %s: %d abitanti -> %d rifiuti, %d nelle Fosse, %d come macerie, %d senza posto." % [

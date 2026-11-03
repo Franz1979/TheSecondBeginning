@@ -42,6 +42,8 @@ help_stop_task,annulla il comando corrente dell'individuo selezionato (torna a r
 help_unload_here_task,tenuto premuto durante un click destro su un deposito: scarica lì tutto ciò che l'individuo selezionato porta in spalla
 help_double_click_label,Doppio click sinistro
 help_double_click_inspect_microcell,"ispeziona la microcella cliccata: risorse raccoglibili e vegetazione presente (funziona anche senza individuo selezionato). Il click singolo seleziona solo oggetti precisi (individui/edifici/sassi/piante), mai la cella intera."
+help_shift_right_click_label,Shift + clic destro
+help_shift_right_click_move,"l'individuo selezionato va lì e basta, qualunque cosa ci sia nella cella: niente raccolta, caccia, pesca o altri comandi"
 help_debug_clear_backpack,(debug) svuota lo zaino dell'individuo selezionato
 help_fog_of_war_menu_link,Nebbia di guerra
 help_fog_of_war_title,Nebbia di guerra
@@ -263,6 +265,7 @@ notification_resource_decayed_building,{quantity} {resource} deperiti in {buildi
 notification_building_material_needed,Serve materiale per avviare la costruzione di {building}
 notification_body_reserve_started,{name} ha finito le provviste e sta consumando la riserva corporea
 notification_thirst_zero,{name} ha finito l'acqua e sta morendo di sete
+notification_thought_building_far_from_water,"Edificio dei pensieri troppo lontano dall'acqua: senza un otre le idee non arrivano. Costruiscine uno più vicino a una fonte"
 individual_thirst_tooltip_waterskin,Corpo {body}/{max} · Otre {water}/{capacity}
 individual_thirst_tooltip_dehydration,Disidratazione: {days} giorni rimasti
 sex_label,Sesso: {sex}
@@ -368,6 +371,7 @@ transport_dialog_confirm,Conferma
 transport_dialog_cancel,Annulla
 pickup_choice_dialog_title,Scegli risorsa da raccogliere
 pickup_choice_dialog_message,Questa posizione contiene più risorse raccoglibili:
+pickup_choice_move_hint,Shift + clic destro: vai lì senza raccogliere
 pickup_choice_all,Tutto
 pickup_choice_category_food,Cibo
 pickup_choice_category_raw_material,Materiali
@@ -749,7 +753,8 @@ tool_category_sewing,cucito
 tool_category_carrying,trasporto
 tool_category_chopping,abbattimento
 individual_cancel_task_tooltip,Annulla l'attività in corso (come il tasto H)
-tool_gate_assigned_waiting,{name} aspetta gli attrezzi per iniziare: {tools}. Portaglieli nello zaino e partirà da solo.
+tool_gate_assigned_waiting,"{name} aspetta gli attrezzi per iniziare: {tools}. In deposito non ci sono o la cintura è piena: appena possibile partirà da solo."
+tool_gate_assigned_fetching,{name} andrà a prendere in deposito gli attrezzi per iniziare: {tools}.
 tool_gate_category_with_examples,{category} (es. {examples})
 tool_gate_waiting_tools,Attrezzi mancanti: {tools}
 tool_gate_waiting_belt_full,"In attesa: cintura piena, libera uno slot per {tool}"

@@ -204,6 +204,8 @@ static func _resolve_anchor_building(individual: HumanIndividual, world: World) 
 # neutra" (moltiplicatore 1.0), coerente con l'uso già arbitrario di questa costante nel tasto Y.
 const DAYDREAM_AROUND_DISTANCE: float = 14.1
 const DAYDREAM_THINK_BASE_DURATION: float = 2.0
+# Il percorso vero è più lungo della linea d'aria (ostacoli, terreni lenti).
+const DAYDREAM_PATH_MARGIN: float = 1.25
 
 # Risoluzione dei tre target Walk della Wander Task — STESSA identica logica di GameScene.
 # _resolve_wander_targets prima di questo spostamento (vedi doc di testa al file).
@@ -323,6 +325,29 @@ static func resolve_daydream_around_position(individual: HumanIndividual, distan
 	return destination if destination != null else origin
 
 
+# Dove sognare (2026-11-01, richiesta utente — lontano dall'acqua il bere urgente scattava sempre prima della fine): il
+# punto a caso di sempre se l'autonomia d'acqua (ThirstService.autonomy_days, otre compreso) basta per tutto il giro, altrimenti
+# un punto d'acqua; nessun punto d'acqua raggiungibile = il punto a caso.
+static func _resolve_daydream_position(individual: HumanIndividual, world: World) -> Vector2:
+	var around_position := resolve_daydream_around_position(individual)
+	if ThirstService.autonomy_days(individual) >= _daydream_trip_days(individual, around_position, world):
+		return around_position
+	var water_point: Variant = ThirstService.pick_water_point(individual)
+	return water_point if water_point != null else around_position
+
+
+# Giorni del giro: andata, riflessione e ritorno all'edificio dei pensieri più vicino, in linea d'aria × DAYDREAM_PATH_MARGIN.
+static func _daydream_trip_days(individual: HumanIndividual, around_position: Vector2, world: World) -> float:
+	var distance := individual.position.distance_to(around_position)
+	var target := ThoughtTargetSelectionService.find_best(
+		world, around_position, individual.home_macro_coords, [], PathfindingService.reachability_for(individual)
+	)
+	if target != null:
+		var macro_offset := Vector2(Vector2i(target.macro_x, target.macro_y) - individual.home_macro_coords) * World.WIDTH
+		distance += around_position.distance_to(Vector2(target.micro_x, target.micro_y) + macro_offset)
+	return distance * DAYDREAM_PATH_MARGIN / maxf(individual.move_speed, 0.001) + DAYDREAM_THINK_BASE_DURATION
+
+
 # Eleggibilita' di leisure_restock nel sorteggio idle: spazio libero nelle provviste >=
 # LEISURE_RESTOCK_MIN_FREE_SPACE_RATIO x capacita'. Capacita' <= 0 -> non eleggibile.
 # Anche sulle calorie (2026-10-25, bugfix "Merik malato in giro sul magazzino"): il prelievo si ferma al tetto di
@@ -422,11 +447,14 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 			# stesso principio "un guard, un solo posto" già seguito per allowed_age_bands. Nessun
 			# WANDER_ENABLED/LEISURE_REST_ENABLED equivalente per Daydream: nessuna richiesta di
 			# poterla disattivare separatamente oggi.
-			var around_position: Vector2 = resolve_daydream_around_position(individual)
+			# Pensiero già pronto (2026-11-01: Think finito, poi il bere ha interrotto il ritorno): niente giro né riflessione,
+			# la Task passa subito al deposito (_handle_pending_thought_target_search).
+			var has_thought := individual.pending_thought
+			var around_position: Vector2 = individual.position if has_thought else _resolve_daydream_position(individual, world)
 			var definition := TaskDefinitionCache.get_definition(path)
 			var context: Dictionary = {
 				"target_position": around_position,
-				"think_duration": DAYDREAM_THINK_BASE_DURATION,
+				"think_duration": 0.0 if has_thought else DAYDREAM_THINK_BASE_DURATION,
 			}
 			var task := TaskFactory.build_task(definition, context)
 			# daydream_step_appended_connector (vedi sopra) — collegato SUBITO dopo la costruzione,

@@ -62,7 +62,8 @@ static func assign_produce(
 		return
 	# Controllo attrezzi (2026-09-25): ToolGateService sposta in cintura gli attrezzi necessari presi dallo zaino.
 	#   - MISSING_TOOLS: la Task viene ASSEGNATA comunque e resta in attesa all'edificio, come la Build senza materiale —
-	#     ProduceAction ricontrolla a ogni tick e parte da sola quando gli attrezzi arrivano. Popup con QUALI attrezzi.
+	#     ProduceAction ricontrolla a ogni tick e parte da sola quando gli attrezzi arrivano. Popup con QUALI attrezzi:
+	#     se sono in deposito va a prenderli da solo (2026-11-01, ToolFetchService.retry_waiting_fetches), non servono aiuti.
 	#   - BELT_FULL/CANNOT_EQUIP: l'attrezzo c'è ma non entra in cintura — la Task NON viene assegnata: avviso, popup e X.
 	# Attrezzeria (2026-10-04): l'attrezzo richiesto è soddisfatto se c'è nell'Attrezzeria dell'edificio oppure sul
 	# pipottino; al pipottino si chiedono solo le categorie che l'Attrezzeria non copre.
@@ -71,7 +72,9 @@ static func assign_produce(
 	)
 	if tool_gate["result"] == ToolGateService.Result.MISSING_TOOLS:
 		if not silent:
-			effects.notify(NotificationTypes.NotificationPopupType.TOOL_REQUIRED, GameContext.tr_text("tool_gate_assigned_waiting").format({
+			var in_storage := ToolFetchService.missing_tools_in_storage(ctx.world, worker, tool_gate["missing_categories"])
+			var notice_key := "tool_gate_assigned_fetching" if in_storage else "tool_gate_assigned_waiting"
+			effects.notify(NotificationTypes.NotificationPopupType.TOOL_REQUIRED, GameContext.tr_text(notice_key).format({
 				"name": worker.name,
 				"tools": ToolFetchService.describe_missing_categories(tool_gate["missing_categories"]),
 			}))

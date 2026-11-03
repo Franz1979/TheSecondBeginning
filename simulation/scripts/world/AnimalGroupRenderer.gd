@@ -67,18 +67,23 @@ const CHASE_CONTACT_DISTANCE: float = 0.3
 const STAND_REACH_DISTANCE: float = 0.3
 const STAND_POINT_ATTEMPTS: int = 6
 const STAND_HEADING_JITTER: float = 0.4
-# Mandria che cambia cella (2026-11-01, passo 7c): con 1-3 giorni di soggiorno e circa 25-40 microcelle al giorno entra
-# solo per un tratto (microcelle dal bordo, zona larga WALK_IN_AREA_RADIUS) ed esce a velocità doppia. Partono scaglionati
-# entro WALK_STAGGER_DAYS (fila, e i percorsi A* non cadono nello stesso fotogramma), sparsi di WALK_BORDER_SPREAD lungo il
-# bordo. Dopo i giorni massimi (bloccati, o mai arrivati) la camminata finisce comunque.
+# Mandria che cambia cella (2026-11-01, passo 7c): a circa 25-40 microcelle al giorno entra solo per un tratto (microcelle
+# dal bordo, zona larga WALK_IN_AREA_RADIUS) ed esce a velocità doppia. Partono scaglionati entro WALK_STAGGER_DAYS (fila,
+# e i percorsi A* non cadono nello stesso fotogramma), sparsi di WALK_BORDER_SPREAD lungo il bordo. Dopo i giorni massimi
+# (bloccati, o mai arrivati) la camminata finisce comunque: larghi abbastanza per il giro attorno a un villaggio.
 const WALK_IN_DEPTH_MIN: float = 15.0
 const WALK_IN_DEPTH_MAX: float = 25.0
 const WALK_IN_AREA_RADIUS: float = 8.0
 const WALK_STAGGER_DAYS: float = 0.25
 const WALK_BORDER_SPREAD: float = 4.0
 const WALK_OUT_SPEED_SCALE: float = 2.0
-const WALK_IN_MAX_DAYS: float = 2.0
-const WALK_OUT_MAX_DAYS: float = 3.0
+const WALK_IN_MAX_DAYS: float = 3.0
+const WALK_OUT_MAX_DAYS: float = 4.0
+# Meta d'arrivo fuori dagli edifici: quanto può allontanarsi dal bordo la zona d'arrivo se quella normale è occupata
+# (_walk_in_area_center); passo e direzioni della ricerca del punto libero più vicino (_out_of_building_zone).
+const WALK_IN_DEPTH_FALLBACK: float = 80.0
+const ZONE_EXIT_SEARCH_STEP: float = 2.0
+const ZONE_EXIT_SEARCH_ANGLES: int = 12
 # Reazioni agli edifici (vedi building_push): forza dell'attrazione, costante, e distanza entro cui si annulla.
 const ATTRACTION_WEIGHT: float = 0.5
 const ATTRACTION_STOP_DISTANCE: float = 2.0
@@ -507,6 +512,16 @@ var building_avoidance_radius: float = 0.0
 # Edifici da cui tenere lontani i centri dei gruppetti (centri in coordinate locali, MOVEMENT esclusi): ultimo valore
 # letto da disturbance_source in _run_disturbance_check, usato a ogni frame da _push_cluster_out_of_buildings.
 var _cluster_avoid_buildings: Array = []
+# Raggio vero degli edifici per chi gironzola (2026-11-01, richiesta utente): griglia WIDTH×HEIGHT, 1 = microcella entro
+# building_avoidance_radius di uno di _cluster_avoid_buildings. Vuota = nessuna zona. Ricostruita solo se quegli edifici
+# cambiano (_update_building_zone), così il controllo a ogni passo non dipende da quanti edifici ci sono.
+var _building_zone: PackedByteArray = PackedByteArray()
+var _building_zone_sources: Array = []
+var _building_zone_revision: int = 0
+# Griglia dei percorsi delle mandrie in cammino (PathfindingService.build_zone_grid), tenuta solo finché qualcuno cammina.
+var _herd_zone_grid: AStarGrid2D = null
+var _herd_zone_grid_version: int = -1
+var _herd_zone_grid_revision: int = -1
 # Reattività della specie al disagio (AnimalRules.avoidance_strength, risolta in configure): frazione per
 # balzo usata da _apply_avoidance_on_hop. Default AVOID_BIAS_PER_HOP per le specie che non la dichiarano.
 var avoidance_strength: float = AVOID_BIAS_PER_HOP
@@ -1170,6 +1185,10 @@ func _process(real_delta: float) -> void:
 			_step_behavior(group, delta)
 			_write_instance_transform(i, group)
 			continue
+		if _is_in_building_zone(Vector2i(group.position.floor())):
+			_walk_out_of_building_zone(group, delta)
+			_write_instance_transform(i, group)
+			continue
 		group.direction = group.direction.rotated(randf_range(-turn_rate, turn_rate) * delta)
 		_apply_cluster_attraction(group, delta)
 		# Il disagio dei singoli individui non agisce qui a ogni frame: piega la direzione solo all'inizio di
@@ -1177,7 +1196,7 @@ func _process(real_delta: float) -> void:
 		_update_group_phase(group, delta)
 		if group.macro_phase == AnimalVisualGroup.MacroPhase.MOVING and group.micro_phase == AnimalVisualGroup.MicroPhase.HOPPING:
 			var gait_speed := hop_speed if group.running_phase else hop_speed * walk_speed_fraction
-			_move_with_collision(group, group.direction * gait_speed * _wounded_speed_factor(group) * delta)
+			_move_with_collision(group, group.direction * gait_speed * _wounded_speed_factor(group) * delta, true)
 		_write_instance_transform(i, group)
 
 	# Usciti dal bordo: tolti dopo il giro, che scorre _groups per indice.
@@ -1253,6 +1272,7 @@ func _run_disturbance_check() -> void:
 	if building_avoidance_radius <= 0.0:
 		buildings = []
 		_cluster_avoid_buildings = []
+	_update_building_zone()
 	var no_sources := humans.is_empty() and buildings.is_empty()
 	for group in _groups:
 		_evaluate_avoidance(group, humans, buildings, no_sources)
@@ -1260,6 +1280,110 @@ func _run_disturbance_check() -> void:
 	# _push_cluster_out_of_buildings.
 	for cluster in _clusters:
 		_evaluate_avoidance(cluster, humans, [], humans.is_empty())
+
+
+# Ricostruisce la griglia del raggio vero se gli edifici sono cambiati. Stessi edifici dei centri dei gruppetti (MOVEMENT
+# esclusi): sentieri e terra battuta non fanno da muro. Una microcella è nella zona se il suo centro è entro il raggio.
+func _update_building_zone() -> void:
+	if _cluster_avoid_buildings == _building_zone_sources:
+		return
+	_building_zone_sources = _cluster_avoid_buildings
+	_building_zone_revision += 1
+	if _cluster_avoid_buildings.is_empty():
+		_building_zone = PackedByteArray()
+		return
+	_building_zone.resize(World.WIDTH * World.HEIGHT)
+	_building_zone.fill(0)
+	var radius_sq := building_avoidance_radius * building_avoidance_radius
+	for building_position: Vector2 in _cluster_avoid_buildings:
+		var first := Vector2i((building_position - Vector2.ONE * building_avoidance_radius).floor())
+		var last := Vector2i((building_position + Vector2.ONE * building_avoidance_radius).floor())
+		for y in range(maxi(first.y, 0), mini(last.y, World.HEIGHT - 1) + 1):
+			for x in range(maxi(first.x, 0), mini(last.x, World.WIDTH - 1) + 1):
+				if (Vector2(x, y) + Vector2(0.5, 0.5)).distance_squared_to(building_position) <= radius_sq:
+					_building_zone[y * World.WIDTH + x] = 1
+
+
+# Zona letta subito: un renderer appena creato per una mandria che arriva non ha ancora fatto il primo controllo periodico.
+func _refresh_building_zone() -> void:
+	if building_avoidance_radius <= 0.0 or not disturbance_source.is_valid():
+		return
+	_cluster_avoid_buildings = (disturbance_source.call() as Dictionary).get("cluster_buildings", [])
+	_update_building_zone()
+
+
+# Griglia dei percorsi con la zona attuale, rifatta se è cambiata la zona o la griglia della cella. Null senza edifici vicini:
+# il percorso normale va già bene.
+func _get_herd_zone_grid() -> AStarGrid2D:
+	if _building_zone.is_empty():
+		return null
+	var version := PathfindingService.get_grid_version(macro_coords)
+	if _herd_zone_grid == null or _herd_zone_grid_version != version or _herd_zone_grid_revision != _building_zone_revision:
+		_herd_zone_grid = PathfindingService.build_zone_grid(macro_coords, _building_zone)
+		_herd_zone_grid_version = version
+		_herd_zone_grid_revision = _building_zone_revision
+	return _herd_zone_grid
+
+
+# Il punto libero più vicino fuori dalla zona (`point` stesso se lo è già); nessuno trovato = `point`.
+func _out_of_building_zone(point: Vector2) -> Vector2:
+	if not _is_in_building_zone(Vector2i(point.floor())):
+		return point
+	var distance := ZONE_EXIT_SEARCH_STEP
+	while distance < World.WIDTH:
+		for angle_index in range(ZONE_EXIT_SEARCH_ANGLES):
+			var candidate := _clamp_to_cell(point + Vector2.from_angle(TAU * angle_index / ZONE_EXIT_SEARCH_ANGLES) * distance)
+			if not _is_wander_blocked(Vector2i(candidate.floor())):
+				return candidate
+		distance += ZONE_EXIT_SEARCH_STEP
+	return point
+
+
+# Centro della zona d'arrivo di una mandria: a un tratto dal bordo, come zona fuori dalla distanza dei centri dei gruppetti.
+# I tentativi vanno via via più in dentro e più di lato; se falliscono tutti, il più lontano dagli edifici tra quelli provati.
+func _walk_in_area_center(border_point: Vector2) -> Vector2:
+	var inward := (Vector2(World.WIDTH, World.HEIGHT) * 0.5 - border_point).normalized()
+	var best_point := _clamp_to_cell(border_point + inward * randf_range(WALK_IN_DEPTH_MIN, WALK_IN_DEPTH_MAX))
+	if _cluster_avoid_buildings.is_empty():
+		return best_point
+	var avoid_distance := _cluster_building_avoid_distance()
+	var best_distance := _nearest_building_distance(best_point, _cluster_avoid_buildings)
+	var attempts := 1
+	while best_distance <= avoid_distance and attempts < CLUSTER_SPAWN_MAX_ATTEMPTS:
+		var progress := float(attempts) / float(CLUSTER_SPAWN_MAX_ATTEMPTS)
+		var depth := randf_range(WALK_IN_DEPTH_MIN, lerpf(WALK_IN_DEPTH_MAX, WALK_IN_DEPTH_FALLBACK, progress))
+		var point := _clamp_to_cell(border_point + inward.rotated(randf_range(-PI, PI) * 0.5 * progress) * depth)
+		var distance := _nearest_building_distance(point, _cluster_avoid_buildings)
+		if distance > best_distance:
+			best_point = point
+			best_distance = distance
+		attempts += 1
+	return best_point
+
+
+func _is_in_building_zone(microcell: Vector2i) -> bool:
+	if _building_zone.is_empty() or microcell.x < 0 or microcell.y < 0 or microcell.x >= World.WIDTH or microcell.y >= World.HEIGHT:
+		return false
+	return _building_zone[microcell.y * World.WIDTH + microcell.x] == 1
+
+
+# Collisione di chi gironzola: gli ostacoli di sempre più la zona degli edifici.
+func _is_wander_blocked(microcell: Vector2i) -> bool:
+	return _is_in_building_zone(microcell) or (blocked_test.is_valid() and bool(blocked_test.call(microcell)))
+
+
+# Chi si trova dentro la zona (edificio appena finito, fine di una fuga, arrivo a piedi) ne esce subito, di corsa, in
+# direzione opposta agli edifici entro il raggio: i più vicini contano di più, così tra due zone non resta a far la spola.
+func _walk_out_of_building_zone(group: AnimalVisualGroup, delta: float) -> void:
+	var away := Vector2.ZERO
+	for building_position: Vector2 in _cluster_avoid_buildings:
+		var offset := group.position - building_position
+		var distance := offset.length()
+		if distance <= building_avoidance_radius and distance > 0.001:
+			away += offset / distance * (building_avoidance_radius - distance + 1.0)
+	if away.length_squared() > 0.000001:
+		group.direction = away.normalized()
+	_move_with_collision(group, group.direction * hop_speed * _wounded_speed_factor(group) * delta)
 
 
 # Raggio della zona da evitare per i centri dei gruppetti, in microcelle (0 = nessuna zona).
@@ -1470,10 +1594,10 @@ static func set_live_behavior(individual_id: int, behavior: AnimalVisualGroup.Be
 # Gli individui da `first_index` in poi (appena nati, in coda a _groups) partono dal bordo e camminano fin dove stavano
 # per nascere. Se è entrata tutta la mandria (first_index 0) la sua zona si sposta prima a un tratto dal bordo.
 func start_herd_walk_in(first_index: int, border_point: Vector2) -> void:
+	_refresh_building_zone()
 	var cluster_shifts: Dictionary = {}
 	if first_index == 0:
-		var inward := (Vector2(World.WIDTH, World.HEIGHT) * 0.5 - border_point).normalized()
-		var area_center := border_point + inward * randf_range(WALK_IN_DEPTH_MIN, WALK_IN_DEPTH_MAX)
+		var area_center := _walk_in_area_center(border_point)
 		for c in range(_clusters.size()):
 			var moved := area_center + Vector2.from_angle(randf() * TAU) * randf() * WALK_IN_AREA_RADIUS
 			cluster_shifts[c] = moved - _clusters[c].position
@@ -1481,7 +1605,7 @@ func start_herd_walk_in(first_index: int, border_point: Vector2) -> void:
 	for i in range(first_index, _groups.size()):
 		var body: AnimalVisualGroup = _groups[i]
 		var shift: Vector2 = cluster_shifts.get(body.cluster_index, Vector2.ZERO)
-		var target := _clamp_to_cell(body.position + shift)
+		var target := _out_of_building_zone(_clamp_to_cell(body.position + shift))
 		body.position = _herd_border_spot(border_point)
 		set_individual_behavior(body.id, AnimalVisualGroup.Behavior.GO_TO, target)
 		_begin_herd_walk(body, AnimalVisualGroup.HerdWalk.ENTERING, WALK_IN_MAX_DAYS)
@@ -1490,6 +1614,7 @@ func start_herd_walk_in(first_index: int, border_point: Vector2) -> void:
 
 # Tutti verso il punto del bordo, dove spariscono uno a uno. Il renderer vuoto lo toglie la riconciliazione successiva.
 func start_herd_leaving(border_point: Vector2) -> void:
+	_refresh_building_zone()
 	_herd_leaving = true
 	for body in _groups:
 		set_individual_behavior(body.id, AnimalVisualGroup.Behavior.GO_TO, _herd_border_spot(border_point), 0.0, 0.0,
@@ -1508,6 +1633,17 @@ func cancel_herd_leaving() -> void:
 		if body.herd_walk == AnimalVisualGroup.HerdWalk.LEAVING:
 			body.herd_walk = AnimalVisualGroup.HerdWalk.NONE
 			set_individual_behavior(body.id, AnimalVisualGroup.Behavior.WANDER)
+	_release_herd_zone_grid_if_idle()
+
+
+# La griglia dei percorsi occupa memoria: si tiene solo finché c'è chi cammina.
+func _release_herd_zone_grid_if_idle() -> void:
+	if _herd_zone_grid == null:
+		return
+	for body in _groups:
+		if body.herd_walk != AnimalVisualGroup.HerdWalk.NONE:
+			return
+	_herd_zone_grid = null
 
 
 func _begin_herd_walk(body: AnimalVisualGroup, walk: AnimalVisualGroup.HerdWalk, max_days: float) -> void:
@@ -1522,6 +1658,7 @@ func _finish_herd_walk(body: AnimalVisualGroup) -> void:
 		return
 	body.herd_walk = AnimalVisualGroup.HerdWalk.NONE
 	set_individual_behavior(body.id, AnimalVisualGroup.Behavior.WANDER)
+	_release_herd_zone_grid_if_idle()
 
 
 func _clamp_to_cell(point: Vector2) -> Vector2:
@@ -1635,7 +1772,8 @@ func _step_go_to(group: AnimalVisualGroup, delta: float) -> void:
 	var block_version := PathfindingService.get_block_version(macro_coords)
 	if not group.behavior_path_planned or group.behavior_path_target != group.behavior_point \
 			or group.behavior_path_block_version != block_version:
-		var plan := PathfindingService.plan_waypoints(macro_coords, group.position, group.behavior_point)
+		var zone_grid: AStarGrid2D = _get_herd_zone_grid() if group.herd_walk != AnimalVisualGroup.HerdWalk.NONE else null
+		var plan := PathfindingService.plan_waypoints(macro_coords, group.position, group.behavior_point, zone_grid)
 		group.behavior_point = plan["target"]
 		group.behavior_path.assign(plan["path"])
 		group.behavior_path_planned = true
@@ -1771,9 +1909,10 @@ func _start_stand_walk(group: AnimalVisualGroup) -> void:
 # rimandando gli animali verso l'insediamento e annullando il disagio). Chi è già su una microcella bloccata
 # (seminato su una roccia, edificio costruito sopra) può uscirne liberamente: conta solo l'ingresso. Senza
 # blocked_test, o fuori dalla macrocella: come prima. La regola è PathfindingService.move_with_collision (2026-10-28),
-# condivisa con gli animali in visita.
-func _move_with_collision(group: AnimalVisualGroup, displacement: Vector2) -> void:
-	var next_position := PathfindingService.move_with_collision(blocked_test, group.position, displacement, macro_coords)
+# condivisa con gli animali in visita. `respect_building_zone` (chi gironzola): la zona degli edifici blocca come un ostacolo.
+func _move_with_collision(group: AnimalVisualGroup, displacement: Vector2, respect_building_zone: bool = false) -> void:
+	var test: Callable = _is_wander_blocked if respect_building_zone and not _building_zone.is_empty() else blocked_test
+	var next_position := PathfindingService.move_with_collision(test, group.position, displacement, macro_coords)
 	if next_position == group.position:
 		return
 	group.position = next_position

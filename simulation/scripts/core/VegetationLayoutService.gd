@@ -104,11 +104,13 @@ static func to_save_data(macro_state: MacroCellState) -> Dictionary:
 	for lot in macro_state.grass_lots.keys():
 		grass.append(_encode(lot))
 	data["grass"] = grass
+	data["checkpoint"] = macro_state.vegetation_layout_checkpoint
 	return data
 
 
 static func load_save_data(macro_state: MacroCellState, data: Dictionary) -> void:
 	macro_state.vegetation_layout_ready = not data.is_empty()
+	macro_state.vegetation_layout_checkpoint = int(data.get("checkpoint", -1))
 	if data.is_empty():
 		return
 	for object_type in LAYOUT_TYPES:

@@ -65,6 +65,8 @@ const DIALOG_BASE_HEIGHT: float = 224.0
 const ROW_HEIGHT: float = 34.0
 const MAX_DIALOG_HEIGHT: float = 640.0
 const DIALOG_WIDTH: int = 320
+const FOOTER_HINT_FONT_SIZE: int = 11
+const FOOTER_HINT_ALPHA: float = 0.7
 
 # Menu delle voci (PickupChoiceMenu): costruito in choice_list_container a ogni apertura in modalità raccolta.
 var _menu: PickupChoiceMenu = null
@@ -96,6 +98,10 @@ const HUNT_DIALOG_HEIGHT: float = 120.0
 # DialogPlacement.place), la finestra resta identica ma compare accanto all'info panel invece che al centro. Vale per
 # quell'apertura sola; {} = al centro come sempre.
 var popup_anchor: Dictionary = {}
+# Scritta piccola in fondo (2026-11-01, Shift + destro dal popup della raccolta col clic destro): come `popup_anchor`, il
+# chiamante la imposta prima di aprire e vale per quell'apertura.
+var footer_hint: String = ""
+var _footer_hint_label: Label = null
 var _anchor: Dictionary = {}
 # Interruttore della zona automatica (2026-10-09): visibile in "Raccogli nelle zone di lavoro" (modalità viaggi) e nella
 # caccia, non nella raccolta da una cella.
@@ -135,6 +141,7 @@ func open_dialog(
 	_anchor = popup_anchor
 	popup_anchor = {}
 	_set_hunt_mode(false)
+	_apply_footer_hint()
 	title = dialog_title
 	message_label.text = message
 	repeat_check_box.button_pressed = repeat_default
@@ -189,6 +196,7 @@ func open_hunt_dialog(
 		hide()
 		return false
 	_set_hunt_mode(true)
+	_apply_footer_hint()
 	_show_auto_zone_row(true)
 	_show_hunt_destination_row()
 	if _meat_suffix_label != null:
@@ -309,6 +317,21 @@ func _on_confirm_pressed() -> void:
 
 
 # Riga "Viaggi: [1..N]" sotto la casella delle ripetizioni, creata alla prima apertura in modalità viaggi.
+func _apply_footer_hint() -> void:
+	if _footer_hint_label == null:
+		if footer_hint == "":
+			return
+		_footer_hint_label = Label.new()
+		_footer_hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_footer_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_footer_hint_label.add_theme_font_size_override("font_size", FOOTER_HINT_FONT_SIZE)
+		_footer_hint_label.modulate.a = FOOTER_HINT_ALPHA
+		message_label.get_parent().add_child(_footer_hint_label)
+	_footer_hint_label.text = footer_hint
+	_footer_hint_label.visible = footer_hint != ""
+	footer_hint = ""
+
+
 func _ensure_trips_row() -> void:
 	if _trips_row != null:
 		return

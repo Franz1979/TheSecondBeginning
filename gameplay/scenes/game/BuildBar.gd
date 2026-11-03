@@ -160,6 +160,8 @@ var _category_icon_types: Array[String] = []
 # Spunta "Nascondi superati" nella riga del titolo (UserOptions.build_bar_hide_superseded), visibile con le categorie e
 # con gli edifici.
 var _hide_superseded_check: Button = null
+# Tipi che richiedono un'idea non completata (2026-11-01): nascosti, vedi set_building_buildable.
+var _undiscovered_types: Dictionary = {}
 # Riga di titolo (2026-10-03, richiesta utente — stessa altezza della barra dei comandi): etichetta piccola sopra i
 # pulsanti, stesso stile di "Azioni"/"Opzioni" (CommandBar.make_group_label). "Costruzione" a barra chiusa o al primo
 # livello, "Edifici" nel sottomenu, "Zone di lavoro" mentre si disegna una zona (set_work_areas_mode, da GameScene).
@@ -333,23 +335,28 @@ func _is_type_hidden_as_superseded(building_type_name: String) -> bool:
 	return rules != null and rules.upgrades_to != "" and _is_type_buildable(rules.upgrades_to)
 
 
+# Nascosto nella barra: non ancora scoperto (2026-11-01, deciso da GameScene, vedi set_building_buildable) o superato.
+func _is_type_hidden(building_type_name: String) -> bool:
+	return _undiscovered_types.has(building_type_name) or _is_type_hidden_as_superseded(building_type_name)
+
+
 # Edifici della categoria non nascosti, in ordine di slot.
 func _visible_types_of_category(category: int) -> Array[String]:
 	var result: Array[String] = []
 	for building_type_name in BUILDING_SLOT_INDEX_BY_TYPE.keys():
-		if int(_category_by_type.get(building_type_name, -1)) == category and not _is_type_hidden_as_superseded(building_type_name):
+		if int(_category_by_type.get(building_type_name, -1)) == category and not _is_type_hidden(building_type_name):
 			result.append(String(building_type_name))
 	result.sort_custom(func(a: String, b: String) -> bool: return int(BUILDING_SLOT_INDEX_BY_TYPE[a]) < int(BUILDING_SLOT_INDEX_BY_TYPE[b]))
 	return result
 
 
-# Ricalcola cosa si vede: slot degli edifici (categoria aperta, superati nascosti) e slot delle categorie (icona
+# Ricalcola cosa si vede: slot degli edifici (categoria aperta, non scoperti e superati nascosti) e slot delle categorie (icona
 # dell'edificio rappresentativo = l'ultimo costruibile in ordine di slot, altrimenti il primo; spenta se nessuno è
 # costruibile; nascosta se la categoria non ha edifici nella barra).
 func _refresh_building_filter() -> void:
 	for building_type_name in BUILDING_SLOT_INDEX_BY_TYPE.keys():
 		var shown := int(_category_by_type.get(building_type_name, -1)) == _current_category \
-			and not _is_type_hidden_as_superseded(building_type_name)
+			and not _is_type_hidden(building_type_name)
 		submenu_row.set_slot_visible(int(BUILDING_SLOT_INDEX_BY_TYPE[building_type_name]), shown)
 	for i in range(CATEGORY_ORDER.size()):
 		var types := _visible_types_of_category(CATEGORY_ORDER[i])
@@ -546,9 +553,14 @@ func get_panel() -> PanelContainer:
 # disabilitato + tooltip "perché" quando is_buildable è false, stato normale altrimenti.
 # building_type_name sconosciuto (nessuno slot mappato) è un no-op silenzioso — non ogni tipo
 # esistente ha necessariamente un bottone in questa barra.
-func set_building_buildable(building_type_name: String, is_buildable: bool, disabled_tooltip: String = "") -> void:
+# is_undiscovered (2026-11-01): il tipo richiede un'idea non completata, lo slot sparisce invece di restare spento.
+func set_building_buildable(building_type_name: String, is_buildable: bool, disabled_tooltip: String = "", is_undiscovered: bool = false) -> void:
 	if not BUILDING_SLOT_INDEX_BY_TYPE.has(building_type_name):
 		return
+	if is_undiscovered:
+		_undiscovered_types[building_type_name] = true
+	else:
+		_undiscovered_types.erase(building_type_name)
 	submenu_row.set_slot_disabled(
 		BUILDING_SLOT_INDEX_BY_TYPE[building_type_name], not is_buildable,
 		disabled_tooltip if not is_buildable else ""

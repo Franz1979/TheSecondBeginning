@@ -163,60 +163,6 @@ const FOOD_AUTONOMY_EPSILON: float = 0.001
 # stesso comportamento "difensivo, non un caso reale" già riservato a world null sopra. UNICO call
 # site oggi: GameScene._process, che passa il proprio game_data.
 func apply_action(individual: HumanIndividual, delta: float, world: World = null, game_data: GameData = null) -> void:
-	if not (DebugLogging.ENABLED and DebugLogging.SHOW_SIM_FRAME_TIMING_LOGS) or _step_depth > 0:
-		_apply_action(individual, delta, world, game_data)
-		return
-	_step_depth += 1
-	_step_parts.clear()
-	_step_last_label = "inizio"
-	var task_before := individual.current_task
-	var action_before := task_before.get_current_action() if task_before != null and not task_before.is_finished() else null
-	var label_before := "%s / %s" % [
-		task_before.task_name if task_before != null else "-",
-		action_before.get_script().get_global_name() if action_before != null and action_before.get_script() != null else "-"
-	]
-	var started := Time.get_ticks_usec()
-	_step_last_usec = started
-	_apply_action(individual, delta, world, game_data)
-	var ended := Time.get_ticks_usec()
-	_step_depth -= 1
-	var total_ms := (ended - started) / 1000.0
-	if total_ms >= DebugLogging.SIM_FRAME_SLOW_MSEC:
-		_step_parts.append("dopo '%s' %.1f" % [_step_last_label, (ended - _step_last_usec) / 1000.0])
-		var task_name := individual.current_task.task_name if individual.current_task != null else "nessuna"
-		print("[ACTION SLOW] #%d %s (%s): %.1f ms -> %s — %s" % [
-			individual.id, individual.name, label_before, total_ms, task_name, ", ".join(_step_parts)
-		])
-
-
-# Misura (2026-10-28, scatto da ~100 ms in WaitAtPointAction senza [IDLE SLOW]): con DebugLogging.SHOW_SIM_FRAME_TIMING_LOGS,
-# una riga [ACTION SLOW] quando apply_action supera SIM_FRAME_SLOW_MSEC, con i ms di ogni passo (_action_step) e
-# dell'ultimo, quello che ha deciso. Solo misura, nessun effetto sul gioco.
-static var _step_depth: int = 0
-static var _step_parts: Array[String] = []
-static var _step_last_usec: int = 0
-static var _step_last_label: String = "inizio"
-
-
-# Passo di misura chiamato da fuori (2026-10-28, pulizia del cantiere): stessa riga [ACTION SLOW], no-op se non si sta
-# misurando un'azione.
-static func timing_step(label: String) -> void:
-	_action_step(label)
-
-
-# Passo di apply_action concluso: ms dall'ultimo passo, solo se il passo costa qualcosa.
-static func _action_step(label: String) -> void:
-	if _step_depth <= 0:
-		return
-	var now_usec := Time.get_ticks_usec()
-	var ms := (now_usec - _step_last_usec) / 1000.0
-	if ms >= 0.5:
-		_step_parts.append("%s %.1f" % [label, ms])
-	_step_last_usec = now_usec
-	_step_last_label = label
-
-
-func _apply_action(individual: HumanIndividual, delta: float, world: World = null, game_data: GameData = null) -> void:
 	# Fallback di rest implicito RIMOSSO (2026-09-12, richiesta utente — "un individuo senza
 	# current_task valida deve semplicemente non fare nulla qui: nessun recupero automatico, nessun
 	# consumo automatico"). Un individuo con current_task null/conclusa resta a stamina invariata
@@ -271,7 +217,6 @@ func _apply_action(individual: HumanIndividual, delta: float, world: World = nul
 			return
 	# Prodotti finiti pieni a metà ordine con "Porta al deposito" (2026-10-08, ProduceAction): giro di consegna.
 	_handle_pending_output_delivery(individual, task, world)
-	_action_step("controlli iniziali")
 
 	var action := task.get_current_action()
 	var stamina_delta := action.get_stamina_delta(individual, task.context, delta)
@@ -312,9 +257,7 @@ func _apply_action(individual: HumanIndividual, delta: float, world: World = nul
 	# stamina_delta/happiness_delta/delta appena applicati sopra, nessun ricalcolo: vedi Task.
 	# record_step_cost/print_cost_summary.
 	task.record_step_cost(stamina_delta, happiness_delta, delta)
-	_action_step("delta e bisogni")
 	if action.is_complete(individual, task.context):
-		_action_step("fine dello step?")
 		# Tempo REALE dello step appena concluso (2026-09-20, richiesta utente): DOPO record_step_cost (l'ultimo
 		# delta e' gia' incluso), PRIMA di finish_current_step (che avanza current_step_index).
 		if DebugLogging.ENABLED and DebugLogging.SHOW_ACTION_TIME_LOGS:
@@ -359,7 +302,6 @@ func finish_current_step(individual: HumanIndividual, task: Task, world: World, 
 	if aborted:
 		return
 	var injury := InjuryRollService.roll_after_action(individual, action, task.context, game_data)
-	_action_step("tiro ferite")
 	if injury.is_empty():
 		return
 	injury_occurred.emit(individual, String(injury["condition_id"]), String(injury["activity"]))
@@ -378,7 +320,6 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 	# (es. ThinkAction -> individual.pending_thought = true) deve essere scritto mentre quello
 	# step è ancora "il current" per costruzione, non dopo che la Task è già passata oltre.
 	action.on_complete(individual, task.context)
-	_action_step("on_complete")
 	# Riparazione finita (2026-10-10, materiali della Ripara — passo 5): il contenitore deve restare vuoto; un avanzo va a
 	# terra (GroundPileService.drop_repair_materials). Non a un abbandono: lì materiali e piano restano sull'edificio.
 	if action is RepairAction and (action as RepairAction).target_building != null and action.is_target_valid() \
@@ -412,7 +353,6 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 	_handle_pending_hunt_butcher(individual, task)
 	_handle_pending_hunt_zone_prey(individual, task)
 	_handle_pending_ground_pile_haul(individual, task)
-	_action_step("richieste dello step")
 	if task.context.has(CONTEXT_PENDING_TASK_ABORT):
 		var abort_reason := String(task.context[CONTEXT_PENDING_TASK_ABORT])
 		task.context.erase(CONTEXT_PENDING_TASK_ABORT)
@@ -442,7 +382,6 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 	_skip_unloads_without_cargo(individual, task)
 	# Passo "allontanati" con un seguito noto (2026-09-27): saltato allo stesso modo, il pipottino resta dov'è.
 	_skip_walk_away_with_follow_up(individual, task)
-	_action_step("avanzamento")
 	# Ordine del giocatore in attesa della consegna di rifornimento (2026-09-29, MaterialSupplyService.
 	# CONTEXT_YIELD_AFTER_DELIVERY): appena completato un Unload del giro — o se il giro non c'è più (scartato alla
 	# ripresa, dopo il Walk di ritorno al cantiere) — la Build va in coda e parte l'ordine. Solo a zaino vuoto: con un
@@ -470,7 +409,6 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 		# Effetti del completamento su skill e parametri vitali: TaskCompletionEffectService (dati in
 		# task_completion_effects.tres), non qui - questo servizio parla di singole Action.
 		TaskCompletionEffectService.apply_effects(individual, task)
-		_action_step("effetti di fine task")
 		# Serie di cacce (2026-10-01): prima di bisogno/coda, così la nuova caccia accodata è già lì.
 		_continue_hunt_zone_series(individual, task)
 		# Serie di estrazioni in zona (2026-10-05): stesso punto, stesso motivo.
@@ -479,14 +417,12 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 		_continue_cut_zone_series(individual, task, game_data)
 		# Serie di pesca in zona (2026-10-31): stesso punto, stesso motivo.
 		_continue_fish_zone_series(individual, task)
-		_action_step("serie in zona")
 		# Bisogno/coda (2026-09-13, richiesta utente, Punto 5) — PRIMA di considerare
 		# l'individuo libero: se un bisogno stamina è ANCORA attivo, assegna la Task-bisogno
 		# corrispondente; altrimenti riprende l'ultima Task sospesa in coda (se presente);
 		# solo se nessuna delle due condizioni vale, individual.stop() come prima di questo
 		# passo. Vedi _handle_task_completion_need_and_queue per il dettaglio dei tre rami.
 		_handle_task_completion_need_and_queue(individual, task, world, game_data)
-		_action_step("bisogno, coda e lavoro nuovo")
 	else:
 		# Validità del bersaglio all'attivazione dello step (2026-09-21, richiesta utente): se il
 		# bersaglio persistente dello step che sta per partire è sparito/completato nel frattempo, la
@@ -512,7 +448,6 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 			_handle_task_completion_need_and_queue(individual, task, world, game_data)
 			return
 		next_action.activate(individual, task.context)
-		_action_step("attivazione step successivo")
 
 
 # Consuma task.context["pending_warehouse_search"] (2026-09-09, richiesta utente — GENERALIZZATO da
@@ -1643,9 +1578,31 @@ func _search_warehouse_for_resource(
 		print("[WAREHOUSE SEARCH] nessun magazzino trovato per resource_name='%s' quantity=%d — nessun edificio da abbandonare in questo caso, ma nessuna destinazione disponibile." % [
 			resource_name, quantity
 		])
+	# Cibo senza deposito (2026-10-31, richiesta utente — "se sta morendo di fame come può non mangiarselo?"): invece di
+	# buttarlo lo mangia sul posto, con il rifornimento dallo zaino (riserva corporea, poi provviste). L'avanzo resta
+	# nello zaino e a Task chiusa segue la regola del carico (release_orphan_cargo).
+	if _queue_eat_from_backpack(individual, task, resource_name):
+		return
 	var discarded_quantity_b1: int = individual.discard_carried_resource_entry(resource_name)
 	if discarded_quantity_b1 > 0:
 		carried_resource_discarded.emit(individual, resource_name, discarded_quantity_b1)
+
+
+# true se `resource_name` nello zaino è cibo commestibile: accoda subito dopo lo step corrente un rifornimento dallo
+# zaino (stesso step di emergency_restock_backpack), uno solo anche se più varietà di cibo restano senza deposito.
+static func _queue_eat_from_backpack(individual: HumanIndividual, task: Task, resource_name: String) -> bool:
+	if not individual.carried_resources.has(resource_name) \
+			or not FoodSelectionService.has_edible_food({resource_name: individual.carried_resources[resource_name]}):
+		return false
+	var next_index := task.current_step_index + 1
+	if next_index < task.steps.size():
+		var next_step := task.steps[next_index] as RestockPouchAction
+		if next_step != null and next_step.source_kind == RestockPouchAction.SourceKind.BACKPACK:
+			return true
+	var new_steps: Array[Action] = [RestockPouchAction.new(null, RestockPouchAction.SourceKind.BACKPACK)]
+	var descriptions: Array[String] = ["task_restock_step_backpack"]
+	task.insert_steps_after_current(new_steps, descriptions)
+	return true
 
 
 # Consuma task.context["pending_thought_target_search"] (2026-09-10, richiesta utente — handler di
@@ -2197,12 +2154,25 @@ func _handle_pending_warehouse_restock(individual: HumanIndividual, task: Task, 
 # è vuoto e alla task restano solo cammini e scarichi di risorse (Walk / Unload RESOURCE). È il caso di una task di
 # trasporto sospesa il cui carico è stato mangiato nel frattempo: riprenderla farebbe camminare fino al magazzino
 # per scaricare nulla, quindi alla ripresa viene scartata (resolve_idle_individual, activate_resumed_task).
+static func _unequip_slot_empty(individual: HumanIndividual, unload: UnloadAction) -> bool:
+	var slot := unload.unequip_slot_index
+	if slot == HumanIndividual.TOWED_SLOT:
+		return individual.towed_resource == ""
+	if unload.unequip_apparel:
+		return individual.get_equipped_apparel(slot) == ""
+	return individual.get_equipped_tool(slot) == ""
+
+
 static func is_empty_cargo_delivery(individual: HumanIndividual, task: Task) -> bool:
 	if task == null or not individual.carried_resources.is_empty():
 		return false
 	var has_unload := false
 	for i in range(task.current_step_index, task.steps.size()):
 		var step: Action = task.steps[i]
+		# Riponi attrezzo/capo (2026-11-01, bugfix: lo store_tool in coda veniva scartato a zaino vuoto): scarica dalla
+		# cintura, dal vestiario o dal traino, non dallo zaino — vuoto solo se quello slot è già vuoto.
+		if step is UnloadAction and (step as UnloadAction).unequip_slot_index != -1:
+			return _unequip_slot_empty(individual, step as UnloadAction)
 		if step is UnloadAction and ((step as UnloadAction).deposit_kind == UnloadAction.DepositKind.RESOURCE \
 				or (step as UnloadAction).deposit_kind == UnloadAction.DepositKind.REPAIR):
 			has_unload = true
@@ -2403,55 +2373,11 @@ static func _resolve_age_band(individual: HumanIndividual, game_data: GameData) 
 # GIÀ a current_task null (seeding/nascita/load) questo è un no-op innocuo (TaskDebugRegistry.
 # on_task_closed(null) è già un caso esplicitamente previsto — "individuo appena creato, mai
 # assegnato" — vedi TaskDebugRegistry.gd; discard_carried_resource() no-op su zaino già vuoto).
-# Misura (2026-10-28, scatto da ~290 ms in "Cerca lavoro" senza causa nel log): con DebugLogging.SHOW_SIM_FRAME_TIMING_LOGS,
-# una riga [IDLE SLOW] quando un giro supera SIM_FRAME_SLOW_MSEC, con i ms di ogni passo (_idle_step) e dell'ultimo,
-# quello che ha deciso. Solo misura, nessun effetto sul gioco.
-static var _idle_depth: int = 0
-static var _idle_parts: Array[String] = []
-static var _idle_last_usec: int = 0
-static var _idle_last_label: String = "inizio"
-
-
 static func resolve_idle_individual(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> void:
-	if not (DebugLogging.ENABLED and DebugLogging.SHOW_SIM_FRAME_TIMING_LOGS) or _idle_depth > 0:
-		_resolve_idle_individual(individual, age_band, world)
-		return
-	_idle_depth += 1
-	_idle_parts.clear()
-	_idle_last_label = "inizio"
-	var arrived := individual.job_seek_arrived
-	var started := Time.get_ticks_usec()
-	_idle_last_usec = started
-	_resolve_idle_individual(individual, age_band, world)
-	var ended := Time.get_ticks_usec()
-	_idle_depth -= 1
-	var total_ms := (ended - started) / 1000.0
-	if total_ms >= DebugLogging.SIM_FRAME_SLOW_MSEC:
-		_idle_parts.append("dopo '%s' %.1f" % [_idle_last_label, (ended - _idle_last_usec) / 1000.0])
-		var task_name := individual.current_task.task_name if individual.current_task != null else "nessuna"
-		print("[IDLE SLOW] #%d %s%s: %.1f ms -> %s — %s" % [
-			individual.id, individual.name, " (arrivo al punto)" if arrived else "", total_ms, task_name, ", ".join(_idle_parts)
-		])
-
-
-# Passo di resolve_idle_individual concluso: ms dall'ultimo passo, solo se il passo costa qualcosa.
-static func _idle_step(label: String) -> void:
-	if _idle_depth <= 0:
-		return
-	var now_usec := Time.get_ticks_usec()
-	var ms := (now_usec - _idle_last_usec) / 1000.0
-	if ms >= 0.5:
-		_idle_parts.append("%s %.1f" % [label, ms])
-	_idle_last_usec = now_usec
-	_idle_last_label = label
-
-
-static func _resolve_idle_individual(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> void:
 	# "Cerca lavoro" appena finita al punto di assegnazione (2026-10-09): letto e spento qui, prima di tutto.
 	var arrived_at_assignment_point := individual.job_seek_arrived
 	individual.job_seek_arrived = false
 	var needed_priority := _resolve_active_stamina_need_priority(individual)
-	_idle_step("bisogno di riposo")
 	if needed_priority != -1:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
 			print("[INTERRUPT DEBUG] #%d %s: individuo libero, bisogno stamina attivo (priorità %d, stamina=%.1f/%.1f)." % [
@@ -2467,7 +2393,6 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 	# malati, prima di riprendere la coda.
 	if ThirstService.needs_emergency_drink(individual) and ThirstService.assign_drink_task(individual, age_band, true, true):
 		return
-	_idle_step("acqua di emergenza")
 
 	# Individuo libero con bisogno di provviste di emergenza (2026-09-19, richiesta utente): riceve
 	# emergency_restock invece di una perditempo. Nessun guard sullo spazio libero. Se nessun magazzino
@@ -2480,11 +2405,9 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 			])
 		if NeedTaskAssignmentService.assign_emergency_restock_task(individual, world, age_band, true):
 			return
-	_idle_step("provviste di emergenza")
 
 	if ThirstService.needs_drink(individual) and ThirstService.assign_drink_task(individual, age_band, false, false):
 		return
-	_idle_step("bere")
 
 	# Malato (2026-10-24, richiesta utente — HumanIndividual.is_sick): dopo i bisogni sopra riporta il carico rimasto
 	# senza proprietario, poi solo provviste (stessa regola dello svago: sacca non quasi piena) o riposo, un giorno alla
@@ -2516,7 +2439,12 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 	# disponibile, prima di riprendere la coda (con la coda sempre piena non ci arriverebbe mai).
 	if SelfRemedyService.try_take_remedy(individual, age_band, world):
 		return
-	_idle_step("malattia e rimedi")
+
+	# Attrezzi in prestito con la coda piena (2026-11-01, richiesta utente): prima di riprendere la coda ripone quelli che
+	# le task in coda non usano — altrimenti, con sempre qualcosa in coda, non tornerebbero mai al deposito.
+	if not individual.task_queue.is_empty() and not individual.skip_job_board_once \
+			and ToolFetchService.try_return_borrowed_tools(individual, age_band, world, true):
+		return
 
 	var resumed_task := TaskQueueService.pop_suspended_task(individual)
 	# Cantieri rimandati per materiale (2026-10-16): restano in coda finché il materiale non c'è, si passa alla successiva.
@@ -2559,7 +2487,6 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 	if resumed_task != null:
 		resumed_task.context.erase(CONTEXT_MATERIAL_POSTPONED)
 		resumed_task.context.erase(CONTEXT_MATERIAL_POSTPONED_KIND)
-	_idle_step("coda")
 	if resumed_task != null:
 		individual.skip_job_board_once = false
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
@@ -2577,7 +2504,6 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 	# o lo stop() finale). A terra solo se nessun magazzino lo accetta.
 	if CargoReturnService.release_orphan_cargo(individual, world):
 		return
-	_idle_step("carico senza proprietario")
 
 	# Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): con l'idea dell'assegnazione
 	# completata, il lavoro attivo più adatto della lista; solo qui, tra una task e l'altra, mai sopra una task o
@@ -2609,14 +2535,12 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 			return
 		if ToolFetchService.try_take_waterskin(individual, age_band, world):
 			return
-		_idle_step("attrezzi, vestiti, sacca e otre")
 	if individual.skip_job_board_once:
 		individual.skip_job_board_once = false
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 			print("[JOB BOARD] #%d %s: lista saltata una volta (annullo del giocatore)." % [individual.id, individual.name])
 	elif arrived_at_assignment_point:
 		var job_taken := JobBoardService.try_take_job(individual)
-		_idle_step("presa dalla lista")
 		if job_taken:
 			var received: Task = individual.current_task if individual.current_task != null else (individual.task_queue.back() if not individual.task_queue.is_empty() else null)
 			CoordinatorService.report_departure(individual, received.get_activity_description() if received != null else "?")
@@ -2626,7 +2550,6 @@ static func _resolve_idle_individual(individual: HumanIndividual, age_band: Huma
 		JobBoardService.note_empty_trip(GameSettings.active_game_data, individual)
 	else:
 		var seek_outcome := JobBoardService.try_seek_job(individual, age_band, world)
-		_idle_step("partenza per il punto")
 		if seek_outcome == JobBoardService.SeekOutcome.STARTED:
 			return
 		# Senza punto di assegnazione nessuno prende lavori dalla coda (2026-10-10, richiesta utente — tolto il ripiego della

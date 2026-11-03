@@ -76,4 +76,7 @@ enum NotificationPopupType {
 	# Cosa sta succedendo col branco in visita (2026-11-01, WildAnimalVisitService._notify_group): prima visita, si abitua,
 	# cacciato, ucciso. Stile di default. Aggiunto IN CODA.
 	WILD_ANIMAL_GROUP_NEWS,
+	# Edificio dei pensieri troppo lontano dall'acqua, senza otre (2026-11-01, ThirstService.check_thought_building_water).
+	# Stile "alert" giallo. Aggiunto IN CODA.
+	THOUGHT_BUILDING_FAR_FROM_WATER,
 }

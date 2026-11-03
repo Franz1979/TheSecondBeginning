@@ -79,8 +79,8 @@ const VEGETATION_REFRESH_MOVE_THRESHOLD: float = 3.0
 # soglie diverse (isteresi) per evitare di attivare/disattivare di continuo quando il player
 # oscilla vicino alla soglia: si attiva solo entro il margine stretto, ma una volta attivo resta
 # tale finché non si supera quello largo. Vedi _compute_relevant_neighbor_offsets.
-const LIVE_NEIGHBOR_ACTIVATE_MARGIN: float = 25.0
-const LIVE_NEIGHBOR_DEACTIVATE_MARGIN: float = 35.0
+const LIVE_NEIGHBOR_ACTIVATE_MARGIN: float = 15.0
+const LIVE_NEIGHBOR_DEACTIVATE_MARGIN: float = 20.0
 
 var macro_world: World
 var game_data: GameData
@@ -220,8 +220,6 @@ const PENDING_REFRESH_INTERVAL_SEC: float = 1.0
 const PENDING_JOB_WAIT_DAYS: float = 1.0
 var pending_panel: PendingPanel = null
 var _pending_refresh_timer: float = 0.0
-# Soglia della riga [VEG REFRESH TIMING] a flag spento (2026-10-28, misura del taglio da ~28 ms).
-const SLOW_REFRESH_LOG_MSEC := 20.0
 var _pending_clock: float = 0.0
 var _pending_unassigned_since: Dictionary = {}
 var _pending_previous_keys: Dictionary = {}
@@ -2325,8 +2323,11 @@ func _on_transport_delivered(owner: HumanIndividual, context: Dictionary, delive
 # Comandi del clic destro con un pipottino selezionato (2026-10-24, refactoring GameScene 5B.7): i bersagli sotto il clic
 # raccolti una volta (_collect_right_click_targets), i comandi possibili e il loro ordine da RightClickCommandService,
 # provati in quell'ordine finché uno consuma il clic. false = nessun comando: il chiamante muove il pipottino.
+# Shift + destro (2026-11-01, richiesta utente): solo movimento, nessun comando, qualunque cosa ci sia sotto il mouse.
 func _handle_right_click_command(event: InputEvent) -> bool:
 	if not (event is InputEventMouseButton) or not event.pressed or event.button_index != MOUSE_BUTTON_RIGHT:
+		return false
+	if event.shift_pressed:
 		return false
 	if individual == null or not individual.is_selected:
 		return false
@@ -4842,6 +4843,7 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary], repeat_override:
 			available_candidates.size(), str(available_quantities)
 		])
 	_pickup_dialog_work_area_workers = []
+	pickup_choice_dialog.footer_hint = tr("pickup_choice_move_hint")
 	pickup_choice_dialog.open_dialog(tr("pickup_choice_dialog_title"), tr("pickup_choice_dialog_message"), pending_resources, UserOptions.get_pickup_default_choice(), repeat_enabled, HaulZoneService.CLICK_MAX_REPEATS)
 	return
 
@@ -11498,7 +11500,7 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	cell.world = World.new()
 
 	if cell.macro_cell != null:
-		cell.world.generate_uniform_terrain(cell.macro_cell.terrain_base, cell.macro_cell.water_type, cell.macro_cell.coast_type)
+		cell.world.generate_single_cell_terrain(cell.macro_cell.terrain_base, cell.macro_cell.water_type, cell.macro_cell.coast_type)
 	else:
 		if macro_world == null:
 			push_warning("Nessun mondo condiviso: genero un mondo vuoto di riserva.")
@@ -11570,6 +11572,8 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 
 		cell.macro_state = macro_world.get_cell_state_at(cell.macro_cell.x, cell.macro_cell.y)
 		if cell.macro_state != null:
+			# Disposizione ancora valida se da quando è stata fatta non è passato un controllo stagionale: niente generatore.
+			cell.needs_vegetation_layout_rebuild = cell.macro_state.vegetation_layout_checkpoint != game_data.vegetation_checkpoint_count
 			if cell.macro_cell.water_type == GameTypes.WaterType.RIVER:
 				var thickness_ratio: float = float(cell.macro_state.get_river_space()) / float(MacroCellState.TOTAL_SPACE)
 				cell.renderer.set_river(cell.macro_cell.river_shape, thickness_ratio)
@@ -12360,6 +12364,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 		if cell.needs_vegetation_layout_rebuild or not cell.macro_state.vegetation_layout_ready:
 			cell.cached_vegetation_positions = VegetationLayoutService.rebuild(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
 			cell.needs_vegetation_layout_rebuild = false
+			cell.macro_state.vegetation_layout_checkpoint = game_data.vegetation_checkpoint_count
 		else:
 			cell.cached_vegetation_positions = VegetationLayoutService.read(cell.macro_state, occupied, game_data.year, building_positions)
 		# Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — ricalcolati
@@ -12612,12 +12617,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 	# Verifica della selezione e pannello (2026-10-03, passo 2: fase prima non misurata).
 	_veg_timings_ms["7_selection_panel"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
-	# Ridisegni lenti (2026-10-28, scatto da 55 ms senza motivo nel log): con SHOW_SIM_FRAME_TIMING_LOGS la riga esce anche
-	# a flag spento, solo sopra SLOW_REFRESH_LOG_MSEC.
-	var refresh_total_ms: float = (Time.get_ticks_usec() - _refresh_total_start_usec) / 1000.0
-	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS \
-			or (DebugLogging.SHOW_SIM_FRAME_TIMING_LOGS and refresh_total_ms >= SLOW_REFRESH_LOG_MSEC):
-		var total_ms: float = refresh_total_ms
+	if DebugLogging.SHOW_VEGETATION_REFRESH_TIMING_LOGS:
+		var total_ms: float = (Time.get_ticks_usec() - _refresh_total_start_usec) / 1000.0
 		var labels: Array = _veg_timings_ms.keys()
 		labels.sort()
 		var parts: Array = []
@@ -13731,9 +13732,13 @@ func _on_build_submenu_action_pressed(action_id: StringName) -> void:
 	var building_type_name := _building_type_name_for_action(action_id)
 	if building_type_name == "":
 		return
+	# Anteprima già attiva (2026-10-31, richiesta utente — "doppio clic"): lo stesso edificio la spegne, uno diverso la
+	# sostituisce subito.
 	if _building_ghost != null:
+		var same_type := _selected_building_type_name == building_type_name
 		_clear_building_ghost()
-		return
+		if same_type:
+			return
 	# Modalità esclusive (2026-09-27): scegliere un edificio chiude il disegno delle zone di lavoro.
 	if _work_area_draw_active:
 		_exit_work_area_draw_mode()
@@ -14243,7 +14248,10 @@ func _refresh_building_slots_buildable() -> void:
 		if rules == null:
 			continue
 		var availability := _building_type_availability(rules, building_type_name)
-		build_bar.set_building_buildable(building_type_name, availability["is_buildable"], availability["disabled_tooltip"])
+		build_bar.set_building_buildable(
+			building_type_name, availability["is_buildable"], availability["disabled_tooltip"],
+			IdeaProgressService.is_building_undiscovered(human_folk, rules)
+		)
 	# Zone di lavoro (2026-09-27, richiesta utente): stesso ricalcolo, stesso tooltip "Richiede: …" degli edifici.
 	var work_areas_available := _is_work_areas_tool_available()
 	var required_idea := IdeaCalculator.get_idea(WorkAreaTypes.REQUIRED_IDEA_ID)
@@ -15837,9 +15845,7 @@ func _on_site_cleared(building: Building) -> void:
 	var builders := JobWorkScanService.workers_on_building(human_individuals, building, JobWorkScanService.BUILD_TASK_NAMES)
 	var effects := GameEffects.new()
 	BuildingLifecycleService.settle_site_stump_debris(_game_context(), building, builders[0] if not builders.is_empty() else null, effects)
-	HumanIndividualActionService.timing_step("pulizia: maceria dei ceppi")
 	_apply_effects(effects)
-	HumanIndividualActionService.timing_step("pulizia: effetti della maceria")
 	var macro_coords := Vector2i(building.macro_x, building.macro_y)
 	if not live_cells.has(macro_coords):
 		return
@@ -15847,7 +15853,6 @@ func _on_site_cleared(building: Building) -> void:
 	if not _refresh_site_cleared_visuals(cell, building):
 		cell.needs_full_vegetation_recompute = true
 		_refresh_resource_visuals(cell, "cantiere ripulito")
-	HumanIndividualActionService.timing_step("pulizia: ridisegno")
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[BUILD] Cantiere edificio #%d ripulito — vegetazione rimossa, spazio riservato per l'edificio." % building.id)
 
@@ -16559,8 +16564,6 @@ func _apply_effects(effects: GameEffects) -> void:
 				_connect_material_supply_step_appended(wire_task, entry["owner"])
 			GameEffects.WireKind.STEP_SIGNALS:
 				_ensure_step_signals(wire_task)
-	# Misura temporanea (2026-10-28, scatto della pulizia del cantiere): no-op fuori da un'azione lenta.
-	HumanIndividualActionService.timing_step("effetti: mosse e lavori collegati")
 	for completed_building in effects.buildings_completed:
 		_on_building_construction_completed(completed_building)
 	# Prima addomesticazione di una specie (2026-10-26): scoperta, ed eventuale idea regalata, nel popup.
@@ -16576,16 +16579,13 @@ func _apply_effects(effects: GameEffects) -> void:
 		var icon_view: HumanIndividualView = human_individual_views.get((entry["member"] as HumanIndividual).id)
 		if icon_view != null:
 			icon_view.show_transient_icon(String(entry["key"]))
-	HumanIndividualActionService.timing_step("effetti: completamenti e icone")
 	for macro_coords in effects.cells_to_refresh.keys():
 		if live_cells.has(macro_coords):
 			_refresh_building_visuals(live_cells[macro_coords])
-	HumanIndividualActionService.timing_step("effetti: edifici della cella")
 	for building in effects.neighbor_refresh_buildings.values():
 		_refresh_dirt_ground_neighbor_cells(building)
 	for building in effects.marker_buildings.values():
 		_refresh_building_marker(building)
-	HumanIndividualActionService.timing_step("effetti: vicini e segni")
 	for macro_coords in effects.vegetation_cells.keys():
 		if live_cells.has(macro_coords):
 			var vegetation_cell: LiveMacroCell = live_cells[macro_coords]
@@ -16597,7 +16597,6 @@ func _apply_effects(effects: GameEffects) -> void:
 			if not _refresh_rubble_visuals(rubble_cell, effects.rubble_lots[macro_coords]):
 				rubble_cell.needs_full_vegetation_recompute = true
 				_refresh_resource_visuals(rubble_cell, "edificio")
-	HumanIndividualActionService.timing_step("effetti: vegetazione e macerie")
 	for building in effects.site_placeholder_buildings.values():
 		_spawn_build_site_placeholders(building)
 	if not selected_building.is_empty() and effects.removed_building_ids.has(int(selected_building.get("building_id", -1))):
@@ -16619,7 +16618,6 @@ func _apply_effects(effects: GameEffects) -> void:
 			GameEffects.PanelKind.DEAD_BODY:
 				if selected_dead_body_individual_id != -1:
 					_refresh_dead_body_panel()
-		HumanIndividualActionService.timing_step("effetti: pannello %s" % str(GameEffects.PanelKind.find_key(panel)))
 	if UserOptions.show_notification_popups:
 		for entry in effects.notifications:
 			notification_popup.enqueue(entry["type"], entry["text"], entry["requires_ack"])
@@ -16628,7 +16626,6 @@ func _apply_effects(effects: GameEffects) -> void:
 	if effects.pending_refresh:
 		_job_board_round.cancel()
 		_start_job_board_round()
-	HumanIndividualActionService.timing_step("effetti: avvisi e In sospeso")
 
 
 # Riconcilia i rametti del cantiere di questa cella con lo STATO degli edifici (2026-09-19,

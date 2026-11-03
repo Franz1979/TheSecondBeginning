@@ -15,7 +15,7 @@ var macro_x: int
 var macro_y: int
 var macro_cell: MacroCellData
 var macro_state: MacroCellState
-var world: World # micro-mondo locale uniforme di QUESTA cella (100x100 microcelle)
+var world: World # micro-mondo locale uniforme di QUESTA cella (una cella sola, vedi World.generate_single_cell_terrain)
 var container: Node2D # genitore posizionato via offset; renderer/animali/fog sono suoi figli
 var renderer: MicroCellRenderer
 var animal_renderers: Dictionary = {} # species_name (String) -> AnimalGroupRenderer

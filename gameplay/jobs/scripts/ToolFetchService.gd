@@ -669,44 +669,66 @@ static func retry_waiting_fetches(ctx: GameContext) -> Array[Dictionary]:
 # stesso viaggio, quelli diretti altrove alla prossima pausa. Senza destinazione si tiene e si riprova. true = task assegnata.
 # Spenta (2026-10-23): i prelievi non segnano più prestiti (start_fetch) e quelli già segnati si cancellano allo
 # spegnimento (forget_borrowed_tools): gli attrezzi restano a chi li ha.
-static func try_return_borrowed_tools(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+# Con la coda piena (2026-11-01, richiesta utente — Ruskan teneva il coltello preso per la corda): `skip_queue_needs`
+# true (resolve_idle_individual, prima di riprendere la coda) ripone solo gli attrezzi che nessuna task in coda usa
+# (ToolGateService.get_required_categories), e nessuno se in coda c'è un prelievo di attrezzi o una caccia. La voce resta nei prestiti
+# finché l'attrezzo è in cintura (la toglie _prune_borrowed_tools a deposito fatto): se il riponi esce dalla coda piena,
+# alla pausa dopo si rifà. Un riponi già aperto per quell'attrezzo non se ne crea un secondo.
+static func try_return_borrowed_tools(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World, skip_queue_needs: bool = false) -> bool:
 	var game_data: GameData = GameSettings.active_game_data
 	if game_data == null or world == null:
 		return false
 	_prune_borrowed_tools(individual)
 	if individual.borrowed_tools.is_empty() or not game_data.job_board_return_borrowed_tools:
 		return false
+	var returning: Dictionary = {}
+	var queue_needs: Array[TaskTypes.ToolCategory] = []
+	for open_task in JobWorkScanService.open_tasks(individual):
+		if open_task.context.has(BORROWED_TOOL_RETURN_KEY):
+			returning[String(open_task.context.get("tool_resource_name", ""))] = true
+		elif skip_queue_needs:
+			# Caccia in coda: armi e munizioni servono anche se gli step (pattuglia) non le dichiarano ancora.
+			if open_task.context.has(ZONE_ORDER_TOOL_FETCH_KEY) or HuntService.is_hunt_task(open_task):
+				return false
+			for category in ToolGateService.get_required_categories(open_task):
+				if not queue_needs.has(category):
+					queue_needs.append(category)
 	var trip_destination: Building = null
 	var assigned_any := false
-	var remaining: Array = []
 	for entry in individual.borrowed_tools:
 		var tool_name := String(entry.get("tool_name", ""))
+		if returning.has(tool_name) or _tool_covers_any(tool_name, queue_needs):
+			continue
 		var slot := find_belt_slot_by_name(individual, tool_name)
 		var destination := _borrowed_tool_destination(world, individual, tool_name, int(entry.get("building_id", -1)))
 		if slot == -1 or destination == null or (trip_destination != null and destination != trip_destination):
-			remaining.append(entry)
 			continue
 		var task := TaskBuilderService.build_tool_task(individual, TaskBuilderService.STORE_TOOL_TASK_DEFINITION_PATH, tool_name, destination, slot)
 		if task == null:
-			remaining.append(entry)
 			continue
 		task.context[BORROWED_TOOL_RETURN_KEY] = true
 		if not assigned_any:
 			if not individual.assign_task(task, age_band):
-				remaining.append(entry)
 				continue
 			assigned_any = true
 			trip_destination = destination
 		else:
 			TaskQueueService.push_follow_up_task(individual, task)
+		returning[tool_name] = true
 		if storage_signal_connector.is_valid():
 			storage_signal_connector.call(task, individual)
 		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 			print("[JOB BOARD] #%d %s: ripone %s in %s #%d (preso per un lavoro)." % [
 				individual.id, individual.name, tool_name, destination.building_type_name, destination.id
 			])
-	individual.borrowed_tools = remaining
 	return assigned_any
+
+
+static func _tool_covers_any(tool_name: String, categories: Array[TaskTypes.ToolCategory]) -> bool:
+	for category in ToolGateService._tool_categories(tool_name):
+		if categories.has(category):
+			return true
+	return false
 
 
 # Munizioni senza arma (2026-10-25, richiesta utente — Runa con due mazzi di frecce e l'arco rotto): chi si libera con in

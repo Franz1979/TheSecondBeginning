@@ -448,6 +448,8 @@ static func tick_second(ctx: GameContext, now: float, effects: GameEffects) -> v
 static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 	# Rifiuti del villaggio (2026-10-18): ogni 30 giorni, nelle Fosse o accanto al centro del villaggio.
 	BuildingLifecycleService.produce_village_waste(ctx, effects)
+	# Edificio dei pensieri troppo lontano dall'acqua (2026-11-01): avviso una volta per episodio.
+	ThirstService.check_thought_building_water(ctx, effects)
 	# Gruppi di animali che frequentano il villaggio (2026-10-26): creati appena esiste un villaggio con centro.
 	WildAnimalGroupService.ensure_groups(ctx)
 	# Nascite, morti e partenze del gruppo (2026-10-27).

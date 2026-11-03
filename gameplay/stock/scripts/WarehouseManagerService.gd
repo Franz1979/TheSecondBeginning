@@ -629,9 +629,9 @@ static func _workstation_missing(ctx: GameContext, resource_name: String) -> int
 # letto dalla riga della coda e dalla campanella. true se ha creato, ridotto o tolto ordini.
 # Attrezzi del villaggio in uso (2026-10-24, regola concordata con l'utente): nome -> pezzi fuori dai depositi che ci
 # torneranno da soli, quindi contano nella scorta per il minimo (non tra gli ingredienti disponibili):
-#   - in cintura in prestito (HumanIndividual.borrowed_tools, regola "Riponi gli attrezzi presi per un lavoro" accesa);
-#   - in cintura mentre li sta riportando (task con ToolFetchService.BORROWED_TOOL_RETURN_KEY, voce già tolta dai prestiti;
-#     solo finché è ancora in cintura, per non contarlo due volte appena depositato);
+#   - in cintura in prestito (HumanIndividual.borrowed_tools, regola "Riponi gli attrezzi presi per un lavoro" accesa),
+#     anche mentre li sta riportando (dal 2026-11-01 la voce resta nei prestiti fino al deposito); solo finché è in
+#     cintura o lo sta prendendo, per non contarlo due volte appena depositato;
 #   - mezzo da traino agganciato (towed_resource: torna sempre, appoggio o magazzino).
 # Non contano gli attrezzi di proprietà (presi con la regola spenta o dati dal giocatore), la sacca presa con la sua regola,
 # i capi indossati, i pezzi rotti.
@@ -641,16 +641,17 @@ static func in_use_stock(individuals: Array) -> Dictionary:
 		var human := member as HumanIndividual
 		if human == null:
 			continue
+		var returning: Dictionary = {}
+		for task in JobWorkScanService.open_tasks(human):
+			if task.context.has(ToolFetchService.BORROWED_TOOL_RETURN_KEY):
+				returning[String(task.context.get("tool_resource_name", ""))] = true
 		for entry in human.borrowed_tools:
 			var borrowed_name := String(entry.get("tool_name", ""))
-			if borrowed_name != "":
-				in_use[borrowed_name] = int(in_use.get(borrowed_name, 0)) + 1
-		for task in JobWorkScanService.open_tasks(human):
-			if not task.context.has(ToolFetchService.BORROWED_TOOL_RETURN_KEY):
+			if borrowed_name == "":
 				continue
-			var returning_name := String(task.context.get("tool_resource_name", ""))
-			if returning_name != "" and ToolFetchService.find_belt_slot_by_name(human, returning_name) != -1:
-				in_use[returning_name] = int(in_use.get(returning_name, 0)) + 1
+			if returning.has(borrowed_name) and ToolFetchService.find_belt_slot_by_name(human, borrowed_name) == -1:
+				continue
+			in_use[borrowed_name] = int(in_use.get(borrowed_name, 0)) + 1
 		if human.towed_resource != "":
 			in_use[human.towed_resource] = int(in_use.get(human.towed_resource, 0)) + 1
 	return in_use

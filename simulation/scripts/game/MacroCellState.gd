@@ -161,6 +161,8 @@ var tree_lot_slots: Dictionary = {}
 var shrub_lot_slots: Dictionary = {}
 var grass_lots: Dictionary = {}
 var vegetation_layout_ready: bool = false
+# Valore di GameData.vegetation_checkpoint_count all'ultima generazione della disposizione. -1: mai (o vecchio salvataggio).
+var vegetation_layout_checkpoint: int = -1
 # Registro unico "risorse a capacità per lotto" (2026-09-19, richiesta utente — refactor
 # lot_source: prima pebble/stick/plant_fiber/mushroom/wild_vegetables avevano ciascuna il proprio
 # campo/formato — pebble_quantities/stick_quantities/plant_fiber_quantities/mushroom_quantities/

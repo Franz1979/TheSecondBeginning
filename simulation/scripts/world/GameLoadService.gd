@@ -76,6 +76,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	var game_data := GameData.new()
 	game_data.year = int(data["game"]["year"])
 	game_data.current_day = int(data["game"].get("current_day", 0))
+	game_data.vegetation_checkpoint_count = int(data["game"].get("vegetation_checkpoint_count", 0))
 	# Sincronizza SUBITO il giorno assoluto noto a TaskDebugRegistry (2026-09-13, richiesta utente,
 	# pulizia temporale del pannello debug 🐞) — senza questa riga, _current_absolute_day
 	# resterebbe al valore stantio di una sessione precedente (o 0, mai avanzato in questa sessione

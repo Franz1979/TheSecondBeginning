@@ -148,6 +148,23 @@ func generate_uniform_terrain(
 			cells.append(cell)
 			cell_states.append(MacroCellState.new(x, y))
 
+
+# Micro-mondo di una cella viva (2026-11-01, scatto all'attivazione): serve solo a MicroCellRenderer, che con terreno
+# uniforme legge la prima cella. Una cella sola invece di 10.000 uguali: get_cell_at risponde solo per (0, 0).
+func generate_single_cell_terrain(
+	terrain_base: GameTypes.TerrainBase,
+	water_type: GameTypes.WaterType,
+	coast_type: GameTypes.CoastType = GameTypes.CoastType.NONE
+) -> void:
+	cells.clear()
+	cell_states.clear()
+	population_groups.clear()
+	var cell := MacroCellData.new(0, 0)
+	cell.terrain_base = terrain_base
+	cell.water_type = water_type
+	cell.coast_type = coast_type
+	cells.append(cell)
+
 func get_cell_at(x: int, y: int) -> MacroCellData:
 	var index := y * WIDTH + x
 	if index < 0 or index >= cells.size():

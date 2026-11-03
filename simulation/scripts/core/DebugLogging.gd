@@ -310,11 +310,11 @@ const SHOW_TRANSPORT_BUILD_LOGS := false
 # FISH — [FISH] pesca (2026-10-31, prove della pesca nelle zone): tentativi, fine sessione o viaggio, cambio di punto
 # (FishAction), pesci consegnati (unload_action.gd), pesca successiva e fine della serie (WorkFollowUpService). Temporaneo:
 # da spegnere quando la pesca nelle zone funziona.
-const SHOW_FISH_LOGS := true
+const SHOW_FISH_LOGS := false
 # Cacce del gestore scorte (2026-10-31, richiesta utente — capire come nascono): a ogni Inventario il calcolo di
 # WarehouseManagerService._request_hunt passo per passo (carne per le lavorazioni, livelli, scoperto per prodotto, domanda,
 # ordini tolti/creati). Temporaneo: da spegnere dopo la prova.
-const SHOW_STOCK_HUNT_LOGS := true
+const SHOW_STOCK_HUNT_LOGS := false
 # BUILDERS — solo le righe dei costruttori (2026-10-17, prove dei più costruttori): assegnazione della task di costruzione
 # (o demolizione), cella di lavoro di ciascuno, attesa del materiale già in arrivo con altri, effetti di fine costruzione
 # agli altri costruttori. Le stesse righe escono anche con TRANSPORT_BUILD.
@@ -445,12 +445,12 @@ const SHOW_JOB_BOARD_TIMING_LOGS := false
 # Tempi della pesca (2026-10-31, misura temporanea — richiesta utente): [FISH TIMING] quando un tentativo di pesca
 # (FishAction._attempt) o la scelta di un altro punto (FishAction._series_spot_empty) supera FISH_TIMING_SLOW_MSEC. La
 # parte della bacheca (bersaglio, riva raggiungibile, presa) esce in [JOB BOARD TIMING]. Da togliere dopo la misura.
-const SHOW_FISH_TIMING_LOGS := true
+const SHOW_FISH_TIMING_LOGS := false
 const FISH_TIMING_SLOW_MSEC := 1.0
 
 # Fotogrammi lenti del giro per fotogramma (2026-10-28, scatto da 900 ms dentro GameSimulation): [SIM FRAME] quando
 # GameSimulation.tick_frame supera SIM_FRAME_SLOW_MSEC, con il tempo di ogni passo e il pipottino/azione più lento.
-# Acceso per la misura; solo log.
+# Riaccendere per misurare; solo log.
 const SHOW_SIM_FRAME_TIMING_LOGS := false
 const SIM_FRAME_SLOW_MSEC := 40
 

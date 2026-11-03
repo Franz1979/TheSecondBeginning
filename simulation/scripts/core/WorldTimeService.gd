@@ -450,6 +450,7 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 	# stagione (territory_dynamics, l'unico punto che ne crea via PopulationSplitService) — vedi
 	# _run_lod_focus_refresh_checkpoint per il dettaglio completo.
 	if checkpoint_ran:
+		game_data.vegetation_checkpoint_count += 1
 		_run_timed("lod_focus_refresh_checkpoint", func(): _run_lod_focus_refresh_checkpoint(world, game_data))
 
 	# Riepilogo diagnostico compatto (Richiesta: "aggiungi timing... senza toccare i log

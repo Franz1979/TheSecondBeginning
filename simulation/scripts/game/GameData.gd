@@ -12,6 +12,9 @@ const START_DAY := 220
 
 var year: int = 0
 var current_day: int = START_DAY # 0..DAYS_PER_YEAR-1
+# Quanti giorni con controllo stagionale sono passati nella partita: la vegetazione può cambiare solo lì. Confrontato con
+# MacroCellState.vegetation_layout_checkpoint per riusare la disposizione di una cella riattivata.
+var vegetation_checkpoint_count: int = 0
 
 # Era geologico/tecnologica corrente (richiesta utente, 2026-09-04) — GLOBALE alla partita per
 # ora (un solo current_era_name per l'intera GameData, non uno per Folk), coerentemente col fatto
@@ -350,6 +353,9 @@ var job_board_take_waterskin: bool = false
 # Sete attiva (2026-10-31, debug — ThirstService.is_enabled, slot 💧 della barra di debug). Salvata ("thirst_enabled");
 # partita nuova e salvataggi vecchi: accesa.
 var thirst_enabled: bool = true
+# Avviso dell'edificio dei pensieri lontano dall'acqua già dato (2026-11-01, ThirstService.check_thought_building_water).
+# Non salvato: dopo un caricamento, se il problema c'è ancora, l'avviso torna una volta.
+var thought_water_alerted: bool = false
 # Regola di assegnazione "Indossa i capi disponibili" (2026-10-19, richiesta utente — ToolFetchService.try_wear_apparel):
 # chi si libera con uno slot del vestiario vuoto va a prendere in deposito i capi che gli mancano e li indossa. Separata
 # dalla sacca. Salvata da GameSaveService ("job_board_wear_apparel"); partita nuova e salvataggi vecchi: spenta.

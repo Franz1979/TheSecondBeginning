@@ -33,6 +33,8 @@ const EMERGENCY_THRESHOLD: float = 0.25
 const RETRY_DROP_DAYS: float = 2.0 / 24.0
 # Distanza massima dall'acqua (in microcelle, anche in diagonale) entro cui non si perde acqua.
 const WATER_BAND_RADIUS: int = 3
+# Distanza massima (microcelle) dal punto d'acqua più vicino di quello scelto da pick_water_point.
+const WATER_POINT_SPREAD: float = 4.0
 # Salute persa al giorno (su 5000 di un adulto): sotto EMERGENCY_THRESHOLD come un'infezione, a zero più del doppio.
 const LOW_WATER_DAILY_HEALTH_LOSS: float = 150.0
 const NO_WATER_DAILY_HEALTH_LOSS: float = 400.0
@@ -165,6 +167,89 @@ static func _add_neighbors(access: Dictionary, position: Vector2i, excluded: Dic
 
 static func _ratio(individual: HumanIndividual) -> float:
 	return individual.current_thirst / individual.max_thirst if individual.max_thirst > 0.0 else 1.0
+
+
+# Giorni d'acqua prima del bere urgente, contando corpo e otre (2026-11-01, richiesta utente — sogno a occhi aperti che
+# non finiva mai per sete): INF se la sete è spenta o non consuma. Serve a chi deve decidere se un giro lungo ci sta.
+static func autonomy_days(individual: HumanIndividual) -> float:
+	if not is_enabled() or individual.daily_water_consumption <= 0.0:
+		return INF
+	var usable := individual.current_thirst - EMERGENCY_THRESHOLD * individual.max_thirst + individual.waterskin_water
+	return maxf(usable, 0.0) / individual.daily_water_consumption
+
+
+# Punto d'acqua dove fermarsi (2026-11-01): una microcella a caso tra quelle di water_access vicine alla più vicina (entro
+# WATER_POINT_SPREAD, così più persone non stanno una sull'altra), fuori dal ruscello. Chi la sceglie non sa che fonte è:
+# una nuova fonte in water_access vale da sola. Arrivandoci si beve (try_sip) e nella fascia l'acqua non cala. null se nessuna.
+static func pick_water_point(individual: HumanIndividual) -> Variant:
+	var nearest: Variant = _find_drink_target(individual)
+	var own_cell := PathfindingService.get_live_cell(individual.home_macro_coords)
+	if nearest == null or own_cell == null:
+		return nearest
+	var from := Vector2i(floori(individual.position.x), floori(individual.position.y))
+	var candidates: Array[Vector2i] = []
+	for spot in own_cell.drink_spots:
+		if own_cell.stream_positions.has(spot) or (Vector2(spot) + Vector2(0.5, 0.5)).distance_to(nearest) > WATER_POINT_SPREAD:
+			continue
+		if PathfindingService.is_blocked(own_cell, spot) or not PathfindingService.is_reachable(own_cell, from, spot):
+			continue
+		candidates.append(spot)
+	if candidates.is_empty():
+		return nearest
+	return Vector2(candidates.pick_random()) + Vector2(0.5, 0.5)
+
+
+# Avviso dell'edificio dei pensieri troppo lontano dall'acqua (2026-11-01, richiesta utente): una volta al giorno
+# (GameSimulation.tick_day). Senza un otre addosso a nessuno, chi parte a pieno da un punto d'acqua non ci arriva prima del
+# bere urgente e le idee non si depositano mai. Una volta per episodio (GameData.thought_water_alerted): torna se il
+# problema sparisce e si ripresenta.
+static func check_thought_building_water(ctx: GameContext, effects: GameEffects) -> void:
+	if ctx.world == null or ctx.game_data == null:
+		return
+	if not _thought_building_out_of_reach(ctx):
+		ctx.game_data.thought_water_alerted = false
+		return
+	if ctx.game_data.thought_water_alerted:
+		return
+	ctx.game_data.thought_water_alerted = true
+	effects.notify(NotificationTypes.NotificationPopupType.THOUGHT_BUILDING_FAR_FROM_WATER,
+		TranslationServer.translate("notification_thought_building_far_from_water"))
+
+
+# true con la sete attiva, nessun otre in cintura, almeno un edificio dei pensieri e un punto d'acqua, e tutti gli
+# edifici oltre la portata del più resistente (a corpo pieno fino al bere urgente).
+static func _thought_building_out_of_reach(ctx: GameContext) -> bool:
+	if not is_enabled():
+		return false
+	var reach := 0.0
+	for individual in ctx.individuals:
+		if waterskin_slot(individual) != -1:
+			return false
+		if individual.daily_water_consumption > 0.0:
+			var days := (1.0 - EMERGENCY_THRESHOLD) * individual.max_thirst / individual.daily_water_consumption
+			reach = maxf(reach, days * individual.move_speed)
+	if reach <= 0.0:
+		return false
+	var nearest := INF
+	for building in ctx.world.buildings:
+		if building.rules != null and building.rules.accepts_thoughts and building.is_complete and not building.is_out_of_service():
+			nearest = minf(nearest, _distance_to_water(building))
+	if nearest == INF:
+		return false
+	return nearest * IdleTaskAssignmentService.DAYDREAM_PATH_MARGIN > reach
+
+
+# Distanza in linea d'aria dal punto d'acqua più vicino, in tutte le celle vive; INF se non ce ne sono.
+static func _distance_to_water(building: Building) -> float:
+	var live_cells := PathfindingService.get_live_cells()
+	var from := Vector2(building.micro_x, building.micro_y)
+	var best := INF
+	for macro in live_cells:
+		var cell: LiveMacroCell = live_cells[macro]
+		var offset := Vector2(Vector2i(macro) - Vector2i(building.macro_x, building.macro_y)) * World.WIDTH
+		for spot in cell.drink_spots:
+			best = minf(best, from.distance_squared_to(Vector2(spot) + offset))
+	return sqrt(best) if best != INF else INF
 
 
 static func needs_drink(individual: HumanIndividual) -> bool:

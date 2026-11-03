@@ -392,6 +392,7 @@ notification_idea_completed,New idea completed: {idea}
 notification_building_material_needed,Material needed to start construction of {building}
 notification_body_reserve_started,{name} has run out of supplies and is using their body reserve
 notification_thirst_zero,{name} has run out of water and is dying of thirst
+notification_thought_building_far_from_water,"Thought building too far from water: without a waterskin, ideas never reach it. Build one closer to a water source"
 individual_thirst_tooltip_waterskin,Body {body}/{max} · Waterskin {water}/{capacity}
 individual_thirst_tooltip_dehydration,Dehydration: {days} days left
 death_cause_childbirth,childbirth
@@ -508,6 +509,7 @@ carried_resource_tooltip_sinew,Sinew
 carried_resource_tooltip_bone,Bones
 pickup_choice_dialog_title,Choose what to pick up
 pickup_choice_dialog_message,This spot has several pickable resources:
+pickup_choice_move_hint,Shift + right click: go there without gathering
 pickup_choice_all,Everything
 pickup_choice_category_food,Food
 pickup_choice_category_raw_material,Materials
@@ -633,7 +635,8 @@ tool_category_sewing,sewing
 tool_category_carrying,carrying
 tool_category_chopping,chopping
 individual_cancel_task_tooltip,Cancel the current activity (same as the H key)
-tool_gate_assigned_waiting,{name} is waiting for tools before starting: {tools}. Bring them to the backpack and the work will start on its own.
+tool_gate_assigned_waiting,"{name} is waiting for tools before starting: {tools}. They aren't in storage or the tool belt is full: the work will start on its own as soon as possible."
+tool_gate_assigned_fetching,{name} will fetch the tools from storage before starting: {tools}.
 tool_gate_category_with_examples,{category} (e.g. {examples})
 tool_gate_waiting_tools,Missing tools: {tools}
 tool_gate_waiting_belt_full,"Waiting: tool belt full, free a slot for {tool}"
@@ -829,6 +832,8 @@ help_stop_task,cancel the current command of the selected individual (back to re
 help_unload_here_task,held during a right click on a warehouse: unloads there everything the selected individual is carrying
 help_double_click_label,Left double click
 help_double_click_inspect_microcell,"inspect the clicked microcell: gatherable resources and vegetation (works even with no individual selected). A single click only selects precise objects (individuals/buildings/stones/plants), never the whole cell."
+help_shift_right_click_label,Shift + right click
+help_shift_right_click_move,"the selected individual just goes there, whatever is in the cell: no gathering, hunting, fishing or other commands"
 help_debug_clear_backpack,(debug) empty the selected individual's backpack
 building_info_conservation_row,{category}: {value}
 building_upgrade_conservation_row,{category}: {from} → {to}

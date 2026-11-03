@@ -118,6 +118,12 @@ static func is_hidden(folk: Folk, idea: Idea) -> bool:
 	return false
 
 
+# Edificio non ancora scoperto (2026-11-01, richiesta utente — BuildBar): richiede un'idea non ancora completata. In
+# anticipo lo si legge solo tra gli sblocchi dell'idea, nell'albero.
+static func is_building_undiscovered(folk: Folk, rules: BuildingRules) -> bool:
+	return folk != null and rules.required_idea_id != "" and not folk.completed_ideas.has(rules.required_idea_id)
+
+
 # Filtro per IdeaUnlocksService.format_lines (parametro is_hidden): uno sblocco che è un'idea ancora
 # coperta va mostrato come "???", altrimenti ne rivelerebbe il nome. Edifici/risorse mai nascosti.
 static func is_unlock_hidden(folk: Folk, kind: StringName, unlock_id: String) -> bool:

@@ -135,6 +135,7 @@ func _show_next() -> void:
 		NotificationTypes.NotificationPopupType.PROCESSING_STATION_FULL,
 		NotificationTypes.NotificationPopupType.WILD_ANIMAL_ATTACK,
 		NotificationTypes.NotificationPopupType.THIRST_ZERO,
+		NotificationTypes.NotificationPopupType.THOUGHT_BUILDING_FAR_FROM_WATER,
 	].has(entry["type"])
 	add_theme_stylebox_override("panel", _style_alert if is_alert else _style_default)
 	_label.add_theme_color_override("font_color", Color(0.15, 0.1, 0.0) if is_alert else Color.WHITE)

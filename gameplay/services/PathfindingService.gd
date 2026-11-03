@@ -37,6 +37,9 @@ const FORD_WEIGHT_SCALE: float = 3.0
 # (LiveMacroCell.stream_crossings), che pesa STONE_FORD_WEIGHT_SCALE × terreno.
 const STREAM_WEIGHT_SCALE: float = 8.0
 const STONE_FORD_WEIGHT_SCALE: float = 1.5
+# Raggio degli edifici per le mandrie in cammino (2026-11-01, richiesta utente — build_zone_grid): un costo, non un divieto.
+# La mandria gira attorno al villaggio, ma se gli edifici chiudono ogni passaggio attraversa comunque invece di restare ferma.
+const ZONE_WEIGHT_SCALE: float = 10.0
 # Nessuna macrocella per move_with_collision: niente rallentamento del guado.
 const NO_MACRO := Vector2i(-2147483648, -2147483648)
 # Preferenza per le strade (2026-10-16, richiesta utente): il vantaggio sul terreno normale (1 − costo) moltiplicato, solo
@@ -186,6 +189,40 @@ static func pick_free_destination(individual: HumanIndividual, sampler: Callable
 	return null
 
 
+static func _new_grid() -> AStarGrid2D:
+	var grid := AStarGrid2D.new()
+	grid.region = Rect2i(0, 0, World.WIDTH, World.HEIGHT)
+	grid.cell_size = Vector2.ONE
+	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
+	grid.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	grid.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
+	grid.update()
+	return grid
+
+
+# Copia della griglia della cella con le microcelle di `zone` (WIDTH×HEIGHT, 1 = nella zona) che costano ZONE_WEIGHT_SCALE
+# volte tanto: separata perché quella della cella è anche delle persone, che non devono evitare il proprio villaggio. Null
+# senza griglia. Chi la tiene la rifà quando cambia get_grid_version.
+static func build_zone_grid(macro_coords: Vector2i, zone: PackedByteArray) -> AStarGrid2D:
+	var cell := get_live_cell(macro_coords)
+	if cell == null or cell.path_grid == null or zone.size() != World.WIDTH * World.HEIGHT:
+		return null
+	var grid := _new_grid()
+	grid.fill_weight_scale_region(grid.region, terrain_weight())
+	for position in cell.path_weights.keys():
+		if _in_bounds(position):
+			grid.set_point_weight_scale(position, float(cell.path_weights[position]))
+	for y in range(World.HEIGHT):
+		for x in range(World.WIDTH):
+			var position := Vector2i(x, y)
+			var index := _index(position)
+			if cell.path_solid[index] == 1:
+				grid.set_point_solid(position, true)
+			if zone[index] == 1:
+				grid.set_point_weight_scale(position, grid.get_point_weight_scale(position) * ZONE_WEIGHT_SCALE)
+	return grid
+
+
 # Costruzione completa della griglia della cella (ingresso nella macrocella).
 static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 	var start_usec := Time.get_ticks_usec()
@@ -195,13 +232,7 @@ static func rebuild(cell: LiveMacroCell, macro_world: World) -> void:
 	if cell.macro_state != null:
 		for position in cell.macro_state.ford_positions:
 			cell.path_fords[position] = true
-	var grid := AStarGrid2D.new()
-	grid.region = Rect2i(0, 0, World.WIDTH, World.HEIGHT)
-	grid.cell_size = Vector2.ONE
-	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
-	grid.default_compute_heuristic = AStarGrid2D.HEURISTIC_OCTILE
-	grid.default_estimate_heuristic = AStarGrid2D.HEURISTIC_OCTILE
-	grid.update()
+	var grid := _new_grid()
 	cell.path_grid = grid
 
 	var solid := PackedByteArray()
@@ -361,8 +392,8 @@ static func is_reachable(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> b
 # Barriere (2026-10-23, richiesta utente — MicrocellObstacles.is_barrier: palizzata, vallo, cancello chiuso): se `to` è
 # una loro microcella il percorso finisce sulla microcella libera prima, dal lato da cui si arriva (l'ultima cella è
 # allora diversa da `to`: chi chiama si ferma lì). Prima si poteva arrivare sopra la barriera e, ripartendo da lì,
-# uscire dall'altra parte.
-static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> Array[Vector2i]:
+# uscire dall'altra parte. `zone_grid` (build_zone_grid): usa quella griglia invece di quella della cella.
+static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i, zone_grid: AStarGrid2D = null) -> Array[Vector2i]:
 	var empty: Array[Vector2i] = []
 	if cell == null or cell.path_grid == null or not _in_bounds(from) or not _in_bounds(to):
 		return empty
@@ -375,7 +406,7 @@ static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> Arra
 		var escape := _escape_route(cell, from)
 		if escape.is_empty():
 			return empty
-		var rest := find_path(cell, escape[escape.size() - 1], to)
+		var rest := find_path(cell, escape[escape.size() - 1], to, zone_grid)
 		if rest.is_empty():
 			return empty
 		if DebugLogging.ENABLED and DebugLogging.SHOW_PATHFINDING_LOGS:
@@ -385,7 +416,7 @@ static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> Arra
 		escape.resize(escape.size() - 1)
 		escape.append_array(rest)
 		return escape
-	var grid := cell.path_grid
+	var grid: AStarGrid2D = zone_grid if zone_grid != null else cell.path_grid
 	var from_was_blocked := cell.path_solid[_index(from)] == 1
 	var to_was_blocked := cell.path_solid[_index(to)] == 1
 	if from_was_blocked:
@@ -401,7 +432,7 @@ static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> Arra
 		path.resize(path.size() - 1)
 	# Lisciatura (2026-09-27): tutti i chiamanti (pipottini, visitatori, ricalcoli per cambio di blocco) ricevono il
 	# percorso già semplificato.
-	return simplify_path(cell, path)
+	return simplify_path(cell, path, zone_grid)
 
 
 # Percorso a punti per un animale (2026-10-31, motore unico degli animali passo 7a — prima solo in
@@ -409,8 +440,8 @@ static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i) -> Arra
 # `from_point` a `to_point` nella cella viva `macro_coords`. Meta irraggiungibile (es. dentro un recinto chiuso):
 # la meta diventa la microcella libera più vicina nella regione di partenza. Ritorna {"path": Array[Vector2],
 # "target": Vector2 (la meta, forse spostata), "redirected": bool}. Cella senza griglia, o partenza = arrivo:
-# percorso vuoto (si va in linea retta).
-static func plan_waypoints(macro_coords: Vector2i, from_point: Vector2, to_point: Vector2) -> Dictionary:
+# percorso vuoto (si va in linea retta). `zone_grid`: vedi find_path.
+static func plan_waypoints(macro_coords: Vector2i, from_point: Vector2, to_point: Vector2, zone_grid: AStarGrid2D = null) -> Dictionary:
 	var path: Array[Vector2] = []
 	var result := {"path": path, "target": to_point, "redirected": false}
 	var cell := get_live_cell(macro_coords)
@@ -428,7 +459,7 @@ static func plan_waypoints(macro_coords: Vector2i, from_point: Vector2, to_point
 		to = nearest
 		result["target"] = Vector2(nearest) + Vector2(0.5, 0.5)
 		result["redirected"] = true
-	var cells := find_path(cell, from, to)
+	var cells := find_path(cell, from, to, zone_grid)
 	for i in range(1, cells.size() - 1):
 		path.append(Vector2(cells[i]) + Vector2(0.5, 0.5))
 	return result
@@ -441,12 +472,20 @@ static func get_block_version(macro_coords: Vector2i) -> int:
 	return cell.path_block_version if cell != null else -1
 
 
+# Versione della griglia della cella viva (cambia anche solo coi pesi): -1 senza cella viva. Per chi tiene una copia
+# fatta con build_zone_grid.
+static func get_grid_version(macro_coords: Vector2i) -> int:
+	var cell := get_live_cell(macro_coords)
+	return cell.path_grid_version if cell != null else -1
+
+
 # Semplificazione del percorso (2026-09-27, lisciatura): da ogni punto tenuto si salta al punto più lontano del percorso
 # raggiungibile in linea retta (dal centro al centro delle microcelle) passando SOLO da microcelle libere, senza
 # tagliare spigoli di microcelle bloccate (un passaggio esatto per un angolo richiede libere entrambe le celle ai lati)
 # e senza microcelle di peso maggiore del massimo del tratto originale saltato. Partenza e destinazione restano sempre
-# (possono essere bloccate: trattate come attraversabili, come in find_path). Percorsi di 0–2 punti: invariati.
-static func simplify_path(cell: LiveMacroCell, path: Array[Vector2i]) -> Array[Vector2i]:
+# (possono essere bloccate: trattate come attraversabili, come in find_path). Percorsi di 0–2 punti: invariati. Con
+# `zone_grid` i pesi sono i suoi, così la lisciatura non taglia dentro la zona.
+static func simplify_path(cell: LiveMacroCell, path: Array[Vector2i], zone_grid: AStarGrid2D = null) -> Array[Vector2i]:
 	if path.size() <= 2 or cell == null or cell.path_grid == null:
 		return path
 	var first: Vector2i = path[0]
@@ -454,29 +493,32 @@ static func simplify_path(cell: LiveMacroCell, path: Array[Vector2i]) -> Array[V
 	var result: Array[Vector2i] = [first]
 	var anchor := 0
 	var probe := anchor + 1
-	var max_weight := maxf(_weight_of(cell, path[anchor]), _weight_of(cell, path[probe]))
+	var max_weight := maxf(_weight_of(cell, path[anchor], zone_grid), _weight_of(cell, path[probe], zone_grid))
 	while probe < path.size() - 1:
-		var next_weight := maxf(max_weight, _weight_of(cell, path[probe + 1]))
-		if _segment_clear(cell, path[anchor], path[probe + 1], next_weight, first, last):
+		var next_weight := maxf(max_weight, _weight_of(cell, path[probe + 1], zone_grid))
+		if _segment_clear(cell, path[anchor], path[probe + 1], next_weight, first, last, zone_grid):
 			probe += 1
 			max_weight = next_weight
 			continue
 		result.append(path[probe])
 		anchor = probe
 		probe = anchor + 1
-		max_weight = maxf(_weight_of(cell, path[anchor]), _weight_of(cell, path[probe]))
+		max_weight = maxf(_weight_of(cell, path[anchor], zone_grid), _weight_of(cell, path[probe], zone_grid))
 	result.append(last)
 	return result
 
 
-static func _weight_of(cell: LiveMacroCell, microcell: Vector2i) -> float:
+static func _weight_of(cell: LiveMacroCell, microcell: Vector2i, zone_grid: AStarGrid2D = null) -> float:
+	if zone_grid != null:
+		return zone_grid.get_point_weight_scale(microcell)
 	return float(cell.path_weights.get(microcell, terrain_weight()))
 
 
 # true se il segmento dal centro di `a` al centro di `b` attraversa solo microcelle libere e di peso <= max_weight
 # (traversata a griglia: ogni microcella toccata; al passaggio esatto per uno spigolo devono essere libere entrambe le
 # celle ai lati). `exempt_a`/`exempt_b` (partenza e destinazione del percorso) sono sempre ammesse.
-static func _segment_clear(cell: LiveMacroCell, a: Vector2i, b: Vector2i, max_weight: float, exempt_a: Vector2i, exempt_b: Vector2i) -> bool:
+static func _segment_clear(cell: LiveMacroCell, a: Vector2i, b: Vector2i, max_weight: float, exempt_a: Vector2i, exempt_b: Vector2i,
+		zone_grid: AStarGrid2D = null) -> bool:
 	var start := Vector2(a) + Vector2(0.5, 0.5)
 	var direction := (Vector2(b) + Vector2(0.5, 0.5)) - start
 	var x := a.x
@@ -493,8 +535,8 @@ static func _segment_clear(cell: LiveMacroCell, a: Vector2i, b: Vector2i, max_we
 		guard -= 1
 		if absf(t_max_x - t_max_y) < 0.000001:
 			# Passaggio esatto per uno spigolo: entrambe le celle ai lati devono essere libere.
-			if not _cell_ok(cell, Vector2i(x + step_x, y), max_weight, exempt_a, exempt_b) \
-					or not _cell_ok(cell, Vector2i(x, y + step_y), max_weight, exempt_a, exempt_b):
+			if not _cell_ok(cell, Vector2i(x + step_x, y), max_weight, exempt_a, exempt_b, zone_grid) \
+					or not _cell_ok(cell, Vector2i(x, y + step_y), max_weight, exempt_a, exempt_b, zone_grid):
 				return false
 			x += step_x
 			y += step_y
@@ -506,17 +548,18 @@ static func _segment_clear(cell: LiveMacroCell, a: Vector2i, b: Vector2i, max_we
 		else:
 			y += step_y
 			t_max_y += t_delta_y
-		if not _cell_ok(cell, Vector2i(x, y), max_weight, exempt_a, exempt_b):
+		if not _cell_ok(cell, Vector2i(x, y), max_weight, exempt_a, exempt_b, zone_grid):
 			return false
 	return Vector2i(x, y) == b
 
 
-static func _cell_ok(cell: LiveMacroCell, microcell: Vector2i, max_weight: float, exempt_a: Vector2i, exempt_b: Vector2i) -> bool:
+static func _cell_ok(cell: LiveMacroCell, microcell: Vector2i, max_weight: float, exempt_a: Vector2i, exempt_b: Vector2i,
+		zone_grid: AStarGrid2D = null) -> bool:
 	if microcell == exempt_a or microcell == exempt_b:
 		return true
 	if not _in_bounds(microcell) or cell.path_solid[_index(microcell)] == 1:
 		return false
-	return _weight_of(cell, microcell) <= max_weight + 0.000001
+	return _weight_of(cell, microcell, zone_grid) <= max_weight + 0.000001
 
 
 # Numero di regioni connesse (ricalcolate se da rifare).

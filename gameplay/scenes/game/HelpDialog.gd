@@ -407,6 +407,7 @@ func _build_shortcuts_text() -> String:
 		"[b]L[/b] — %s" % tr("help_cycle_map_layer"),
 		"[b]Esc[/b] — %s" % tr("help_escape_cancel"),
 		"[b]%s[/b] — %s" % [tr("help_double_click_label"), tr("help_double_click_inspect_microcell")],
+		"[b]%s[/b] — %s" % [tr("help_shift_right_click_label"), tr("help_shift_right_click_move")],
 	]
 	# Voci DEBUG (2026-09-09, richiesta utente — "aggiungi anche z, s [H] nell'help"): mostrate
 	# solo quando i debug hook stessi sono attivi (DebugLogging.ENABLED, stesso interruttore che li

@@ -49,11 +49,12 @@ const BODY_RESERVE_FULL_EPSILON: float = 0.001
 const BODY_RESERVE_FULL_HEALTH_DELTA: float = 10.0
 const BODY_RESERVE_NOT_FULL_HEALTH_PENALTY: float = 20.0
 
-const HOME_HEALTH_DELTA: float = 4.0
+# Casa +2 / senza casa -5 (2026-10-31, richiesta utente: -10 era troppo; prima +4 / -10).
+const HOME_HEALTH_DELTA: float = 2.0
 const HOME_HAPPINESS_DELTA: float = 3.0
 # Nucleo unito (2026-10-22, richiesta utente): tutti i membri del nucleo famigliare nella stessa casa.
 const NUCLEUS_UNITED_HAPPINESS_DELTA: float = 1.0
-const HOMELESS_HEALTH_PENALTY: float = 10.0
+const HOMELESS_HEALTH_PENALTY: float = 5.0
 const HOMELESS_HAPPINESS_PENALTY: float = 5.0
 
 # Fede -> lealtà (2026-10-02, regole 4 e 4b sopra).
