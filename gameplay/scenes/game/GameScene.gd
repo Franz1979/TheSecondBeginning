@@ -499,6 +499,8 @@ var buildings_info_panel: BuildingsInfoPanel
 # perché questo pannello è l'eccezione "non muta" della famiglia.
 const TASK_DEBUG_PANEL_SCENE := preload("res://gameplay/scenes/game/TaskDebugPanel.tscn")
 var task_debug_panel: TaskDebugPanel
+# Scheda 🦌 degli animali domestici (2026-11-03): ricostruita solo a scheda aperta.
+var domestic_animals_panel: DomesticAnimalsPanel
 
 # Anteprima "fantasma" della capanna (vedi BuildBar/BuildingGhost) — attivata dal tasto 🛖 nel
 # sottomenu costruzione, segue il mouse ogni frame finché attiva. Click sinistro piazza DAVVERO
@@ -809,6 +811,8 @@ func _ready() -> void:
 	# attiva (tab_changed sotto) e al tick giornaliero (_on_day_advanced).
 	task_debug_panel = TASK_DEBUG_PANEL_SCENE.instantiate()
 	game_info_tabs.debug_tab.add_child(task_debug_panel)
+	domestic_animals_panel = DomesticAnimalsPanel.new()
+	game_info_tabs.animals_tab.add_child(domestic_animals_panel)
 	game_info_tabs.tab_changed.connect(_on_game_info_tab_changed)
 	minimap_panel.cell_clicked.connect(_on_minimap_cell_clicked)
 	system_menu_dialog.add_action(tr("save_game"), &"save")
@@ -853,6 +857,7 @@ func _ready() -> void:
 	add_child(domestication_panel)
 	domestication_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(domestication_panel))
 	domestication_panel.debug_add_points_requested.connect(_on_domestication_debug_add_points)
+	domestication_panel.debug_add_animal_requested.connect(_on_domestication_debug_add_animal)
 	demolish_confirmation_dialog.demolish_confirmed.connect(_on_demolish_confirmed)
 	demolish_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(demolish_confirmation_dialog))
 	# NESSUN visibility_changed collegato a _on_blocking_dialog_visibility_changed per questi due
@@ -10357,6 +10362,8 @@ func _refresh_buildings_panel() -> void:
 func _on_game_info_tab_changed(tab: int) -> void:
 	if tab == GameInfoTabs.TAB_DEBUG:
 		task_debug_panel.refresh()
+	elif tab == GameInfoTabs.TAB_ANIMALS:
+		domestic_animals_panel.refresh(game_data)
 	# Lista della popolazione (2026-10-09): non si aggiorna a scheda nascosta, quindi tornandoci si ricostruisce.
 	elif tab == GameInfoTabs.TAB_POPULATION:
 		_refresh_population_panel()
@@ -13637,6 +13644,9 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 		&"toggle_sick":
 			_debug_toggle_sick()
 		# Lupi passo L1 (2026-10-28): visita del branco a comando.
+		&"dog_points":
+			if game_data != null:
+				_on_domestication_debug_add_points("dog")
 		&"wolf_visit":
 			var wolf_group := WildAnimalGroupService.find_group(game_data, "wolf")
 			if wolf_group == null:
@@ -14245,6 +14255,14 @@ func _on_domestication_debug_add_points(species: String) -> void:
 	_apply_effects(domestication_effects)
 	domestication_panel.refresh_content()
 	_refresh_debug_domestication()
+
+
+# "+1" di debug del pannello delle Addomesticazioni: un animale nato 3 anni fa, finché non esistono gli arrivi veri.
+func _on_domestication_debug_add_animal(species: String) -> void:
+	var birth_day := game_data.get_absolute_day() - 3 * GameData.DAYS_PER_YEAR
+	DomesticAnimalService.add_animal(game_data, species, randf() < 0.5, birth_day)
+	if game_info_tabs.current_tab == GameInfoTabs.TAB_ANIMALS:
+		domestic_animals_panel.refresh(game_data)
 
 
 # Bottone dell'assegnazione delle task (2026-10-07): sempre visibile; spento finché l'idea
@@ -16967,6 +16985,8 @@ func _on_day_advanced(checkpoint_ran: bool) -> void:
 	# aggiornarla, questo è solo un ripasso automatico di cortesia.
 	if game_info_tabs.current_tab == GameInfoTabs.TAB_DEBUG:
 		task_debug_panel.refresh()
+	elif game_info_tabs.current_tab == GameInfoTabs.TAB_ANIMALS:
+		domestic_animals_panel.refresh(game_data)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_SELECTED_PANEL_REFRESH_LOGS:
 		var panel_refresh_elapsed_ms := (Time.get_ticks_usec() - _debug_panel_refresh_start_usec) / 1000.0
 		print("[SELECTED PANEL REFRESH] anno=%d giorno=%d: %.3f ms" % [

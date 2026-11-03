@@ -122,6 +122,16 @@ var domesticated_species: Array[String] = []
 # Specie selvatiche (AnimalRules.species_name) già viste nel mondo: un'addomesticazione con idea richiesta parte solo
 # per queste. Scritte solo da DomesticationEncounterService.
 var encountered_wild_species: Array[String] = []
+# Animali domestici seguiti uno per uno (cane, passo 1, 2026-11-03 — DomesticAnimalService). Salvati da GameSaveService
+# ("domestic_animals"), insieme al prossimo id da assegnare.
+var domestic_animals: Array[DomesticAnimal] = []
+var next_domestic_animal_id: int = 1
+
+func allocate_domestic_animal_id() -> int:
+	var id := next_domestic_animal_id
+	next_domestic_animal_id += 1
+	return id
+
 # Gruppi di animali selvatici seguiti uno per uno (2026-10-26, richiesta utente — primo: il branco di lupi). Creati da
 # WildAnimalGroupService.ensure_groups appena esiste un magazzino (dal 2026-10-28).
 var wild_animal_groups: Array[WildAnimalGroup] = []

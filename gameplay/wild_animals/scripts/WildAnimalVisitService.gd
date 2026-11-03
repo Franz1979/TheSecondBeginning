@@ -981,7 +981,9 @@ static func apply_visit_outcome(visit: WildAnimalVisit, game_data: GameData, wor
 		visit_points += per_animal * (YOUNG_POINTS_SHARE if is_young else 1.0)
 	var domestic_species := _domestic_species_for(group.species)
 	var whole_points := 0
-	if domestic_species != "":
+	var domestic_rules := DomesticAnimalCalculator.get_rules(domestic_species)
+	# Con tutti i cani arrivati i lupi restano un pericolo, ma senza più punti.
+	if domestic_rules != null and not DomesticAnimalService.has_all_arrivals(game_data, domestic_rules):
 		group.pending_domestication_points += visit_points
 		whole_points = int(floor(group.pending_domestication_points))
 		group.pending_domestication_points -= whole_points
@@ -993,10 +995,52 @@ static func apply_visit_outcome(visit: WildAnimalVisit, game_data: GameData, wor
 		present.size(), visit_points, per_animal, whole_points, domestic_species, group.pending_domestication_points,
 		roundi(AGGRESSION_DROP_PER_VISIT),
 		", ".join(present.map(func(animal: WildAnimal) -> String: return "#%d (%d)" % [animal.id, roundi(animal.aggression)]))])
+	if domestic_rules != null:
+		_release_domestic_arrivals(visit, group, domestic_rules, wild_rules, game_data, world, effects)
 	if at_pit and not group.notified_first_quiet_pit:
 		group.notified_first_quiet_pit = true
 		_notify_group(effects, "notification_wild_first_quiet_pit_%s" % group.species)
 	_notify_calmer(group, effects)
+
+
+# Arrivi dal branco (cane, passo 2, 2026-11-03, richiesta utente: tutti insieme): da una visita tranquilla con i punti alla
+# soglia, i più calmi del branco diventano gli animali domestici che mancano. Chi manca perché il branco non ha candidati, o
+# perché ne è morto uno, arriva alla visita tranquilla successiva. Sesso e nascita restano quelli del lupo.
+static func _release_domestic_arrivals(visit: WildAnimalVisit, group: WildAnimalGroup, rules: DomesticAnimalRules,
+		wild_rules: AnimalRules, game_data: GameData, world: World, effects: GameEffects) -> void:
+	if not rules.individuals_enabled:
+		return
+	if DomesticationPointsService.get_points(game_data, rules.species_name) < rules.domestication_points_required:
+		return
+	var storage := WildAnimalGroupService.find_anchor_storage(world)
+	var village_id := storage.village_id if storage != null else -1
+	var today := game_data.get_absolute_day()
+	var arrived := 0
+	for is_male: bool in [true, false]:
+		for i in range(DomesticAnimalService.missing_for_arrival(game_data, rules, is_male)):
+			# L'ultimo presente resta: una visita senza nessuno non può uscire.
+			var excluded_id := visit.animal_ids[0] if visit.animal_ids.size() == 1 else -1
+			var leaver := WildAnimalGroupService.pick_calmest_leaver(group, is_male, today, wild_rules, excluded_id)
+			if leaver == null:
+				break
+			DomesticAnimalService.add_animal(game_data, rules.species_name, leaver.is_male, leaver.birth_day, village_id)
+			group.animals.erase(leaver)
+			_leave_visit(visit, leaver.id)
+			arrived += 1
+	if arrived > 0:
+		print("[WILD ANIMAL VISITS] %s: %d lasciano il branco per diventare %s, nel branco ne restano %d" % [
+			group.species, arrived, rules.species_name, group.animals.size()])
+		_notify_group(effects, "notification_domestic_arrival_%s" % rules.species_name, {"count": arrived})
+
+
+# Toglie dalla visita un animale uscito dal branco, col suo corpo se è sulla mappa. Nessun effetto se non era presente.
+static func _leave_visit(visit: WildAnimalVisit, animal_id: int) -> void:
+	var index := visit.animal_ids.find(animal_id)
+	if index < 0:
+		return
+	if index < visit.body_ids.size() and visit.body_ids[index] != 0:
+		AnimalGroupRenderer.remove_live_individual(visit.body_ids[index])
+	_remove_from_visit_arrays(visit, index)
 
 
 # Messaggi al giocatore (2026-11-01, richiesta utente: deve capire che il branco si abitua e che cacciarlo costa). Testi

@@ -114,6 +114,23 @@ static func _add_animal(group: WildAnimalGroup, is_male: bool, today: int, age_y
 	return animal
 
 
+# Il più calmo del sesso voluto che può lasciare il branco (cane, passo 2): né vecchio, né cucciolo (sotto l'anno), né della
+# coppia riproduttrice. excluded_id = chi non può andarsene (-1 nessuno). null se nessuno è adatto.
+static func pick_calmest_leaver(group: WildAnimalGroup, is_male: bool, today: int, wild_rules: AnimalRules,
+		excluded_id: int) -> WildAnimal:
+	var calmest: WildAnimal = null
+	for animal in group.animals:
+		if animal.is_male != is_male or animal.id == excluded_id:
+			continue
+		if animal.id == group.breeding_male_id or animal.id == group.breeding_female_id:
+			continue
+		if animal.get_age_years(today) == 0 or animal.get_age_band(today, wild_rules) == GameTypes.AgeBand.OLD:
+			continue
+		if calmest == null or animal.aggression < calmest.aggression:
+			calmest = animal
+	return calmest
+
+
 # Giornaliero (GameSimulation.tick_day, dopo ensure_groups), richiesta utente 2026-10-27. Per ogni gruppo, in ordine:
 # morti per vecchiaia → attesa se il gruppo è vuoto → rimpiazzo della coppia → cucciolata (primo giorno della stagione
 # delle nascite) → partenze oltre il tetto. Pochi animali per gruppo: il giro giornaliero non costa nulla.

@@ -145,6 +145,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.encountered_wild_species.clear()
 	for species in data["game"].get("encountered_wild_species", []):
 		game_data.encountered_wild_species.append(String(species))
+	# Animali domestici (2026-11-03) — .get() per i save precedenti: nessun animale.
+	game_data.domestic_animals.clear()
+	for saved_animal in data["game"].get("domestic_animals", []):
+		game_data.domestic_animals.append(DomesticAnimal.from_save_data(saved_animal))
+	game_data.next_domestic_animal_id = int(data["game"].get("next_domestic_animal_id", 1))
 	# Gruppi di animali in visita (2026-10-26) — .get() per i save precedenti: nessun gruppo, li ricrea
 	# WildAnimalGroupService.ensure_groups al primo giorno.
 	game_data.wild_animal_groups.clear()

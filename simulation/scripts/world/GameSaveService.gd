@@ -72,6 +72,11 @@ func save_game_to_json(
 			"domestication_points": game_data.domestication_points,
 			"domesticated_species": game_data.domesticated_species,
 			"encountered_wild_species": game_data.encountered_wild_species,
+			# Animali domestici (vedi GameData, DomesticAnimal.to_save_data).
+			"domestic_animals": game_data.domestic_animals.map(
+				func(animal: DomesticAnimal) -> Dictionary: return animal.to_save_data()
+			),
+			"next_domestic_animal_id": game_data.next_domestic_animal_id,
 			# Gruppi di animali che frequentano il villaggio (vedi GameData, WildAnimalGroup.to_save_data).
 			"wild_animal_groups": game_data.wild_animal_groups.map(
 				func(group: WildAnimalGroup) -> Dictionary: return group.to_save_data()

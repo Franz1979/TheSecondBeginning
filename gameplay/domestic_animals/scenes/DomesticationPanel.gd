@@ -12,8 +12,10 @@ extends CanvasLayer
 # "+100" di debug su una specie: GameScene aggiunge i punti con i propri GameEffects (eventuale scoperta) e
 # richiama refresh_content.
 signal debug_add_points_requested(species: String)
+# "+1" di debug su una specie con animali veri (cane passo 1): GameScene crea l'animale e aggiorna la scheda 🦌.
+signal debug_add_animal_requested(species: String)
 
-enum CardState { DOMESTICATED, IN_PROGRESS, LOCKED }
+enum CardState { DOMESTICATED, IN_PROGRESS }
 
 const ANIMALS_TAB := 0
 const PLANTS_TAB := 1
@@ -23,12 +25,10 @@ const DEBUG_POINTS := 100
 const STATE_BG_COLORS := {
 	CardState.DOMESTICATED: Color(0.14, 0.32, 0.18),
 	CardState.IN_PROGRESS: Color(0.14, 0.24, 0.38),
-	CardState.LOCKED: Color(0.16, 0.16, 0.18),
 }
 const STATE_BORDER_COLORS := {
 	CardState.DOMESTICATED: Color(0.40, 0.80, 0.46),
 	CardState.IN_PROGRESS: Color(0.45, 0.68, 0.95),
-	CardState.LOCKED: Color(0.40, 0.40, 0.44),
 }
 
 @onready var title_label: Label = $Root/MarginContainer/VBoxContainer/HeaderRow/TitleLabel
@@ -81,13 +81,14 @@ func _fill_animals() -> void:
 	cards.add_theme_constant_override("h_separation", 12)
 	cards.add_theme_constant_override("v_separation", 12)
 	animals_box.add_child(cards)
-	for species in DomesticAnimalCalculator.list_species():
+	for species in DomesticAnimalCalculator.list_species_for_display():
 		var rules := DomesticAnimalCalculator.get_rules(species)
 		if rules == null:
 			continue
-		# Il cane (nessuna idea richiesta) sempre; le altre solo se la selvatica è stata incontrata: le specie mai viste
-		# non si rivelano.
-		if rules.required_idea_id != "" and not DomesticationEncounterService.is_encountered(_game_data, rules.wild_species_name):
+		# Il cane (nessuna idea richiesta) sempre; le altre solo con l'idea nota e la selvatica incontrata: prima non si
+		# rivelano (2026-11-03, richiesta utente).
+		if rules.required_idea_id != "" and (not _human_folk.completed_ideas.has(rules.required_idea_id)
+				or not DomesticationEncounterService.is_encountered(_game_data, rules.wild_species_name)):
 			continue
 		cards.add_child(_build_card(rules))
 
@@ -105,8 +106,6 @@ func _fill_plants() -> void:
 func _state_of(rules: DomesticAnimalRules) -> CardState:
 	if _game_data.domesticated_species.has(rules.species_name):
 		return CardState.DOMESTICATED
-	if rules.required_idea_id != "" and not _human_folk.completed_ideas.has(rules.required_idea_id):
-		return CardState.LOCKED
 	return CardState.IN_PROGRESS
 
 
@@ -154,8 +153,6 @@ func _build_card(rules: DomesticAnimalRules) -> PanelContainer:
 			state_label.text = tr("domestication_state_domesticated")
 		CardState.IN_PROGRESS:
 			state_label.text = tr("domestication_state_in_progress")
-		CardState.LOCKED:
-			state_label.text = tr("domestication_state_locked").format({"idea": _idea_name(rules.required_idea_id)})
 	state_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	box.add_child(state_label)
 
@@ -166,6 +163,12 @@ func _build_card(rules: DomesticAnimalRules) -> PanelContainer:
 		debug_button.size_flags_horizontal = Control.SIZE_SHRINK_END
 		debug_button.pressed.connect(func() -> void: debug_add_points_requested.emit(rules.species_name))
 		box.add_child(debug_button)
+		if rules.individuals_enabled:
+			var add_animal_button := Button.new()
+			add_animal_button.text = "+1 %s" % tr(rules.display_name)
+			add_animal_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+			add_animal_button.pressed.connect(func() -> void: debug_add_animal_requested.emit(rules.species_name))
+			box.add_child(add_animal_button)
 	return card
 
 

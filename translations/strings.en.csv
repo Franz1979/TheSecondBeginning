@@ -62,7 +62,7 @@ idea_advanced_paleolithic_constructions_summary,Allows building the hut.
 idea_advanced_paleolithic_constructions_description,"Sturdy poles, weaving and solid roofs make larger, longer-lasting shelters."
 idea_oral_teaching,Oral teaching
 idea_oral_teaching_summary,Elders pass on to children what they do best.
-idea_oral_teaching_description,"Stories and repeated gestures carry knowledge from one generation to the next."
+idea_oral_teaching_description,"Stories and repeated gestures carry knowledge from one generation to the next. Places live on in the stories too: your people remember for longer what grows in distant areas and what the land there is like."
 idea_tribal_organization,Tribal organization
 idea_tribal_organization_summary,The village learns to gather and decide together.
 idea_tribal_organization_description,"Elders and the most skilled sit in a circle, and their word guides the tribe. The Star circle can be upgraded into a Sacred council circle: with the elders' seats it also becomes the place of councils and can become the village center. Meetings are held only on order: with the Village chief they can be scheduled."
@@ -1543,6 +1543,12 @@ village_naming_confirmation_text,"What name do you want to give {village}? Once 
 village_naming_confirmation_confirm,Name it
 notification_village_named,The village is now called {village}
 domestic_animal_dog,Dog
+game_info_tab_animals,Animals
+domestic_animals_empty,No domestic animals.
+domestic_animal_row,"{name} #{id}, {sex}, age {age}"
+domestic_animal_male,male
+domestic_animal_female,female
+notification_domestic_arrival_dog,"Some wolves no longer leave: they now live in the village. New dogs: {count}."
 discovery_first_domesticated_wolf_title,A wolf that no longer runs
 discovery_first_domesticated_wolf_p1,"For a long time a wolf pack kept coming back to scavenge in the waste pit. Each time it came a little closer, each time it fled a little later."
 discovery_first_domesticated_wolf_p2,"This time one of the young ones stayed. It no longer growls: it follows the villagers at a distance and sleeps near the huts. It is no longer a wolf: it is a dog."

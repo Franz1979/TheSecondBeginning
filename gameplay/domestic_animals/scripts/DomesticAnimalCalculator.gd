@@ -40,6 +40,20 @@ static func list_species() -> Array[String]:
 	return names
 
 
+# Ordine di DomesticationPanel (2026-11-03): prima le specie senza idea richiesta (il cane), poi le altre per nome.
+static func list_species_for_display() -> Array[String]:
+	var without_idea: Array[String] = []
+	var with_idea: Array[String] = []
+	for species in list_species():
+		var rules := get_rules(species)
+		if rules != null and rules.required_idea_id == "":
+			without_idea.append(species)
+		else:
+			with_idea.append(species)
+	without_idea.append_array(with_idea)
+	return without_idea
+
+
 # Regole della specie selvatica d'origine (es. il lupo per il cane); null con warning se non esiste.
 static func get_wild_rules(species_name: String) -> AnimalRules:
 	var rules := get_rules(species_name)

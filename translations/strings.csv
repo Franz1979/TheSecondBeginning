@@ -98,7 +98,7 @@ idea_advanced_paleolithic_constructions_summary,Permette di costruire la capanna
 idea_advanced_paleolithic_constructions_description,"Pali robusti, intrecci e coperture solide danno ripari più grandi e duraturi."
 idea_oral_teaching,Insegnamento orale
 idea_oral_teaching_summary,Gli anziani tramandano ai bambini ciò che sanno fare meglio.
-idea_oral_teaching_description,"Racconti e gesti ripetuti passano il sapere da una generazione all'altra."
+idea_oral_teaching_description,"Racconti e gesti ripetuti passano il sapere da una generazione all'altra. Anche i luoghi restano nei racconti: il popolo ricorda più a lungo cosa cresce nelle zone lontane e com'è fatta la loro terra."
 idea_tribal_organization,Organizzazione tribale
 idea_tribal_organization_summary,Il villaggio impara a riunirsi e a decidere insieme.
 idea_tribal_organization_description,"Gli anziani e i più esperti siedono in cerchio, e la loro parola guida la tribù. Il Cerchio delle stelle si può migliorare in Cerchio sacro del consiglio: con le sedute degli anziani diventa anche il luogo dei consigli e può diventare il centro del villaggio. Le riunioni si tengono solo su ordine: con il Capo villaggio si potranno programmare."
@@ -1597,6 +1597,12 @@ village_naming_confirmation_text,"Che nome vuoi dare a {village}? Una volta scel
 village_naming_confirmation_confirm,Dai il nome
 notification_village_named,Il villaggio si chiama ora {village}
 domestic_animal_dog,Cane
+game_info_tab_animals,Animali
+domestic_animals_empty,Nessun animale domestico.
+domestic_animal_row,"{name} #{id}, {sex}, età {age}"
+domestic_animal_male,maschio
+domestic_animal_female,femmina
+notification_domestic_arrival_dog,"Alcuni lupi non se ne vanno più: ora vivono al villaggio. Nuovi cani: {count}."
 discovery_first_domesticated_wolf_title,Un lupo che non fugge più
 discovery_first_domesticated_wolf_p1,"Per lungo tempo un branco di lupi è tornato a frugare nella fossa dei rifiuti. Ogni volta si avvicinava un po' di più, ogni volta fuggiva un po' più tardi."
 discovery_first_domesticated_wolf_p2,"Questa volta uno dei giovani è rimasto. Non ringhia più: segue gli abitanti a distanza, dorme vicino alle capanne. Non è più un lupo: è un cane."

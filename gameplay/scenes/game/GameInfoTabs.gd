@@ -52,13 +52,15 @@ const PENDING_BLINK_ICON := "❗"
 const PENDING_BLINK_TOGGLES: int = 10
 const PENDING_BLINK_INTERVAL_SEC: float = 0.4
 const PENDING_MAX_SHOWN_COUNT: int = 9
+# Scheda degli animali domestici (2026-11-03, cane passo 1): ospita DomesticAnimalsPanel (aggiunto da GameScene).
+const TAB_ANIMALS := 4
 # DebugTab (2026-09-12, richiesta utente — "una tab di debug (colore etichetta del debug) nell'info
 # panel" per TaskDebugPanel, elenco di tutte le Task assegnate in sessione) — AGGIUNTA IN CODA
 # (dopo Placeholder, non prima: nessuna posizione specifica richiesta per questa, a differenza di
 # BuildingsTab). Nascosta con set_tab_hidden quando DebugLogging.ENABLED è false (vedi _ready sotto)
 # — stesso principio "mai visibile in una build pulita" già seguito da ogni altro elemento debug
 # del progetto (tasti T/Y/Z/U, SpeedDebugButton).
-const TAB_DEBUG := 4
+const TAB_DEBUG := 5
 
 # Segnale "🎯 centra" (Step 3, richiesta utente 2026-09-04) — sostituisce il bottone che prima
 # viveva dentro HumanIndividualInfoPanel (funzionava solo per individui): un solo bottone qui,
@@ -81,6 +83,7 @@ signal center_requested
 @onready var population_tab: Control = $PopulationTab/PopulationScroll/PopulationClamp
 @onready var buildings_tab: Control = $BuildingsTab/BuildingsScroll/BuildingsClamp
 @onready var pending_tab: Control = $PendingTab/PendingScroll/PendingClamp
+@onready var animals_tab: Control = $AnimalsTab/AnimalsScroll/AnimalsClamp
 var _pending_count: int = 0
 var _pending_blink_toggles_left: int = 0
 var _pending_blink_on: bool = false
@@ -137,6 +140,7 @@ func _ready() -> void:
 	set_tab_title(TAB_BUILDINGS, "🏠")
 	set_tab_title(TAB_SELECTION, "🔍")
 	_refresh_pending_title()
+	set_tab_title(TAB_ANIMALS, "🦌")
 	# 🐞 (2026-09-12, richiesta utente) — icona GIÀ di per sé "colorata/riconoscibile come debug"
 	# (nessuna infrastruttura di per-tab font color in TabBar/TabContainer da costruire apposta per
 	# un'unica scheda) — l'etichetta "DEBUG" vera e propria, in un colore acceso, vive DENTRO il
@@ -149,6 +153,7 @@ func _ready() -> void:
 	tab_bar.set_tab_tooltip(TAB_BUILDINGS, tr("game_info_tab_buildings"))
 	tab_bar.set_tab_tooltip(TAB_SELECTION, tr("game_info_tab_selection"))
 	tab_bar.set_tab_tooltip(TAB_PENDING, tr("game_info_tab_pending"))
+	tab_bar.set_tab_tooltip(TAB_ANIMALS, tr("game_info_tab_animals"))
 	# Il numero accanto a 🔔 non deve mai allargare la barra né il pannello (2026-10-04): con clip_tabs la barra delle
 	# linguette non chiede più larghezza delle schede; nel caso limite mostra le frecce di scorrimento invece di allargarsi.
 	clip_tabs = true
@@ -191,7 +196,7 @@ func _ready() -> void:
 #     da ghiande"; prima troncava con i puntini): sta in un HBoxContainer con EXPAND, quindi riceve la larghezza
 #     restante della riga e non allarga mai il pannello.
 func _lock_content_width() -> void:
-	for clamp_container in [population_tab, buildings_tab, selection_content.get_parent(), pending_tab]:
+	for clamp_container in [population_tab, buildings_tab, selection_content.get_parent(), pending_tab, animals_tab]:
 		(clamp_container.get_parent() as ScrollContainer).horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	title_label.clip_text = false
 	title_label.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING

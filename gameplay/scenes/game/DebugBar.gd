@@ -39,6 +39,8 @@ var _last_fps: int = -1
 # Branco di lupi del villaggio (2026-10-26): numero di lupi, dettaglio per lupo nel tooltip (set_wolf_pack). Dal
 # 2026-10-28 (lupi passo L1) è un pulsante: fa partire una visita del branco (action_pressed &"wolf_visit").
 @onready var wolves_button: Button = $MarginContainer/HBoxContainer/ContentGroup/WolvesButton
+# Punti del cane (2026-11-03, cane passo 1): action_pressed &"dog_points", per arrivare alla scoperta senza anni di visite.
+@onready var dog_points_button: Button = $MarginContainer/HBoxContainer/ContentGroup/DogPointsButton
 # Sete (2026-10-31, richiesta utente): in fondo a destra, tra i controlli da togliere — accende/spegne
 # GameData.thirst_enabled (action_pressed &"toggle_thirst"; lo stato lo rimette GameScene con set_thirst_enabled).
 @onready var thirst_button: Button = $MarginContainer/HBoxContainer/ContentGroup/ThirstButton
@@ -83,6 +85,8 @@ func _ready() -> void:
 	random_event_apply_button.tooltip_text = TooltipText.wrap(tr("debug_random_event_apply") + ": " + tr("debug_random_event_apply_tooltip"))
 	random_event_apply_button.pressed.connect(_on_random_event_apply_pressed)
 	wolves_button.pressed.connect(func() -> void: action_pressed.emit(&"wolf_visit"))
+	dog_points_button.tooltip_text = TooltipText.wrap("Aggiunge 100 punti addomesticazione al cane")
+	dog_points_button.pressed.connect(func() -> void: action_pressed.emit(&"dog_points"))
 	thirst_button.tooltip_text = TooltipText.wrap(tr("toggle_thirst_tooltip") + ": " + tr("toggle_thirst_description"))
 	thirst_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_thirst"))
 	_apply_state()
