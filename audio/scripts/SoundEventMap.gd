@@ -38,6 +38,9 @@ const EVENTS: Dictionary = {
 	&"wild_animal_charged:wolf": &"wolf_attack",
 	# Animale domestico cliccato o entrato nell'inquadratura (2026-11-03, cane passo 3): evento "domestic_animal_call:<specie>".
 	&"domestic_animal_call:dog": &"dog_bark",
+	# Uccisione ordinata con Macella (2026-11-04): solo il verso della specie, evento "domestic_animal_slaughtered:<specie>";
+	# specie assente = nessun suono. La macellazione della carcassa non ha suono.
+	&"domestic_animal_slaughtered:dog": &"dog_yelp",
 	# Branco scacciato da un gruppo di persone (2026-10-30, lupi L6.1): grido di guerra di chi lo scaccia.
 	&"wild_animal_driven_off": &"war_cry",
 	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per

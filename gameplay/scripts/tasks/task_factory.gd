@@ -292,6 +292,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				# Bere alla riva (2026-10-30, sete): nessun argomento, la riva è il Walk prima.
 				steps.append(DrinkAction.new())
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.SLAUGHTER:
+				# 1 argomento (id dell'animale domestico) — 2026-11-04, SlaughterAction.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step SLAUGHTER di TaskDefinition '%s'" % definition.task_name)
+					continue
+				steps.append(SlaughterAction.new(int(context[step_definition.context_keys[0]])))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.FISH:
 				# 2 argomenti (macrocella, microcella del ruscello) — 2026-10-31, FishAction (fish.tres); la riva è il Walk prima.
 				if step_definition.context_keys.size() < 2 or not context.has(step_definition.context_keys[0]) 						or not context.has(step_definition.context_keys[1]):

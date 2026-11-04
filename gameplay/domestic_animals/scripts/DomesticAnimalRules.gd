@@ -45,9 +45,19 @@ extends Resource
 @export var max_age_variation_years: int = 0
 # Giorni per guarire da quasi morto a salute piena (passo 4); 0 = non guarisce.
 @export var health_recovery_days: int = 0
+# Sintomo della fame (passo 6): tante persone morte di fame entro tanti giorni e muore un adulto; 0 = la fame non lo tocca.
+@export var starved_people_per_death: int = 0
+@export var starved_people_window_days: int = 0
 # Cuccioli per cucciolata (passo 5).
 @export var litter_size_min: int = 0
 @export var litter_size_max: int = 0
+
+@export_group("Butchering")
+# Rese dell'adulto (Macella, passo 7), scalate per fascia con size_multiplier_by_age della selvatica (ButcherAction.compute_yields).
+@export var butcher_meat_units: int = 0
+@export var butcher_hide_units: int = 0
+@export var butcher_sinew_units: int = 0
+@export var butcher_bone_units: int = 0
 
 @export_group("Population")
 # Massimo di animali = abitanti / inhabitants_per_animal, mai meno di min_population_cap (passo 5).

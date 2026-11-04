@@ -30,7 +30,7 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 			continue
 		for carcass in pile.carcasses:
 			var carcass_id := int(carcass.get("id", -1))
-			if kept_by_hunter.has(carcass_id):
+			if kept_by_hunter.has(carcass_id) or not bool(carcass.get("butcherable", true)):
 				continue
 			var claimers: Array[HumanIndividual] = []
 			claimers.assign(claimers_by_carcass.get(carcass_id, []))

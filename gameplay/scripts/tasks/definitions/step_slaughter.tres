@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_slaughter"]
+
+[resource]
+script = ExtResource("1_slaughter")
+action_type = 39
+context_keys = Array[String](["slaughter_animal_id"])
+step_description = "task_slaughter_step_slaughter"

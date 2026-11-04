@@ -571,6 +571,15 @@ task_hunt_step_hunt,Hunting
 task_hunt_step_aim,Taking aim
 task_hunt_step_throw,Throwing
 task_butcher_name,Butchering
+task_slaughter_name,Butchering
+task_slaughter_step_slaughter,Reaching the animal
+animal_slaughter_destination_tooltip,Destination of butchering products: {name}
+animal_slaughter_button,Slaughter
+animal_slaughter_tooltip,"Order this animal slaughtered: someone with a blade kills and butchers it on the spot"
+animal_slaughter_assign_tooltip,Choose who slaughters it
+animal_slaughter_cancel_button,Cancel slaughter
+animal_slaughter_cancel_tooltip,Cancel the slaughter of this animal
+animal_slaughter_banner_text,🔪 Slaughter {species}: click an individual (Esc to cancel)
 task_butcher_step_walk,Walking to the carcass
 task_butcher_step_butcher,Butchering the carcass
 task_butcher_step_return_to_pile,Returning to the carcass pile
@@ -601,6 +610,7 @@ animal_species_tarpan,Tarpan
 animal_species_wild_donkey,Wild donkey
 animal_species_aurochs,Aurochs
 animal_species_wolf,Wolf
+animal_species_dog,Dog
 animal_age_band_young,Young
 animal_age_band_adult,Adult
 animal_age_band_old,Old
@@ -1550,6 +1560,7 @@ domestic_animal_male,male
 domestic_animal_female,female
 notification_domestic_arrival_dog,"Some wolves no longer leave: they now live in the village. New dogs: {count}."
 notification_domestic_left_dog,"The village cannot support all the dogs: {count} have left."
+notification_domestic_starved_dog,"The village is starving: a dog has died too."
 discovery_first_domesticated_wolf_title,A wolf that no longer runs
 discovery_first_domesticated_wolf_p1,"For a long time a wolf pack kept coming back to scavenge in the waste pit. Each time it came a little closer, each time it fled a little later."
 discovery_first_domesticated_wolf_p2,"This time one of the young ones stayed. It no longer growls: it follows the villagers at a distance and sleeps near the huts. It is no longer a wolf: it is a dog."

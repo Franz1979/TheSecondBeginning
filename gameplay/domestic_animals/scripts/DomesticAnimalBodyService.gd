@@ -34,9 +34,7 @@ static func sync_bodies(game_data: GameData, world: World, renderers: Dictionary
 		var cell := PathfindingService.get_live_cell(animal.macro_coords)
 		if cell == null:
 			continue
-		var home := animal.position
-		if storage != null and Vector2i(storage.macro_x, storage.macro_y) == animal.macro_coords:
-			home = VisitorService.get_building_point(storage)
+		var home := _home_point(animal, storage)
 		if animal.position.x < 0.0:
 			animal.position = _pick_free_point(home, rules, PathfindingService.blocked_test_for(animal.macro_coords))
 		var key := _renderer_key(animal)
@@ -51,6 +49,12 @@ static func sync_bodies(game_data: GameData, world: World, renderers: Dictionary
 		body.health *= animal.health_ratio
 		AnimalGroupRenderer.set_live_behavior(body.id, AnimalVisualGroup.Behavior.STAND_AROUND, home,
 			rules.roam_radius_min, rules.roam_radius_max, rules.roam_speed_scale)
+
+
+static func _home_point(animal: DomesticAnimal, storage: Building) -> Vector2:
+	if storage != null and Vector2i(storage.macro_x, storage.macro_y) == animal.macro_coords:
+		return VisitorService.get_building_point(storage)
+	return animal.position
 
 
 # Parametri del renderer: quelli della selvatica, con taglia e colore della specie domestica. species_name resta quello della

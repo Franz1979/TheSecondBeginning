@@ -691,6 +691,15 @@ task_hunt_step_hunt,Cacciando
 task_hunt_step_aim,Prendendo la mira
 task_hunt_step_throw,Scagliando
 task_butcher_name,Macellazione
+task_slaughter_name,Macellazione
+task_slaughter_step_slaughter,Raggiungendo l'animale
+animal_slaughter_destination_tooltip,Destinazione dei prodotti della macellazione: {name}
+animal_slaughter_button,Macella
+animal_slaughter_tooltip,"Ordina di macellare questo animale: chi ha una lama lo uccide e lo macella sul posto"
+animal_slaughter_assign_tooltip,Scegli chi lo macella
+animal_slaughter_cancel_button,Annulla macellazione
+animal_slaughter_cancel_tooltip,Annulla la macellazione di questo animale
+animal_slaughter_banner_text,🔪 Macella {species}: clicca un individuo (Esc per annullare)
 task_butcher_step_walk,Andando alla carcassa
 task_butcher_step_butcher,Macellando
 task_butcher_step_return_to_pile,Tornando al mucchio della preda
@@ -719,6 +728,7 @@ animal_species_tarpan,Tarpan
 animal_species_wild_donkey,Asino selvatico
 animal_species_aurochs,Uro
 animal_species_wolf,Lupo
+animal_species_dog,Cane
 animal_age_band_young,Giovane
 animal_age_band_adult,Adulto
 animal_age_band_old,Anziano
@@ -1604,6 +1614,7 @@ domestic_animal_male,maschio
 domestic_animal_female,femmina
 notification_domestic_arrival_dog,"Alcuni lupi non se ne vanno più: ora vivono al villaggio. Nuovi cani: {count}."
 notification_domestic_left_dog,"Il villaggio non basta per tutti i cani: {count} se ne sono andati."
+notification_domestic_starved_dog,"Il villaggio ha fame: è morto anche un cane."
 discovery_first_domesticated_wolf_title,Un lupo che non fugge più
 discovery_first_domesticated_wolf_p1,"Per lungo tempo un branco di lupi è tornato a frugare nella fossa dei rifiuti. Ogni volta si avvicinava un po' di più, ogni volta fuggiva un po' più tardi."
 discovery_first_domesticated_wolf_p2,"Questa volta uno dei giovani è rimasto. Non ringhia più: segue gli abitanti a distanza, dorme vicino alle capanne. Non è più un lupo: è un cane."

@@ -155,7 +155,8 @@ static func _merge_fresh_entries(entries: Dictionary, fresh: Dictionary) -> void
 # speciale del mucchio (GroundPile.carcasses), non una voce di risorsa. Ritorna il mucchio, null se non c'è
 # posto (carcassa persa) o game_data manca.
 static func drop_carcass(
-	game_data: GameData, macro_coords: Vector2i, position: Vector2, species: String, age_band: int, world: World = null
+	game_data: GameData, macro_coords: Vector2i, position: Vector2, species: String, age_band: int, world: World = null,
+	butcherable: bool = true
 ) -> GroundPile:
 	if game_data == null or species == "":
 		return null
@@ -174,6 +175,7 @@ static func drop_carcass(
 	pile.carcasses.append({
 		"id": game_data.allocate_ground_pile_id(),
 		"species": species, "age_band": age_band, "killed_year": game_data.year, "killed_day": game_data.current_day,
+		"butcherable": butcherable,
 	})
 	pile.revision += 1
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
@@ -488,6 +490,7 @@ static func from_save_data(data: Dictionary, parse_resources: Callable) -> Groun
 					"age_band": int(raw_carcass.get("age_band", GameTypes.AgeBand.ADULT)),
 					"killed_year": int(raw_carcass.get("killed_year", 0)),
 					"killed_day": int(raw_carcass.get("killed_day", 0)),
+					"butcherable": bool(raw_carcass.get("butcherable", true)),
 				})
 	return pile
 

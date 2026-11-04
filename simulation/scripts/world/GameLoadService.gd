@@ -92,6 +92,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.last_butcher_destination = String(data["game"].get("last_butcher_destination", ""))
 	# Ultima destinazione del pescato (2026-11-03): nei salvataggi precedenti quella della carne, che il pesce seguiva.
 	game_data.last_fish_destination = String(data["game"].get("last_fish_destination", game_data.last_butcher_destination))
+	game_data.last_slaughter_destination = String(data["game"].get("last_slaughter_destination", ""))
 	# Ordinamento dell'elenco dei pipottini (2026-10-04): "age" (predefinito) nei salvataggi precedenti.
 	game_data.population_list_sort = String(data["game"].get("population_list_sort", "age"))
 	game_data.era_effective_age_band_durations_male = _float_array_from_json(
@@ -150,6 +151,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for saved_animal in data["game"].get("domestic_animals", []):
 		game_data.domestic_animals.append(DomesticAnimal.from_save_data(saved_animal))
 	game_data.next_domestic_animal_id = int(data["game"].get("next_domestic_animal_id", 1))
+	game_data.domestic_starvation_days = data["game"].get("domestic_starvation_days", {})
 	# Gruppi di animali in visita (2026-10-26) — .get() per i save precedenti: nessun gruppo, li ricrea
 	# WildAnimalGroupService.ensure_groups al primo giorno.
 	game_data.wild_animal_groups.clear()

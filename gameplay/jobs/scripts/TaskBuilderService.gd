@@ -26,6 +26,7 @@ const HAUL_RESOURCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/defini
 const HAUL_RESOURCE_ZONE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/haul_resource_zone.tres"
 # Macellazione (2026-09-26): Walk verso la carcassa -> Butcher -> PickUp dal mucchio.
 const BUTCHER_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/butcher.tres"
+const SLAUGHTER_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/slaughter.tres"
 # Scarico di quello che si ha già nello zaino in un magazzino (2026-10-17): Walk -> Unload.
 const UNLOAD_RESOURCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/unload_resource.tres"
 # Cura somministrata (2026-10-25, HealJobProvider): Walk all'edificio -> Remedy TAKE -> Walk al malato -> Remedy GIVE.
@@ -402,6 +403,22 @@ static func build_pile_job_task(worker: HumanIndividual, pile: GroundPile, macro
 # Macellazione della carcassa `carcass_id` del mucchio `pile` (`macro_state` = quello della sua cella): Walk -> Butcher ->
 # PickUp di tutto dal mucchio, poi la catena di sempre. `butcher_destination` (ButcherDestinationService): dove portare
 # i prodotti; il comando manuale usa il default, il focolare.
+# Macella un animale domestico (2026-11-04): lo segue, lo raggiunge e lo uccide; la macellazione la chiede SlaughterAction, con
+# questa destinazione.
+static func build_slaughter_task(
+	worker: HumanIndividual, animal: DomesticAnimal, butcher_destination: String = ButcherDestinationService.CAMPFIRE
+) -> Task:
+	var definition := TaskDefinitionCache.get_definition(SLAUGHTER_TASK_DEFINITION_PATH)
+	if definition == null:
+		return null
+	var task := TaskFactory.build_task(definition, {
+		"slaughter_animal_id": animal.id,
+	})
+	if task != null:
+		task.context[ButcherDestinationService.CONTEXT_KEY] = butcher_destination
+	return task
+
+
 static func build_butcher_task(
 	worker: HumanIndividual, pile: GroundPile, carcass_id: int, macro_state: MacroCellState,
 	butcher_destination: String = ButcherDestinationService.CAMPFIRE

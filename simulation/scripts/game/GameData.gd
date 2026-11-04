@@ -126,6 +126,9 @@ var encountered_wild_species: Array[String] = []
 # ("domestic_animals"), insieme al prossimo id da assegnare.
 var domestic_animals: Array[DomesticAnimal] = []
 var next_domestic_animal_id: int = 1
+# Giorni assoluti delle persone morte di fame non ancora "contate" da un animale morto, per specie domestica (cane, passo 6,
+# DomesticAnimalLifeService.on_person_starved). Salvati.
+var domestic_starvation_days: Dictionary = {}
 
 func allocate_domestic_animal_id() -> int:
 	var id := next_domestic_animal_id
@@ -458,6 +461,8 @@ var last_butcher_destination: String = ""
 # carne, stessa coppia (conta la parte della carne), usata dalla pesca col clic destro e dagli ordini del giocatore.
 # "" = mai scelta.
 var last_fish_destination: String = ""
+# Destinazione dei prodotti di Macella (animali domestici, 2026-11-04): valore suo, indipendente da caccia e pesca. Una sola per tutte le specie.
+var last_slaughter_destination: String = ""
 # Ordinamento dell'elenco dei pipottini nella scheda popolazione (2026-10-04, salvato con la partita): id di
 # HumanPopulationInfoPanel.SORT_OPTIONS ("age", "name", "house"). Un id sconosciuto ricade sul predefinito.
 var population_list_sort: String = "age"

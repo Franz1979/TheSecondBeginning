@@ -59,16 +59,19 @@ func _init(p_pile_macro_coords: Vector2i = Vector2i.ZERO, p_pile_microcell: Vect
 # (AnimalRules.butcher_*_units) scalate per size_multiplier_by_age della fascia. Statica e pura.
 static func compute_yields(species: String, age_band: int) -> Dictionary:
 	var yields := {"meat": 0, "hide": 0, "sinew": 0, "bone": 0} # stesse chiavi di PRODUCT_NAMES
-	var rules := AnimalCalculator.get_animal_rules(species)
+	# Specie domestica (Macella, 2026-11-04): rese sue, scala per fascia della selvatica d'origine.
+	var domestic := DomesticAnimalCalculator.get_rules(species)
+	var rules: AnimalRules = DomesticAnimalCalculator.get_wild_rules(species) if domestic != null else AnimalCalculator.get_animal_rules(species)
 	if rules == null:
 		return yields
 	var scale: float = 1.0
 	if age_band >= 0 and age_band < rules.size_multiplier_by_age.size():
 		scale = rules.size_multiplier_by_age[age_band]
-	yields["meat"] = roundi(rules.butcher_meat_units * scale)
-	yields["hide"] = roundi(rules.butcher_hide_units * scale)
-	yields["sinew"] = roundi(rules.butcher_sinew_units * scale)
-	yields["bone"] = roundi(rules.butcher_bone_units * scale)
+	var source: Resource = domestic if domestic != null else rules
+	yields["meat"] = roundi(source.butcher_meat_units * scale)
+	yields["hide"] = roundi(source.butcher_hide_units * scale)
+	yields["sinew"] = roundi(source.butcher_sinew_units * scale)
+	yields["bone"] = roundi(source.butcher_bone_units * scale)
 	return yields
 
 

@@ -37,6 +37,7 @@ func save_game_to_json(
 			"last_butcher_destination": game_data.last_butcher_destination,
 			# Ultima destinazione del pescato (2026-11-03).
 			"last_fish_destination": game_data.last_fish_destination,
+			"last_slaughter_destination": game_data.last_slaughter_destination,
 			# Ordinamento dell'elenco dei pipottini nella scheda popolazione (2026-10-04).
 			"population_list_sort": game_data.population_list_sort,
 			"era_effective_age_band_durations_male": game_data.era_effective_age_band_durations_male,
@@ -77,6 +78,7 @@ func save_game_to_json(
 				func(animal: DomesticAnimal) -> Dictionary: return animal.to_save_data()
 			),
 			"next_domestic_animal_id": game_data.next_domestic_animal_id,
+			"domestic_starvation_days": game_data.domestic_starvation_days,
 			# Gruppi di animali che frequentano il villaggio (vedi GameData, WildAnimalGroup.to_save_data).
 			"wild_animal_groups": game_data.wild_animal_groups.map(
 				func(group: WildAnimalGroup) -> Dictionary: return group.to_save_data()

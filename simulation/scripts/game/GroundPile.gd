@@ -40,6 +40,15 @@ func get_position() -> Vector2:
 	return Vector2(microcell) + Vector2(0.5, 0.5)
 
 
+# Id della carcassa più vecchia che si può macellare, -1 se nessuna ("butcherable" false: animale domestico morto da solo, cane
+# passo 6; assente nei salvataggi vecchi = sì).
+func get_oldest_butcherable_carcass_id() -> int:
+	for carcass in carcasses:
+		if bool(carcass.get("butcherable", true)):
+			return int(carcass["id"])
+	return -1
+
+
 # Vuoto = nessuna risorsa E nessuna carcassa: un mucchio con una carcassa resta finché la carcassa c'è.
 func is_empty() -> bool:
 	return resources.is_empty() and carcasses.is_empty()

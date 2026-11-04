@@ -171,6 +171,31 @@ static func assign_prey_hunt(ctx: GameContext, worker: HumanIndividual, prey: An
 			])
 
 
+# Macella un animale domestico col mirino (2026-11-04): comando manuale, stessi controlli di assign_butcher (idoneità, lama
+# in cintura o nello zaino, senza andare in deposito), X rossa e avviso se rifiutato; icona "butcher" sull'animale. true se
+# assegnato.
+static func assign_slaughter(ctx: GameContext, worker: HumanIndividual, animal: DomesticAnimal, effects: GameEffects) -> bool:
+	var task := TaskBuilderService.build_slaughter_task(worker, animal,
+		ButcherDestinationService.resolve_default(ctx.game_data.last_slaughter_destination, ctx.world, ctx.folk))
+	if task == null:
+		return false
+	effects.wire_task(GameEffects.WireKind.STEP_SIGNALS, task, worker)
+	var request := AssignRequest.create(worker, task, "task_activity_butcher").at_microcell(animal.macro_coords, Vector2i(animal.position.floor()), "butcher")
+	request.strict = true
+	var age_band := ctx.age_band_of(worker)
+	if not AssignService.check(request, age_band, effects):
+		return false
+	var tool_gate := ToolGateService.check_and_prepare(worker, task, ctx.game_data)
+	if tool_gate["result"] != ToolGateService.Result.OK:
+		CommandFeedback.tool_gate_failure(worker, tool_gate, effects)
+		AssignService.reject_icon(request, effects)
+		return false
+	worker.tool_gate_warning = ""
+	if not tool_gate["equipped"].is_empty():
+		effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
+	return AssignService.commit(request, age_band, effects)
+
+
 # Macellazione della carcassa più vecchia del mucchio `pile` (clic destro): Walk, ButcherAction, PickUp di tutto dal
 # mucchio. Controlli come la caccia (idoneità, attrezzi BUTCHERING); icona "butcher" sul mucchio. false se la Task non
 # nasce (macrocella non viva): il clic prosegue agli altri comandi.
@@ -178,7 +203,10 @@ static func assign_butcher(ctx: GameContext, worker: HumanIndividual, pile: Grou
 	var cell: LiveMacroCell = ctx.live_cells.get(pile.macro_coords)
 	if cell == null or cell.macro_state == null:
 		return false
-	var task := TaskBuilderService.build_butcher_task(worker, pile, int(pile.carcasses[0]["id"]), cell.macro_state)
+	var carcass_id := pile.get_oldest_butcherable_carcass_id()
+	if carcass_id < 0:
+		return false
+	var task := TaskBuilderService.build_butcher_task(worker, pile, carcass_id, cell.macro_state)
 	if task == null:
 		return false
 	effects.wire_task(GameEffects.WireKind.BUTCHER, task, worker)

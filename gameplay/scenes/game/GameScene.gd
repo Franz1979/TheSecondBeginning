@@ -47,8 +47,8 @@ signal wild_animal_charged(global_pos: Vector2, species: String)
 signal wild_animal_driven_off(global_pos: Vector2)
 # Animale domestico cliccato o entrato nell'inquadratura (2026-11-03, cane passo 3): verso della specie (AudioEventListener).
 signal domestic_animal_called(global_pos: Vector2, species: String)
-# Quanta salute toglie il pulsante "Ferisci" di debug del pannello animale (cane, passo 4).
-const DEBUG_WOUND_RATIO: float = 0.25
+# Macella (2026-11-04): uccisione ordinata dal giocatore, per il suono (AudioEventListener).
+signal domestic_animal_slaughtered(global_pos: Vector2, species: String)
 # Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
 # per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
 # riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
@@ -771,8 +771,10 @@ func _ready() -> void:
 	# stesso principio "componente muto" degli altri.
 	animal_info_panel = ANIMAL_INFO_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(animal_info_panel)
-	animal_info_panel.debug_wound_requested.connect(_on_animal_debug_wound)
-	animal_info_panel.debug_add_year_requested.connect(_on_animal_debug_add_year)
+	animal_info_panel.slaughter_requested.connect(_on_animal_slaughter_requested)
+	animal_info_panel.slaughter_assign_requested.connect(_on_animal_slaughter_assign_requested)
+	animal_info_panel.slaughter_cancel_requested.connect(_on_animal_slaughter_cancel_requested)
+	animal_info_panel.butcher_destination_chosen.connect(_on_slaughter_destination_chosen)
 	# terrain_scattered_resource_info_panel (2026-09-08, richiesta utente; rinominato 2026-09-15 da
 	# stick_lot_info_panel, vedi TerrainScatteredResourceInfoPanel.gd) — sesto sibling nella STESSA
 	# SelectionTab, stesso identico principio "componente muto" degli altri cinque.
@@ -856,6 +858,7 @@ func _ready() -> void:
 	CoordinatorService.call_sound_emitter = _emit_coordinator_called
 	# Veglia delle stelle (2026-10-29): richiamo della guida alla chiamata, icona e coro all'inizio.
 	StarVigilService.call_sound_emitter = _emit_star_vigil_called
+	DomesticAnimalSlaughterService.kill_sound_emitter = _emit_domestic_animal_slaughtered
 	StarVigilService.start_effect_emitter = _spawn_social_rite_started_effect.bind(StarVigilService.RITE_ID)
 	JobBoardService.open_jobs_counter = _job_board_open_job_count
 	options_menu.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(options_menu))
@@ -3513,6 +3516,7 @@ func _select_animal(hit: Dictionary) -> void:
 	DomesticAnimalBodyService.clear_selected(_domestic_animal_renderers)
 	if hit.has("domestic"):
 		DomesticAnimalBodyService.set_selected(_domestic_animal_renderers, int(hit["body_id"]))
+		_sync_butcher_destination_button()
 		var clicked_animal := DomesticAnimalService.find_animal(game_data, int(hit["individual_id"]))
 		if clicked_animal != null:
 			domestic_animal_called.emit(DomesticAnimalBodyService.get_global_position(clicked_animal, _domestic_animal_renderers),
@@ -3661,23 +3665,102 @@ func _refresh_domestic_animal_panel() -> void:
 	var band := animal.get_age_band(today, DomesticAnimalCalculator.get_wild_rules(animal.species))
 	animal_info_panel.show_animal(tr(rules.display_name), tr("animal_age_band_" + String(GameTypes.AgeBand.keys()[band]).to_lower()), true)
 	animal_info_panel.show_domestic_details(animal.is_male, animal.get_age_years(today), animal.health_ratio)
+	var has_worker := DomesticAnimalSlaughterService.has_worker(human_individuals, animal.id)
+	animal_info_panel.show_slaughter_state(not animal.slaughter_requested and not has_worker,
+		animal.slaughter_requested and not has_worker, animal.slaughter_requested or has_worker)
 	game_info_tabs.set_selection_title(tr("selection_title_type").format({"type": tr("animal_selection_title")}))
 
 
-# Debug del pannello (cane, passo 4): oggi nulla ferisce un cane e 12 anni sono lunghi da aspettare.
-func _on_animal_debug_wound() -> void:
+# Macella (cane, passo 7, 2026-11-04). Con la lista dei lavori l'ordine va in coda, senza si sceglie subito chi col mirino.
+func _on_animal_slaughter_requested() -> void:
+	var animal := DomesticAnimalService.find_animal(game_data, int(selected_animal.get("individual_id", -1)))
+	if animal == null:
+		return
+	if JobBoardService.is_enabled(human_folk):
+		animal.slaughter_requested = true
+		_refresh_pending_entries()
+		_refresh_animal_panel()
+		return
+	_enter_slaughter_pick_mode(animal)
+
+
+func _on_animal_slaughter_assign_requested() -> void:
 	var animal := DomesticAnimalService.find_animal(game_data, int(selected_animal.get("individual_id", -1)))
 	if animal != null:
-		DomesticAnimalLifeService.wound(game_data, animal, DEBUG_WOUND_RATIO)
-	_validate_selected_animal()
+		_enter_slaughter_pick_mode(animal)
+
+
+func _enter_slaughter_pick_mode(animal: DomesticAnimal) -> void:
+	var on_pick := func(worker: HumanIndividual) -> void:
+		if DomesticAnimalService.find_animal(game_data, animal.id) == null:
+			return
+		var effects := GameEffects.new()
+		var assigned := HuntCommandService.assign_slaughter(_game_context(), worker, animal, effects)
+		_apply_effects(effects)
+		if not assigned:
+			return
+		var job_keys: Array[String] = [SlaughterJobProvider.job_key(animal.id)]
+		_forget_job_board_wait(job_keys)
+		if not selected_animal.is_empty():
+			_refresh_animal_panel()
+	_enter_worker_pick_mode(tr("animal_slaughter_banner_text").format({"species": tr("animal_species_%s" % animal.species)}), on_pick)
+
+
+func _on_animal_slaughter_cancel_requested() -> void:
+	var animal := DomesticAnimalService.find_animal(game_data, int(selected_animal.get("individual_id", -1)))
+	if animal != null:
+		_cancel_animal_slaughter(animal)
+
+
+# Toglie l'ordine: chi lo stava macellando smette e torna libero.
+func _cancel_animal_slaughter(animal: DomesticAnimal) -> void:
+	animal.slaughter_requested = false
+	var job_keys: Array[String] = [SlaughterJobProvider.job_key(animal.id)]
+	_forget_job_board_wait(job_keys)
+	_close_slaughter_tasks(animal, false)
+	_refresh_pending_entries()
 	_refresh_animal_panel()
 
 
-func _on_animal_debug_add_year() -> void:
-	var animal := DomesticAnimalService.find_animal(game_data, int(selected_animal.get("individual_id", -1)))
-	if animal != null:
-		animal.birth_day -= GameData.DAYS_PER_YEAR
-	_refresh_animal_panel()
+# Lavoro preso dalla coda: la lama da prendere in deposito (se serve), poi segue l'animale finché lo raggiunge.
+func _assign_slaughter_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var animal: DomesticAnimal = job["target"]
+	if DomesticAnimalService.find_animal(game_data, animal.id) == null:
+		return
+	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, CarcassJobProvider.TOOL_CATEGORIES)
+	var task := TaskBuilderService.build_slaughter_task(worker, animal,
+		ButcherDestinationService.resolve_default(game_data.last_slaughter_destination, macro_world, human_folk))
+	if task == null:
+		return
+	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
+		return
+	var job_keys: Array[String] = [String(job["key"])]
+	_forget_job_board_wait(job_keys)
+	_ensure_step_signals(task)
+	var cell: LiveMacroCell = live_cells.get(animal.macro_coords)
+	if cell != null:
+		_spawn_command_icon_at_microcell(cell, Vector2i(animal.position.floor()), "butcher")
+	_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
+	if not selected_animal.is_empty():
+		_refresh_animal_panel()
+
+
+# Rimetti in coda / Blocca: chi lo sta facendo smette (salta la lista una volta); l'ordine resta in lista.
+func _slaughter_job_release(job: Dictionary) -> void:
+	_close_slaughter_tasks(job["target"], true)
+	_refresh_selected_individual_panel()
+
+
+func _close_slaughter_tasks(animal: DomesticAnimal, skip_job_board_once: bool) -> void:
+	for member in human_individuals:
+		for queued in member.task_queue.duplicate():
+			if DomesticAnimalSlaughterService.task_slaughters(queued, animal.id):
+				member.task_queue.erase(queued)
+		if DomesticAnimalSlaughterService.task_slaughters(member.current_task, animal.id):
+			if skip_job_board_once:
+				member.skip_job_board_once = true
+			member.stop(false)
+			HumanIndividualActionService.resolve_idle_individual(member, _resolve_age_band(member), macro_world)
 
 
 func _refresh_wild_animal_panel() -> void:
@@ -4107,6 +4190,11 @@ func _sync_butcher_destination_button() -> void:
 		ButcherDestinationService.resolve_default(game_data.last_fish_destination, macro_world, human_folk)
 	)
 	var bar_shown := ButcherDestinationService.has_alternative_processing_destination(macro_world, human_folk)
+	if animal_info_panel != null:
+		# Macella (2026-11-04): stesse opzioni, valore suo (GameData.last_slaughter_destination).
+		animal_info_panel.set_butcher_destination(_butcher_destination_entry(
+			ButcherDestinationService.resolve_default(game_data.last_slaughter_destination, macro_world, human_folk)
+		), options)
 	command_bar.set_butcher_destination(bar_shown, current, options)
 	command_bar.set_fish_destination(bar_shown, fish_current, options)
 	pickup_choice_dialog.set_butcher_destination(true, current, options)
@@ -4156,6 +4244,12 @@ func _on_command_bar_butcher_destination_chosen(destination: String) -> void:
 # Scelta dal pulsante del pesce (2026-11-03: barra, popup della Pesca, cassetto): vale per le pesche ordinate da adesso.
 func _on_fish_destination_chosen(destination: String) -> void:
 	game_data.last_fish_destination = destination
+	_sync_butcher_destination_button()
+
+
+# Scelta dal pulsante del pannello animale (2026-11-04): vale per le macellazioni di animali domestici assegnate da adesso.
+func _on_slaughter_destination_chosen(destination: String) -> void:
+	game_data.last_slaughter_destination = destination
 	_sync_butcher_destination_button()
 
 
@@ -6853,7 +6947,7 @@ func _find_carcass_pile_at_click() -> GroundPile:
 	var best: GroundPile = null
 	var best_distance: float = GROUND_PILE_SELECT_RADIUS_PX
 	for pile in game_data.ground_piles:
-		if pile.carcasses.is_empty():
+		if pile.get_oldest_butcherable_carcass_id() < 0:
 			continue
 		var cell: LiveMacroCell = live_cells.get(pile.macro_coords)
 		if cell == null or cell.renderer == null:
@@ -8324,6 +8418,18 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _butcher_job_release,
 		})
+		# Macella (2026-11-04): un animale domestico per lavoro, vedi SlaughterJobProvider.
+		_job_board_provider_list.append({
+			"name": "slaughter",
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return SlaughterJobProvider.collect(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return SlaughterJobProvider.rejection(_game_context(), worker, job),
+			"assign": _assign_slaughter_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return SlaughterJobProvider.workers(_game_context(), job),
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("animal_slaughter_cancel_tooltip")},
+			"cancel": func(job: Dictionary) -> void: _cancel_animal_slaughter(job["target"]),
+			"release": _slaughter_job_release,
+		})
 		_job_board_provider_list.append({
 			"name": "pile",
 			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return PileJobProvider.collect(_game_context(), provider, assigned),
@@ -8643,6 +8749,13 @@ func _emit_coordinator_called(member: HumanIndividual) -> void:
 		return
 	var cell_container: Node2D = live_cells[member.home_macro_coords].container
 	coordinator_called.emit(cell_container.to_global(member.position * MicroCellRenderer.CELL_SIZE))
+
+
+# Macella (2026-11-04): suono dell'uccisione nel punto dell'animale, prima che il corpo sparisca.
+func _emit_domestic_animal_slaughtered(animal: DomesticAnimal) -> void:
+	var global_pos := DomesticAnimalBodyService.get_global_position(animal, _domestic_animal_renderers)
+	if global_pos != Vector2.ZERO:
+		domestic_animal_slaughtered.emit(global_pos, animal.species)
 
 
 # Richiamo della guida della Veglia delle stelle alla sua posizione (solo se la sua macrocella è attiva).
@@ -9681,7 +9794,7 @@ const LEISURE_RITE_TASK_NAME := "task_leisure_rite_name"
 # Icona dell'azione per nome della task (IconRegistry.COMMAND_ICON_NODES); assente = nessuna icona.
 const DIRECT_COMMAND_ICON_BY_TASK := {
 	"task_haul_resource_name": "pickup", "task_transport_name": "transport", "task_cut_name": "cut",
-	"task_quarry_name": "quarry", "task_hunt_name": "hunt", "task_hunt_zone_name": "hunt", "task_butcher_name": "butcher",
+	"task_quarry_name": "quarry", "task_hunt_name": "hunt", "task_hunt_zone_name": "hunt", "task_butcher_name": "butcher", "task_slaughter_name": "butcher",
 	"task_build_name": "build", "task_demolish_name": "demolish", "task_produce_name": "produce", "task_bury_name": "bury",
 	"task_rite_name": "rite", "task_deliver_output_name": "transport", "task_repair_name": "build",
 }
@@ -9765,7 +9878,7 @@ func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
 		return "costruzione, demolizione o produzione"
 	if BodyBurialService.is_bury_task(task):
 		return "sepoltura"
-	if CarcassJobProvider.is_butchering_task(task):
+	if CarcassJobProvider.is_butchering_task(task) or SlaughterJobProvider.is_listed_task(task, game_data):
 		return "macellazione"
 	# Riparazione (2026-10-10): della coda solo se l'edificio ha la riparazione richiesta (col mirino è un comando diretto).
 	if JobWorkScanService.REPAIR_TASK_NAMES.has(task.task_name):
@@ -9982,6 +10095,13 @@ func _activate_job_entry(entry: Dictionary) -> bool:
 			if pile == null:
 				return false
 			_select_ground_pile({"pile_id": pile.id, "macro_coords": pile.macro_coords})
+		# Animale domestico da macellare (2026-11-04).
+		"domestic_animal":
+			var listed_animal := DomesticAnimalService.find_animal(game_data, int(entry["id"]))
+			if listed_animal == null or listed_animal.body_id == 0:
+				return false
+			_select_animal({"domestic": true, "individual_id": listed_animal.id, "body_id": listed_animal.body_id,
+				"species": "domestic", "macro_coords": listed_animal.macro_coords})
 		# Zona di lavoro (2026-10-09, ordini "Taglia" del cassetto con la zona fissata).
 		"work_area":
 			var area := WorkAreaService.find_by_id(game_data, int(entry["id"]))
@@ -10506,6 +10626,10 @@ func _on_human_individual_died(
 		view.queue_free()
 	if individual.is_selected:
 		_clear_individual_selection()
+	if cause == DeathTypes.DeathCause.STARVATION:
+		var starvation_effects := GameEffects.new()
+		DomesticAnimalLifeService.on_person_starved(game_data, starvation_effects)
+		_apply_effects(starvation_effects)
 	# Step 5 del sistema oggetti-scaduti (2026-09-05): comparsa della DeadBodyView nello STESSO
 	# punto/segnale già usato per la comparsa del record expired_objects (Step 3, dentro
 	# GameTimeService._kill_individual, appena prima che questo stesso segnale scattasse) — non

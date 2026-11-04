@@ -132,6 +132,8 @@ enum ActionType {
 	DRINK,
 	# FISH (2026-10-31, pesca con la lenza nel ruscello — FishAction, fish.tres) — IN CODA (38).
 	FISH,
+	# SLAUGHTER (2026-11-04, Macella sugli animali domestici — SlaughterAction, slaughter.tres) — IN CODA (39).
+	SLAUGHTER,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

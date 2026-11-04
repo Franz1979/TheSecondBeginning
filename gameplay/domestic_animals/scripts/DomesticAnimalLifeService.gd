@@ -3,7 +3,7 @@ extends RefCounted
 
 # Vecchiaia e salute degli animali domestici (cane, passo 4, 2026-11-03). La salute sta in DomesticAnimal.health_ratio, il
 # corpo ne è una copia: ferito rallenta da solo (AnimalGroupRenderer._wounded_speed_factor). Niente malattie. Chi muore
-# sparisce senza carcassa: le carcasse arrivano col passo 6.
+# lascia dov'era una carcassa che marcisce e non si macella (passo 6); chi parte in autunno no.
 
 
 # Ogni giorno (GameSimulation.tick_day): muore chi ha raggiunto l'età massima, gli altri guariscono un po' e il corpo segue
@@ -45,6 +45,44 @@ static func _set_health_ratio(animal: DomesticAnimal, ratio: float) -> void:
 		var body := AnimalGroupRenderer.find_live_individual(animal.body_id)
 		if body != null:
 			body.health = AnimalGroupRenderer.get_live_max_health(animal.body_id) * animal.health_ratio
+
+
+# Una persona morta di fame (GameScene, individual_died): il villaggio soffre e lo soffrono anche gli animali. Raggiunte
+# starved_people_per_death morti entro starved_people_window_days muore un adulto a caso, con l'avviso, e il conto riparte.
+# Non è una riserva di cibo: la carcassa marcisce. Senza adulti nessuna morte e nessun avviso.
+static func on_person_starved(game_data: GameData, effects: GameEffects) -> void:
+	var today := game_data.get_absolute_day()
+	var species_done: Dictionary = {}
+	for animal in game_data.domestic_animals.duplicate():
+		if species_done.has(animal.species):
+			continue
+		species_done[animal.species] = true
+		var rules := DomesticAnimalCalculator.get_rules(animal.species)
+		if rules == null or rules.starved_people_per_death <= 0:
+			continue
+		var days: Array = []
+		for day in game_data.domestic_starvation_days.get(animal.species, []):
+			if today - int(day) <= rules.starved_people_window_days:
+				days.append(day)
+		days.append(today)
+		if days.size() >= rules.starved_people_per_death and _starve_one_adult(game_data, rules, today, effects):
+			days.clear()
+		game_data.domestic_starvation_days[animal.species] = days
+
+
+static func _starve_one_adult(game_data: GameData, rules: DomesticAnimalRules, today: int, effects: GameEffects) -> bool:
+	var wild_rules := DomesticAnimalCalculator.get_wild_rules(rules.species_name)
+	var adults: Array[DomesticAnimal] = []
+	for animal in DomesticAnimalService.get_animals(game_data, rules.species_name):
+		if animal.get_age_band(today, wild_rules) == GameTypes.AgeBand.ADULT:
+			adults.append(animal)
+	if adults.is_empty():
+		return false
+	_kill(game_data, adults[randi() % adults.size()], "fame")
+	if effects != null:
+		effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS,
+			GameContext.tr_text("notification_domestic_starved_%s" % rules.species_name))
+	return true
 
 
 # Età di morte in giorni, propria di ogni animale: dipende solo dall'id, quindi resta uguale dopo un caricamento e non si salva.
@@ -139,6 +177,10 @@ static func _pick_leaver(animals: Array[DomesticAnimal], rules: DomesticAnimalRu
 
 static func _kill(game_data: GameData, animal: DomesticAnimal, reason: String) -> void:
 	_remove(game_data, animal)
+	# Mai stato sulla mappa (posizione -1): nessun punto dove lasciare la carcassa.
+	if animal.macro_coords.x >= 0 and animal.position.x >= 0.0:
+		var band := animal.get_age_band(game_data.get_absolute_day(), DomesticAnimalCalculator.get_wild_rules(animal.species))
+		GroundPileService.drop_carcass(game_data, animal.macro_coords, animal.position, animal.species, int(band), null, false)
 	print("[DOMESTIC] %s %d morto: %s" % [animal.species, animal.id, reason])
 
 

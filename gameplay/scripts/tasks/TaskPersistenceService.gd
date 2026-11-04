@@ -276,6 +276,8 @@ static func _action_type_for_step(step: Action) -> int:
 	if step is DrinkAction:
 		return TaskTypes.ActionType.DRINK
 	# FISH (2026-10-31, FishAction, fish.tres), aggiunta insieme al proprio case in _build_step.
+	if step is SlaughterAction:
+		return TaskTypes.ActionType.SLAUGHTER
 	if step is FishAction:
 		return TaskTypes.ActionType.FISH
 	# REPAIR (2026-10-10, RepairAction, repair.tres), aggiunta insieme al proprio case in _build_step.
@@ -566,6 +568,8 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.DRINK:
 			# Nessun argomento; il tempo trascorso da load_save_data.
 			step = DrinkAction.new()
+		TaskTypes.ActionType.SLAUGHTER:
+			step = SlaughterAction.new(int(step_data.get("animal_id", -1)))
 		TaskTypes.ActionType.FISH:
 			# La microcella del ruscello; il tempo del tentativo in corso da load_save_data.
 			step = FishAction.new(

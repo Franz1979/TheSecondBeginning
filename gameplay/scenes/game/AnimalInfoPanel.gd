@@ -7,9 +7,11 @@ extends VBoxContainer
 # renderer, regole né popolazioni. Specie e fascia d'età per tutti; per gli animali seguiti per individuo
 # (WildAnimal, 2026-10-28 lupi L1b) anche sesso, anni, riproduttore e aggressività come barra (show_wild_details).
 
-# Pulsanti di debug dell'animale domestico (cane, passo 4): ferirlo e invecchiarlo per provare, mai in una build pulita.
-signal debug_wound_requested
-signal debug_add_year_requested
+# Macella (cane, passo 7): ordine del giocatore su un animale domestico. GameScene decide lista o mirino.
+signal slaughter_requested
+signal slaughter_assign_requested
+signal slaughter_cancel_requested
+signal butcher_destination_chosen(destination: String)
 
 @onready var species_label: Label = $SpeciesLabel
 @onready var age_band_label: Label = $AgeBandLabel
@@ -20,24 +22,39 @@ signal debug_add_year_requested
 @onready var aggression_label: Label = $WildDetails/AggressionRow/AggressionLabel
 @onready var aggression_bar: ProgressBar = $WildDetails/AggressionRow/AggressionBar
 
-var _debug_row: HBoxContainer = null
+var _slaughter_row: HBoxContainer = null
+var _slaughter_button: Button = null
+var _slaughter_assign_button: Button = null
+var _slaughter_cancel_button: Button = null
+var _destination_pair: ButcherDestinationPair = null
 
 
 func _ready() -> void:
 	aggression_label.text = tr("animal_aggression_label")
-	if DebugLogging.ENABLED:
-		_debug_row = HBoxContainer.new()
-		wild_details.add_child(_debug_row)
-		_add_debug_button("Ferisci", debug_wound_requested)
-		_add_debug_button("+1 anno", debug_add_year_requested)
+	_build_slaughter_row()
 	clear()
 
 
-func _add_debug_button(text: String, pressed_signal: Signal) -> void:
+func _build_slaughter_row() -> void:
+	_slaughter_row = HBoxContainer.new()
+	wild_details.add_child(_slaughter_row)
+	_slaughter_button = _add_slaughter_button("animal_slaughter_button", "animal_slaughter_tooltip", slaughter_requested)
+	_slaughter_assign_button = _add_slaughter_button("building_assign_production_worker_button", "animal_slaughter_assign_tooltip", slaughter_assign_requested)
+	_slaughter_cancel_button = _add_slaughter_button("animal_slaughter_cancel_button", "animal_slaughter_cancel_tooltip", slaughter_cancel_requested)
+	_destination_pair = ButcherDestinationPair.new()
+	_destination_pair.tooltip_key = "animal_slaughter_destination_tooltip"
+	_destination_pair.destination_chosen.connect(func(destination: String) -> void: butcher_destination_chosen.emit(destination))
+	_slaughter_row.add_child(_destination_pair)
+
+
+func _add_slaughter_button(text_key: String, tooltip_key: String, pressed_signal: Signal) -> Button:
 	var button := Button.new()
-	button.text = text
+	button.text = tr(text_key)
+	button.tooltip_text = TooltipText.wrap(tr(tooltip_key))
+	button.focus_mode = Control.FOCUS_NONE
 	button.pressed.connect(func() -> void: pressed_signal.emit())
-	_debug_row.add_child(button)
+	_slaughter_row.add_child(button)
+	return button
 
 
 # has_details: righe degli animali seguiti per individuo, riempite subito dopo da show_wild_details o show_domestic_details.
@@ -58,8 +75,7 @@ func show_wild_details(is_male: bool, age_years: int, is_breeder: bool, aggressi
 	breeder_label.visible = is_breeder
 	aggression_label.text = tr("animal_aggression_label")
 	aggression_bar.value = clampf(aggression, 0.0, 100.0)
-	if _debug_row != null:
-		_debug_row.visible = false
+	_slaughter_row.visible = false
 
 
 # Animale domestico (2026-11-03, cane passo 3): sesso, anni e salute (passo 4, 0..1) nella riga della barra; niente
@@ -71,8 +87,18 @@ func show_domestic_details(is_male: bool, age_years: int, health_ratio: float) -
 	breeder_label.visible = false
 	aggression_label.text = tr("individual_health_label")
 	aggression_bar.value = clampf(health_ratio * 100.0, 0.0, 100.0)
-	if _debug_row != null:
-		_debug_row.visible = true
+	_slaughter_row.visible = true
+
+
+# Quali pulsanti di Macella si vedono (passo 7). Solo .visible, mai ricreati: l'aggiornamento periodico non perde i clic.
+func show_slaughter_state(can_order: bool, can_assign: bool, can_cancel: bool) -> void:
+	_slaughter_button.visible = can_order
+	_slaughter_assign_button.visible = can_assign
+	_slaughter_cancel_button.visible = can_cancel
+
+
+func set_butcher_destination(current: Dictionary, options: Array[Dictionary]) -> void:
+	_destination_pair.set_destination(true, current, options)
 
 
 func clear() -> void:
