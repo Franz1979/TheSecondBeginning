@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_step_cook_soup"]
+
+[resource]
+script = ExtResource("1_step_cook_soup")
+action_type = 44
+context_keys = Array[String](["soup_house_building", "soup_ingredients"])
+step_description = "task_cook_soup_step_cook"

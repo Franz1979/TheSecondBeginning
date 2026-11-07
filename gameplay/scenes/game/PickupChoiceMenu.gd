@@ -10,6 +10,8 @@ extends RefCounted
 
 # Scelta cambiata: is_resource = criterio NAME (una risorsa: il chiamante mostra la quantità), max_quantity = sua scorta.
 signal selection_changed(is_resource: bool, max_quantity: int)
+# Voce a quantità fissa scelta o lasciata (2026-11-07, prede della trappola: tutto, niente quantità né Ripeti).
+signal fixed_selection_changed(is_fixed: bool)
 
 # Chiavi tr() per categoria: [nome della categoria (intestazione), "tutto" della categoria].
 const CATEGORY_TEXT_KEYS := {
@@ -23,11 +25,12 @@ const CATEGORY_TEXT_KEYS := {
 
 # Sorgenti nell'ordine in cui compaiono (2026-09-26, ground drop): prima il mucchio a terra (sta sopra), poi il
 # terreno, con la chiave tr() della loro intestazione. Le intestazioni compaiono solo se le sorgenti sono due.
-const SOURCE_ORDER: Array[int] = [PickUpAction.SourceKind.GROUND_PILE, PickUpAction.SourceKind.TERRAIN]
+const SOURCE_ORDER: Array[int] = [PickUpAction.SourceKind.TRAP, PickUpAction.SourceKind.GROUND_PILE, PickUpAction.SourceKind.TERRAIN]
 # Riquadri delle sorgenti (2026-09-26, richiesta utente — con due sorgenti le sezioni si distinguevano poco):
 # sfondo leggermente diverso per sorgente (terroso per il mucchio, verdastro per il terreno), bordo, intestazione
 # più grande staccata da un separatore, spazio vuoto tra un riquadro e l'altro.
 const SOURCE_PANEL_COLORS := {
+	PickUpAction.SourceKind.TRAP: Color(0.22, 0.20, 0.28, 1.0),
 	PickUpAction.SourceKind.GROUND_PILE: Color(0.30, 0.24, 0.17, 1.0),
 	PickUpAction.SourceKind.TERRAIN: Color(0.19, 0.25, 0.18, 1.0),
 }
@@ -35,6 +38,7 @@ const SOURCE_PANEL_BORDER_COLOR := Color(0.55, 0.52, 0.45, 1.0)
 const SOURCE_HEADER_FONT_SIZE: int = 15
 const SOURCE_PANEL_GAP: float = 10.0
 const SOURCE_TEXT_KEYS := {
+	PickUpAction.SourceKind.TRAP: "pickup_choice_source_trap",
 	PickUpAction.SourceKind.GROUND_PILE: "pickup_choice_source_ground_pile",
 	PickUpAction.SourceKind.TERRAIN: "pickup_choice_source_terrain",
 }
@@ -81,7 +85,7 @@ func build(list: VBoxContainer, resources: Array, default_choice: Dictionary = {
 		var only: Dictionary = resources[0]
 		_rows_container = list
 		_add_choice(
-			_build_resource_row(String(only["resource_name"]), int(only["quantity"]), 0), PickUpAction.CriterionKind.NAME,
+			_build_resource_row(String(only["resource_name"]), int(only["quantity"]), 0, String(only.get("display_name", ""))), PickUpAction.CriterionKind.NAME,
 			int(only["category"]), String(only["resource_name"]), int(only["quantity"]),
 			int(only.get("source_kind", PickUpAction.SourceKind.TERRAIN))
 		)
@@ -134,7 +138,9 @@ func select(index: int) -> void:
 	for i in range(_choices.size()):
 		(_choices[i]["button"] as Button).button_pressed = i == index
 	var choice: Dictionary = _choices[index]
-	selection_changed.emit(int(choice["kind"]) == PickUpAction.CriterionKind.NAME, int(choice["max_quantity"]))
+	var is_fixed := int(choice["source_kind"]) == PickUpAction.SourceKind.TRAP
+	selection_changed.emit(int(choice["kind"]) == PickUpAction.CriterionKind.NAME and not is_fixed, int(choice["max_quantity"]))
+	fixed_selection_changed.emit(is_fixed)
 
 
 # Riquadro di una sorgente (solo con due sorgenti): PanelContainer con sfondo proprio e bordo, dentro
@@ -164,6 +170,12 @@ func _build_source_block(source_kind: int) -> VBoxContainer:
 # leggibile. `base_level` sposta tutta la sezione di un rientro sotto l'intestazione della sorgente. Ritorna il
 # numero di righe aggiunte (per il dimensionamento del popup).
 func _add_source_section(entries: Array, source_kind: int, base_level: int) -> int:
+	# Trappola (2026-11-07): solo le sue righe ("Uccelli (n)"), niente "Tutto" né categorie.
+	if source_kind == PickUpAction.SourceKind.TRAP:
+		for entry in entries:
+			_add_choice(_build_resource_row(String(entry["resource_name"]), int(entry["quantity"]), base_level, String(entry.get("display_name", ""))),
+				PickUpAction.CriterionKind.NAME, int(entry["category"]), String(entry["resource_name"]), int(entry["quantity"]), source_kind)
+		return entries.size()
 	var by_category: Dictionary = {}
 	for entry in entries:
 		var category: int = int(entry["category"])
@@ -261,13 +273,15 @@ func _build_text_row(text: String, level: int) -> Control:
 
 # Riga di una risorsa: rientro + icona (disegnata/emoji/iniziale, stesso schema a 3 livelli di
 # OptionChoiceDialog e BuildingInfoPanel) + Button "Nome (quantita')".
-func _build_resource_row(resource_name: String, quantity: int, level: int) -> Control:
+# `display_name` (2026-11-07): testo al posto del nome della risorsa ("Uccelli" per le prede della trappola).
+func _build_resource_row(resource_name: String, quantity: int, level: int, display_name: String = "") -> Control:
 	var row := HBoxContainer.new()
 	row.add_child(_build_indent(level))
 
 	row.add_child(build_resource_icon_box(resource_name))
 
-	row.add_child(build_choice_button("%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]))
+	var text := display_name if display_name != "" else IconRegistry.get_resource_display_name(resource_name)
+	row.add_child(build_choice_button("%s (%d)" % [text, quantity]))
 	return row
 
 

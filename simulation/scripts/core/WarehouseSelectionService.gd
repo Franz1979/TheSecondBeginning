@@ -379,7 +379,8 @@ static func _get_matching_stock(building: Building, criterion: Variant, min_quan
 		# Combustibile di una casa riscaldabile (2026-10-22): riservato alla casa, mai una sorgente automatica. Vestiario di una
 		# casa di nucleo abitata: riservato ai suoi abitanti, che lo prendono direttamente da casa (HouseWardrobeService).
 		if HouseHeatingService.is_fuel_reserved(building, String(resource_name)) \
-				or HouseWardrobeService.is_apparel_reserved(building, String(resource_name)):
+				or HouseWardrobeService.is_apparel_reserved(building, String(resource_name)) \
+				or HouseWardrobeService.is_bowl_reserved(building, String(resource_name)):
 			continue
 		if quantity < minimum:
 			continue

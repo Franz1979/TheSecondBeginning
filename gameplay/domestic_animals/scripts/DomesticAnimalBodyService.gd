@@ -24,7 +24,7 @@ static func sync_bodies(game_data: GameData, world: World, renderers: Dictionary
 			animal.position = body.position
 			if DomesticAnimalGuardService.update_confront_animal(animal, game_data):
 				continue
-			if not DomesticAnimalHuntService.update_animal(animal, individuals):
+			if not DomesticAnimalHuntService.update_animal(animal, individuals, game_delta):
 				DomesticAnimalFollowService.update_animal(animal, game_data, world, individuals, game_delta)
 			continue
 		animal.body_id = 0
@@ -62,6 +62,8 @@ static func sync_bodies(game_data: GameData, world: World, renderers: Dictionary
 		animal.hunt_person_id = -1
 		animal.hunt_catching_up = false
 		animal.guard_confront_group_id = -1
+		animal.hunt_chase_prey_id = -1
+		animal.hunt_hold_hours_left = 0.0
 		AnimalGroupRenderer.set_live_behavior(body.id, AnimalVisualGroup.Behavior.STAND_AROUND, home,
 			rules.roam_radius_min, rules.roam_radius_max, rules.roam_speed_scale)
 

@@ -119,6 +119,7 @@ var _fish_destination_state: Dictionary = {"shown": false, "current": {}, "optio
 func _ready() -> void:
 	_menu = PickupChoiceMenu.new()
 	_menu.selection_changed.connect(_on_menu_selection_changed)
+	_menu.fixed_selection_changed.connect(func(is_fixed: bool) -> void: repeat_check_box.visible = not _trips_mode and not is_fixed)
 	quantity_label.text = tr("transport_dialog_quantity_label")
 	repeat_check_box.text = tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_TRIPS})
 	confirm_button.text = tr("transport_dialog_confirm")

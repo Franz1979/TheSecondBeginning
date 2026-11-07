@@ -19,7 +19,7 @@ extends RefCounted
 #   bioma x terreno, cosi' il risultato riflette le proporzioni volute e non l'ordine di chiamata.
 # - FISH/BIRDS sono seminati come frazione della capacita' SFRUTTABILE (usable capacity, lo
 #   stesso tetto verso cui la crescita converge — vedi ResourceCalculator.get_water_
-#   usable_capacity_space/get_land_usable_capacity_space), non della capacita' fisica grezza
+#   usable_capacity_space), non della capacita' fisica grezza
 #   come in InitialResourceSetupService: per un mondo ADULT/OLD la frazione seminata deve
 #   avvicinarsi al tetto che la crescita userebbe comunque, non al tetto fisico che la crescita
 #   non raggiunge mai se usable_capacity_ratio < 1.0.
@@ -116,7 +116,6 @@ func populate_resources(world: World, age: GameTypes.WorldAge) -> void:
 	young_seeder.populate_stone(world)
 
 	populate_fish(world, age)
-	populate_birds(world, age)
 	populate_vegetation(world, age)
 
 
@@ -191,80 +190,6 @@ func populate_fish(world: World, age: GameTypes.WorldAge) -> void:
 		)
 
 	print("Fish popolato (mondo parametrico, age=%s)" % GameTypes.WorldAge.keys()[age])
-
-
-# Gemella di InitialResourceSetupService.populate_birds — vedi populate_fish sopra per le stesse
-# differenze (frazione parametrica per eta', capacita' sfruttabile invece che fisica).
-func populate_birds(world: World, age: GameTypes.WorldAge) -> void:
-	var ratio_range: Vector2 = FAUNA_SEED_RATIO_BY_AGE[age]
-
-	# Vedi nota su eligible_count/presence_passed_count/seeded_by_* in populate_fish sopra —
-	# stesso schema diagnostico aggregato, raggruppato per (terreno,bioma) invece che water_type
-	# (la costa non entra nella chiave: è un moltiplicatore fine, raggrupparci sopra esploderebbe
-	# il numero di gruppi senza aggiungere molto).
-	var eligible_count := 0
-	var presence_passed_count := 0
-	var seeded_by_terrain_biome: Dictionary = {}
-
-	for cell in world.cells:
-		var state := world.get_cell_state_at(cell.x, cell.y)
-		if state == null:
-			continue
-
-		var capacity := ResourceCalculator.get_land_usable_capacity_space(GameTypes.WorldObjectType.BIRDS, cell, state)
-		if capacity <= 0:
-			continue
-		eligible_count += 1
-
-		var chance := ResourceCalculator.get_presence_chance(
-			GameTypes.WorldObjectType.BIRDS, cell.terrain_base, cell.biome, cell.coast_type
-		)
-		var roll := randf()
-		if roll > chance:
-			continue
-		presence_passed_count += 1
-
-		var max_density := ResourceCalculator.get_max_density(
-			GameTypes.WorldObjectType.BIRDS, cell.terrain_base, cell.biome, cell.coast_type
-		)
-		if max_density <= 0.0:
-			continue
-
-		var dedicated_space: int = int(round(capacity * randf_range(ratio_range.x, ratio_range.y)))
-		if dedicated_space <= 0:
-			continue
-		var quantity: int = int(round(max_density * dedicated_space))
-
-		state.set_terrestrial_space(GameTypes.WorldObjectType.BIRDS, dedicated_space)
-		state.set_resource_quantity(GameTypes.WorldObjectType.BIRDS, quantity)
-
-		var group_key: String = "%s/%s" % [
-			GameTypes.TerrainBase.keys()[cell.terrain_base], GameTypes.Biome.keys()[cell.biome]
-		]
-		var group: Dictionary = seeded_by_terrain_biome.get(group_key, {"count": 0, "space_sum": 0, "quantity_sum": 0})
-		group["count"] = int(group["count"]) + 1
-		group["space_sum"] = int(group["space_sum"]) + dedicated_space
-		group["quantity_sum"] = int(group["quantity_sum"]) + quantity
-		seeded_by_terrain_biome[group_key] = group
-
-	if DebugLogging.ENABLED and DebugLogging.SHOW_FAUNA_DIAGNOSTICS_LOGS:
-		var seeded_count := 0
-		for group_key in seeded_by_terrain_biome.keys():
-			var group: Dictionary = seeded_by_terrain_biome[group_key]
-			var count: int = group["count"]
-			seeded_count += count
-			print(
-				"[FAUNA SEEDING] BIRDS terreno/bioma=%s celle_popolate=%d spazio_medio=%.1f quantita_media=%.1f quantita_totale=%d" % [
-					group_key, count, float(group["space_sum"]) / count, float(group["quantity_sum"]) / count, group["quantity_sum"]
-				]
-			)
-		print(
-			"[FAUNA SEEDING SUMMARY] BIRDS: %d celle idonee (terra con capacita>0) -> %d superano presence_chance -> %d popolate" % [
-				eligible_count, presence_passed_count, seeded_count
-			]
-		)
-
-	print("Birds popolato (mondo parametrico, age=%s)" % GameTypes.WorldAge.keys()[age])
 
 
 # Step unico per GRASS+SHRUB+TREE: calcola available_space UNA VOLTA (dopo STONE e river_space,

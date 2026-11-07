@@ -263,10 +263,11 @@ static func _end_confront(animal: DomesticAnimal, reason: String) -> void:
 
 
 # Branco a portata: abbaia subito e poi ogni guard_bark_interval_hours; fuori portata il conto si azzera, così al
-# prossimo avvicinamento abbaia di nuovo subito.
+# prossimo avvicinamento abbaia di nuovo subito. Branco in uscita: nessun abbaio.
 static func _update_alarm(visit: WildAnimalVisit, animal: DomesticAnimal, rules: DomesticAnimalRules, hours: float) -> void:
 	var nearest := _nearest_visitor_distance(visit, animal.position)
-	if nearest > rules.guard_alarm_radius:
+	# Branco in partenza (2026-11-07, richiesta utente): il pericolo è passato, niente allarme.
+	if nearest > rules.guard_alarm_radius or visit.phase == WildAnimalVisit.Phase.LEAVING:
 		visit.guard_bark_hours_left.erase(animal.id)
 		return
 	var left := float(visit.guard_bark_hours_left.get(animal.id, 0.0)) - hours

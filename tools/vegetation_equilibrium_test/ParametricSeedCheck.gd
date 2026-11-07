@@ -4,7 +4,7 @@ extends Node
 # ParametricResourceSetupService.populate_resources(world, age) UNA VOLTA (nessun avanzamento di
 # anni, a differenza di VegetationEquilibriumTest.gd nella stessa cartella) e stampa lo stato
 # risultante — dedicated_space GRASS/SHRUB/TREE per le stesse celle campione bioma x terreno gia'
-# usate nei test di saturazione, piu' un riepilogo FISH/BIRDS — solo per confermare a colpo
+# usate nei test di saturazione, piu' un riepilogo FISH — solo per confermare a colpo
 # d'occhio che le proporzioni configurate vengano rispettate. NON tocca il motore: chiama solo
 # l'API pubblica di ParametricResourceSetupService.
 #
@@ -61,8 +61,8 @@ func _ready() -> void:
 		])
 
 	print("")
-	print("=== FISH/BIRDS per cella campione (dove applicabile) ===")
-	print("%-22s %-14s %-14s" % ["bioma|terreno", "FISH", "BIRDS"])
+	print("=== FISH per cella campione (dove applicabile) ===")
+	print("%-22s %-14s" % ["bioma|terreno", "FISH"])
 	for key in keys:
 		var info: Dictionary = samples[key]
 		var coords: Vector2i = info["coords"]
@@ -75,13 +75,7 @@ func _ready() -> void:
 			var fish_space := state.get_water_space(GameTypes.WorldObjectType.FISH)
 			fish_label = "%d/%d (%.1f%%)" % [fish_space, fish_cap, float(fish_space) / float(fish_cap) * 100.0]
 
-		var birds_cap := ResourceCalculator.get_land_usable_capacity_space(GameTypes.WorldObjectType.BIRDS, cell, state)
-		var birds_label := "N/A"
-		if birds_cap > 0:
-			var birds_space := state.get_terrestrial_space(GameTypes.WorldObjectType.BIRDS)
-			birds_label = "%d/%d (%.1f%%)" % [birds_space, birds_cap, float(birds_space) / float(birds_cap) * 100.0]
-
-		print("%-22s %-14s %-14s" % [key, fish_label, birds_label])
+		print("%-22s %-14s" % [key, fish_label])
 
 	print("")
 	print("=== Fine verifica ===")

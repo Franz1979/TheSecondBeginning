@@ -57,3 +57,7 @@ hunt_max_prey_health = 30.0
 guard_confront_distance = 4.0
 guard_confront_max_advance = 6.0
 guard_confront_ring_max = 1.5
+hunt_scent_radius = 8.0
+hunt_hold_hours = 3.0
+hunt_hold_contact_distance = 1.5
+hunt_chase_max_distance = 25.0

@@ -7,7 +7,7 @@ extends RefCounted
 # ordine; la scena li prova in quell'ordine e il primo che consuma il clic vince (un comando può ancora rinunciare, per
 # esempio il trasporto da un edificio vuoto). Nessun comando = movimento verso il punto. Senza stato.
 
-enum Command { BURY, HUNT, BUTCHER, CUT, QUARRY, PICKUP, BUILD, TRANSPORT, FISH, CLAY, FILL_JAR }
+enum Command { BURY, HUNT, BUTCHER, CUT, QUARRY, PICKUP, BUILD, TRANSPORT, FISH, CLAY, FILL_JAR, TRAP }
 
 
 # Comandi possibili per `targets`, in ordine di priorità:
@@ -19,6 +19,8 @@ enum Command { BURY, HUNT, BUTCHER, CUT, QUARRY, PICKUP, BUILD, TRANSPORT, FISH,
 #   - pesca (2026-10-31) su un punto del ruscello con pesci visibile in dettaglio. Senza la lenza (FISHING, in cintura o
 #     nello zaino) resta il comando, come la caccia senza arma: lo rifiuta FishCommandService con l'avviso (2026-11-01,
 #     richiesta utente — prima diventava un "vai lì" muto), a meno che lì ci sia altro da fare (raccolta, edificio);
+#   - trappole (2026-11-07) prima del taglio, su una microcella senza edifici, rocce, argilla né pesci dove se ne può
+#     piazzare una (targets.trap_place_options): il popup ha anche Raccogli e Taglia se valgono;
 #   - raccolta, poi costruzione (o riparazione) e trasporto sull'edificio; su una Tettoia dell'acqua completa, prima di
 #     costruzione e trasporto, il riempimento delle giare (2026-11-06, WaterJarCommandService).
 static func candidates(ctx: GameContext, worker: HumanIndividual, targets: RightClickTargets, transport_pending: bool) -> Array[Command]:
@@ -35,11 +37,11 @@ static func candidates(ctx: GameContext, worker: HumanIndividual, targets: Right
 		commands.append(Command.BUTCHER)
 	var on_resumable_building := has_resumable_work(ctx, targets.building)
 	var day := ctx.game_data.get_absolute_day()
-	if not on_resumable_building and not targets.plant.is_empty() \
-			and ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING):
-		var plant_key: Vector3i = targets.plant["individual_key"]
-		if FogOfWarVerificationService.is_detail_visible(ctx.live_cells, targets.plant["macro_coords"], Vector2i(plant_key.x, plant_key.y), day):
-			commands.append(Command.CUT)
+	if targets.building == null and not targets.trap_place_options.is_empty() and targets.rock.is_empty() \
+			and targets.clay.is_empty() and targets.stream_fish.is_empty():
+		commands.append(Command.TRAP)
+	if can_cut(ctx, worker, targets):
+		commands.append(Command.CUT)
 	if not on_resumable_building and not targets.rock.is_empty() \
 			and ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.DIGGING):
 		if FogOfWarVerificationService.is_detail_visible(ctx.live_cells, targets.rock["macro_coords"], targets.rock["position"], day):
@@ -59,6 +61,18 @@ static func candidates(ctx: GameContext, worker: HumanIndividual, targets: Right
 		commands.append(Command.BUILD)
 		commands.append(Command.TRANSPORT)
 	return commands
+
+
+# Taglio possibile: pianta visibile in dettaglio, attrezzo CHOPPING (in cintura o nello zaino), nessun edificio con un
+# lavoro da riprendere sotto il clic.
+static func can_cut(ctx: GameContext, worker: HumanIndividual, targets: RightClickTargets) -> bool:
+	if targets.plant.is_empty() or has_resumable_work(ctx, targets.building) \
+			or not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.CHOPPING):
+		return false
+	var plant_key: Vector3i = targets.plant["individual_key"]
+	return FogOfWarVerificationService.is_detail_visible(
+		ctx.live_cells, targets.plant["macro_coords"], Vector2i(plant_key.x, plant_key.y), ctx.game_data.get_absolute_day()
+	)
 
 
 # true se `building` ha un lavoro da riprendere col clic destro: cantiere o "da demolire" (has_resumable_task), o una

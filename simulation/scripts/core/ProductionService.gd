@@ -110,7 +110,8 @@ static func known_workstation_display_name(resource_name: String, folk: Folk) ->
 # ritorna gli affumicatoi il cui stato è cambiato (cella da ridisegnare). Una volta al secondo (GameSimulation).
 # Capanna del guaritore (2026-10-25, richiesta utente — fuoco interno): stessa regola per ogni tipo in SMOKING_TYPES, ma
 # fuma solo se la ricetta in lavorazione brucia combustibile (recipe_fuel_required > 0; l'infuso sì, l'unguento no).
-const SMOKING_TYPES: Array[String] = ["smokehouse", "healer_hut"]
+# Capanna del vasellaio (2026-11-07, richiesta utente): fuma mentre cuoce giare e ciotole (ricette a combustibile).
+const SMOKING_TYPES: Array[String] = ["smokehouse", "healer_hut", "potter_hut"]
 
 static func refresh_smoking(world: World, individuals: Array[HumanIndividual]) -> Array[Building]:
 	var changed: Array[Building] = []
@@ -859,13 +860,15 @@ static func get_production_demand(building: Building, resource_name: String) -> 
 # BuildingStorageService.withdraw_stored (la voce sparisce solo se arriva a 0). Chiamata DOPO il
 # prelievo dei materiali della ricetta, così non tocca le unità appena consumate come materiale.
 # Pubblica (2026-10-22): la usa anche il riscaldamento delle case (HouseHeatingService), stessa regola del focolare.
-static func consume_fuel(building: Building, required: float) -> void:
-	_consume_fuel(building, required)
+# Restituisce il combustibile bruciato davvero (pezzi interi: può superare `required`; l'anticipo delle case lo tiene,
+# HouseHeatingService.spend_fuel).
+static func consume_fuel(building: Building, required: float) -> float:
+	return _consume_fuel(building, required)
 
 
-static func _consume_fuel(building: Building, required: float) -> void:
+static func _consume_fuel(building: Building, required: float) -> float:
 	if required <= 0.0:
-		return
+		return 0.0
 	var fuel_names: Array[String] = []
 	for stored_name in building.stored_resources.keys():
 		if get_fuel_value(String(stored_name)) > 0.0:
@@ -886,6 +889,7 @@ static func _consume_fuel(building: Building, required: float) -> void:
 			continue
 		var burned := BuildingStorageService.withdraw_stored(building, fuel_name, units)
 		remaining -= float(burned) * fuel_value
+	return required - remaining
 
 
 # true se `resource_name` è un ingrediente (recipe_inputs) di almeno una ricetta producibile presso `building`

@@ -53,7 +53,10 @@ const BODY_RESTORE_DURATION_PER_CALORIE: float = 0.001
 #     più denso), stesso travaso in riserva e provviste. Mangia anche il carico che stava trasportando per una
 #     task (arriverà meno roba a destinazione). A fine step chiede, se il bisogno resta, il viaggio al magazzino
 #     (CONTEXT_PENDING_WAREHOUSE_RESTOCK, consumata da HumanIndividualActionService._handle_pending_warehouse_restock).
-enum SourceKind { BUILDING, BACKPACK }
+#   - SOUP (2026-11-07, zuppa di midollo): la pentola della casa target_building, la parte dell'individuo
+#     (HomeSoupService.take_share: riserva del corpo poi saccoccia, felicità e salute della zuppa). La scelta di andarci
+#     la fa NeedTaskAssignmentService.build_restock_task.
+enum SourceKind { BUILDING, BACKPACK, SOUP }
 const CONTEXT_PENDING_WAREHOUSE_RESTOCK := "pending_warehouse_restock"
 
 # Tetto delle provviste mangiando dallo zaino, in giorni di autonomia (2026-11-03, richiesta utente — "se lo magna" senza
@@ -107,6 +110,15 @@ func activate(individual: Variant, context: Dictionary) -> void:
 		individual, BACKPACK_MEAL_AUTONOMY_DAYS if source_kind == SourceKind.BACKPACK else -1.0
 	)
 	var pouch_calorie_room: float = INF if is_inf(_pouch_calorie_cap) else maxf(_pouch_calorie_cap - individual.food_calories_held, 0.0)
+	if source_kind == SourceKind.SOUP:
+		# Durata e fatica con le regole di sempre, sullo spazio della parte che va nella saccoccia.
+		var soup_plan := HomeSoupService.plan_share(individual, target_building)
+		var soup_space: float = float(soup_plan.get("pouch", 0.0)) * HomeSoupService.SPACE_PER_CALORIE
+		_duration = DURATION_FACTOR * soup_space / individual.max_carry_capacity if individual.max_carry_capacity > 0.0 else 0.0
+		_duration += BODY_RESTORE_DURATION_PER_CALORIE * float(soup_plan.get("body", 0.0))
+		_total_stamina_cost = STAMINA_COST_PER_SPACE_UNIT * soup_space
+		_elapsed = 0.0
+		return
 	if source_kind == SourceKind.BACKPACK:
 		_selection = FoodSelectionService.select_food_from_entries(
 			individual.carried_resources, free_space, body_deficit, "zaino di #%d" % individual.id, pouch_calorie_room
@@ -158,6 +170,10 @@ func get_required_position(individual: Variant, context: Dictionary) -> Variant:
 #     in proporzione.
 # Selezione vuota o edificio nullo -> non modifica niente.
 func on_complete(individual: Variant, context: Dictionary) -> void:
+	if source_kind == SourceKind.SOUP:
+		if target_building != null and HomeSoupService.take_share(individual, target_building) > 0.0:
+			pouch_restocked.emit(target_building, {})
+		return
 	var pouch_quantities: Dictionary = _selection.get("quantities", {})
 	var body_quantities: Dictionary = _selection.get("body_quantities", {})
 	var space_before: float = individual.food_space_used

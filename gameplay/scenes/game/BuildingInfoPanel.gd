@@ -1516,15 +1516,21 @@ func _refresh_shelter_target(building: Building, capacity: int) -> void:
 	_shelter_target_row.add_child(WarehousePanel.build_level_field(shown, func(level: int) -> void:
 		water_target_changed.emit(building, level)
 	, "building_info_shelter_target_tooltip", 100, 0, true, WarehousePanel.LEVEL_NONE_TEXT, capacity))
+	# Riquadro fisso in fondo (2026-11-07, come la riga delle trappole nella zona): "D" col default del villaggio, ↺ col
+	# valore proprio della tettoia (riporta al default); sempre della stessa misura, così la riga non si sposta.
+	var marker := Button.new()
+	marker.text = "↺" if override >= 0 else "D"
+	marker.focus_mode = Control.FOCUS_NONE
+	marker.add_theme_font_size_override("font_size", 12)
+	marker.custom_minimum_size = Vector2(22.0, 22.0)
+	marker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	if override >= 0:
-		var reset := Button.new()
-		reset.text = "↺"
-		reset.flat = true
-		reset.focus_mode = Control.FOCUS_NONE
-		reset.add_theme_font_size_override("font_size", 12)
-		reset.tooltip_text = TooltipText.wrap(tr("building_info_shelter_target_reset"))
-		reset.pressed.connect(func() -> void: water_target_changed.emit(building, -1))
-		_shelter_target_row.add_child(reset)
+		marker.tooltip_text = TooltipText.wrap(tr("building_info_shelter_target_reset"))
+		marker.pressed.connect(func() -> void: water_target_changed.emit(building, -1))
+	else:
+		marker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		marker.tooltip_text = TooltipText.wrap(tr("building_info_shelter_target_default_tooltip"))
+	_shelter_target_row.add_child(marker)
 
 
 # Materiali per la riparazione (2026-10-10, Building.repair_materials): didascalia e chip delle risorse presenti con la
@@ -2840,6 +2846,36 @@ func _refresh_heating(building: Building, is_house: bool) -> void:
 	_heating_label.text = tr("building_heating_label").format({
 		"state": tr("building_heating_warm" if building.heated_today else "building_heating_cold"),
 	})
+	_refresh_soup(building)
+
+
+# Zuppa di casa (2026-11-07, HomeSoupService): sotto il riscaldamento, "Zuppa: 2 parti su 3 · buona ancora 2 giorni" o
+# "Zuppa: nessuna"; nel tooltip chi deve ancora prendere la sua parte.
+var _soup_label: Label = null
+
+
+func _refresh_soup(building: Building) -> void:
+	if _soup_label == null:
+		_soup_label = Label.new()
+		_soup_label.autowrap_mode = _heating_label.autowrap_mode
+		_soup_label.add_theme_font_size_override("font_size", _heating_label.get_theme_font_size("font_size"))
+		_soup_label.mouse_filter = Control.MOUSE_FILTER_PASS
+		_heating_label.add_sibling(_soup_label)
+	_soup_label.visible = HomeSoupService.is_soup_house(building)
+	if not _soup_label.visible:
+		return
+	if not HomeSoupService.has_soup(building):
+		_soup_label.text = tr("building_soup_none")
+		_soup_label.tooltip_text = TooltipText.wrap(tr("building_soup_tooltip"))
+		return
+	_soup_label.text = tr("building_soup_label").format({
+		"left": building.soup_shares.size(), "total": building.soup_portions_total, "days": HomeSoupService.days_left(building),
+	})
+	var names: Array[String] = []
+	for member in GameSettings.active_human_individuals:
+		if building.soup_shares.has(member.id):
+			names.append("%s (%d)" % [member.name, roundi(float(building.soup_shares[member.id]))])
+	_soup_label.tooltip_text = TooltipText.wrap(tr("building_soup_tooltip") + "\n\n" + tr("building_soup_waiting").format({"names": ", ".join(names)}))
 
 
 func _refresh_influence_received(building: Building) -> void:

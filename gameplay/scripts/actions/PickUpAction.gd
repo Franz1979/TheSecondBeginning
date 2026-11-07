@@ -78,7 +78,9 @@ enum CriterionKind { NAME, CATEGORY, ALL }
 #     qualcuno ha lasciato cadere, non ciò che il terreno offre.
 # Scelta da chi crea la Task (TaskBuilderService.build_pickup_task) dopo TaskFactory, così haul_resource.tres resta
 # invariata; persistita in get_save_data e letta da TaskPersistenceService._build_step. Non riordinare.
-enum SourceKind { TERRAIN, GROUND_PILE }
+# TRAP (2026-11-07): prede di una trappola montata, solo nel popup della raccolta (svuotamento manuale, TrapCommandService):
+# mai una PickUpAction.
+enum SourceKind { TERRAIN, GROUND_PILE, TRAP }
 
 # Priorita' fissa tra categorie (2026-09-20): cibo, poi materiali, poi medicinali; semilavorati e
 # strumenti (2026-09-23) in coda.

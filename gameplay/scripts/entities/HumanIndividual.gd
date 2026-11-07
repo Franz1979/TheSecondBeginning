@@ -1203,6 +1203,8 @@ func assign_task(task: Task, age_band: HumanTypes.AgeBand, is_interrupt_transiti
 	# senza passare da stop()) PRIMA di sovrascriverla, poi registra la NUOVA. Vedi TaskDebugRegistry.
 	# gd per il perché questi due punti (qui e stop() sotto) bastano a coprire ogni Task mai
 	# assegnata.
+	# Zuppa di casa (2026-11-07, log di debug): cottura sostituita prima di finire.
+	HomeSoupService.log_interrupted(self, current_task, "sostituita da '%s'" % task.task_name)
 	TaskDebugRegistry.on_task_closed(current_task)
 	# Disposizione della Task PRECEDENTE, sospendibile o no (2026-09-13, richiesta utente — CAMBIO
 	# COMPORTAMENTO: la sospendibilità ora conta SEMPRE, indipendentemente da CHI causa la
@@ -1383,6 +1385,8 @@ func stop(discard_cargo: bool = true) -> void:
 	# naturale), viene marcata "completata"; se stop() è invece chiamata a Task ancora incompleta
 	# (tasto H, o qualunque futura interruzione che passi da qui), "interrotta". Vedi TaskDebugRegistry.
 	# gd per il criterio esatto.
+	# Zuppa di casa (2026-11-07, log di debug): cottura fermata prima di finire.
+	HomeSoupService.log_interrupted(self, current_task, "fermata")
 	TaskDebugRegistry.on_task_closed(current_task)
 	# Scenario A — interruzione manuale con zaino pieno (2026-09-12, richiesta utente, fix
 	# unificato "scarico a terra") — stesso principio di assign_task() sopra: copre sia lo stop

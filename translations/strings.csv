@@ -569,6 +569,15 @@ building_residents_caption,Residenti
 building_influence_received_label,"Influenza ricevuta: {types}"
 building_influence_received_none,nessuna
 building_heating_label,Riscaldamento: {state}
+building_soup_none,Zuppa di midollo: nessuna
+task_cook_soup_name,Cucina la zuppa di midollo
+task_cook_soup_step_walk_source,Va a prendere le ossa
+task_cook_soup_step_take,Prende le ossa
+task_cook_soup_step_walk_home,Torna a casa
+task_cook_soup_step_cook,Cucina la zuppa di midollo
+building_soup_label,Zuppa di midollo: {left} parti su {total} · buona ancora {days} g
+building_soup_tooltip,"La zuppa di midollo: la cucina un abitante quando è libero, bollendo 5 ossa. Vale 150 calorie, divise in parti uguali tra gli abitanti (i neonati no); ognuno prende la sua in una volta. Col fuoco acceso (casa scaldata) resta buona 10 giorni, col fuoco spento 3."
+building_soup_waiting,Devono ancora prendere la loro parte: {names}
 building_heating_warm,acceso
 building_heating_cold,spento
 influence_type_political,politica
@@ -1024,6 +1033,9 @@ fill_jar_fail_no_travois,"{name} non ha un travois per la giara piena: niente ri
 building_potter_hut,Capanna del vasellaio
 build_bar_potter_hut_tooltip,Capanna del vasellaio
 build_bar_potter_hut_description,"Qui l'argilla si modella e si cuoce nella fossa di cottura: ciotole e giare."
+building_trapper_hut,Capanna del trappoliere
+build_bar_trapper_hut_tooltip,Capanna del trappoliere
+build_bar_trapper_hut_description,"Qui si intrecciano lacci, gabbie di bastoni e nasse. Conviene costruirla vicino a dove si caccia o si pesca."
 building_water_shelter,Tettoia dell'acqua
 build_bar_water_shelter_tooltip,Tettoia dell'acqua
 build_bar_water_shelter_description,"Tettoia leggera dove si tengono le giare, dieci posti. Potrà tenere l'acqua da bere lontano dal fiume."
@@ -1522,11 +1534,11 @@ warehouse_rule_water,Acqua per tettoia
 warehouse_rule_water_missing,mancano {count} giare
 pending_stock_water,Tettoie dell'acqua
 pending_stock_water_missing,"Mancano {count} giare nei magazzini per tenere le tettoie al loro livello d'acqua"
-building_info_shelter_target_general,Livello voluto: regola generale
+building_info_shelter_target_general,Livello voluto:
 building_info_shelter_target_own,Livello voluto:
 building_info_shelter_target_excluded,"Livello voluto: esclusa dal WM"
-building_info_shelter_target_tooltip,"Acqua da tenere in questa tettoia. Se scende sotto, all'inventario il WM ordina di riempire le giare che servono. Toccando il valore la tettoia ne prende uno suo al posto della regola generale; 0 = il WM non la riempie mai. La tacchetta sulla barra segna il livello."
-building_info_shelter_target_reset,Torna alla regola generale del WM
+building_info_shelter_target_tooltip,"Acqua da tenere in questa tettoia. Se scende sotto, all'inventario il WM ordina di riempire le giare che servono. Toccando il valore la tettoia ne prende uno suo al posto del default del villaggio; 0 = il WM non la riempie mai. La tacchetta sulla barra segna il livello."
+building_info_shelter_target_reset,Torna al default del villaggio (Gestione scorte)
 warehouse_rule_water_tooltip,"Acqua da tenere in ogni Tettoia dell'acqua. Quando una tettoia scende sotto questo livello, all'inventario parte un ordine che riempie le giare che servono (serve un travois). 0 = regola spenta."
 drawer_order_water_row,{building}: riempi {quantity} giare
 pending_stock_water_blocked,Tettoia non disponibile o nessuna giara da riempire
@@ -1886,3 +1898,50 @@ drawer_transport_banner_target,🚚 Trasporta: clicca l'edificio di destinazione
 drawer_transport_reject_not_needed,Trasporto non ordinato: {building} non ha posto per {resource}.
 drawer_order_player_transport_row,Trasporta {quantity} {resource} · {source} → {target}
 drawer_order_player_transport_blocked,Niente da prendere nella partenza o nessun posto nella destinazione
+microcell_inspection_birds,"Uccelli: {level}"
+bird_presence_none,nessuno
+bird_presence_few,pochi
+bird_presence_some,parecchi
+bird_presence_many,molti
+carried_resource_tooltip_bird_net,Rete per uccelli
+task_place_trap_name,Piazzare una trappola
+task_place_trap_step_walk_source,Andando a prendere la trappola
+task_place_trap_step_take,Prendendo la trappola
+task_place_trap_step_walk_site,Portando la trappola al posto
+task_place_trap_step_set,Montando la trappola
+task_place_trap_job_name,Piazza {trap} ({area})
+task_place_trap_job_tooltip,"Nella zona {area} mancano trappole: {trap} da prendere alla capanna più vicina e da montare dove ci sono più prede."
+trap_fail_no_source,"{name} non trova più l'edificio con la trappola."
+trap_fail_no_trap,"{name} non trova più la trappola da piazzare."
+trap_fail_no_room,"{name} non ha posto nello zaino per la trappola."
+trap_fail_not_carried,"{name} è arrivato al posto senza la trappola."
+warehouse_rule_traps,{trap} per zona
+warehouse_rule_traps_tooltip,"Trappole da tenere montate in ogni zona di lavoro col lavoro giusto (caccia per le trappole di terra). Chi è libero va a prenderle e le monta dove ci sono più prede. Una zona può avere un numero suo. 0 = nessuna."
+work_area_traps_row,{trap}
+work_area_traps_general,(default villaggio)
+work_area_traps_tooltip,"Trappole montate in questa zona e, nel campo, quante tenerne. Cambiato qui vale solo per questa zona, al posto del default del villaggio (Gestione scorte)."
+work_area_traps_reset_tooltip,Torna al default del villaggio (Gestione scorte)
+microcell_inspection_trap,"{trap}: catture {caught}/{capacity}"
+task_assignment_kind_trap,Trappole
+work_area_traps_default_tooltip,"D = vale il default del villaggio (Gestione scorte). Cambiando il numero la zona ne prende uno suo e qui compare ↺ per tornare al default."
+building_info_shelter_target_default_tooltip,"D = vale il default del villaggio (Gestione scorte). Cambiando il livello la tettoia ne prende uno suo e qui compare ↺ per tornare al default."
+task_empty_trap_name,Svuotare una trappola
+task_empty_trap_step_walk,Andando alla trappola
+task_empty_trap_step_empty,Svuotando la trappola
+task_empty_trap_job_name,"Svuota {trap} ({caught}/{capacity})"
+task_empty_trap_job_tooltip,"Andare a {trap}, prendere le prede ({caught}/{capacity}) e portarle dove va la carne delle cacce del WM."
+trap_fail_gone,"{name}: la trappola non c'è più."
+trap_choice_dialog_title,Microcella
+trap_choice_dialog_message,Cosa vuoi fare qui?
+trap_choice_place,Trappole
+trap_place_item_birds,"{trap} (uccelli: {level})"
+trap_place_reject_unavailable,"Qui non si può più piazzare questa trappola (posto occupato, nessuna trappola pronta o uccelli troppo pochi)."
+task_activity_place_trap,piazzare una trappola
+trap_choice_place_confirm,Piazza
+pickup_choice_source_trap,Dalla trappola
+trap_pickup_catch_birds,Uccelli
+task_activity_empty_trap,svuotare una trappola
+trap_empty_reject_nothing,La trappola è vuota
+trap_empty_reject_taken,La sta già svuotando {name}
+task_empty_trap_round_job_name,Giro delle trappole ({area}): {count}
+task_empty_trap_round_job_tooltip,"Passare da tutte le trappole della zona {area} con prede ({count}), le più vicine prima, e portare tutto dove va la carne delle cacce del WM."

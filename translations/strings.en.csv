@@ -356,6 +356,15 @@ building_residents_caption,Residents
 building_influence_received_label,"Influence received: {types}"
 building_influence_received_none,none
 building_heating_label,Heating: {state}
+building_soup_none,Marrow soup: none
+task_cook_soup_name,Cook the marrow soup
+task_cook_soup_step_walk_source,Goes to get the bones
+task_cook_soup_step_take,Takes the bones
+task_cook_soup_step_walk_home,Goes back home
+task_cook_soup_step_cook,Cooks the marrow soup
+building_soup_label,Marrow soup: {left} portions of {total} · good for {days} more d
+building_soup_tooltip,"The marrow soup: a resident cooks it when free, boiling 5 bones. It is worth 150 calories, split evenly among the residents (infants excluded); each takes their own at once. With the fire lit (heated house) it keeps 10 days, with the fire out 3."
+building_soup_waiting,Still to take their portion: {names}
 building_heating_warm,on
 building_heating_cold,off
 influence_type_political,political
@@ -966,6 +975,9 @@ fill_jar_fail_no_travois,"{name} has no travois for the full jar: no filling."
 building_potter_hut,Potter's hut
 build_bar_potter_hut_tooltip,Potter's hut
 build_bar_potter_hut_description,"Clay is shaped here and fired in the pit: bowls and jars."
+building_trapper_hut,Trapper's hut
+build_bar_trapper_hut_tooltip,Trapper's hut
+build_bar_trapper_hut_description,"Snares, stick cages and fish traps are woven here. Best built near where you hunt or fish."
 building_water_shelter,Water shelter
 build_bar_water_shelter_tooltip,Water shelter
 build_bar_water_shelter_description,"Light shelter where jars are kept, ten places. It will be able to hold drinking water far from the river."
@@ -1468,11 +1480,11 @@ warehouse_rule_water,Water per shelter
 warehouse_rule_water_missing,{count} jars missing
 pending_stock_water,Water shelters
 pending_stock_water_missing,"{count} jars missing in the warehouses to keep the shelters at their water level"
-building_info_shelter_target_general,Wanted level: general rule
+building_info_shelter_target_general,Wanted level:
 building_info_shelter_target_own,Wanted level:
 building_info_shelter_target_excluded,"Wanted level: excluded from the WM"
-building_info_shelter_target_tooltip,"Water to keep in this shelter. When it drops below, at the inventory the WM orders to fill the jars needed. Changing the value gives this shelter its own instead of the general rule; 0 = the WM never fills it. The tick on the bar marks the level."
-building_info_shelter_target_reset,Back to the WM general rule
+building_info_shelter_target_tooltip,"Water to keep in this shelter. When it drops below, at the inventory the WM orders to fill the jars needed. Changing the value gives this shelter its own instead of the village default; 0 = the WM never fills it. The tick on the bar marks the level."
+building_info_shelter_target_reset,Back to the village default (Stock management)
 warehouse_rule_water_tooltip,"Water to keep in every Water shelter. When a shelter drops below this level, the inventory starts an order that fills the jars needed (a travois is required). 0 = rule off."
 drawer_order_water_row,{building}: fill {quantity} jars
 pending_stock_water_blocked,Shelter not available or no jar to fill
@@ -1832,3 +1844,50 @@ drawer_transport_banner_target,🚚 Transport: click the destination building (E
 drawer_transport_reject_not_needed,Transport not ordered: {building} has no room for {resource}.
 drawer_order_player_transport_row,Transport {quantity} {resource} · {source} → {target}
 drawer_order_player_transport_blocked,Nothing to take at the source or no room at the destination
+microcell_inspection_birds,"Birds: {level}"
+bird_presence_none,none
+bird_presence_few,few
+bird_presence_some,several
+bird_presence_many,many
+carried_resource_tooltip_bird_net,Bird net
+task_place_trap_name,Setting a trap
+task_place_trap_step_walk_source,Going to fetch the trap
+task_place_trap_step_take,Taking the trap
+task_place_trap_step_walk_site,Carrying the trap to the spot
+task_place_trap_step_set,Setting up the trap
+task_place_trap_job_name,Set {trap} ({area})
+task_place_trap_job_tooltip,"Zone {area} is missing traps: {trap} to fetch from the nearest hut and set where prey is most plentiful."
+trap_fail_no_source,"{name} can no longer find the building with the trap."
+trap_fail_no_trap,"{name} can no longer find the trap to set."
+trap_fail_no_room,"{name} has no room in the pack for the trap."
+trap_fail_not_carried,"{name} reached the spot without the trap."
+warehouse_rule_traps,{trap} per zone
+warehouse_rule_traps_tooltip,"Traps to keep set in every work zone with the right job (hunting for land traps). Whoever is free fetches them and sets them where prey is most plentiful. A zone can have its own number. 0 = none."
+work_area_traps_row,{trap}
+work_area_traps_general,(village default)
+work_area_traps_tooltip,"Traps set in this zone and, in the field, how many to keep. Changed here it applies only to this zone, instead of the village default (Stock management)."
+work_area_traps_reset_tooltip,Back to the village default (Stock management)
+microcell_inspection_trap,"{trap}: catches {caught}/{capacity}"
+task_assignment_kind_trap,Traps
+work_area_traps_default_tooltip,"D = the village default applies (Stock management). Changing the number gives the zone its own, and ↺ appears here to go back to the default."
+building_info_shelter_target_default_tooltip,"D = the village default applies (Stock management). Changing the level gives the shelter its own, and ↺ appears here to go back to the default."
+task_empty_trap_name,Emptying a trap
+task_empty_trap_step_walk,Going to the trap
+task_empty_trap_step_empty,Emptying the trap
+task_empty_trap_job_name,"Empty {trap} ({caught}/{capacity})"
+task_empty_trap_job_tooltip,"Go to the {trap}, take the catch ({caught}/{capacity}) and bring it where the meat of the WM hunts goes."
+trap_fail_gone,"{name}: the trap is gone."
+trap_choice_dialog_title,Microcell
+trap_choice_dialog_message,What do you want to do here?
+trap_choice_place,Traps
+trap_place_item_birds,"{trap} (birds: {level})"
+trap_place_reject_unavailable,"This trap can no longer be placed here (spot taken, no trap ready or too few birds)."
+task_activity_place_trap,place a trap
+trap_choice_place_confirm,Place
+pickup_choice_source_trap,From the trap
+trap_pickup_catch_birds,Birds
+task_activity_empty_trap,empty a trap
+trap_empty_reject_nothing,The trap is empty
+trap_empty_reject_taken,{name} is already emptying it
+task_empty_trap_round_job_name,Trap round ({area}): {count}
+task_empty_trap_round_job_tooltip,"Visit every trap with catch in zone {area} ({count}), nearest first, and bring everything where the WM hunt meat goes."

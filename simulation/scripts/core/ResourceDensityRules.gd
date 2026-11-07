@@ -50,7 +50,7 @@ extends Resource
 # Default 1.0 su ogni campo: finché un .tres non li sovrascrive esplicitamente, get_presence_
 # chance/get_water_presence_chance si comportano come prima di questo asse (nessuna riduzione
 # aggiuntiva). Oggi impostati esplicitamente a 1.0 (nessuna calibrazione) solo per GRASS/SHRUB/
-# FISH/BIRDS — STONE e TREE non li impostano, quindi restano sui default di classe qui sotto,
+# FISH — STONE e TREE non li impostano, quindi restano sui default di classe qui sotto,
 # comportamento identico a prima anche per loro.
 @export_group("Presence Terrain Multipliers")
 @export var presence_terrain_multiplier_plain: float = 1.0

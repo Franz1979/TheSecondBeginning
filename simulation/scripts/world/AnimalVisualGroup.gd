@@ -77,6 +77,11 @@ var behavior_path: Array[Vector2] = []
 var behavior_path_planned: bool = false
 var behavior_path_target: Vector2 = Vector2.ZERO
 var behavior_path_block_version: int = -1
+# GO_TO che non avanza (2026-11-07, richiesta utente — lupo incastrato contro la Fossa): tempo dei balzi in cui la
+# collisione lo ha tenuto quasi fermo; oltre la soglia il percorso si ricalcola dalla posizione vera, passando prima dal
+# centro della sua microcella (behavior_replan_via_center). Vedi AnimalGroupRenderer._step_go_to.
+var behavior_blocked_time: float = 0.0
+var behavior_replan_via_center: bool = false
 # STAND_AROUND: punto dell'anello verso cui sta andando e punto verso cui si gira da fermo (di norma il centro).
 var behavior_stand_point: Vector2 = Vector2.ZERO
 var behavior_look_point: Vector2 = Vector2.ZERO

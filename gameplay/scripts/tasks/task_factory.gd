@@ -318,6 +318,36 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				else:
 					steps.append(PutJarAction.new(jar_building))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.TAKE_TRAP:
+				# 1 argomento (l'edificio da cui prendere la trappola) — 2026-11-07, trappole.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step TAKE_TRAP di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(TakeTrapAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.SET_TRAP:
+				# Nessun argomento: trappola e posto sono nel context (TrapService.CONTEXT_*) — 2026-11-07.
+				steps.append(SetTrapAction.new())
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.EMPTY_TRAP:
+				# Nessun argomento: la trappola è nel context (TrapService.CONTEXT_TRAP_ID) — 2026-11-07.
+				steps.append(EmptyTrapAction.new())
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.TAKE_SOUP_INGREDIENTS:
+				# 1 argomento (il magazzino della tappa; quello che manca è nel context) — 2026-11-07, zuppa di casa.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step TAKE_SOUP_INGREDIENTS di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(TakeSoupIngredientsAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.COOK_SOUP:
+				# 2 argomenti (la Capanna, ingredienti) — 2026-11-07, zuppa di casa.
+				if step_definition.context_keys.size() < 2 or not context.has(step_definition.context_keys[0]) \
+						or not context.has(step_definition.context_keys[1]):
+					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step COOK_SOUP di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(CookSoupAction.new(context[step_definition.context_keys[0]], context[step_definition.context_keys[1]]))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.FISH:
 				# 2 argomenti (macrocella, microcella del ruscello) — 2026-10-31, FishAction (fish.tres); la riva è il Walk prima.
 				if step_definition.context_keys.size() < 2 or not context.has(step_definition.context_keys[0]) 						or not context.has(step_definition.context_keys[1]):

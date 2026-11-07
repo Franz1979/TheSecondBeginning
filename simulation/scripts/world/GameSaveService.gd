@@ -79,6 +79,13 @@ func save_game_to_json(
 				func(animal: DomesticAnimal) -> Dictionary: return animal.to_save_data()
 			),
 			"next_domestic_animal_id": game_data.next_domestic_animal_id,
+			# Trappole montate (2026-11-07, PlacedTrap.to_save_data) e regola del WM delle trappole per zona.
+			"placed_traps": game_data.placed_traps.map(
+				func(trap: PlacedTrap) -> Dictionary: return trap.to_save_data()
+			),
+			"next_placed_trap_id": game_data.next_placed_trap_id,
+			"broken_traps": game_data.broken_traps,
+			"stock_traps_per_zone": game_data.stock_traps_per_zone,
 			"domestic_starvation_days": game_data.domestic_starvation_days,
 			"domestic_first_arrival_day": game_data.domestic_first_arrival_day,
 			"domestic_stray_due_day": game_data.domestic_stray_due_day,
@@ -226,13 +233,11 @@ func save_game_to_json(
 			"age_composition": state.age_composition,
 			"river_space": state.river_space,
 			"water_dedicated_space": state.water_dedicated_space,
-			"terrestrial_dedicated_space": state.terrestrial_dedicated_space,
 			"active_growth_bonuses": state.active_growth_bonuses,
 			"pending_migration_surplus": state.pending_migration_surplus,
 			"secondary_resource_stock": state.secondary_resource_stock,
 			"pending_grass_space_debt": state.pending_grass_space_debt,
-			"pending_fish_space_debt": state.pending_fish_space_debt,
-			"pending_bird_space_debt": state.pending_bird_space_debt
+			"pending_fish_space_debt": state.pending_fish_space_debt
 		}
 		# LOD0 (vedi MacroCellState.has_ever_been_discovered): assente (= false al caricamento) per
 		# la stragrande maggioranza delle macrocelle di un mondo grande, mai esplorate — stesso
@@ -390,16 +395,6 @@ func save_game_to_json(
 			fruit_stock_harvested_data.append({"resource_name": resource_name, "lots": lots_data})
 		if not fruit_stock_harvested_data.is_empty():
 			state_data["berry_harvested_by_lot"] = fruit_stock_harvested_data
-		# Raccolto per nido di "eggs" (2026-09-18, richiesta utente — uova raccoglibili per
-		# microcella) — SIBLING del blocco fruit_stock_harvested_data sopra, ma FLAT (non annidato
-		# per resource_name: eggs è l'unica risorsa di questa famiglia, vedi MacroCellState.
-		# eggs_harvested_by_lot) — stesso formato {x,y,harvested} di stick_quantities, senza
-		# checkpoint_day/capacity per lo stesso motivo del blocco berry.
-		if not state.eggs_harvested_by_lot.is_empty():
-			var eggs_harvested_data: Array = []
-			for pos in state.eggs_harvested_by_lot.keys():
-				eggs_harvested_data.append({"x": pos.x, "y": pos.y, "harvested": int(state.eggs_harvested_by_lot[pos])})
-			state_data["eggs_harvested_by_lot"] = eggs_harvested_data
 		# wild_vegetables (2026-09-19) — ora nel registro unificato "lot_registry" sopra, non più
 		# in una sezione dedicata (era l'unica risorsa GRASS_PATCH prima di questo refactor).
 		# Stesso formato/principio di vegetation_cut_exceptions sopra, ma per la mortalità naturale
@@ -518,8 +513,12 @@ func save_game_to_json(
 			# retry_blocked_material_shortages) per ricalcolarlo da zero.
 			"is_awaiting_material": building.is_awaiting_material,
 			# Riscaldamento (2026-10-22, HouseHeatingService).
-			"heating_fuel_due": building.heating_fuel_due,
+			"heating_fuel_credit": building.heating_fuel_credit,
 			"heated_today": building.heated_today,
+			# Zuppa di casa (2026-11-07, HomeSoupService).
+			"soup_freshness": building.soup_freshness,
+			"soup_shares": building.soup_shares,
+			"soup_portions_total": building.soup_portions_total,
 		})
 
 	# Fog of war (vedi FogOfWarMemory.gd/GameScene.fog_of_war_memories) — una entry per macrocella

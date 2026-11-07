@@ -362,6 +362,10 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 	if task.context.has(WaterJarService.CONTEXT_PENDING_NEXT_TRIP):
 		task.context.erase(WaterJarService.CONTEXT_PENDING_NEXT_TRIP)
 		WaterJarService.append_next_trip(individual, task, world)
+	# Zuppa di casa (2026-11-07): dopo una tappa con qualcosa ancora da prendere, la tappa successiva subito dopo.
+	if task.context.has(HomeSoupService.CONTEXT_PENDING_NEXT_STOP):
+		task.context.erase(HomeSoupService.CONTEXT_PENDING_NEXT_STOP)
+		HomeSoupService.insert_next_stop(individual, task, world)
 	# Avviso del riempimento senza chiusura del compito (serie finita o giara riportata vuota): mostrato subito.
 	if WaterJarService.is_fill_task(task) and task.context.has(CONTEXT_PENDING_PLAYER_MESSAGE) \
 			and not task.context.has(CONTEXT_PENDING_TASK_ABORT):
@@ -405,6 +409,9 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 			and individual.carried_resources.is_empty() \
 			and (action is UnloadAction or not MaterialSupplyService.is_in_supply_round(task)):
 		_yield_after_supply_delivery(individual, task, world, game_data)
+		return
+	# Prelievo di rifornimento a vuoto (2026-11-07): si ripianifica dal magazzino, niente ritorno al cantiere a zaino vuoto.
+	if _replan_after_empty_supply_retrieve(individual, task, action, world, game_data):
 		return
 	# Macellazione a più viaggi (2026-10-01): a fine giro, se il mucchio ha ancora prodotti, nuovo Walk + PickUp.
 	if task.is_finished():
@@ -599,6 +606,99 @@ static func _is_waiting_for_material(task: Task, world: World) -> bool:
 		return false
 	var need := MaterialSupplyService.get_supply_need(world, building, Vector2.ZERO, Vector2i.ZERO, Callable(), is_repair)
 	return need.is_empty() or need.get("source", null) == null
+
+
+# Tipo di rinvio per materiale dello step di lavoro `action` (2026-11-07); "" se lo step non ne ha uno.
+static func _postponed_kind_for(action: Action) -> String:
+	if action is SetupSiteAction or action is BuildAction:
+		return POSTPONED_KIND_BUILD
+	if action is RepairAction:
+		return POSTPONED_KIND_REPAIR
+	if action is ProduceAction:
+		return POSTPONED_KIND_PRODUCE
+	if action is SocialRiteAttendAction:
+		return POSTPONED_KIND_RITE
+	return ""
+
+
+# Ripresa senza materiale (2026-11-07, richiesta utente — Kessa e Thal tornavano al cantiere lontano per scoprire che il
+# materiale mancava ancora): una task interrotta (per un bisogno) a metà di un giro non ancora caricato, o ferma sullo step
+# di lavoro, la cui ripresa porterebbe al cantiere senza che nessun magazzino abbia quello che manca. Viene marcata come
+# rimandata per materiale (stesso controllo di _is_waiting_for_material) e resta in coda; riparte da sola quando un
+# magazzino ha il materiale. Solo a zaino vuoto: con un carico la ripresa normale lo consegna o lo ripone. true = trattenuta.
+static func _hold_resume_without_material(individual: HumanIndividual, task: Task, world: World) -> bool:
+	if task == null or world == null or task.is_finished() or task.context.has(CONTEXT_MATERIAL_POSTPONED) \
+			or not individual.carried_resources.is_empty() or not is_task_valid(task):
+		return false
+	var blocked := MaterialSupplyService.get_pending_round_blocked_step(task)
+	if blocked == null:
+		blocked = task.get_current_action()
+	var kind := _postponed_kind_for(blocked)
+	var site: Building = blocked.get("target_building") if kind != "" else null
+	if site == null:
+		return false
+	task.context[CONTEXT_MATERIAL_POSTPONED] = site.id
+	task.context[CONTEXT_MATERIAL_POSTPONED_KIND] = kind
+	if not _is_waiting_for_material(task, world):
+		task.context.erase(CONTEXT_MATERIAL_POSTPONED)
+		task.context.erase(CONTEXT_MATERIAL_POSTPONED_KIND)
+		return false
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[BUILD MATERIAL NEEDED] #%d %s: '%s' non ripresa — nessun magazzino ha il materiale per #%d, resta in coda." % [
+			individual.id, individual.name, task.task_name, site.id
+		])
+	return true
+
+
+# Prelievo di rifornimento a vuoto (2026-11-07, richiesta utente — un altro aveva preso il materiale prima): invece di
+# tornare al cantiere a zaino vuoto, si ripianifica dal magazzino. Un altro magazzino ha il materiale → nuovo giro da qui;
+# nessuno → la task va in coda come rimandata per materiale; altrimenti (sorgente non utilizzabile da lui) ritorno al
+# cantiere come prima. Un secondo prelievo a vuoto di fila torna al comportamento di prima (CONTEXT_SUPPLY_REPLANNED).
+# true = gestito, il chiamante si ferma.
+func _replan_after_empty_supply_retrieve(
+	individual: HumanIndividual, task: Task, action: Action, world: World, game_data: GameData
+) -> bool:
+	if world == null or not (action is RetrieveAction and (action as RetrieveAction).material_supply):
+		return false
+	if not task.context.has(MaterialSupplyService.CONTEXT_SUPPLY_FAILED):
+		task.context.erase(MaterialSupplyService.CONTEXT_SUPPLY_REPLANNED)
+		return false
+	if task.context.has(MaterialSupplyService.CONTEXT_SUPPLY_REPLANNED):
+		task.context.erase(MaterialSupplyService.CONTEXT_SUPPLY_REPLANNED)
+		return false
+	if not individual.carried_resources.is_empty() or task.is_finished():
+		return false
+	if not MaterialSupplyService.drop_rest_of_supply_round(task):
+		return false
+	task.context.erase(MaterialSupplyService.CONTEXT_SUPPLY_FAILED)
+	task.context[MaterialSupplyService.CONTEXT_SUPPLY_REPLANNED] = true
+	var blocked := task.get_current_action()
+	var site: Building = blocked.get("target_building") if MaterialSupplyService.is_supplied_step(blocked) else null
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[MATERIAL SUPPLY] #%d %s: prelievo a vuoto — niente ritorno al cantiere, si ripianifica dal magazzino." % [
+			individual.id, individual.name
+		])
+	if site != null and MaterialSupplyService.try_supply_at_level_zero(individual, task, world, site):
+		return true
+	var kind := _postponed_kind_for(blocked)
+	if site != null and kind != "":
+		task.context[CONTEXT_MATERIAL_POSTPONED] = site.id
+		task.context[CONTEXT_MATERIAL_POSTPONED_KIND] = kind
+		var waiting := _is_waiting_for_material(task, world)
+		task.context.erase(CONTEXT_MATERIAL_POSTPONED)
+		task.context.erase(CONTEXT_MATERIAL_POSTPONED_KIND)
+		if waiting:
+			task.context.erase(MaterialSupplyService.CONTEXT_SUPPLY_REPLANNED)
+			_postpone_for_material(individual, task, site, world, game_data, kind)
+			return true
+	# Sorgente non utilizzabile da lui: ritorno al cantiere come prima (Walk di ritorno della ripresa).
+	if activate_resumed_task(individual, task, world):
+		return true
+	if game_data == null:
+		individual.stop(false)
+	else:
+		resolve_idle_individual(individual, _resolve_age_band(individual, game_data), world)
+	return true
 
 
 func _yield_after_supply_delivery(individual: HumanIndividual, task: Task, world: World, game_data: GameData) -> void:
@@ -2538,7 +2638,7 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# svuota — MAI impostare current_task su una task già finita: activate_resumed_task la
 	# troverebbe già conclusa e non farebbe nulla, lasciando l'individuo bloccato per sempre.
 	while resumed_task != null and (resumed_task.is_finished() or not is_task_valid(resumed_task) or is_empty_cargo_delivery(individual, resumed_task) \
-			or _is_waiting_for_material(resumed_task, world)):
+			or _is_waiting_for_material(resumed_task, world) or _hold_resume_without_material(individual, resumed_task, world)):
 		if not resumed_task.is_finished() and is_task_valid(resumed_task) and _is_waiting_for_material(resumed_task, world):
 			held_for_material.append(resumed_task)
 			resumed_task = TaskQueueService.pop_suspended_task(individual)
@@ -2707,6 +2807,19 @@ static func activate_resumed_task(individual: HumanIndividual, resumed_task: Tas
 		var blocked_action := resumed_task.get_current_action()
 		if world != null and MaterialSupplyService.is_supplied_step(blocked_action) \
 				and MaterialSupplyService.try_supply_at_level_zero(individual, resumed_task, world, blocked_action.get("target_building")):
+			return true
+	# Cantiere ripreso con materiale mancante che un magazzino ha (2026-11-07, richiesta utente — Thal tornava al cantiere
+	# lontano #69 e solo lì ripartiva per il magazzino): il giro di rifornimento parte da dove si trova, così arriva al
+	# cantiere già carico. Solo costruzione e allestimento: la produzione può lavorare un ciclo anche con l'ordine incompleto.
+	var site_step := resumed_task.get_current_action()
+	if world != null and (site_step is BuildAction or site_step is SetupSiteAction):
+		var site: Building = site_step.get("target_building")
+		if site != null and not MaterialSupplyService.get_missing_materials(site).is_empty() \
+				and MaterialSupplyService.try_supply_at_level_zero(individual, resumed_task, world, site):
+			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+				print("[MATERIAL SUPPLY] #%d %s: '%s' ripresa con materiale mancante — prima al magazzino, non al cantiere #%d." % [
+					individual.id, individual.name, resumed_task.task_name, site.id
+				])
 			return true
 	# "Walk di ritorno alla ripresa" (2026-09-13, richiesta utente, in preparazione al fix generico
 	# per QUALUNQUE Task sospesa il cui step corrente è un'Action stazionaria con una posizione

@@ -30,6 +30,9 @@ var target_point: Vector2 = Vector2.ZERO
 var look_point: Vector2 = Vector2.ZERO
 # Sosta rimasta, in giorni di gioco.
 var stay_remaining: float = 0.0
+# In uscita (2026-11-07): giorni passati con qualcuno già uscito e qualcuno ancora in scena (rimasti indietro,
+# WildAnimalVisitService.STRAGGLER_EXIT_DAYS).
+var straggler_days: float = 0.0
 # Animali presenti (id dei WildAnimal del gruppo) e loro posizione (microcelle), stessi indici: copiata dai corpi a ogni
 # mossa, è quello che si salva e da dove i corpi ripartono se vengono ricreati.
 var animal_ids: Array[int] = []
@@ -129,7 +132,7 @@ func to_save_data() -> Dictionary:
 		"group_id": group_id, "species": species, "phase": phase, "target_kind": target_kind,
 		"pit_building_id": pit_building_id, "macro_coords": _pair(Vector2(macro_coords)),
 		"position": _pair(position), "entry_point": _pair(entry_point),
-		"target_point": _pair(target_point), "look_point": _pair(look_point), "stay_remaining": stay_remaining,
+		"target_point": _pair(target_point), "look_point": _pair(look_point), "stay_remaining": stay_remaining, "straggler_days": straggler_days,
 		"animal_ids": animal_ids, "animal_positions": animal_positions.map(_pair), "animal_healths": animal_healths, "notice_radii": notice_radii,
 		"attack_aggression": attack_aggression, "attack_wolves": attack_wolves, "attack_rolled": attack_rolled,
 		"attack_target_id": attack_target_id, "charge_remaining": charge_remaining,
@@ -153,6 +156,7 @@ static func from_save_data(data: Dictionary) -> WildAnimalVisit:
 	visit.target_point = _vector(data.get("target_point"))
 	visit.look_point = _vector(data.get("look_point"))
 	visit.stay_remaining = float(data.get("stay_remaining", 0.0))
+	visit.straggler_days = float(data.get("straggler_days", 0.0))
 	for value in data.get("animal_ids", []):
 		visit.animal_ids.append(int(value))
 	for value in data.get("animal_positions", []):

@@ -71,6 +71,7 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"smoked_hide_bag": "_draw_deposit_storage_smoked_hide_bag_icon",
 	"waterskin": "_draw_deposit_storage_waterskin_icon",
 	"fishing_line": "_draw_deposit_storage_fishing_line_icon",
+	"bird_net": "_draw_deposit_storage_bird_net_icon",
 	"fish_meat": "_draw_deposit_storage_fish_meat_icon",
 	"cooked_fish": "_draw_deposit_storage_cooked_fish_icon",
 	"dried_fish": "_draw_deposit_storage_dried_fish_icon",
@@ -91,6 +92,7 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"bone": "_draw_deposit_storage_bone_icon",
 	"clay": "_draw_deposit_storage_clay_icon",
 	"clay_jar": "_draw_deposit_storage_clay_jar_icon",
+	"clay_bowl": "_draw_deposit_storage_clay_bowl_icon",
 }
 
 
@@ -593,6 +595,11 @@ static func _draw_deposit_storage_fishing_line_icon(canvas: CanvasItem, top_left
 	FishingLineIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
+# Rete per uccelli (2026-11-07): stessa geometria dell'icona del pannello (BirdNetIcon.draw_into).
+static func _draw_deposit_storage_bird_net_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	BirdNetIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
 static func _draw_deposit_storage_fish_meat_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	FishMeatIcon.draw_into(canvas, top_left, Vector2(side, side))
 
@@ -674,6 +681,10 @@ static func _draw_deposit_storage_clay_icon(canvas: CanvasItem, top_left: Vector
 
 static func _draw_deposit_storage_clay_jar_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	ClayJarIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_clay_bowl_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	ClayBowlIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 static func _draw_deposit_storage_fiber_rope_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:

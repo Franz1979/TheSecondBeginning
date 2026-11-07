@@ -124,10 +124,15 @@ var rubble_origin: String = RUBBLE_ORIGIN_COLLAPSE
 # questo stato (edifici già completi, o senza required_materials valorizzato).
 var is_awaiting_material: bool = false
 
-# Riscaldamento (2026-10-22, HouseHeatingService): combustibile dovuto non ancora bruciato (mezze unità) e casa riscaldata
-# oggi. Salvati.
-var heating_fuel_due: float = 0.0
+# Riscaldamento (2026-10-22, HouseHeatingService): anticipo di combustibile già bruciato e non ancora consumato (es. mezzo
+# pezzo d'inverno; dal 2026-11-07, prima era un debito) e casa riscaldata oggi. Salvati.
+var heating_fuel_credit: float = 0.0
 var heated_today: bool = false
+# Zuppa di casa (2026-11-07, HomeSoupService): freschezza della pentola (1 alla cottura, 0 = nessuna pentola), parti
+# ancora da prendere (id dell'abitante -> calorie) e parti in tutto. Salvati.
+var soup_freshness: float = 0.0
+var soup_shares: Dictionary = {}
+var soup_portions_total: int = 0
 # Affumicatoio al lavoro adesso (2026-10-23, ProductionService.refresh_smoking): fumo sulla mappa. Non salvato: dopo il
 # caricamento si ricalcola entro un secondo.
 var smoking_now: bool = false

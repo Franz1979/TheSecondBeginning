@@ -364,6 +364,16 @@ static func build_restock_task(individual: HumanIndividual, world: World, defini
 			"restock_source_kind": RestockPouchAction.SourceKind.BACKPACK,
 		})
 	var source := find_restock_source(individual, world)
+	# Zuppa di casa (2026-11-07, HomeSoupService passo 3): con la sua parte in una pentola buona di casa, e tutta la parte
+	# che ci sta, va a casa se non è più lontana del magazzino scelto (in linea d'aria, come la scelta del magazzino).
+	var source_kind: int = RestockPouchAction.SourceKind.BUILDING
+	var soup_house := HomeSoupService.restock_house(individual, world)
+	if soup_house != null and (source == null or _straight_distance(individual, soup_house) <= _straight_distance(individual, source) + 0.001):
+		HomeSoupService._log(individual, "fame: va a prendere la sua parte di zuppa a casa #%d invece che al magazzino%s." % [
+			soup_house.id, (" #%d" % source.id) if source != null else ""
+		])
+		source = soup_house
+		source_kind = RestockPouchAction.SourceKind.SOUP
 	if source == null:
 		if DebugLogging.should_log_restock(individual.id):
 			print("[RESTOCK] #%d %s: nessun magazzino completo con cibo trovato, Task non creata (%s)." % [
@@ -379,6 +389,7 @@ static func build_restock_task(individual: HumanIndividual, world: World, defini
 	var context: Dictionary = {
 		"restock_target_position": target_position,
 		"restock_target_building": source,
+		"restock_source_kind": source_kind,
 	}
 	if DebugLogging.should_log_restock(individual.id):
 		print("[RESTOCK] #%d %s: magazzino scelto %s #%d in macro=(%d,%d) micro=(%d,%d), target=%s (%s)" % [
@@ -457,6 +468,10 @@ static func _best_food_ratio(building: Building) -> float:
 			continue
 		best = maxf(best, rules.calories_per_unit / rules.space_per_unit)
 	return best
+
+
+static func _straight_distance(individual: HumanIndividual, building: Building) -> float:
+	return individual.position.distance_to(SpatialSelectionService._position_relative_to(building, individual.home_macro_coords))
 
 
 static func _assign_restock_task(

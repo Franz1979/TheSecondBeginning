@@ -438,12 +438,13 @@ var _stick_mesh: ArrayMesh = null
 var _stick_multimesh: MultiMesh = null
 # Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — Vector2i (nido,
 # una microcella GRASS) -> quantità disponibile RESIDUA, già netta del raccolto e già filtrata a
-# > 0 dal chiamante (GameScene._refresh_resource_visuals, tramite TerrainScatteredResourceService.
-# get_egg_stock_available_at — la funzione di disponibilità residua, non un secondo calcolo qui).
+# > 0 dal chiamante (dal 2026-11-07 lotti GRASS_PATCH di LotCapacityService, arrivano da
+# set_grass_patch_availability — nessun secondo calcolo qui).
 # MIRROR di stick_availability sopra (stesso schema int diretto — il chiamante ha già risolto la
 # sottrazione, questo renderer si limita a leggere "quanto disegnare"). Un solo mesh condiviso
 # (stesso principio di stick: nessuna variante multipla necessaria).
 var egg_nest_availability: Dictionary = {}
+const EGG_RESOURCE_NAME := "eggs"
 var _egg_mesh: ArrayMesh = null
 var _egg_multimesh: MultiMesh = null
 # Lotti GRASS_PATCH (wild_vegetables dal 2026-09-19, GENERALIZZATO lo stesso giorno per le erbe
@@ -773,8 +774,7 @@ func set_stick_availability(availability: Dictionary) -> void:
 # la disponibilità RESIDUA già filtrata a > 0 e da Fog of War (STESSO momento/STESSA cadenza di
 # set_stick_availability sopra — checkpoint stagionale/raccolta/movimento con visibilità cambiata).
 # A differenza di stone/pebble non dipende da un "set_positions" separato: i nidi sono già le
-# chiavi del Dictionary stesso (MacroCellState.egg_nest_positions concettualmente, qui letto
-# indirettamente dalle chiavi di egg_nest_availability) — stesso schema di set_stick_availability.
+# chiavi del Dictionary stesso (i lotti "eggs" di lot_capacity_cache) — stesso schema di set_stick_availability.
 func set_egg_nest_availability(availability: Dictionary) -> void:
 	egg_nest_availability = availability
 	_rebuild_egg_multimesh()
@@ -786,6 +786,10 @@ func set_egg_nest_availability(availability: Dictionary) -> void:
 # chiamata per risorsa GRASS_PATCH (ogni risorsa ha il proprio MultiMesh, vedi
 # _get_grass_patch_multimesh).
 func set_grass_patch_availability(resource_name: String, availability: Dictionary) -> void:
+	# Uova (2026-11-07): lotti GRASS_PATCH come le verdure, ma col disegno del nido.
+	if resource_name == EGG_RESOURCE_NAME:
+		set_egg_nest_availability(availability)
+		return
 	grass_patch_availability[resource_name] = availability
 	_rebuild_grass_patch_multimesh(resource_name)
 	queue_redraw()
@@ -1625,9 +1629,13 @@ func _draw_buildings() -> void:
 		if building_type_name == HealerHutShape.TYPE:
 			HealerHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
 			continue
-		# Capanna del vasellaio (2026-11-03): vista dall'alto, ruota con la porta (PotterHutShape).
+		# Capanna del trappoliere (2026-11-07): vista dall'alto, ruota con l'apertura (TrapperHutShape).
+		if building_type_name == TrapperHutShape.TYPE:
+			TrapperHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			continue
+		# Capanna del vasellaio (2026-11-03): vista dall'alto, ruota con la porta; fumo solo mentre cuoce (PotterHutShape).
 		if building_type_name == PotterHutShape.TYPE:
-			PotterHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			PotterHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
 			continue
 		# Essiccatoio (2026-10-31): vista dall'alto, ruota con la direzione scelta (DryingRackShape).
 		if building_type_name == DryingRackShape.TYPE:
@@ -2008,6 +2016,8 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"potter_hut",
 	# Tettoia dell'acqua (2026-11-06).
 	"water_shelter",
+	# Capanna del trappoliere (2026-11-07).
+	"trapper_hut",
 	# Ceppo dell'insegnamento (2026-10-16).
 	"teaching_stump",
 	# Spiazzo delle feste (2026-10-17): un tile per microcella del rettangolo ("dirt_cells"), sotto il cerchio di sassi.

@@ -33,9 +33,10 @@ const VEGETAL_SOURCES: Array[String] = ["acorn", "fruit", "berry"]
 
 # Ibride: fish_meat (placeholder — valori provvisori da ritarare, vedi fish_meat.tres — stesso schema di
 # FORAGE: consuming_depletes_primary=true, nessuno stock/sottotipo, non una risorsa secondaria gestibile dal
-# giocatore) + eggs (quella si' a stock). bird_meat rimossa il 2026-09-26: e' diventata "meat", la carne
-# generica della macellazione (materia prima, 0 calorie), non piu' una fonte calorica legata a BIRDS.
-const HYBRID_SOURCES: Array[String] = ["fish_meat", "eggs"]
+# giocatore). bird_meat rimossa il 2026-09-26: e' diventata "meat", la carne generica della macellazione (materia
+# prima, 0 calorie), non piu' una fonte calorica legata a BIRDS. eggs tolta il 2026-11-07: e' una risorsa a lotti
+# sull'erba (come wild_vegetables, che qui non si conta), non piu' una scorta derivata da BIRDS.
+const HYBRID_SOURCES: Array[String] = ["fish_meat"]
 
 # Risorsa primaria da cui ciascuna fonte calorica deriva — SecondaryResourceRules non lo dichiara
 # da sola (lo sa solo il chiamante, stesso schema gia' in uso in WorldTimeService._SECONDARY_SOURCES
@@ -45,7 +46,6 @@ const _SOURCE_PRIMARY_TYPE := {
 	"fruit": GameTypes.WorldObjectType.TREE,
 	"berry": GameTypes.WorldObjectType.SHRUB,
 	"fish_meat": GameTypes.WorldObjectType.FISH,
-	"eggs": GameTypes.WorldObjectType.BIRDS,
 }
 
 

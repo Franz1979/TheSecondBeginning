@@ -5,5 +5,5 @@
 [resource]
 script = ExtResource("1_restock_pouch")
 action_type = 12
-context_keys = Array[String](["restock_target_building"])
+context_keys = Array[String](["restock_target_building", "restock_source_kind"])
 step_description = "task_leisure_restock_step_restock"

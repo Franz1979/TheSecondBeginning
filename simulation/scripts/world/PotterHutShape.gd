@@ -69,7 +69,7 @@ const PIT_STONE_RADIUS: float = 0.3
 # `invalid` = anteprima su una posizione non edificabile (tutto rossastro); `alpha` per l'anteprima semitrasparente.
 static func draw(
 	canvas: CanvasItem, center: Vector2, direction: GameTypes.Direction, invalid: bool = false, alpha: float = 1.0,
-	scale: float = 1.0
+	scale: float = 1.0, smoking: bool = false
 ) -> void:
 	var forward := TentShapes.direction_vector(direction)
 	var side := Vector2(-forward.y, forward.x)
@@ -147,6 +147,13 @@ static func draw(
 		canvas.draw_circle(pot_center, pot.z * scale, tint.call(POT, INVALID_FILL))
 		canvas.draw_arc(pot_center, pot.z * scale, 0.0, TAU, 16, tint.call(OUTLINE, INVALID_OUTLINE), OUTLINE_WIDTH * 0.6 * scale, true)
 		canvas.draw_circle(pot_center, pot.z * POT_MOUTH_RATIO * scale, tint.call(POT_MOUTH, INVALID_OUTLINE))
+
+	# Fumo dalla fossa di cottura mentre cuoce (2026-11-07, richiesta utente): stessi sbuffi e colore dell'affumicatoio, in
+	# coordinate dello schermo, verso l'alto.
+	if smoking:
+		var smoke := PlaceholderBuildingShapes.SMOKE
+		for puff in SmokehouseShape.SMOKE_PUFFS:
+			canvas.draw_circle(pit + Vector2(puff.x, puff.y) * scale, puff.z * scale, Color(smoke.r, smoke.g, smoke.b, smoke.a * alpha))
 
 
 static func _rect(to_canvas: Callable, left: float, top: float, right: float, bottom: float) -> PackedVector2Array:

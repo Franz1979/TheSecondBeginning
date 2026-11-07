@@ -109,6 +109,16 @@ extends Resource
 @export var hunt_speed_scale: float = 1.0
 @export var hunt_catch_up_distance: float = 6.0
 @export var hunt_max_prey_health: float = 0.0
+# Fiuto (passo 2): nella caccia in zona una preda entro hunt_scent_radius microcelle dall'animale che accompagna il
+# cacciatore conta come avvistata, anche fuori dal raggio di vista di lui (HuntZoneService.find_sighted_prey). 0 = niente.
+@export var hunt_scent_radius: float = 0.0
+# Inseguire e tenere a bada (passo 3): quando la preda del cacciatore fugge (dopo un tiro) l'animale la insegue di corsa;
+# arrivato entro hunt_hold_contact_distance, se la salute massima della specie (AnimalRules.max_health) non supera
+# hunt_max_prey_health la ferma lì per hunt_hold_hours ore di gioco (un nuovo tiro la rimette in fuga), altrimenti le
+# corre attorno finché smette di fuggire. Oltre hunt_chase_max_distance dal cacciatore lascia perdere e torna.
+@export var hunt_hold_hours: float = 0.0
+@export var hunt_hold_contact_distance: float = 1.5
+@export var hunt_chase_max_distance: float = 25.0
 
 @export_group("Follow")
 # Dietro alle persone (passo 8.3, 2026-11-06): ogni animale gironzola attorno a una persona che sta fuori dagli edifici,

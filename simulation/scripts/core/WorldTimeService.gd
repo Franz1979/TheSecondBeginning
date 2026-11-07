@@ -467,24 +467,6 @@ func _run_secondary_resource_stock_checkpoint(
 					state.berry_harvested_by_lot.erase(resource_name)
 					var revision: int = int(state.berry_harvested_revision.get(resource_name, 0))
 					state.berry_harvested_revision[resource_name] = revision + 1
-			# Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — STESSO
-			# principio del ramo "fruit stock" sopra: eggs_harvested_by_lot va azzerato SOLO quando
-			# il moltiplicatore stagionale di eggs SALE rispetto alla stagione precedente (eggs.tres:
-			# [0.0, 1.0, 0.0, 0.0] — sale solo inverno->primavera, la sola vera "ricomparsa" di questa
-			# fonte), mai quando scende — la memoria di quanto già raccolto in un nido deve restare
-			# tra stagioni senza uova (nessuna nuova uova compare da nessuna parte in quelle
-			# transizioni). eggs non è in TerrainScatteredResourceService.FRUIT_STOCK_SOURCES (quella
-			# famiglia è specifica di TREE/SHRUB, vedi TerrainScatteredResourceService.gd), quindi un
-			# ramo a parte invece di estendere quel Dictionary. Nessun equivalente di berry_harvested_
-			# revision qui: nessun rendering consulta questo registro (vedi MacroCellState.eggs_
-			# harvested_by_lot), nessuna firma leggera da invalidare. FLAT .clear() (non .erase(
-			# resource_name), a differenza del ramo sopra: eggs_harvested_by_lot non è annidato per
-			# resource_name, vedi quel campo).
-			elif source["resource_name"] == "eggs" and not state.eggs_harvested_by_lot.is_empty():
-				var eggs_previous_multiplier: float = float(rules.seasonal_availability_multiplier[previous_season])
-				var eggs_new_multiplier: float = float(rules.seasonal_availability_multiplier[new_season])
-				if eggs_new_multiplier > eggs_previous_multiplier:
-					state.eggs_harvested_by_lot.clear()
 		skip_summary.append("%s=%d/%d" % [source["resource_name"], skipped, world.cell_states.size()])
 		total_skipped += skipped
 

@@ -28,7 +28,6 @@ const SECONDARY_SOURCES := [
 	{"resource_name": "berry", "primary_resource_type": GameTypes.WorldObjectType.SHRUB},
 	{"resource_name": "acorn", "primary_resource_type": GameTypes.WorldObjectType.TREE},
 	{"resource_name": "fruit", "primary_resource_type": GameTypes.WorldObjectType.TREE},
-	{"resource_name": "eggs", "primary_resource_type": GameTypes.WorldObjectType.BIRDS},
 ]
 
 

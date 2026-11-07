@@ -16,9 +16,22 @@ extends VBoxContainer
 
 @onready var content_label: Label = $ContentLabel
 
+# Riga speciale di `lines` (2026-11-07, richiesta utente): al suo posto un tratteggio leggero (DashedSeparator) tra le
+# sezioni (vegetazione | risorse raccoglibili | uccelli). Mai mostrata come testo.
+const SEPARATOR_LINE := "\u0001separator"
+
+# Separatori ed etichette aggiunte dopo ContentLabel, rifatte a ogni show_inspection.
+var _extra_nodes: Array[Node] = []
+
 
 func _ready() -> void:
 	clear()
+
+
+# Aggiunge a `lines` un separatore di sezione, solo se c'è già del testo prima e l'ultima riga non è già un separatore.
+static func append_separator(lines: Array) -> void:
+	if not lines.is_empty() and String(lines.back()) != SEPARATOR_LINE:
+		lines.append(SEPARATOR_LINE)
 
 
 # `lines` già risolte dal chiamante (tr()-ate, interpolate) — vedi GameScene._handle_microcell_
@@ -34,7 +47,27 @@ func _ready() -> void:
 # — stesso contenuto (solo stringhe), tipo runtime diverso, String.join() non fa distinzione.
 func show_inspection(lines: Array) -> void:
 	visible = true
-	content_label.text = "\n".join(lines)
+	for node in _extra_nodes:
+		node.queue_free()
+	_extra_nodes.clear()
+	# Blocchi di testo separati da SEPARATOR_LINE: il primo in ContentLabel, gli altri in copie con un tratteggio prima.
+	var blocks: Array[Array] = [[]]
+	for line in lines:
+		if String(line) == SEPARATOR_LINE:
+			blocks.append([])
+		else:
+			blocks.back().append(String(line))
+	content_label.text = "\n".join(blocks[0])
+	for i in range(1, blocks.size()):
+		if blocks[i].is_empty():
+			continue
+		var separator := DashedSeparator.new()
+		add_child(separator)
+		_extra_nodes.append(separator)
+		var label := content_label.duplicate() as Label
+		label.text = "\n".join(blocks[i])
+		add_child(label)
+		_extra_nodes.append(label)
 
 
 func clear() -> void:

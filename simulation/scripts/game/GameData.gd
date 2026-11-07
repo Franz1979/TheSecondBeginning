@@ -142,6 +142,24 @@ func allocate_domestic_animal_id() -> int:
 	next_domestic_animal_id += 1
 	return id
 
+# Trappole montate sulla mappa (2026-11-07, capanna del trappoliere — PlacedTrap, TrapService). Salvate da GameSaveService
+# ("placed_traps"), insieme al prossimo id. placed_traps_revision (non salvata) sale a ogni cambio: il disegno si aggiorna.
+var placed_traps: Array[PlacedTrap] = []
+var next_placed_trap_id: int = 1
+var placed_traps_revision: int = 0
+# Trappole rotte, posti a riposo (2026-11-07, SecondaryResourceRules.trap_rest_days): {"id", "trap_name", "macro_x",
+# "macro_y", "lot_x", "lot_y", "broken_day"} JSON-nativi; tolte da TrapService.advance_daily alla scadenza. Salvate
+# ("broken_traps"); il disegno segue placed_traps_revision.
+var broken_traps: Array[Dictionary] = []
+# Regola del WM "Trappole per zona" (2026-11-07): trappole volute in ogni zona del loro lavoro, per tipo di trappola
+# (nome -> numero; assente o 0 = nessuna). Una zona può avere il proprio numero (WorkArea.trap_targets). Salvata.
+var stock_traps_per_zone: Dictionary = {}
+
+func allocate_placed_trap_id() -> int:
+	var id := next_placed_trap_id
+	next_placed_trap_id += 1
+	return id
+
 # Gruppi di animali selvatici seguiti uno per uno (2026-10-26, richiesta utente — primo: il branco di lupi). Creati da
 # WildAnimalGroupService.ensure_groups appena esiste un magazzino (dal 2026-10-28).
 var wild_animal_groups: Array[WildAnimalGroup] = []

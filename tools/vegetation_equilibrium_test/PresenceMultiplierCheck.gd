@@ -25,11 +25,6 @@ func _ready() -> void:
 		ResourceCalculator.get_presence_chance(GameTypes.WorldObjectType.SHRUB, GameTypes.TerrainBase.MOUNTAIN, GameTypes.Biome.DESERT, GameTypes.CoastType.NONE)
 	])
 
-	print("\n-- BIRDS --")
-	print("  MOUNTAIN|ROCKY|NONE coast: presence_chance = %.4f (atteso: 0.4000, la sola base)" % [
-		ResourceCalculator.get_presence_chance(GameTypes.WorldObjectType.BIRDS, GameTypes.TerrainBase.MOUNTAIN, GameTypes.Biome.ROCKY, GameTypes.CoastType.NONE)
-	])
-
 	print("\n-- FISH --")
 	print("  RIVER: presence_chance = %.4f (atteso: 0.5000, la sola base — prima era 0.15)" % [
 		ResourceCalculator.get_water_presence_chance(GameTypes.WorldObjectType.FISH, GameTypes.WaterType.RIVER)

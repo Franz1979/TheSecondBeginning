@@ -54,6 +54,8 @@ const IDLE_FALLBACK_TASK_PATHS: Array[String] = [
 	TalkService.TALK_TASK_DEFINITION_PATH,
 	LEISURE_LESSON_TASK_DEFINITION_PATH,
 	LEISURE_BANQUET_TASK_DEFINITION_PATH,
+	# Zuppa di casa (2026-11-07, HomeSoupService): possibile solo con plan_cooking (in entry["plan"]).
+	HomeSoupService.TASK_DEFINITION_PATH,
 ]
 
 # Guard di eleggibilita' di leisure_restock nel sorteggio idle (2026-09-19, richiesta utente): la Task e'
@@ -540,6 +542,10 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 		var assigned := false
 		if path == TalkService.TALK_TASK_DEFINITION_PATH:
 			assigned = bool(TalkService.start_talk(individual, age_band)["ok"])
+		elif path == HomeSoupService.TASK_DEFINITION_PATH:
+			var soup_task := HomeSoupService.build_cook_task(individual, remaining[drawn_index]["plan"])
+			assigned = soup_task != null and individual.assign_task(soup_task, age_band)
+			HomeSoupService._log(individual, "estratta dallo svago: " + ("parte a cucinare." if assigned else "assegnazione fallita."))
 		elif (remaining[drawn_index]["definition"] as TaskDefinition).idle_social_rite_id != "":
 			var rite_rules := RiteService.get_rules((remaining[drawn_index]["definition"] as TaskDefinition).idle_social_rite_id) as SocialRiteRules
 			# Banchetto spontaneo: la "Soglia calorie" dello spiazzo (SocialRiteService.get_idle_calorie_threshold).
@@ -587,6 +593,12 @@ static func _is_idle_entry_possible(entry: Dictionary, individual: HumanIndividu
 	).is_empty():
 		return false
 	# Rito sociale spontaneo escluso senza un edificio adatto (vedi LEISURE_LESSON_TASK_DEFINITION_PATH).
+	# Zuppa di casa (2026-11-07): casa, fuoco, ingredienti e ciotola (HomeSoupService.plan_cooking).
+	if path == HomeSoupService.TASK_DEFINITION_PATH:
+		var plan := HomeSoupService.plan_cooking(individual, world)
+		if plan.is_empty():
+			return false
+		entry["plan"] = plan
 	if definition.idle_social_rite_id != "":
 		var rite_building: Building = SocialRiteService.find_idle_target(
 			RiteService.get_rules(definition.idle_social_rite_id) as SocialRiteRules, individual, age_band, world,

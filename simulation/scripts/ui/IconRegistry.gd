@@ -47,8 +47,6 @@ const RESOURCE_ICONS := {
 	"fiber_rope": "🪢",
 	# Ciotola di pietra (2026-10-24, richiesta utente): emoji provvisoria.
 	"stone_bowl": "🥣",
-	# Vasellame (2026-11-03, richiesta utente): emoji provvisorie.
-	"clay_bowl": "🥣",
 	# Infuso di erbe (2026-10-25, richiesta utente — capanna del guaritore): emoji provvisoria.
 	"herbal_infusion": "🍵",
 	# Unguento di erbe e steccatura (2026-10-25, richiesta utente — rimedi delle ferite): emoji provvisorie.
@@ -121,6 +119,8 @@ const RESOURCE_ICON_NODES := {
 	"waterskin": preload("res://simulation/scripts/ui/WaterskinIcon.gd"),
 	# Pesca (2026-10-31): lenza (matassina di corda con lo stecchino d'osso) e pesce crudo (trota di profilo).
 	"fishing_line": preload("res://simulation/scripts/ui/FishingLineIcon.gd"),
+	# Rete per uccelli (2026-11-07, capanna del trappoliere): due paletti con la rete tesa.
+	"bird_net": preload("res://simulation/scripts/ui/BirdNetIcon.gd"),
 	"fish_meat": preload("res://simulation/scripts/ui/FishMeatIcon.gd"),
 	# Pesce cotto, essiccato e affumicato (2026-10-31): la sagoma del pesce crudo con i propri colori e dettagli.
 	"cooked_fish": preload("res://simulation/scripts/ui/CookedFishIcon.gd"),
@@ -148,6 +148,8 @@ const RESOURCE_ICON_NODES := {
 	"bone": preload("res://simulation/scripts/ui/BoneIcon.gd"),
 	"clay": preload("res://simulation/scripts/ui/ClayIcon.gd"),
 	"clay_jar": preload("res://simulation/scripts/ui/ClayJarIcon.gd"),
+	# Ciotola di terracotta (2026-11-07, richiesta utente — prima emoji, e pallino sulla mappa): vedi ClayBowlIcon.gd.
+	"clay_bowl": preload("res://simulation/scripts/ui/ClayBowlIcon.gd"),
 }
 
 
@@ -193,6 +195,8 @@ const BUILDING_ICONS := {
 	"potter_hut": "🏺",
 	# Tettoia dell'acqua (2026-11-06) — emoji di riserva, la barra usa WaterShelterIcon.
 	"water_shelter": "💧",
+	# Capanna del trappoliere (2026-11-07) — emoji di riserva, la barra usa TrapperHutIcon.
+	"trapper_hut": "🪤",
 }
 
 
@@ -252,6 +256,8 @@ const BUILDING_ICON_NODES := {
 	"potter_hut": preload("res://simulation/scripts/ui/PotterHutIcon.gd"),
 	# Tettoia dell'acqua (2026-11-06): lo stesso disegno della mappa (WaterShelterShape), con le giare.
 	"water_shelter": preload("res://simulation/scripts/ui/WaterShelterIcon.gd"),
+	# Capanna del trappoliere (2026-11-07): lo stesso disegno della mappa (TrapperHutShape).
+	"trapper_hut": preload("res://simulation/scripts/ui/TrapperHutIcon.gd"),
 	# Macerie (2026-10-10, richiesta utente — crollo): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rubble": preload("res://simulation/scripts/ui/RubbleIcon.gd"),
 	# Ceppo dell'insegnamento (2026-10-16, richiesta utente): stesso disegno della mappa (PlaceholderBuildingShapes).
@@ -332,6 +338,8 @@ const COMMAND_ICONS := {
 	"fish": "🎣",
 	# "heal" (2026-10-25, cura dei malati allettati): solo emoji, nessuna icona disegnata.
 	"heal": "🩹",
+	# "trap" (2026-11-07, lavoro "Piazza trappola"): emoji provvisoria.
+	"trap": "🪤",
 	"task_rejected": "❌",
 }
 

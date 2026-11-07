@@ -136,15 +136,24 @@ static func list_prey_in_area(area: WorkArea, live_cells: Dictionary) -> Array:
 	return prey
 
 
-# Prede della zona (list_prey_in_area) entro il raggio di vista del cacciatore stesso.
+# Prede della zona (list_prey_in_area) entro il raggio di vista del cacciatore stesso, o entro il fiuto del cane che lo
+# accompagna (2026-11-07, caccia col cane passo 2: DomesticAnimalHuntService.scenting_animal_for, hunt_scent_radius; il
+# cane sta nella macrocella del cacciatore, quindi stesse coordinate).
 static func find_sighted_prey(area: WorkArea, hunter: HumanIndividual, live_cells: Dictionary) -> Array:
 	var sighted: Array = []
 	if hunter == null:
 		return sighted
 	var radius := get_hunter_visibility_radius(hunter, live_cells, area.macro_coords if area != null else hunter.home_macro_coords)
 	var radius_sq := radius * radius
+	var dog := DomesticAnimalHuntService.scenting_animal_for(hunter)
+	var scent_sq := 0.0
+	if dog != null:
+		var scent := DomesticAnimalCalculator.get_rules(dog.species).hunt_scent_radius
+		scent_sq = scent * scent
 	for animal in list_prey_in_area(area, live_cells):
-		if hunter.position.distance_squared_to(ApproachPreyAction.prey_position_for(hunter, animal)) <= radius_sq:
+		var prey_position := ApproachPreyAction.prey_position_for(hunter, animal)
+		if hunter.position.distance_squared_to(prey_position) <= radius_sq \
+				or (dog != null and dog.position.distance_squared_to(prey_position) <= scent_sq):
 			sighted.append(animal)
 	return sighted
 
@@ -171,6 +180,14 @@ static func choose_prey(area: WorkArea, hunter: HumanIndividual, live_cells: Dic
 		if distance_sq < best_distance_sq:
 			best_distance_sq = distance_sq
 			best = animal
+	# Fuori dalla vista del cacciatore: l'ha trovata il fiuto del cane (passo 2).
+	if best != null:
+		var radius := get_hunter_visibility_radius(hunter, live_cells, area.macro_coords)
+		if best_distance_sq > radius * radius:
+			var dog := DomesticAnimalHuntService.scenting_animal_for(hunter)
+			print("[DOMESTIC HUNT] %s #%d fiuta %s a %.1f microcelle da #%d %s (vista %.1f)" % [
+				dog.species if dog != null else "?", dog.id if dog != null else -1, best.species_name,
+				sqrt(best_distance_sq), hunter.id, hunter.name, radius])
 	return best
 
 

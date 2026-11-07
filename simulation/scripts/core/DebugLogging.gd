@@ -5,8 +5,8 @@ class_name DebugLogging
 # senza scommentare riga per riga nei singoli servizi.
 const ENABLED := true
 
-# Filtro dedicato per i log diagnostici di seeding/crescita/migrazione di FISH e BIRDS
-# (ParametricResourceSetupService.populate_fish/populate_birds, FaunaGrowthService,
+# Filtro dedicato per i log diagnostici di seeding/crescita/migrazione di FISH
+# (ParametricResourceSetupService.populate_fish, FaunaGrowthService,
 # FaunaMigrationService) — mostra il calcolo (capacità, presence_chance, densità, spazio/
 # quantità risultante) per ogni cella dove la risorsa viene effettivamente seminata/cresce/
 # migra, non per ogni cella esaminata (altrimenti 10000 righe anche quando la risorsa è assente).
@@ -110,7 +110,7 @@ const SHOW_VITALS_RECALC_LOGS := false
 # due regole scatta comunque in un verso o nell'altro, quindi la riga è sempre stampata per ognuno,
 # non solo quando cambia qualcosa). A false: nessun comportamento di simulazione cambia, solo il
 # print viene soppresso.
-const SHOW_VITALS_INTERACTION_LOGS := false
+const SHOW_VITALS_INTERACTION_LOGS := true
 # Riga [VITALS INTERACTION] solo per chi ha una malattia in corso (2026-10-24, prova dell'evento malattia), compreso il
 # giorno in cui guarisce; false = tutti.
 const VITALS_INTERACTION_LOG_ONLY_ILL := true
@@ -250,7 +250,10 @@ const SHOW_REST_CHOICE_LOGS := false
 # (HumanIndividualActionService), [BUILD]/[BUILD DEBUG]/[TRANSPORT] (GameScene),
 # [BUILD PROGRESS DEBUG]/[OCCUPIED SPACE DEBUG] (SetupSiteAction/ClearAction/BuildAction),
 # [ASSIGN HOUSE] (AssignHouseService).
-const SHOW_TRANSPORT_BUILD_LOGS := true
+const SHOW_TRANSPORT_BUILD_LOGS := false
+# Zuppa di casa (2026-11-07, HomeSoupService): piano, tappe, prese, cottura e, col tasto M di debug, il motivo per cui
+# non si può cucinare.
+const SHOW_SOUP_LOGS := true
 # FISH — [FISH] pesca (2026-10-31, prove della pesca nelle zone): tentativi, fine sessione o viaggio, cambio di punto
 # (FishAction), pesci consegnati (unload_action.gd), pesca successiva e fine della serie (WorkFollowUpService). Temporaneo:
 # da spegnere quando la pesca nelle zone funziona.
@@ -278,7 +281,7 @@ const SHOW_UNLOAD_PROGRESS_LOGS := false
 # RecoverWeaponAction), quale Task/step la consuma, la ricezione in GameScene (e il rifiuto se la carcassa ha già
 # una macellazione in corso o in coda), l'accodamento, e [BUTCHER] a macellazione compiuta. Ogni riga ha anno,
 # giorno e frame del motore (HuntService.describe_now).
-const SHOW_HUNT_LOGS := true
+const SHOW_HUNT_LOGS := false
 # Intervallo tra due righe di avvicinamento, in GIORNI DI GIOCO (1 giorno = 8 s reali a 1x): 0.125 =
 # circa una riga al secondo a velocità 1x.
 const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
@@ -380,7 +383,7 @@ const SHOW_CLEAR_LOGS := false
 
 # Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
-const SHOW_JOB_BOARD_LOGS := true
+const SHOW_JOB_BOARD_LOGS := false
 
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per
@@ -427,8 +430,12 @@ const SHOW_TALK_LOGS := false
 
 # Coesione (2026-10-14, VillageCohesionService): una riga [COESIONE] a ogni variazione — talk, idea, nuovi arrivati,
 # calo annuale — con valore prima e dopo. Acceso per le prime prove.
-const SHOW_COHESION_LOGS := true
+const SHOW_COHESION_LOGS := false
 
 # Riti sociali (2026-10-14, SocialRiteService — es. il banchetto): una riga [RITO SOCIALE] per organizzazione, arrivi,
 # inizio, cottura, fine o annullo. Acceso per le prime prove.
-const SHOW_SOCIAL_RITE_LOGS := true
+const SHOW_SOCIAL_RITE_LOGS := false
+
+# Trappole (2026-11-07, TrapService — rete per uccelli): una riga [TRAP] quando cambia il posto scelto in una zona (o non
+# ce n'è), alla presa della trappola all'edificio e al montaggio (dove, usi, indice). Acceso per le prime prove.
+const SHOW_TRAP_LOGS := true

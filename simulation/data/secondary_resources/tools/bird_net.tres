@@ -1,0 +1,35 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_bird_net"]
+
+[resource]
+script = ExtResource("1_bird_net")
+secondary_resource_name = "bird_net"
+calories_per_unit = 0.0
+category = 4
+generation_source = 2
+space_per_unit = 40.0
+recipe_inputs = {
+"fiber_rope": 4,
+"plant_fiber": 4,
+"stick": 4
+}
+recipe_labor = 300.0
+recipe_workstation_types = Array[String](["trapper_hut"])
+recipe_required_tool_categories = Array[int]([1, 6])
+tool_categories = Array[int]([14])
+max_uses = 20
+trap_zone_job = "hunt"
+trap_quarry = "birds"
+trap_min_spacing = 5
+trap_setup_days = 0.08
+trap_capacity = 3
+trap_daily_catch_chance = 0.25
+trap_catch_count_weights = Array[float]([0.6, 0.3, 0.1])
+trap_catch_spoil_days = 5
+trap_empty_after_days = 1
+trap_empty_days = 0.04
+trap_catch_resource = "meat"
+trap_catch_yield = 1
+trap_rest_days = 60
+trap_idle_wear_days = 20

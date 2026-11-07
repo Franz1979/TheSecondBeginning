@@ -139,6 +139,15 @@ enum ActionType {
 	# TAKE_JAR / PUT_JAR (2026-11-06, giare — TakeJarAction/PutJarAction, fill_jar.tres) — IN CODA (41, 42).
 	TAKE_JAR,
 	PUT_JAR,
+	# TAKE_SOUP_INGREDIENTS / COOK_SOUP (2026-11-07, zuppa di casa — TakeSoupIngredientsAction/CookSoupAction,
+	# cook_soup.tres) — IN CODA (43, 44).
+	TAKE_SOUP_INGREDIENTS,
+	COOK_SOUP,
+	# TAKE_TRAP / SET_TRAP (2026-11-07, trappole — TakeTrapAction/SetTrapAction, place_trap.tres) — IN CODA (45, 46).
+	TAKE_TRAP,
+	SET_TRAP,
+	# EMPTY_TRAP (2026-11-07, svuotamento delle trappole — EmptyTrapAction, empty_trap.tres) — IN CODA (47).
+	EMPTY_TRAP,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,
@@ -180,4 +189,7 @@ enum ToolCategory {
 	# FISHING (2026-10-31, richiesta utente — lenza, fishing_line.tres) aggiunto IN FONDO, stesso motivo: senza uno
 	# strumento da pesca non si pesca (niente idea, come la caccia con la lancia). Nessuna Action la richiede ancora.
 	FISHING,
+	# TRAP (2026-11-07, richiesta utente — rete per uccelli, bird_net.tres) aggiunto IN FONDO, stesso motivo: una trappola
+	# da piazzare, mai da cintura. Nessuna Action la richiede, così nessuno se la prende in cintura.
+	TRAP,
 }

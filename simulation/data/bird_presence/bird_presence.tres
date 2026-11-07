@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="BirdPresenceRules" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://simulation/scripts/core/BirdPresenceRules.gd" id="1_birds"]
+
+[resource]
+script = ExtResource("1_birds")
+cover_radius = 3
+full_cover_ratio = 0.4
+multiplier_by_biome = {
+1: 1.0,
+2: 1.0,
+3: 0.0,
+4: 0.8,
+5: 1.0,
+6: 0.5
+}
+multiplier_by_season = {
+0: 0.4,
+1: 1.0,
+2: 0.8,
+3: 1.0
+}
+few_threshold = 0.1
+some_threshold = 0.35
+many_threshold = 0.65

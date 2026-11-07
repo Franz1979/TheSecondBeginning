@@ -3,7 +3,7 @@ extends PanelContainer
 
 const TAB_GEOGRAFIA := 0
 const TAB_VEGETAZIONE := 1
-# Fauna "passiva" (FISH, BIRDS): cresce e cala in MacroCellState per densità.
+# Fauna "passiva" (FISH): cresce e cala in MacroCellState per densità.
 const TAB_FAUNA_1 := 2
 const TAB_SUSSISTENZA := 3
 
@@ -36,9 +36,6 @@ const TAB_SUSSISTENZA := 3
 @onready var fauna_1_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/SectionTitleLabel
 @onready var fish_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/FishNumberLabel
 @onready var water_empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/WaterEmptySpaceLabel
-@onready var birds_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/BirdsSeparatorLabel
-@onready var birds_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/BirdsNumberLabel
-@onready var land_empty_space_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/LandEmptySpaceLabel
 @onready var subsistence_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/SectionTitleLabel
 @onready var forage_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/ForageUnitsLabel
 @onready var forage_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/ForageCaloriesLabel
@@ -51,9 +48,6 @@ const TAB_SUSSISTENZA := 3
 @onready var fruit_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/FruitSeparatorLabel
 @onready var fruit_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/FruitUnitsLabel
 @onready var fruit_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/FruitCaloriesLabel
-@onready var eggs_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/EggsSeparatorLabel
-@onready var eggs_units_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/EggsUnitsLabel
-@onready var eggs_calories_label: Label = $MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent/EggsCaloriesLabel
 @onready var actions_container: VBoxContainer = $MarginContainer/VBoxContainer/ActionsContainer
 
 
@@ -136,19 +130,11 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		fish_number_label.text = "Fish: " + NumberFormatter.format_int(fish_quantity) + " (occupied cells: " + NumberFormatter.format_int(fish_space) + ")"
 		water_empty_space_label.text = "Water empty space: " + NumberFormatter.format_int(state.get_empty_water_space(water_capacity))
 
-		var birds_quantity := state.get_resource_quantity(GameTypes.WorldObjectType.BIRDS)
-		var birds_space := state.get_terrestrial_space(GameTypes.WorldObjectType.BIRDS)
-		var land_capacity := ResourceCalculator.get_land_capacity_space(cell, state)
-		birds_separator_label.text = " - - - - - - - - - -"
-		birds_number_label.text = "Birds: " + NumberFormatter.format_int(birds_quantity) + " (occupied cells: " + NumberFormatter.format_int(birds_space) + ")"
-		land_empty_space_label.text = "Habitat empty space: " + NumberFormatter.format_int(state.get_empty_terrestrial_space(land_capacity))
-
 
 		_update_forage_calories_label(cell, state, current_season)
 		_update_berry_stock_label(state)
 		_update_acorn_stock_label(state)
 		_update_fruit_stock_label(state)
-		_update_eggs_stock_label(state)
 	else:
 		stone_number_label.text = "Stone: -"
 		grass_number_label.text = "Grass: -"
@@ -165,12 +151,8 @@ func show_cell(cell: MacroCellData, state: MacroCellState, current_season: GameT
 		acorn_calories_label.visible = false
 		fruit_units_label.visible = false
 		fruit_calories_label.visible = false
-		eggs_units_label.visible = false
-		eggs_calories_label.visible = false
 		fish_number_label.text = "Fish: -"
 		water_empty_space_label.text = "Water empty space: -"
-		birds_number_label.text = "Birds: -"
-		land_empty_space_label.text = "Habitat empty space: -"
 
 
 # Due righe di verifica temporanea per il calcolo di FORAGE (erba consumata direttamente, vedi
@@ -219,19 +201,6 @@ func _update_fruit_stock_label(state: MacroCellState) -> void:
 	fruit_calories_label.text = "  - fruit calories available: " + NumberFormatter.format_int(int(round(fruit_calories)))
 	fruit_units_label.visible = true
 	fruit_calories_label.visible = true
-
-
-# Stesso pattern di _update_berry_stock_label sopra, per EGGS (fonte source_subtype vuoto,
-# derivata direttamente dall'aggregato BIRDS — stesso path stateless già usato da FORAGE/GRASS,
-# non un sottotipo come berry/acorn/fruit).
-func _update_eggs_stock_label(state: MacroCellState) -> void:
-	var eggs_units := CaloricCalculator.get_secondary_resource_stock_units(state, "eggs")
-	var eggs_calories := CaloricCalculator.get_secondary_resource_stock_calories(state, "eggs")
-	eggs_separator_label.text = " - - - - - - - - - -"
-	eggs_units_label.text = "  - eggs stock available: " + NumberFormatter.format_int(int(round(eggs_units)))
-	eggs_calories_label.text = "  - eggs calories available: " + NumberFormatter.format_int(int(round(eggs_calories)))
-	eggs_units_label.visible = true
-	eggs_calories_label.visible = true
 
 
 # Seconda riga, indentata, sotto la riga principale di SHRUB: nascosta se la cella non ha ancora
@@ -340,9 +309,5 @@ func clear() -> void:
 	acorn_calories_label.visible = false
 	fruit_units_label.visible = false
 	fruit_calories_label.visible = false
-	eggs_units_label.visible = false
-	eggs_calories_label.visible = false
 	fish_number_label.text = "Fish: -"
 	water_empty_space_label.text = "Water empty space: -"
-	birds_number_label.text = "Birds: -"
-	land_empty_space_label.text = "Habitat empty space: -"

@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_step_take_trap"]
+
+[resource]
+script = ExtResource("1_step_take_trap")
+action_type = 45
+context_keys = Array[String](["trap_source_building"])
+step_description = "task_place_trap_step_take"

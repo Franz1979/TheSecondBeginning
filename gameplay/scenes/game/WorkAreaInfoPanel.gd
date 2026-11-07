@@ -38,6 +38,7 @@ const CUT_JOB := CutZoneService.CUT_JOB
 # Albero dei filtri: rientro per livello e larghezza del bottone [+]/[−].
 const TREE_INDENT: float = 14.0
 const EXPAND_BUTTON_WIDTH: float = 20.0
+const TRAP_MARKER_SIZE := 22.0
 const HUNT_ROOT_KEY := "hunt:root"
 const HAUL_ROOT_KEY := "haul:root"
 const QUARRY_ROOT_KEY := "quarry:root"
@@ -172,6 +173,7 @@ func _build_jobs() -> void:
 				_build_cut_filters()
 			QuarryZoneService.QUARRY_JOB:
 				_build_quarry_filters()
+		_build_trap_rows(String(job_id))
 
 
 func _job_check_box(job_id: String) -> CheckBox:
@@ -602,6 +604,79 @@ func _build_actions() -> void:
 	)
 	row.add_child(delete_button)
 	add_child(row)
+
+
+# --- Trappole del lavoro (2026-11-07, TrapService): numero voluto in questa zona per tipo di trappola ---
+# Senza un numero proprio vale quello del WM (GameData.stock_traps_per_zone), scritto "(generale)"; cambiato qui diventa
+# il numero della zona, e "↺" torna al generale. Righe solo per le trappole di questo lavoro, e solo se sono già note
+# (la regola del WM è visibile: c'è un edificio che le fabbrica).
+
+func _build_trap_rows(job_id: String) -> void:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null:
+		return
+	var available := WarehousePanel.available_rules_for(GameSettings.active_world)
+	if not bool(available.get(WarehousePanel.RULE_TRAPS, false)):
+		return
+	for trap_name in TrapService.list_trap_names():
+		if TrapService.get_rules(trap_name).trap_zone_job != job_id:
+			continue
+		var own := _area.trap_targets.has(trap_name)
+		var general := int(game_data.stock_traps_per_zone.get(trap_name, 0))
+		var value := int(_area.trap_targets[trap_name]) if own else general
+		# Riga come quelle della Gestione scorte (2026-11-07, richiesta utente): rientrata come le righe dei filtri, nome che
+		# riempie lo spazio, montate in una colonna fissa allineata a destra (come Qtà), il campo e in fondo un riquadro
+		# fisso, "D" col default del villaggio o ↺ col valore della zona, così non si sposta niente.
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var indent := Control.new()
+		indent.custom_minimum_size = Vector2(EXPAND_BUTTON_WIDTH, 0.0)
+		row.add_child(indent)
+		var text := tr("work_area_traps_row").format({"trap": IconRegistry.get_resource_display_name(trap_name)})
+		var label := _label(text)
+		label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.clip_text = true
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		row.add_child(label)
+		# Montate ora nella zona, prima del campo delle volute (come Qtà / Min del WM, senza scritte).
+		var mounted := 0
+		for trap in game_data.placed_traps:
+			if trap.trap_name == trap_name and trap.work_area_id == _area.id:
+				mounted += 1
+		var count_label := _label(str(mounted))
+		count_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		count_label.custom_minimum_size = Vector2(WarehousePanel.QUANTITY_COLUMN_WIDTH, 0.0)
+		count_label.clip_text = true
+		count_label.tooltip_text = TooltipText.wrap(tr("work_area_traps_tooltip"))
+		count_label.mouse_filter = Control.MOUSE_FILTER_STOP
+		row.add_child(count_label)
+		var row_trap: String = trap_name
+		row.add_child(WarehousePanel.build_level_field(value, func(level: int) -> void:
+			_area.trap_targets[row_trap] = level
+			area_changed.emit(_area)
+			_rebuild.call_deferred()
+		, "work_area_traps_tooltip", 1, 0, true, WarehousePanel.LEVEL_NONE_TEXT, WarehousePanel.TRAP_LEVEL_MAX))
+		var marker := _button("↺" if own else "D")
+		marker.custom_minimum_size = Vector2(TRAP_MARKER_SIZE, TRAP_MARKER_SIZE)
+		marker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		if own:
+			marker.tooltip_text = TooltipText.wrap(tr("work_area_traps_reset_tooltip"))
+			marker.pressed.connect(func() -> void:
+				_area.trap_targets.erase(row_trap)
+				area_changed.emit(_area)
+				_rebuild()
+			)
+		else:
+			# Solo un segno: col default non c'è niente da ripristinare.
+			marker.mouse_filter = Control.MOUSE_FILTER_PASS
+			marker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+			marker.tooltip_text = TooltipText.wrap(tr("work_area_traps_default_tooltip"))
+		row.add_child(marker)
+		_indented_box().add_child(row)
 
 
 # Filtri del lavoro (creati col filtro iniziale del lavoro se mancano), modificati sul posto.

@@ -6,15 +6,10 @@ extends RefCounted
 # niente encroachment né rinvio all'anno successivo. Growth/migration/mortality per la fauna
 # "passiva" restano tre checkpoint stagionali separati (vedi WorldTimeService: fine primavera/
 # estate/autunno), ciascuno nel proprio servizio (FaunaGrowthService/FaunaMigrationService/
-# FaunaMortalityService). Nome generico ("Fauna", non "Fish") perché copre più di una risorsa
-# non vegetale: FISH (dominio acqua, water_dedicated_space) e BIRDS (dominio terra,
-# terrestrial_dedicated_space) condividono la stessa formula di crescita logistica, applicata a
-# due budget fisicamente separati — vedi _grow_water_resource_in_cell/_grow_land_resource_in_cell.
+# FaunaMortalityService). Oggi solo FISH (dominio acqua, water_dedicated_space); BIRDS (dominio terra) tolto il
+# 2026-11-07, col suo budget terrestre.
 const WATER_GROWABLE_TYPES := [
 	GameTypes.WorldObjectType.FISH,
-]
-const LAND_GROWABLE_TYPES := [
-	GameTypes.WorldObjectType.BIRDS,
 ]
 
 
@@ -38,8 +33,6 @@ func grow_fauna(world: World) -> void:
 
 		for resource_type in WATER_GROWABLE_TYPES:
 			_grow_water_resource_in_cell(cell, state, resource_type, growth_by_type)
-		for resource_type in LAND_GROWABLE_TYPES:
-			_grow_land_resource_in_cell(cell, state, resource_type, growth_by_type)
 
 	if DebugLogging.ENABLED and DebugLogging.SHOW_FAUNA_DIAGNOSTICS_LOGS:
 		for resource_type in growth_by_type.keys():
@@ -99,47 +92,6 @@ func _grow_water_resource_in_cell(
 	var new_quantity: int = int(round(new_space * max_density))
 
 	state.set_water_space(resource_type, new_space)
-	state.set_resource_quantity(resource_type, new_quantity)
-
-	if DebugLogging.ENABLED and DebugLogging.SHOW_FAUNA_DIAGNOSTICS_LOGS:
-		_accumulate_growth(growth_by_type, resource_type, current_space, new_space, new_quantity)
-
-
-# Gemella di _grow_water_resource_in_cell sopra, sul budget terrestrial_dedicated_space invece
-# che water_dedicated_space: stessa identica formula di crescita logistica, solo le funzioni/
-# accessori sono quelli del dominio terra (ResourceCalculator.get_land_*, asse Terrain/Biome/
-# Coast invece di WaterType — vedi analisi BIRDS: nessun asse indipendente necessario, a
-# differenza di FISH).
-func _grow_land_resource_in_cell(
-	cell: MacroCellData,
-	state: MacroCellState,
-	resource_type: GameTypes.WorldObjectType,
-	growth_by_type: Dictionary
-) -> void:
-	var capacity := ResourceCalculator.get_land_usable_capacity_space(resource_type, cell, state)
-	if capacity <= 0:
-		return
-
-	var current_space: int = state.get_terrestrial_space(resource_type)
-	if current_space <= 0:
-		return
-
-	var growth_rate := ResourceCalculator.get_growth_rate(resource_type, cell.terrain_base, cell.biome, cell.coast_type)
-	if growth_rate <= 0.0:
-		return
-
-	var empty_space: int = state.get_empty_terrestrial_space(capacity)
-	var max_reachable_space: int = current_space + empty_space
-	if max_reachable_space <= 0:
-		return
-
-	var new_space_float: float = current_space + growth_rate * current_space * (1.0 - float(current_space) / float(max_reachable_space))
-	var new_space: int = int(round(min(new_space_float, max_reachable_space)))
-
-	var max_density := ResourceCalculator.get_max_density(resource_type, cell.terrain_base, cell.biome, cell.coast_type)
-	var new_quantity: int = int(round(new_space * max_density))
-
-	state.set_terrestrial_space(resource_type, new_space)
 	state.set_resource_quantity(resource_type, new_quantity)
 
 	if DebugLogging.ENABLED and DebugLogging.SHOW_FAUNA_DIAGNOSTICS_LOGS:

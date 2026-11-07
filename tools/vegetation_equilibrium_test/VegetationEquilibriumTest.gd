@@ -11,7 +11,7 @@ extends Node
 # terreno effettivamente presente sulla mappa caricata — la SATURAZIONE COMPLESSIVA dello
 # spazio terrestre (ROCK+TREE+GRASS+SHRUB come percentuale del budget disponibile, non
 # l'equilibrio "puro" per singola risorsa), la sua SCOMPOSIZIONE per singola risorsa all'anno di
-# saturazione, e separatamente la saturazione di FISH/BIRDS verso la propria capacita'
+# saturazione, e separatamente la saturazione di FISH verso la propria capacita'
 # sfruttabile. Nessun service di simulation/scripts/core/ viene toccato: questo script si
 # limita a chiamare l'API pubblica gia' esistente.
 #
@@ -104,9 +104,6 @@ func _ready() -> void:
 	var fish_pct_history: Dictionary = {}
 	var fish_abs_history: Dictionary = {}
 	var fish_cap: Dictionary = {}
-	var birds_pct_history: Dictionary = {}
-	var birds_abs_history: Dictionary = {}
-	var birds_cap: Dictionary = {}
 
 	for key in samples.keys():
 		veg_pct_history[key] = []
@@ -116,14 +113,11 @@ func _ready() -> void:
 			veg_breakdown_history[key][rt] = []
 		fish_pct_history[key] = []
 		fish_abs_history[key] = []
-		birds_pct_history[key] = []
-		birds_abs_history[key] = []
 
 	_record_year(
 		world, samples, fish_samples,
 		veg_pct_history, veg_abs_history, veg_breakdown_history, veg_cap,
-		fish_pct_history, fish_abs_history, fish_cap,
-		birds_pct_history, birds_abs_history, birds_cap
+		fish_pct_history, fish_abs_history, fish_cap
 	)
 
 	var time_service := WorldTimeService.new()
@@ -133,20 +127,18 @@ func _ready() -> void:
 		_record_year(
 			world, samples, fish_samples,
 			veg_pct_history, veg_abs_history, veg_breakdown_history, veg_cap,
-			fish_pct_history, fish_abs_history, fish_cap,
-			birds_pct_history, birds_abs_history, birds_cap
+			fish_pct_history, fish_abs_history, fish_cap
 		)
 		if (year + 1) % 10 == 0:
 			var elapsed_sec := (Time.get_ticks_usec() - start_usec) / 1000000.0
 			print("  ...anno %d/%d completato (%.1fs trascorsi)" % [year + 1, YEARS_TO_RUN, elapsed_sec])
 
-	_report_saturation_tables(samples, fish_samples, veg_pct_history, veg_abs_history, veg_cap, fish_pct_history, fish_abs_history, fish_cap, birds_pct_history, birds_abs_history, birds_cap)
+	_report_saturation_tables(samples, fish_samples, veg_pct_history, veg_abs_history, veg_cap, fish_pct_history, fish_abs_history, fish_cap)
 
 	var composition := _build_composition_report(
 		samples, fish_samples,
 		veg_pct_history, veg_abs_history, veg_breakdown_history, veg_cap,
-		fish_pct_history, fish_abs_history, fish_cap,
-		birds_pct_history, birds_abs_history, birds_cap
+		fish_pct_history, fish_abs_history, fish_cap
 	)
 	_print_composition_report(composition)
 	_write_composition_json(composition)
@@ -243,8 +235,7 @@ func _pick_fish_sample_cells(world: World, samples: Dictionary) -> Dictionary:
 func _record_year(
 	world: World, samples: Dictionary, fish_samples: Dictionary,
 	veg_pct_history: Dictionary, veg_abs_history: Dictionary, veg_breakdown_history: Dictionary, veg_cap: Dictionary,
-	fish_pct_history: Dictionary, fish_abs_history: Dictionary, fish_cap: Dictionary,
-	birds_pct_history: Dictionary, birds_abs_history: Dictionary, birds_cap: Dictionary
+	fish_pct_history: Dictionary, fish_abs_history: Dictionary, fish_cap: Dictionary
 ) -> void:
 	for key in samples.keys():
 		var coords: Vector2i = samples[key]["coords"]
@@ -278,17 +269,6 @@ func _record_year(
 			fish_abs_history[key].append(f_space)
 			fish_pct_history[key].append(float(f_space) / float(f_cap) if f_cap > 0 else -1.0)
 
-		# --- BIRDS: capacita' sfruttabile su terra, budget indipendente da ROCK/TREE/GRASS/SHRUB ---
-		var b_cap := ResourceCalculator.get_land_usable_capacity_space(GameTypes.WorldObjectType.BIRDS, cell, state)
-		birds_cap[key] = b_cap
-		if b_cap > 0:
-			var b_space := state.get_terrestrial_space(GameTypes.WorldObjectType.BIRDS)
-			birds_abs_history[key].append(b_space)
-			birds_pct_history[key].append(float(b_space) / float(b_cap))
-		else:
-			birds_abs_history[key].append(0)
-			birds_pct_history[key].append(-1.0)
-
 
 # Primo anno t (>=0) in cui pct_series[t..t+STREAK-1] sono tutti >= threshold, oppure -1 se mai
 # raggiunto entro la serie.
@@ -307,8 +287,7 @@ func _find_saturation_year(pct_series: Array, threshold: float) -> int:
 func _report_saturation_tables(
 	samples: Dictionary, fish_samples: Dictionary,
 	veg_pct_history: Dictionary, veg_abs_history: Dictionary, veg_cap: Dictionary,
-	fish_pct_history: Dictionary, fish_abs_history: Dictionary, fish_cap: Dictionary,
-	birds_pct_history: Dictionary, birds_abs_history: Dictionary, birds_cap: Dictionary
+	fish_pct_history: Dictionary, fish_abs_history: Dictionary, fish_cap: Dictionary
 ) -> void:
 	var keys := samples.keys()
 	keys.sort()
@@ -346,32 +325,15 @@ func _report_saturation_tables(
 			key, cap, (str(y) if y != -1 else "MAI"), "%d (%.1f%%)" % [last_abs, last_pct * 100.0]
 		])
 
-	print("")
-	print("=== TABELLA: BIRDS — anno di saturazione (soglia %.0f%%) ===" % [SATURATION_THRESHOLD * 100.0])
-	print("%-22s %-10s %-14s %-14s" % ["bioma|terreno", "cap_usab.", "eq_anno", "val_anno100"])
-	for key in keys:
-		var cap: int = birds_cap.get(key, 0)
-		if cap <= 0:
-			continue
-		var pct_series: Array = birds_pct_history[key]
-		var abs_series: Array = birds_abs_history[key]
-		var last_pct: float = pct_series[pct_series.size() - 1]
-		var last_abs: int = abs_series[abs_series.size() - 1]
-		var y := _find_saturation_year(pct_series, SATURATION_THRESHOLD)
-		print("%-22s %-10d %-14s %-14s" % [
-			key, cap, (str(y) if y != -1 else "MAI"), "%d (%.1f%%)" % [last_abs, last_pct * 100.0]
-		])
-
 
 # Costruisce il Dictionary esportato in JSON: per ogni combinazione, la scomposizione
 # GRASS/SHRUB/TREE/ROCK all'anno di saturazione del TOTALE (o all'ultimo anno campionato se mai
-# saturo), e FISH/BIRDS (valore + percentuale sulla propria capacita') al proprio anno di
+# saturo), e FISH (valore + percentuale sulla propria capacita') al proprio anno di
 # saturazione specifico (o ultimo anno se mai saturo).
 func _build_composition_report(
 	samples: Dictionary, fish_samples: Dictionary,
 	veg_pct_history: Dictionary, veg_abs_history: Dictionary, veg_breakdown_history: Dictionary, veg_cap: Dictionary,
-	fish_pct_history: Dictionary, fish_abs_history: Dictionary, fish_cap: Dictionary,
-	birds_pct_history: Dictionary, birds_abs_history: Dictionary, birds_cap: Dictionary
+	fish_pct_history: Dictionary, fish_abs_history: Dictionary, fish_cap: Dictionary
 ) -> Dictionary:
 	var keys := samples.keys()
 	keys.sort()
@@ -431,22 +393,6 @@ func _build_composition_report(
 				"pct_of_capacity": float(f_abs_series[f_used_year]) / float(f_cap) if f_cap > 0 else 0.0,
 			}
 
-		var b_cap: int = birds_cap.get(key, 0)
-		if b_cap <= 0:
-			entry["birds"] = null
-		else:
-			var b_pct_series: Array = birds_pct_history[key]
-			var b_abs_series: Array = birds_abs_history[key]
-			var by := _find_saturation_year(b_pct_series, SATURATION_THRESHOLD)
-			var b_used_year: int = by if by != -1 else (b_pct_series.size() - 1)
-			entry["birds"] = {
-				"saturation_year": by,
-				"year_used_for_snapshot": b_used_year,
-				"capacity": b_cap,
-				"absolute": b_abs_series[b_used_year],
-				"pct_of_capacity": float(b_abs_series[b_used_year]) / float(b_cap) if b_cap > 0 else 0.0,
-			}
-
 		combinations[key] = entry
 
 	return {
@@ -488,15 +434,6 @@ func _print_composition_report(composition: Dictionary) -> void:
 			var resample_note := " [ricampionato]" if f["resampled_due_to_failed_seed"] else ""
 			print("  FISH%s: anno=%s val=%d/%d (%.1f%%)" % [
 				resample_note, fy_label, f["absolute"], f["capacity"], f["pct_of_capacity"] * 100.0
-			])
-
-		if entry["birds"] == null:
-			print("  BIRDS: N/A")
-		else:
-			var b2: Dictionary = entry["birds"]
-			var by_label := str(b2["saturation_year"]) if b2["saturation_year"] != -1 else ("MAI (asintotico anno %d)" % b2["year_used_for_snapshot"])
-			print("  BIRDS: anno=%s val=%d/%d (%.1f%%)" % [
-				by_label, b2["absolute"], b2["capacity"], b2["pct_of_capacity"] * 100.0
 			])
 
 

@@ -49,6 +49,8 @@ enum WorldObjectType {
 	GRASS,
 	SHRUB,
 	FISH,
+	# Non più usato dal 2026-11-07 (uccelli tolti dalla simulazione della macrocella): resta solo per non spostare i
+	# numeri dei tipi dopo, che i salvataggi scrivono come interi.
 	BIRDS,
 	# BUILDING: stesso trattamento di ROCK ai fini dello spazio (MacroCellState.dedicated_space) —
 	# un edificio occupa spazio fisico esattamente come una pietra, senza growth/succession_level

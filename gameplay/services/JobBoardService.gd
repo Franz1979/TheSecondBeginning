@@ -56,16 +56,17 @@ const STATE_LOCKED := "locked"
 # "inventory" (2026-10-11): inventario del magazzino ("inventory:0", uno alla volta; InventoryJobProvider.collect).
 # "rite" (2026-10-14): riti ordinati dal pannello edificio ("rite:<id edificio>", Building.requested_rite_id).
 # "heal" (2026-10-25): cura dei malati allettati ("heal:<id malato>", HealJobProvider.collect).
-const DEFAULT_STATE_BY_KIND := {"butcher": STATE_LISTED, "build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED, "quarry": STATE_LISTED, "gather": STATE_LISTED, "hunt": STATE_LISTED, "fish": STATE_LISTED, "repair": STATE_LISTED, "inventory": STATE_LISTED, "rite": STATE_LISTED, "site_cut": STATE_LISTED, "heal": STATE_LISTED}
+# "trap" (2026-11-07): trappole da piazzare nelle zone ("trap:<id zona>:<trappola>", TrapJobProvider.collect).
+const DEFAULT_STATE_BY_KIND := {"butcher": STATE_LISTED, "build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED, "quarry": STATE_LISTED, "gather": STATE_LISTED, "hunt": STATE_LISTED, "fish": STATE_LISTED, "repair": STATE_LISTED, "inventory": STATE_LISTED, "rite": STATE_LISTED, "site_cut": STATE_LISTED, "heal": STATE_LISTED, "trap": STATE_LISTED}
 # Tipo di lavoro -> chiave di SkillEffectService (skill_action_effects.tres) della sua skill (modo "Più adatto").
-const SKILL_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": HuntService.SKILL_EFFECT_KEY, "fish": "fish", "repair": "build", "inventory": InventoryAction.SKILL_EFFECT_KEY, "rite": RiteAction.SKILL_EFFECT_KEY, "site_cut": "cut", "heal": RemedyAction.SKILL_EFFECT_KEY, "transport": "walk_loaded"}
+const SKILL_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": HuntService.SKILL_EFFECT_KEY, "fish": "fish", "repair": "build", "inventory": InventoryAction.SKILL_EFFECT_KEY, "rite": RiteAction.SKILL_EFFECT_KEY, "site_cut": "cut", "heal": RemedyAction.SKILL_EFFECT_KEY, "trap": TrapService.SKILL_EFFECT_KEY, "transport": "walk_loaded"}
 # Categorie della priorità (2026-11-07, richiesta utente): i mucchi a terra ("pile") contano come la Raccolta, i Prodotti
 # finiti da consegnare ("output") come i Trasporti. Il tipo del lavoro resta il suo (stato, chiave, fornitore); qui solo
 # "Più adatto" (skill) e "Personalizzata" (ordine dei tipi). Gli ordini "transport" del cassetto (magazzino, Riempi giare,
 # Trasporta del giocatore) hanno già il tipo "transport" (DrawerOrderJobProvider._transport_job), con la skill Trasportatore.
 const PRIORITY_KIND_BY_KIND := {"pile": "gather", "output": "transport"}
 # Tipo di lavoro -> icona di comando (IconRegistry) che lampeggia sull'edificio durante l'attesa per l'assegnazione a mano.
-const ICON_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt", "fish": "fish", "repair": "build", "inventory": "transport", "rite": "rite", "site_cut": "cut", "heal": "heal", "transport": "transport"}
+const ICON_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt", "fish": "fish", "repair": "build", "inventory": "transport", "rite": "rite", "site_cut": "cut", "heal": "heal", "trap": "trap", "transport": "transport"}
 
 # Modi di priorità (valori salvati in GameData.job_board_priority_mode, mai cambiarli).
 const PRIORITY_BEST_FIT := "best_fit"
@@ -87,7 +88,7 @@ const PRIORITY_NAME_KEYS := {
 # "hunt" (2026-10-09): ordini di caccia del cassetto, in fondo. "repair" (2026-10-10): riparazioni richieste, in fondo.
 # "inventory" (2026-10-11): l'inventario del magazzino, per primo (senza di lui non escono gli ordini del magazzino).
 # "transport" (2026-11-07): prende il posto di "pile" e "output" (PRIORITY_KIND_BY_KIND).
-const DEFAULT_KIND_ORDER: Array[String] = ["inventory", "heal", "body", "build", "upgrade", "demolish", "transport", "produce", "site_cut", "cut", "quarry", "gather", "hunt", "butcher", "fish", "repair", "rite"]
+const DEFAULT_KIND_ORDER: Array[String] = ["inventory", "heal", "body", "build", "upgrade", "demolish", "transport", "produce", "site_cut", "cut", "quarry", "gather", "hunt", "butcher", "fish", "trap", "repair", "rite"]
 # Tipo -> chiave tr() del nome nell'elenco dei tipi e nel log.
 const KIND_NAME_KEYS := {
 	"site_cut": "task_assignment_kind_site_cut",
@@ -107,6 +108,7 @@ const KIND_NAME_KEYS := {
 	"inventory": "task_assignment_kind_inventory",
 	"rite": "task_assignment_kind_rite",
 	"heal": "task_assignment_kind_heal",
+	"trap": "task_assignment_kind_trap",
 }
 # Due skill uguali entro questo scarto contano come pari (poi decide l'età).
 const SKILL_TIE_EPSILON: float = 0.0001

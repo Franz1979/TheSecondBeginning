@@ -83,6 +83,9 @@ signal fuel_min_changed(type_name: String, level: int)
 # Regola "Acqua per tettoia" (2026-11-07, giare passo 3): valore da GameScene (set_water_rule, prima di _ready); i cambi
 # escono con water_per_shelter_changed. L'acqua di ogni tettoia si legge nel pannello della tettoia, non qui.
 signal water_per_shelter_changed(level: int)
+# Regola "Trappole per zona" (2026-11-07, TrapService): numero voluto in ogni zona per tipo di trappola; una zona può avere
+# il proprio numero (pannello della zona). Valori da GameScene (set_trap_rule), i cambi escono con trap_per_zone_changed.
+signal trap_per_zone_changed(trap_name: String, level: int)
 # Regola "Rifornisci le Attrezzerie" (2026-10-18, ToolkitStockService): accesa/spenta e pezzi voluti per tipo e attrezzo.
 signal toolkit_rule_toggled(enabled: bool)
 signal toolkit_target_changed(type_name: String, tool_name: String, level: int)
@@ -94,6 +97,10 @@ var _fuel_rule_enabled: bool = false
 var _water_per_shelter: int = 0
 var _water_max: int = 0
 var _water_missing: int = 0
+# [{"trap": nome, "level": int}], una riga per tipo di trappola.
+var _trap_rows: Array[Dictionary] = []
+# Massimo del campo delle trappole per zona.
+const TRAP_LEVEL_MAX: int = 20
 const WATER_MISSING_COLOR := Color(0.95, 0.35, 0.30, 1.0)
 var _fuel_rows: Array[Dictionary] = []
 var _toolkit_rule_enabled: bool = false
@@ -284,6 +291,36 @@ func set_water_rule(level: int, max_level: int, missing: int = 0) -> void:
 	_water_missing = missing
 
 
+func set_trap_rule(rows: Array[Dictionary]) -> void:
+	_trap_rows = rows.duplicate(true)
+
+
+# Regola "Trappole per zona": una riga per tipo di trappola, nome e campo compatto a destra (0 = nessuna).
+func _build_trap_rule_rows() -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	for entry in _trap_rows:
+		var trap_name := String(entry["trap"])
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_traps_tooltip"))
+		var label := Label.new()
+		label.text = tr("warehouse_rule_traps").format({"trap": IconRegistry.get_resource_display_name(trap_name)})
+		label.tooltip_text = TooltipText.wrap(row.tooltip_text)
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
+		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		row.add_child(label)
+		row.add_child(build_level_field(int(entry["level"]), func(level: int) -> void:
+			entry["level"] = level
+			trap_per_zone_changed.emit(trap_name, level)
+		, "warehouse_rule_traps_tooltip", 1, 0, true, LEVEL_NONE_TEXT, TRAP_LEVEL_MAX))
+		box.add_child(row)
+	return box
+
+
 # Regola "Acqua per tettoia": titolo con il campo compatto a destra (+ e − uno sopra l'altro, a passi di 100, 0 = spenta).
 func _build_water_rule_rows() -> Control:
 	var row := HBoxContainer.new()
@@ -311,6 +348,45 @@ func _build_water_rule_rows() -> Control:
 
 func set_banquet_rule(safe_only: bool) -> void:
 	_banquet_safe_only = safe_only
+
+
+# Regole che servono a un edificio (2026-11-07, richiesta utente): "Banchetti spontanei", "Acqua per tettoia" e
+# "Rifornisci le Attrezzerie" compaiono solo con almeno un edificio finito che le usa (spiazzo delle feste, tettoia
+# dell'acqua, edificio con Attrezzeria). I valori restano salvati anche mentre la regola è nascosta. Default: tutte visibili.
+const RULE_BANQUET := "banquet"
+const RULE_WATER := "water"
+const RULE_TOOLKIT := "toolkit"
+# "Trappole per zona" (2026-11-07): con almeno un edificio finito che fabbrica una trappola (capanna del trappoliere).
+const RULE_TRAPS := "traps"
+const BANQUET_BUILDING_TYPE := "feast_ground"
+var _available_rules: Dictionary = {RULE_BANQUET: true, RULE_WATER: true, RULE_TOOLKIT: true, RULE_TRAPS: true}
+
+
+func set_available_rules(available: Dictionary) -> void:
+	_available_rules = available.duplicate()
+
+
+# {RULE_*: bool} dagli edifici finiti e non demoliti di `world`.
+static func available_rules_for(world: World) -> Dictionary:
+	var result := {RULE_BANQUET: false, RULE_WATER: false, RULE_TOOLKIT: false, RULE_TRAPS: false}
+	if world == null:
+		return result
+	var trap_workstations: Array[String] = []
+	for trap_name in TrapService.list_trap_names():
+		for type_name in TrapService.get_rules(trap_name).recipe_workstation_types:
+			trap_workstations.append(type_name)
+	for building in world.buildings:
+		if building == null or building.is_demolished or not building.is_complete:
+			continue
+		if building.building_type_name == BANQUET_BUILDING_TYPE:
+			result[RULE_BANQUET] = true
+		if WaterJarService.is_shelter(building):
+			result[RULE_WATER] = true
+		if BuildingToolkitService.type_has_toolkit(building.building_type_name):
+			result[RULE_TOOLKIT] = true
+		if trap_workstations.has(building.building_type_name):
+			result[RULE_TRAPS] = true
+	return result
 
 
 # Regola dei banchetti spontanei: titolo e la casella del terzo delle scorte.
@@ -671,9 +747,14 @@ func _build_rules_section() -> void:
 	DashedSeparator.add_item(_rules_box, fish_row)
 	DashedSeparator.add_item(_rules_box, _build_workstation_food_rule_row())
 	DashedSeparator.add_item(_rules_box, _build_fuel_rule_rows())
-	DashedSeparator.add_item(_rules_box, _build_toolkit_rule_rows())
-	DashedSeparator.add_item(_rules_box, _build_water_rule_rows())
-	DashedSeparator.add_item(_rules_box, _build_banquet_rule_rows())
+	if bool(_available_rules.get(RULE_TOOLKIT, true)):
+		DashedSeparator.add_item(_rules_box, _build_toolkit_rule_rows())
+	if bool(_available_rules.get(RULE_WATER, true)):
+		DashedSeparator.add_item(_rules_box, _build_water_rule_rows())
+	if bool(_available_rules.get(RULE_TRAPS, true)) and not _trap_rows.is_empty():
+		DashedSeparator.add_item(_rules_box, _build_trap_rule_rows())
+	if bool(_available_rules.get(RULE_BANQUET, true)):
+		DashedSeparator.add_item(_rules_box, _build_banquet_rule_rows())
 	if _excess_meat_state.size() == 3:
 		var options: Array[Dictionary] = []
 		options.assign(_excess_meat_state[2])

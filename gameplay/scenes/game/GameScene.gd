@@ -1760,6 +1760,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_Z:
 		_debug_clear_selected_individual_backpack()
 
+	# Zuppa di casa (debug, 2026-11-07, richiesta utente): tasto M ("minestra") — l'individuo selezionato parte subito a
+	# cucinare, senza aspettare il sorteggio dello svago; se non può, il motivo nel log [SOUP].
+	if DebugLogging.ENABLED and event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_M:
+		_debug_cook_soup()
+
 	# Layer della mappa (2026-09-27, richiesta utente) — tasto L: passa al layer disponibile successivo, in ordine,
 	# compreso "Nessuno" (MapLayerRegistry.get_cycle_ids). Non è un comando di debug.
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_L:
@@ -2184,6 +2189,19 @@ func _assign_emergency_rest_task() -> void:
 
 # Leisure Restock (2026-09-19, richiesta utente): tasto F sull'individuo selezionato - vedi
 # NeedTaskAssignmentService.assign_leisure_restock_task (la Task non nasce se nessun magazzino ha cibo).
+# Tasto M di debug (2026-11-07): stesso piano e stesso compito dello svago "Cucina la zuppa" (HomeSoupService).
+func _debug_cook_soup() -> void:
+	if individual == null or not individual.is_selected:
+		print("[SOUP] tasto M: nessun individuo selezionato.")
+		return
+	var plan := HomeSoupService.plan_cooking(individual, macro_world, true)
+	if plan.is_empty():
+		return
+	var task := HomeSoupService.build_cook_task(individual, plan)
+	var assigned := task != null and individual.assign_task(task, _resolve_age_band(individual))
+	HomeSoupService._log(individual, "tasto M: " + ("parte a cucinare." if assigned else "compito non assegnato (età o compito non costruito)."))
+
+
 func _assign_leisure_restock_task() -> void:
 	if individual == null or not individual.is_selected:
 		return
@@ -2377,6 +2395,14 @@ func _collect_right_click_targets(event: InputEvent) -> RightClickTargets:
 	targets.clay = _clay_at_click()
 	targets.stream_fish = _stream_fish_at_click()
 	targets.pickup_candidates = _resolve_pickup_candidates(event, game_data.get_absolute_day())
+	var clicked_lot := _resolve_microcell_at_click()
+	if not clicked_lot.is_empty() and FogOfWarVerificationService.is_detail_visible(
+		live_cells, clicked_lot["macro_coords"], clicked_lot["lot"], game_data.get_absolute_day()
+	):
+		targets.trap_site = clicked_lot
+		targets.trap_place_options = TrapService.placeable_traps(
+			game_data, macro_world, human_individuals, clicked_lot["macro_coords"], clicked_lot["lot"]
+		)
 	var building_hit := building_selector_controller.try_select(
 		event, live_cells, macro_world.buildings if macro_world != null else [], MOUSE_BUTTON_RIGHT
 	)
@@ -2410,7 +2436,75 @@ func _run_right_click_command(command: RightClickCommandService.Command, targets
 			return _right_click_transport(targets)
 		RightClickCommandService.Command.FILL_JAR:
 			return _right_click_fill_jar(targets)
+		RightClickCommandService.Command.TRAP:
+			return _right_click_trap(targets)
 	return false
+
+
+# Scheda "Trappole" (2026-11-07, piazzamento manuale, TrapCommandService): popup con Raccogli e Taglia se valgono e le
+# trappole piazzabili sulla microcella (col livello della preda). Solo il piazzamento possibile e un solo tipo: subito.
+func _right_click_trap(targets: RightClickTargets) -> bool:
+	var site := targets.trap_site
+	var options := targets.trap_place_options
+	var available_candidates: Array[Dictionary] = []
+	for candidate in targets.pickup_candidates:
+		if int(candidate["available_quantity"]) > 0:
+			available_candidates.append(candidate)
+	var cut_possible := RightClickCommandService.can_cut(_game_context(), individual, targets)
+	if available_candidates.is_empty() and not cut_possible and options.size() == 1:
+		_assign_manual_trap_place(individual, String(options[0]["trap_name"]), site)
+		return true
+	_extraction_pending = {"individual": individual, "candidates": targets.pickup_candidates, "trap_site": site}
+	var rows := {}
+	var overrides := {}
+	var row_options := {}
+	if not available_candidates.is_empty():
+		var pickup_resources := _build_pickup_pending_resources(available_candidates)
+		_extraction_pending["pickup_resources"] = pickup_resources
+		rows[EXTRACTION_CHOICE_GATHER] = 1
+		overrides[EXTRACTION_CHOICE_GATHER] = {"text": tr("cut_choice_gather"), "icon": IconRegistry.get_command_icon("pickup")}
+		row_options[EXTRACTION_CHOICE_GATHER] = {
+			"type": "pickup", "resources": pickup_resources, "default_choice": UserOptions.get_pickup_default_choice(),
+			"repeat_default": UserOptions.repeat_default, "repeat_max": HaulZoneService.CLICK_MAX_REPEATS,
+			"single_row": pickup_resources.size() == 1,
+		}
+	if cut_possible:
+		var plant_choice := _build_cut_plant_choice(targets.plant)
+		_extraction_pending["plant"] = targets.plant
+		_extraction_pending["plants"] = plant_choice["plants"]
+		_extraction_pending["all_plants"] = plant_choice["all_plants"]
+		rows[EXTRACTION_CHOICE_CUT] = 1
+		overrides[EXTRACTION_CHOICE_CUT] = {"text": tr("cut_choice_cut"), "icon": IconRegistry.get_command_icon("cut")}
+		row_options[EXTRACTION_CHOICE_CUT] = {"type": "list", "items": plant_choice["items"], "selected": plant_choice["selected"]}
+	var items: Array = []
+	for option in options:
+		var trap_name := String(option["trap_name"])
+		var text := IconRegistry.get_resource_display_name(trap_name)
+		var level := int(option["level"])
+		if level >= 0:
+			text = tr("trap_place_item_birds").format({"trap": text, "level": tr(BIRD_PRESENCE_LEVEL_KEYS[level])})
+		items.append({"key": trap_name, "text": text, "enabled": true, "icon": trap_name})
+	rows[EXTRACTION_CHOICE_TRAP] = 1
+	overrides[EXTRACTION_CHOICE_TRAP] = {"text": tr("trap_choice_place"), "confirm_text": tr("trap_choice_place_confirm"), "icon": IconRegistry.get_command_icon("trap")}
+	row_options[EXTRACTION_CHOICE_TRAP] = {"type": "list", "items": items, "selected": String(options[0]["trap_name"])}
+	extraction_choice_dialog.open_choice_only_dialog(
+		tr("trap_choice_dialog_title"), tr("trap_choice_dialog_message"), rows, overrides, row_options, true
+	)
+	return true
+
+
+func _assign_manual_trap_empty(worker: HumanIndividual, trap_id: int) -> void:
+	var effects := GameEffects.new()
+	TrapCommandService.assign_empty(_game_context(), worker, trap_id, effects)
+	_apply_effects(effects)
+
+
+func _assign_manual_trap_place(worker: HumanIndividual, trap_name: String, site: Dictionary) -> void:
+	if site.is_empty():
+		return
+	var effects := GameEffects.new()
+	TrapCommandService.assign_place(_game_context(), worker, trap_name, site["macro_coords"], site["lot"], effects)
+	_apply_effects(effects)
 
 
 # Riempimento delle giare (2026-11-06, richiesta utente — giare: passo 1): clic destro sulla Tettoia dell'acqua, numero di
@@ -5140,6 +5234,9 @@ func _dispatch_pickup_candidates(candidates: Array[Dictionary], repeat_override:
 	# nessun popup, si preleva direttamente quella — nessuna scelta reale da porre al player.
 	if available_candidates.size() == 1:
 		var chosen: Dictionary = available_candidates[0]
+		if int(chosen.get("source_kind", PickUpAction.SourceKind.TERRAIN)) == PickUpAction.SourceKind.TRAP:
+			_assign_manual_trap_empty(individual, int(chosen["trap_id"]))
+			return
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] _right_click_pickup: ritorna TRUE — unico candidato con scorta reale, %s_hit=%s" % [chosen["resource_name"], str(chosen)])
 		_assign_pickup_task(
@@ -5184,6 +5281,8 @@ func _build_pickup_pending_resources(available_candidates: Array[Dictionary]) ->
 			"source_kind": int(candidate.get("source_kind", PickUpAction.SourceKind.TERRAIN)),
 			"macro_coords": candidate["macro_coords"],
 			"position": candidate["position"],
+			"display_name": String(candidate.get("display_name", "")),
+			"trap_id": int(candidate.get("trap_id", 0)),
 		})
 	return pending_resources
 
@@ -5197,6 +5296,8 @@ const EXTRACTION_CHOICE_CUT := "cut"
 # Riga "Tutte le piante (N)" in testa all'elenco sotto "Taglia" (2026-10-07): serie su tutta la microcella cliccata.
 const CUT_ALL_PLANTS_KEY := "all_plants"
 const EXTRACTION_CHOICE_QUARRY := "quarry"
+# Scheda "Trappole" (2026-11-07): elenco delle trappole piazzabili sulla microcella (_right_click_trap).
+const EXTRACTION_CHOICE_TRAP := "trap"
 # Popup condiviso da taglio ed estrazione (solo scelta, niente quantità né ripetizione).
 var extraction_choice_dialog: OptionChoiceDialog
 # Popup aperto: {"individual", "candidates" (della raccolta, risolti al click)} più "plant" (risultato di
@@ -5433,6 +5534,10 @@ func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -
 			return
 		var plants: Dictionary = pending.get("plants", {})
 		_assign_cut_task(worker, plants.get(String(chosen_key) if chosen_key != null else "", pending["plant"]))
+	elif choice == EXTRACTION_CHOICE_TRAP:
+		var chosen_trap: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_TRAP)
+		if chosen_trap != null and String(chosen_trap) != "":
+			_assign_manual_trap_place(worker, String(chosen_trap), pending.get("trap_site", {}))
 	elif choice == EXTRACTION_CHOICE_QUARRY and pending.has("clay"):
 		_assign_dig_clay_task(worker, pending["clay"])
 	elif choice == EXTRACTION_CHOICE_QUARRY:
@@ -5679,6 +5784,9 @@ func _on_pickup_choice_made(kind: int, category: int, resource_name: String, qua
 		resource_name if kind == PickUpAction.CriterionKind.NAME else "")
 	if entry.is_empty():
 		return
+	if source_kind == PickUpAction.SourceKind.TRAP:
+		_assign_manual_trap_empty(individual, int(entry.get("trap_id", 0)))
+		return
 	var entry_resource: String = String(entry["resource_name"])
 	var entry_category: int = category if kind == PickUpAction.CriterionKind.CATEGORY else -1
 	_assign_pickup_task(
@@ -5781,7 +5889,8 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 	# Mucchio a terra (2026-09-26, ground drop): il contenuto del mucchio nella microcella del click compare
 	# INSIEME alle risorse naturali (non le nasconde più), ogni candidato con il proprio source_kind — il popup
 	# di scelta li distingue e il giocatore sceglie da dove raccogliere. Prima il mucchio (sta sopra), poi il resto.
-	var candidates: Array[Dictionary] = _resolve_ground_pile_pickup_candidates(current_absolute_day)
+	var candidates: Array[Dictionary] = _resolve_trap_pickup_candidates(current_absolute_day)
+	candidates.append_array(_resolve_ground_pile_pickup_candidates(current_absolute_day))
 
 	# STONE_POSITION (pebble) — UN blocco per lot_source (2026-09-19, refactor lot_source: prima un
 	# blocco per NOME risorsa scritto a mano; ora un loop su LotCapacityService.
@@ -5825,22 +5934,6 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 			_append_unlocked_pickup_candidate(candidates, "berry", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], false, include_locked)
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] plant_fiber_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(plant_fiber_lot_hit))
-
-	# Eggs (2026-09-18, richiesta utente — uova raccoglibili per microcella su GRASS) — MAI
-	# lot_source (stock aggregato ripartito per nido, non "capacità per lotto"): GRASS non ha un
-	# lotto persistito da colpire, STESSA tecnica generica di _resolve_microcell_at_click (qualunque
-	# lotto sotto il mouse), ma l'hit è valido solo se quel lotto è REALMENTE un nido in questo
-	# momento (macro_state.egg_nest_positions — stessa fonte di verità di TerrainScatteredResourceService.
-	# get_available("eggs", ...), ORA gated a monte su secondary_resource_stock["eggs"] > 0 — vedi
-	# compute_egg_nest_positions: fuori stagione/senza BIRDS l'insieme è già vuoto).
-	var egg_hit := _resolve_microcell_at_click()
-	if not egg_hit.is_empty():
-		var egg_cell: LiveMacroCell = live_cells.get(egg_hit["macro_coords"])
-		if egg_cell != null and egg_cell.macro_state != null and egg_cell.macro_state.egg_nest_positions.has(egg_hit["lot"]):
-			if FogOfWarVerificationService.is_detail_visible(live_cells, egg_hit["macro_coords"], egg_hit["lot"], current_absolute_day):
-				_append_unlocked_pickup_candidate(candidates, "eggs", egg_hit["macro_coords"], egg_hit["lot"], true, include_locked)
-			elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
-				print("[PICKUP CMD DEBUG] egg_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(egg_hit))
 
 	# GRASS_PATCH (wild_vegetables) — STESSA tecnica generica del blocco eggs sopra (GRASS non ha
 	# un lotto persistito da colpire), ma un loop su OGNI risorsa GRASS_PATCH (2026-09-19, refactor
@@ -6088,6 +6181,8 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 					stone_line = ""
 		if stone_line != "":
 			terrain_lines.append(stone_line)
+		if not terrain_lines.is_empty() or not pile_lines.is_empty():
+			MicroCellInspectionPanel.append_separator(lines)
 		if not terrain_lines.is_empty():
 			lines.append(tr("microcell_inspection_resources_header"))
 			lines.append_array(terrain_lines)
@@ -6095,7 +6190,29 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 			lines.append(tr("microcell_inspection_ground_pile_header"))
 			lines.append_array(pile_lines)
 
+	# Uccelli (2026-11-07): presenza calcolata solo qui al clic (BirdPresenceService), niente popolazione salvata.
+	if cell != null and cell.macro_cell != null:
+		var bird_level := BirdPresenceService.get_presence_level(cell.macro_state, cell.macro_cell.biome,
+			SeasonCalculator.get_season_for_day(game_data.current_day), lot)
+		MicroCellInspectionPanel.append_separator(lines)
+		lines.append(tr("microcell_inspection_birds").format({"level": tr(BIRD_PRESENCE_LEVEL_KEYS[bird_level])}))
+	# Trappole montate sulla microcella (2026-11-07, TrapService), sotto gli uccelli: prede prese ora su quante ne tiene.
+	for trap in TrapService.traps_at(game_data, macro_coords, lot):
+		var trap_rules := TrapService.get_rules(trap.trap_name)
+		lines.append(tr("microcell_inspection_trap").format({
+			"trap": IconRegistry.get_resource_display_name(trap.trap_name),
+			"caught": trap.get_caught(), "capacity": trap_rules.trap_capacity if trap_rules != null else 0,
+		}))
+
 	_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": lines})
+
+
+const BIRD_PRESENCE_LEVEL_KEYS := {
+	BirdPresenceService.Level.NONE: "bird_presence_none",
+	BirdPresenceService.Level.FEW: "bird_presence_few",
+	BirdPresenceService.Level.SOME: "bird_presence_some",
+	BirdPresenceService.Level.MANY: "bird_presence_many",
+}
 
 
 # Individui VIVI di `object_type` (TREE/SHRUB, mai GRASS — che non ha identità individuale, resta
@@ -7758,6 +7875,31 @@ func _on_event_decision_chosen(option_index: int, context: Variant) -> void:
 
 # Candidati di raccolta dal mucchio nella microcella del click (click destro): una voce per risorsa del mucchio,
 # con source_kind GROUND_PILE (PickUpAction). Vuoto se lì non c'è un mucchio o la microcella non è visibile.
+# Prede della trappola montata sulla microcella cliccata (2026-11-07, svuotamento manuale): un candidato "Uccelli (n)" con
+# sorgente TRAP, solo con almeno una preda dentro.
+func _resolve_trap_pickup_candidates(current_absolute_day: int) -> Array[Dictionary]:
+	var candidates: Array[Dictionary] = []
+	var hit := _resolve_microcell_at_click()
+	if hit.is_empty() or game_data == null:
+		return candidates
+	if not FogOfWarVerificationService.is_detail_visible(live_cells, hit["macro_coords"], hit["lot"], current_absolute_day):
+		return candidates
+	for trap in TrapService.traps_at(game_data, hit["macro_coords"], hit["lot"]):
+		var rules := TrapService.get_rules(trap.trap_name)
+		if rules == null or trap.get_caught() <= 0:
+			continue
+		candidates.append({
+			"resource_name": rules.trap_catch_resource,
+			"display_name": tr("trap_pickup_catch_birds") if rules.trap_quarry == TrapService.QUARRY_BIRDS else IconRegistry.get_resource_display_name(rules.trap_catch_resource),
+			"macro_coords": trap.macro_coords,
+			"position": trap.lot,
+			"available_quantity": trap.get_caught(),
+			"source_kind": PickUpAction.SourceKind.TRAP,
+			"trap_id": trap.id,
+		})
+	return candidates
+
+
 func _resolve_ground_pile_pickup_candidates(current_absolute_day: int) -> Array[Dictionary]:
 	var candidates: Array[Dictionary] = []
 	var hit := _resolve_microcell_at_click()
@@ -8302,6 +8444,8 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 	entries.append_array(_collect_damaged_building_entries())
 	# Materiali che nessuno riesce a portare (2026-10-16, MaterialSupplyService.get_materials_nobody_can_carry).
 	entries.append_array(_collect_too_heavy_material_entries())
+	# Trappole che nessuno riesce a portare alla zona (2026-11-07).
+	entries.append_array(TrapJobProvider.collect_nobody_can_carry_entries(_game_context()))
 	# Idea dell'assegnazione senza punto di assegnazione (2026-10-10): la coda non è attiva.
 	if JobBoardService.is_idea_completed(human_folk) and not board_enabled:
 		var no_point_text := tr("pending_no_assignment_point")
@@ -8752,7 +8896,40 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _heal_job_release,
 		})
+		# Piazza trappola (2026-11-07): trappole che mancano nelle zone, vedi TrapJobProvider.
+		_job_board_provider_list.append({
+			"name": "trap",
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return TrapJobProvider.collect(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return TrapJobProvider.rejection(_game_context(), worker, job),
+			"assign": _assign_trap_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return TrapJobProvider.workers(_game_context(), job),
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": true, "cancel_tooltip": ""},
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _trap_job_release,
+		})
 	return _job_board_provider_list
+
+
+# Piazza trappola presa dalla lista (2026-11-07): un solo lavoratore per zona e trappola.
+func _assign_trap_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var ctx := _game_context()
+	if not TrapJobProvider.workers(ctx, job).is_empty():
+		return
+	var task := TrapJobProvider.build_task(ctx, worker, job)
+	if task == null:
+		return
+	worker.assign_task(task, _resolve_age_band(worker))
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
+# Rimetti in coda / Blocca: il lavoro si ferma (una trappola già nello zaino torna al magazzino come carico orfano).
+func _trap_job_release(job: Dictionary) -> void:
+	for member in TrapJobProvider.workers(_game_context(), job):
+		if member.current_task != null and member.current_task.task_name in [TrapService.TASK_NAME, TrapService.EMPTY_TASK_NAME]:
+			member.skip_job_board_once = true
+			_stop_member_task(member)
 
 
 # Cura presa dalla lista (2026-10-25): un solo lavoratore per malato.
@@ -11964,6 +12141,12 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	cell.renderer = MicroCellRenderer.new()
 	cell.container.add_child(cell.renderer)
 	cell.renderer.setup(cell.world)
+	# Trappole montate (2026-11-07, TrapService): sopra il terreno, sotto la nebbia (aggiunta dopo).
+	var trap_layer := PlacedTrapLayer.new()
+	# Sopra chiome e oggetti del renderer, sotto la nebbia (z 2).
+	trap_layer.z_index = 1
+	cell.container.add_child(trap_layer)
+	trap_layer.setup(Vector2i(mx, my))
 
 	# Renderer animali: nessuno creato qui (2026-09-26) — nascono solo per le specie presenti, da
 	# _restore_saved_animal_individuals e dalla riconciliazione con la popolazione (_refresh_animal_
@@ -12712,14 +12895,13 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 	# anche dalle raccolte) più i soli lotti appena entrati in vista (_scattered_availability_for). Altrimenti
 	# scattered_newly_visible resta null e tutto si ricalcola come prima.
 	# Dal 2026-10-24 (progetto B fase 3) anche tra un giorno e l'altro: l'elenco della nebbia porta pure le microcelle
-	# uscite per scadenza ({"entered", "exited"}), i cui lotti si tolgono. Le uova no: il loro stock cambia coi giorni
-	# (consumo degli animali), quindi al primo ridisegno di un giorno nuovo si ricalcolano (scattered_eggs_changes null).
+	# uscite per scadenza ({"entered", "exited"}), i cui lotti si tolgono. Le uova dal 2026-11-07 sono lotti d'erba come
+	# gli altri (prima avevano una scorta che cambiava coi giorni e si ricalcolavano a parte).
 	var scattered_newly_visible: Variant = null
 	if allow_scattered_skip and cell.fog_of_war_renderer != null and not cell.needs_full_vegetation_recompute \
 			and cell.fog_of_war_renderer.is_visibility_day_current(game_data.get_absolute_day()) \
 			and cell.scattered_layout_version == cell.vegetation_layout_version:
 		scattered_newly_visible = cell.fog_of_war_renderer.get_visible_changes_since(cell.scattered_visible_epoch, cell.scattered_visible_version)
-	var scattered_eggs_changes: Variant = scattered_newly_visible if cell.scattered_cache_day == game_data.get_absolute_day() else null
 	_scattered_new_lots_added = 0
 	_scattered_lots_removed = 0
 	# Tempo dei MultiMesh di bastoni/sassi (qui) e uova/lotti d'erba (sotto), sommati in "1c_scattered_multimeshes".
@@ -12805,16 +12987,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 			cell.macro_state.vegetation_layout_checkpoint = game_data.vegetation_checkpoint_count
 		else:
 			cell.cached_vegetation_positions = VegetationLayoutService.read(cell.macro_state, occupied, game_data.year, building_positions)
-		# Nidi "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella) — ricalcolati
-		# alla STESSA cadenza delle posizioni GRASS appena sopra (mai una cadenza a parte: i nidi sono
-		# per costruzione un sottoinsieme di QUESTE posizioni, vedi TerrainScatteredResourceService.
-		# compute_egg_nest_positions/MacroCellState.egg_nest_positions) — GRASS non ha un lotto
-		# persistito a differenza di TREE/SHRUB, quindi questo è l'UNICO punto in cui l'insieme nidi
-		# di questa cella può essere aggiornato.
-		cell.macro_state.egg_nest_positions = TerrainScatteredResourceService.compute_egg_nest_positions(
-			cell.macro_state, cell.cached_vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
-		)
-		# Lotti GRASS_PATCH (wild_vegetables) — STESSO principio di egg_nest_positions appena sopra:
+		# Lotti GRASS_PATCH (wild_vegetables, erbe medicinali e dal 2026-11-07 anche le uova):
 		# ricalcolati alla STESSA cadenza delle posizioni GRASS (mai una cadenza a parte), GRASS non
 		# ha un lotto persistito a differenza di TREE/SHRUB, quindi questo è l'UNICO punto in cui
 		# l'insieme lotti di questa cella può essere aggiornato. Loop su OGNI risorsa GRASS_PATCH
@@ -12830,25 +13003,12 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 	var vegetation_positions: Dictionary = cell.cached_vegetation_positions
 	_veg_timings_ms["1_position_generation"] = (Time.get_ticks_usec() - _step_start_usec) / 1000.0
 
-	# Rendering nidi "eggs" (2026-09-18, richiesta utente) — MIRROR di set_stick_availability/
-	# set_pebble_availability sopra: chiamato SEMPRE ad ogni refresh (non solo quando le posizioni-nido
-	# sono state appena rigenerate, esattamente come stick/pebble sopra), perché la visibilità FoW e
-	# la disponibilità (stock/raccolto) possono cambiare anche senza un rigenero vegetazione. Un solo
-	# lookup per posizione-nido candidata (TerrainScatteredResourceService.get_egg_stock_available_at,
-	# la STESSA funzione di disponibilità residua già usata da pickup/ispezione — nessun secondo
-	# calcolo) — solo le posizioni con disponibilità > 0 entrano nel Dictionary passato al renderer,
-	# così un nido fuori stagione/senza birds/già raccolto semplicemente non compare (mai un'istanza
-	# multimesh sprecata per un nido vuoto).
 	_scattered_start_usec = Time.get_ticks_usec()
 	# Taglio per lotto: nidi e lotti d'erba stanno solo su lotti d'erba, che un taglio di albero o arbusto non tocca.
 	if cut_patched:
-		skipped.append("eggs")
 		skipped.append("grass_patch")
 	elif cell.renderer != null:
-		if not _apply_scattered_availability(cell, "eggs", _scattered_availability_for(cell, "eggs", "eggs", cell.macro_state.egg_nest_positions, visible_positions, scattered_eggs_changes), allow_scattered_skip, func(availability: Dictionary) -> void: cell.renderer.set_egg_nest_availability(availability)):
-			skipped.append("eggs")
-
-		# Rendering lotti GRASS_PATCH (2026-09-19) — MIRROR del blocco eggs appena sopra, stesso
+		# Rendering lotti GRASS_PATCH (2026-09-19; dal 2026-11-07 anche le uova, che il renderer disegna col nido) — stesso
 		# helper condiviso (_build_lot_availability_map), ora un loop su OGNI risorsa GRASS_PATCH
 		# (richiesta utente, erbe medicinali: prima un setter hardcoded per "wild_vegetables").
 		# La FORMA del marker di ciascuna vive nel renderer (MicroCellRenderer.GRASS_PATCH_MARKER_
@@ -12866,8 +13026,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 		cell.scattered_visible_epoch = cell.fog_of_war_renderer.get_newly_visible_epoch()
 		cell.scattered_visible_version = cell.fog_of_war_renderer.visible_set_version
 		cell.scattered_layout_version = cell.vegetation_layout_version
-	var scattered_mode_text: String = "ricalcolate" if scattered_newly_visible == null else "memoria (+%d lotti, -%d lotti%s)" % [
-		_scattered_new_lots_added, _scattered_lots_removed, "" if scattered_eggs_changes != null else ", uova ricalcolate"
+	var scattered_mode_text: String = "ricalcolate" if scattered_newly_visible == null else "memoria (+%d lotti, -%d lotti)" % [
+		_scattered_new_lots_added, _scattered_lots_removed
 	]
 
 	# Proposta 2 (filtro FoW): il renderer riceve solo le posizioni che il FoW mostrerebbe comunque
@@ -13260,9 +13420,6 @@ func _refresh_collected_resource_visuals(cell: LiveMacroCell, collected: Diction
 				_apply_scattered_availability(cell, "pebble", _visible_lot_availability(cell, "pebble", cell.macro_state.stone_positions, visible_positions), false, pebble_apply)
 				pebble_outcome = "rimontato (calcolo completo)"
 			updated.append("pebble: " + pebble_outcome)
-		elif resource_key == "eggs":
-			_apply_scattered_availability(cell, "eggs", _visible_lot_availability(cell, "eggs", cell.macro_state.egg_nest_positions.keys(), visible_positions), false, func(availability: Dictionary) -> void: cell.renderer.set_egg_nest_availability(availability))
-			updated.append(resource_key)
 		elif grass_patch_names.has(resource_key):
 			var patch_apply := func(availability: Dictionary) -> void: cell.renderer.set_grass_patch_availability(resource_key, availability)
 			var patch_lots: Dictionary = cell.macro_state.lot_capacity_cache.get(resource_key, {})
@@ -14241,6 +14398,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Tettoia dell'acqua (2026-11-06) — azione cablata in BuildBar._ready.
 		&"build_water_shelter":
 			return "water_shelter"
+		# Capanna del trappoliere (2026-11-07) — azione cablata in BuildBar._ready.
+		&"build_trapper_hut":
+			return "trapper_hut"
 		_:
 			return ""
 
@@ -14783,6 +14943,8 @@ func _toggle_warehouse_drawer() -> void:
 	elif human_folk != null and human_folk.completed_ideas.has(WarehousePanel.REQUIRED_IDEA_ID):
 		_layout_side_drawer()
 		_warehouse_panel = WarehousePanel.new()
+		# Regole legate a un edificio (2026-11-07): solo con almeno un edificio finito che le usa.
+		_warehouse_panel.set_available_rules(WarehousePanel.available_rules_for(macro_world))
 		# Livelli minimi (2026-10-10): dati della partita, come la soglia della riparazione.
 		_warehouse_panel.set_min_levels(game_data.stock_min_levels, game_data.stock_min_food_days)
 		_warehouse_panel.min_level_changed.connect(func(resource_name: String, level: int) -> void:
@@ -14817,6 +14979,17 @@ func _toggle_warehouse_drawer() -> void:
 		# Regola "Acqua per tettoia" (2026-11-07, giare passo 3): dato della partita, ordini da WaterShelterStockService.
 		_warehouse_panel.set_water_rule(game_data.stock_water_per_shelter, WaterShelterStockService.max_water_per_shelter(), game_data.stock_runtime.water_jars_missing)
 		_warehouse_panel.water_per_shelter_changed.connect(func(level: int) -> void: game_data.stock_water_per_shelter = level)
+		# Regola "Trappole per zona" (2026-11-07): dato della partita per tipo di trappola, lavori da TrapJobProvider.
+		var trap_rows: Array[Dictionary] = []
+		for trap_name in TrapService.list_trap_names():
+			trap_rows.append({"trap": trap_name, "level": int(game_data.stock_traps_per_zone.get(trap_name, 0))})
+		_warehouse_panel.set_trap_rule(trap_rows)
+		_warehouse_panel.trap_per_zone_changed.connect(func(trap_name: String, level: int) -> void:
+			if level > 0:
+				game_data.stock_traps_per_zone[trap_name] = level
+			else:
+				game_data.stock_traps_per_zone.erase(trap_name)
+		)
 		# Regola "Rifornisci le Attrezzerie" (2026-10-18): dati della partita, per tipo di edificio e attrezzo.
 		_warehouse_panel.set_toolkit_rule(game_data.stock_toolkit_rule_enabled, ToolkitStockService.get_rule_rows(game_data, human_folk.completed_ideas))
 		_warehouse_panel.toolkit_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_toolkit_rule_enabled = enabled)
@@ -15684,7 +15857,7 @@ func _place_building_at(world_position: Vector2) -> void:
 
 	# Sottrae lo spazio dell'edificio dal budget vegetazione della macrocella — stesso meccanismo
 	# generico già usato per ROCK (MacroCellState.dedicated_space), mai un campo dedicato a parte
-	# come river_space: get_empty_space()/get_land_growth_surplus() lo vedono automaticamente al
+	# come river_space: get_empty_space() lo vede automaticamente al
 	# prossimo controllo, nessun ricalcolo stagionale da aggiungere qui. Sommato (non sovrascritto)
 	# al valore già presente, per supportare più edifici nella stessa macrocella.
 	var current_building_space := state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING)
@@ -16335,12 +16508,6 @@ func _refresh_rubble_visuals(cell: LiveMacroCell, lots: Array) -> bool:
 	if not is_same(render_positions, cell.cached_vegetation_positions):
 		render_positions[grass_type] = _grass_without_lots(render_positions.get(grass_type, []), removed)
 	cell.renderer.set_grass_positions(render_positions.get(grass_type, []))
-	var nests_changed := false
-	for lot in removed:
-		if cell.macro_state.egg_nest_positions.erase(lot):
-			nests_changed = true
-	if nests_changed:
-		_apply_scattered_availability(cell, "eggs", _visible_lot_availability(cell, "eggs", cell.macro_state.egg_nest_positions.keys(), cell.last_visible_positions), false, func(availability: Dictionary) -> void: cell.renderer.set_egg_nest_availability(availability))
 	for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.GRASS_PATCH):
 		var patch_lots: Dictionary = cell.macro_state.lot_capacity_cache.get(resource_name, {})
 		var patch_apply := func(availability: Dictionary) -> void: cell.renderer.set_grass_patch_availability(resource_name, availability)
@@ -16491,6 +16658,13 @@ func _connect_storage_refresh_signals(step: Action) -> void:
 	elif step is PutJarAction:
 		if not (step as PutJarAction).jar_moved.is_connected(_on_resource_deposited):
 			(step as PutJarAction).jar_moved.connect(_on_resource_deposited)
+	elif step is TakeSoupIngredientsAction:
+		# Zuppa di casa (2026-11-07): ingredienti presi dal magazzino, ciotola posata in casa.
+		if not (step as TakeSoupIngredientsAction).storage_changed.is_connected(_on_resource_deposited):
+			(step as TakeSoupIngredientsAction).storage_changed.connect(_on_resource_deposited)
+	elif step is CookSoupAction:
+		if not (step as CookSoupAction).storage_changed.is_connected(_on_resource_deposited):
+			(step as CookSoupAction).storage_changed.connect(_on_resource_deposited)
 	elif step is DrinkAction:
 		# Bevuta alla Tettoia dell'acqua (2026-11-07): le giare cambiano.
 		if not (step as DrinkAction).shelter_used.is_connected(_on_resource_deposited):

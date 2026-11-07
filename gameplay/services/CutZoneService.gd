@@ -107,6 +107,9 @@ static func list_available_plants_in_lot(
 		return plants
 	if individual != null and not HaulZoneService.is_cell_reachable(individual, macro_coords, lot):
 		return plants
+	# Microcella con una trappola montata (2026-11-07): le sue piante non si tagliano.
+	if TrapService.trap_lots(GameSettings.active_game_data, macro_coords).has(lot):
+		return plants
 	# Individui del lotto dall'indice condiviso (VegetationLotIndex, 2026-10-28), non più un giro su tutte le piante.
 	for object_type in PLANT_OBJECT_TYPES:
 		for key in VegetationLotIndex.keys_in_lot(cell.macro_state, object_type, lot):
@@ -199,11 +202,13 @@ static func list_available_plants(
 	if cell == null or cell.macro_state == null:
 		return plants
 	var reachable_by_lot: Dictionary = {}
+	# Microcelle con una trappola montata (2026-11-07): le loro piante non si tagliano.
+	var trap_lots := TrapService.trap_lots(GameSettings.active_game_data, area.macro_coords)
 	for object_type in PLANT_OBJECT_TYPES:
 		for key in cell.cached_vegetation_positions.get(object_type, []):
 			var individual_key: Vector3i = key
 			var lot := Vector2i(individual_key.x, individual_key.y)
-			if not area.rect.has_point(lot):
+			if not area.rect.has_point(lot) or trap_lots.has(lot):
 				continue
 			if reserved.has(_plant_reservation_key(area.macro_coords, object_type, individual_key)):
 				continue

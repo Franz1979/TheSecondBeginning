@@ -22,5 +22,9 @@ var clay: Dictionary = {}
 var stream_fish: Dictionary = {}
 # Candidati della raccolta nel punto (GameScene._resolve_pickup_candidates), già filtrati dalla nebbia.
 var pickup_candidates: Array[Dictionary] = []
+# Microcella cliccata visibile in dettaglio ({"macro_coords", "lot"}), {} = nessuna, e le trappole che ci si possono
+# piazzare a mano (TrapService.placeable_traps), 2026-11-07.
+var trap_site: Dictionary = {}
+var trap_place_options: Array[Dictionary] = []
 # Edificio colpito; null = nessuno.
 var building: Building = null

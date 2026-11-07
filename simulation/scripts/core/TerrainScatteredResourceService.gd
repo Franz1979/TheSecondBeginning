@@ -9,9 +9,7 @@ extends RefCounted
 #   - SecondaryResourceRules.lot_source != NONE (pebble/stick/plant_fiber/mushroom/
 #     wild_vegetables) -> LotCapacityService, il servizio generico per l'intera famiglia "capacità
 #     per lotto" — aggiungerne una nuova costa solo un .tres, nessuna riga qui.
-#   - "eggs" -> stock aggregato ripartito per nido (get_egg_stock_available_at/
-#     consume_egg_stock_at sotto), modello indipendente da lot_source (GRASS non ha un registro
-#     per-individuo da cui derivare un peso "vero", vedi quei due file).
+#   - "eggs": dal 2026-11-07 (richiesta utente, uova senza BIRDS) è anch'essa lot_source GRASS_PATCH, nel primo ramo.
 #   - FRUIT_STOCK_SOURCES (berry/acorn/fruit) -> stock aggregato ripartito per peso di individui
 #     TREE/SHRUB (get_fruit_stock_available_at/consume_fruit_stock_at sotto).
 #
@@ -49,21 +47,19 @@ static func get_available_ignoring_lock(macro_state: MacroCellState, resource_na
 
 # Vero se `resource_name` puo' comparire tra le risorse raccoglibili a terra (2026-09-20, richiesta utente — menu
 # Opzioni "preselezione raccolta": elenca TUTTE le risorse raccoglibili, non solo quelle presenti in una cella).
-# STESSE tre famiglie di _get_available_unlocked/consume: lot_source != NONE, "eggs", FRUIT_STOCK_SOURCES;
+# STESSE famiglie di _get_available_unlocked/consume: lot_source != NONE (uova comprese), FRUIT_STOCK_SOURCES;
 # fish_meat/bird_meat e simili non lo sono. Indipendente dal blocco per idea (una risorsa bloccata e' comunque
 # raccoglibile in linea di principio).
 static func is_pickable(resource_name: String) -> bool:
 	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if rules != null and rules.lot_source != SecondaryResourceTypes.LotSource.NONE:
 		return true
-	return resource_name == "eggs" or FRUIT_STOCK_SOURCES.has(resource_name)
+	return FRUIT_STOCK_SOURCES.has(resource_name)
 
 
 static func _get_available_unlocked(macro_state: MacroCellState, resource_name: String, position: Vector2i, rules: SecondaryResourceRules) -> int:
 	if rules != null and rules.lot_source != SecondaryResourceTypes.LotSource.NONE:
 		return LotCapacityService.get_available(macro_state, resource_name, position, rules)
-	if resource_name == "eggs":
-		return get_egg_stock_available_at(macro_state, position)
 	if FRUIT_STOCK_SOURCES.has(resource_name):
 		return get_fruit_stock_available_at(resource_name, macro_state, position)
 	return 0
@@ -83,9 +79,6 @@ static func consume(macro_state: MacroCellState, resource_name: String, position
 	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if rules != null and rules.lot_source != SecondaryResourceTypes.LotSource.NONE:
 		LotCapacityService.consume(macro_state, resource_name, position, quantity, rules)
-		return
-	if resource_name == "eggs":
-		consume_egg_stock_at(macro_state, position, quantity)
 		return
 	if FRUIT_STOCK_SOURCES.has(resource_name):
 		consume_fruit_stock_at(resource_name, macro_state, position, quantity)
@@ -468,110 +461,3 @@ static func apply_cut_fruit_weights(macro_state: MacroCellState, object_type: Ga
 			cache["total"] = maxf(float(cache["total"]) - weight, 0.0)
 			cache["revision"] = int(cache.get("revision", 0)) + 1
 		cache["primary_resource_quantity"] = quantity
-
-
-# "Nidi" per eggs (2026-09-18, richiesta utente — uova raccoglibili per microcella, STESSO modello
-# di stock aggregato/derivazione al volo della famiglia "fruit stock" sopra, ma con una differenza
-# strutturale: berry/acorn/fruit derivano il peso per lotto da un registro PERSISTITO di individui
-# TREE/SHRUB (tree_individual_subtype/shrub_individual_subtype), che GRASS non ha (nessuna identità
-# individuale, vedi VegetationPositionService) — quindi qui non c'è un registro da cui leggere un
-# peso "vero": il peso di ogni nido è invece esso stesso deterministico da hash (vedi
-# compute_egg_nest_positions sotto, aggiornato 2026-09-18 — "rendi il peso variabile per nido": PRIMA
-# ogni nido pesava esattamente 1, ora un valore in SecondaryResourceRules.patch_weight_min/max). Per
-# lo stesso motivo per cui il peso non può essere ricostruito da un registro, dipende dalle
-# posizioni GRASS CORRENTI, che vivono solo nella cache runtime di GameScene/LiveMacroCell — è
-# GameScene._refresh_resource_visuals a scrivere MacroCellState.egg_nest_positions ogni volta che
-# rigenera quelle posizioni (vedi commento su quel campo), MAI questo file, che si limita a leggerlo.
-
-
-# Sottoinsieme deterministico di `grass_positions` (Array[Vector2i], le posizioni GRASS CORRENTI di
-# una macrocella — tipicamente cell.cached_vegetation_positions[GameTypes.WorldObjectType.GRASS]):
-# Vector2i (nido) -> float (peso, vedi sotto). Membership scelta con hash(str(micro_seed) + salt)
-# sulla posizione, filtrato dalla soglia SecondaryResourceRules.patch_probability di eggs.tres —
-# STESSO idioma di ResourcePositionService._passes_soft_threshold/_priority_hash (hash puro di
-# posizione+seed, mai randf(): stesso seed => stesso risultato sempre, indipendentemente da quando/
-# quante volte viene chiamato). rules == null o patch_probability <= 0.0 (nessuna .tres valorizzata,
-# vedi default in SecondaryResourceRules) -> {} (nessun nido), mai un errore.
-#
-# Peso per nido (2026-09-18, richiesta utente — "i nidi hanno tutti peso uniforme... rendi il peso
-# variabile", altrimenti ogni macrocella distribuirebbe sempre lo stesso numero esatto di uova per
-# nido): un SECONDO hash della stessa posizione, con un SALT DIVERSO da quello di membership sopra
-# (mai lo stesso — altrimenti "essere un nido" e "quanto pesa" sarebbero perfettamente correlati
-# invece che indipendenti, es. sempre i nidi più vicini alla soglia col peso più alto/basso),
-# interpolato linearmente in [patch_weight_min, patch_weight_max]. Deterministico come la membership:
-# stesso seed => stesso peso sempre, nessun randf().
-#
-# BUGFIX (2026-09-18, richiesta utente — "il pickup viene offerto anche dove non ci sono uova, e
-# l'ispezione mostra uova=0 invece di dire solo erba"): PRIMA questa funzione ignorava del tutto
-# secondary_resource_stock["eggs"] — un lotto passava il test hash ed entrava in egg_nest_positions
-# anche con stock aggregato a 0 (fuori dalla stagione delle uova, o in una macrocella senza BIRDS),
-# quindi risultava un "nido" geometricamente valido ma perennemente vuoto. Una posizione è un nido
-# SOLO quando esistono davvero uova per la macrocella: stock <= 0.0 -> {} (nessun nido affatto),
-# PRIMA di risolvere rules/hashare le posizioni — un aggregato pari a zero rende comunque zero ogni
-# singola quota (stock × peso/peso_totale), quindi questo early-out non cambia MAI il risultato
-# finale di get_egg_stock_available_at, si limita a farlo scattare più a monte (niente candidati/
-# render per lotti che sarebbero comunque risultati a 0). Ricalcolata alla stessa cadenza di
-# egg_nest_positions (GameScene._refresh_resource_visuals, invalidata ad ogni checkpoint stagionale
-# su TUTTE le celle vive — vedi _on_day_advanced/checkpoint_ran), quindi resta sempre coerente con
-# lo stock corrente.
-static func compute_egg_nest_positions(macro_state: MacroCellState, grass_positions: Array) -> Dictionary:
-	if macro_state.get_secondary_resource_stock("eggs") <= 0.0:
-		return {}
-	var rules := CaloricCalculator.get_caloric_source_rules("eggs")
-	if rules == null or rules.patch_probability <= 0.0:
-		return {}
-	var nest_seed: int = hash(str(macro_state.micro_seed) + "_eggs_nest")
-	var weight_seed: int = hash(str(macro_state.micro_seed) + "_eggs_nest_weight")
-	var nests: Dictionary = {}
-	for pos in grass_positions:
-		var lot := Vector2i(pos.x, pos.y)
-		var hash_value: float = float(hash(lot * 3 + Vector2i(nest_seed, 727)) % 100000) / 100000.0
-		if hash_value < rules.patch_probability:
-			var weight_hash: float = float(hash(lot * 5 + Vector2i(weight_seed, 419)) % 100000) / 100000.0
-			nests[lot] = lerp(rules.patch_weight_min, rules.patch_weight_max, weight_hash)
-	return nests
-
-
-# Peso totale dei nidi di una macrocella — somma di egg_nest_positions.values(), estratta a parte
-# solo perché get_egg_stock_available_at sotto la userebbe come denominatore comune per OGNI
-# chiamata sulla stessa macrocella (nessuna cache: il Dictionary è già piccolo, tipicamente poche
-# decine di nidi, e già ricalcolato alla cadenza di egg_nest_positions — sommarlo ad ogni query
-# resta economico, stesso principio "niente cache dove non serve" già seguito per nest_count prima
-# di questo passo).
-static func _get_egg_nest_total_weight(macro_state: MacroCellState) -> float:
-	var total: float = 0.0
-	for weight in macro_state.egg_nest_positions.values():
-		total += float(weight)
-	return total
-
-
-# Disponibilità REALE del nido: quota nominale (stock aggregato × peso_nido / peso_totale — vedi
-# compute_egg_nest_positions sopra per come nasce il peso, ora variabile per nido) meno quanto già
-# raccolto DA UMANI in questo nido quest'anno (MacroCellState.eggs_harvested_by_lot). Il TOTALE
-# raccoglibile in una macrocella non cambia rispetto al vecchio peso uniforme (la somma di
-# stock×peso/peso_totale su tutti i nidi resta sempre stock, per costruzione) — cambia solo come si
-# distribuisce tra nidi ricchi (peso vicino a patch_weight_max) e poveri (vicino a patch_weight_min).
-# `position` non in egg_nest_positions (mai stato un nido, o non lo è più dopo un rigenero — vedi
-# commento su quel campo) -> 0, nessuna eccezione.
-static func get_egg_stock_available_at(macro_state: MacroCellState, position: Vector2i) -> int:
-	if not macro_state.egg_nest_positions.has(position):
-		return 0
-	var total_weight: float = _get_egg_nest_total_weight(macro_state)
-	if total_weight <= 0.0:
-		return 0
-	var lot_weight: float = float(macro_state.egg_nest_positions[position])
-	var stock: float = macro_state.get_secondary_resource_stock("eggs")
-	var nominal: int = int(floor(stock * lot_weight / total_weight))
-	var harvested: int = int(macro_state.eggs_harvested_by_lot.get(position, 0))
-	return max(nominal - harvested, 0)
-
-
-# Scala l'aggregato (stesso principio esplicito di consume_fruit_stock_at sopra — "è il punto in
-# cui la raccolta umana toglie cibo agli animali") E incrementa eggs_harvested_by_lot[position]:
-# STESSO schema di consume_fruit_stock_at, ma senza il livello aggiuntivo per resource_name (eggs è
-# l'unica risorsa di questa famiglia, vedi MacroCellState.eggs_harvested_by_lot).
-static func consume_egg_stock_at(macro_state: MacroCellState, position: Vector2i, quantity: int) -> void:
-	var stock_before: float = macro_state.get_secondary_resource_stock("eggs")
-	macro_state.set_secondary_resource_stock("eggs", stock_before - float(quantity))
-	var harvested_before: int = int(macro_state.eggs_harvested_by_lot.get(position, 0))
-	macro_state.eggs_harvested_by_lot[position] = harvested_before + quantity

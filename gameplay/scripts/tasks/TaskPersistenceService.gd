@@ -286,6 +286,18 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.TAKE_JAR
 	if step is PutJarAction:
 		return TaskTypes.ActionType.PUT_JAR
+	# TAKE_TRAP / SET_TRAP (2026-11-07, trappole), aggiunte insieme ai propri case in _build_step.
+	if step is TakeTrapAction:
+		return TaskTypes.ActionType.TAKE_TRAP
+	if step is SetTrapAction:
+		return TaskTypes.ActionType.SET_TRAP
+	if step is EmptyTrapAction:
+		return TaskTypes.ActionType.EMPTY_TRAP
+	# TAKE_SOUP_INGREDIENTS / COOK_SOUP (2026-11-07, zuppa di casa), aggiunte insieme ai propri case in _build_step.
+	if step is TakeSoupIngredientsAction:
+		return TaskTypes.ActionType.TAKE_SOUP_INGREDIENTS
+	if step is CookSoupAction:
+		return TaskTypes.ActionType.COOK_SOUP
 	if step is FishAction:
 		return TaskTypes.ActionType.FISH
 	# REPAIR (2026-10-10, RepairAction, repair.tres), aggiunta insieme al proprio case in _build_step.
@@ -588,6 +600,21 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			step = TakeJarAction.new(_find_building_by_id(world, int(step_data.get("jar_building_id", -1))))
 		TaskTypes.ActionType.PUT_JAR:
 			step = PutJarAction.new(_find_building_by_id(world, int(step_data.get("jar_building_id", -1))))
+		TaskTypes.ActionType.TAKE_TRAP:
+			# L'edificio per id; il tempo trascorso da load_save_data.
+			step = TakeTrapAction.new(_find_building_by_id(world, int(step_data.get("trap_building_id", -1))))
+		TaskTypes.ActionType.SET_TRAP:
+			step = SetTrapAction.new()
+		TaskTypes.ActionType.EMPTY_TRAP:
+			# La trappola della tappa (giro delle trappole, 2026-11-07) nel costruttore: load_save_data vale solo per lo step corrente.
+			step = EmptyTrapAction.new(int(step_data.get("trap_id", 0)))
+		TaskTypes.ActionType.TAKE_SOUP_INGREDIENTS:
+			# Magazzino per id (quello che manca è nel context della Task); il tempo da load_save_data.
+			step = TakeSoupIngredientsAction.new(_find_building_by_id(world, int(step_data.get("soup_building_id", -1))))
+		TaskTypes.ActionType.COOK_SOUP:
+			step = CookSoupAction.new(
+				_find_building_by_id(world, int(step_data.get("soup_house_id", -1))), step_data.get("soup_ingredients", {})
+			)
 		TaskTypes.ActionType.FISH:
 			# La microcella del ruscello; il tempo del tentativo in corso da load_save_data.
 			step = FishAction.new(

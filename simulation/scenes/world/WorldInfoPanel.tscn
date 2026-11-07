@@ -117,10 +117,6 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
-[node name="EggsNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
 [node name="RisorseTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
@@ -153,14 +149,6 @@ theme_override_font_sizes/font_size = 13
 
 [node name="FishSummaryContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
 layout_mode = 2
-
-[node name="BirdsSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="BirdsSummaryLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
 
 [node name="ActionsContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer" unique_id=1311435228]
 layout_mode = 2

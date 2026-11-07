@@ -29,12 +29,6 @@ var river_space: int = 0
 # terrestre, esiste solo entro la capacità restituita da
 # ResourceCalculator.get_water_capacity_space() (TOTAL_SPACE per SEA/LAKE, river_space per RIVER).
 var water_dedicated_space: Dictionary = {}
-# Budget separato per fauna terrestre "passiva" (oggi solo BIRDS), stesso principio di
-# water_dedicated_space sopra: mai sommato in get_total_dedicated_space()/get_empty_space(),
-# esiste solo entro la capacità restituita da ResourceCalculator.get_land_capacity_space()
-# (TOTAL_SPACE - river_space per terrain non-WATER) — non compete con TREE/GRASS/SHRUB/ROCK per
-# lo stesso spazio fisico, esattamente come FISH non compete con la vegetazione.
-var terrestrial_dedicated_space: Dictionary = {}
 var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: float, trigger_absolute_day: int, duration_years: int}
 # Surplus di crescita non piazzato dall'encroachment a fine primavera, in attesa che il
 # checkpoint di inizio primavera dell'anno successivo lo trasformi in trasferimenti verso le
@@ -267,44 +261,8 @@ var berry_harvested_by_lot: Dictionary = {}
 # che risolve. NON persistito (come berry_weight_cache sopra): dopo un load parte vuoto, innocuo —
 # al più forza un primo ricalcolo in più alla prossima query, mai un dato mancante.
 var berry_harvested_revision: Dictionary = {}
-# Nidi per "eggs" (2026-09-18, richiesta utente — uova raccoglibili per microcella, STESSO modello
-# di berry ma su GRASS invece che TREE/SHRUB): Vector2i -> float (peso del nido, NON un booleano —
-# aggiornato 2026-09-18, richiesta utente "rendi il peso variabile per nido": prima ogni nido
-# pesava esattamente 1, ora un valore deterministico in SecondaryResourceRules.patch_weight_min/
-# max di eggs.tres — RINOMINATO da nest_weight_min/max il 2026-09-19, richiesta utente:
-# wild_vegetables (lot_source GRASS_PATCH, vedi lot_capacity_cache sopra) usa lo STESSO meccanismo di selezione posizione
-# su GRASS, campo patch_probability condiviso, "nest"->"patch" generico —, così la ripartizione
-# stock × peso_nido / peso_totale — TerrainScatteredResourceService.get_egg_stock_available_at —
-# distribuisce più uova ai nidi "ricchi" che a quelli "poveri" invece che in parti uguali).
-# Sottoinsieme deterministico delle posizioni GRASS correnti della macrocella (TerrainScattered
-# ResourceService.compute_egg_nest_positions, due hash sulla stessa posizione con salt diversi —
-# uno decide SE è un nido con soglia patch_probability, l'altro QUANTO pesa). Cache RUNTIME, NON
-# persistita (come berry_weight_cache sopra) — GRASS non ha
-# identità individuale/lotti persistiti a differenza di TREE/SHRUB (vedi VegetationPositionService),
-# quindi non esiste un dato "a monte" da cui ri-derivarla da sola: è GameScene._refresh_resource_
-# visuals a scriverla qui ogni volta che rigenera le posizioni GRASS della cella (stessa cadenza,
-# mai una cadenza a parte). Un lotto uscito da questo insieme dopo un rigenero (erba non più lì,
-# edificio nuovo, ecc.) semplicemente non c'è più: TerrainScatteredResourceService.get_egg_stock_
-# available_at lo tratta come "non un nido", 0 disponibile, nessun errore — eggs_harvested_by_lot
-# sotto può contenere entry stantie per quel lotto, mai lette.
-var egg_nest_positions: Dictionary = {}
-# Raccolto DA UMANI per nido (2026-09-18, richiesta utente) — Vector2i -> int, STESSO principio di
-# berry_harvested_by_lot sopra ma FLAT (non annidato per resource_name: "eggs" è l'unica risorsa di
-# questo tipo, nessuna preparazione per una seconda in questo passo, a differenza della catena
-# "fruit stock" generica). Sottratto dalla quota nominale derivata al volo (stock/numero_nidi,
-# TerrainScatteredResourceService.get_egg_stock_available_at) e incrementato dalla raccolta
-# (consume_egg_stock_at). Azzerato per intero SOLO quando il moltiplicatore stagionale di eggs SALE
-# rispetto alla stagione precedente (eggs.tres: [0.0, 1.0, 0.0, 0.0] — sale solo inverno->primavera,
-# la sola vera "ricomparsa" di questa fonte, vedi WorldTimeService._run_secondary_resource_stock_
-# checkpoint), mai quando scende. PERSISTITO in GameSaveService/GameLoadService (chiave
-# "eggs_harvested_by_lot", formato {x,y,harvested} — stesso stile di stick_quantities ma senza
-# checkpoint_day/capacity, stesso motivo di berry_harvested_by_lot: la freschezza la dà
-# l'azzeramento stagionale esplicito). Le posizioni-nido stesse (egg_nest_positions sopra) NON sono
-# invece persistite: si rigenerano, un'entry qui per un lotto che dopo il rigenero non è più un
-# nido resta semplicemente inerte (vedi commento su egg_nest_positions).
-var eggs_harvested_by_lot: Dictionary = {}
-# "Lotti" per wild_vegetables (2026-09-19) — a differenza di egg_nest_positions/eggs_harvested_by_
-# lot sopra (famiglia a stock aggregato, invariata da questo refactor), wild_vegetables è ora una
+# "Lotti" per wild_vegetables (2026-09-19; dal 2026-11-07 anche le uova, che prima avevano nidi e registro propri) —
+# wild_vegetables è ora una
 # risorsa lot_source=GRASS_PATCH: la sua capacità RUNTIME vive in lot_capacity_cache["wild_
 # vegetables"] (scritta da LotCapacityService.refresh_grass_patch_lot_capacity, stessa cadenza di
 # prima — GameScene._refresh_resource_visuals, ogni volta che le posizioni GRASS vengono
@@ -315,13 +273,12 @@ var eggs_harvested_by_lot: Dictionary = {}
 # convertito in "spazio equivalente" (unità/densità) è quasi sempre < 1 unità intera — invece
 # di arrotondare e perdere la frazione ogni giorno, si accumula qui finché non supera 1.0, momento in cui dedicated_space[GRASS] viene davvero decrementato.
 var pending_grass_space_debt: float = 0.0
-# Stesso meccanismo di pending_grass_space_debt sopra, sul pesce (water_dedicated_space[FISH]) e
-# sugli uccelli (terrestrial_dedicated_space[BIRDS]) consumati dagli animali. Campi separati (non
+# Stesso meccanismo di pending_grass_space_debt sopra, sul pesce (water_dedicated_space[FISH]) consumato dagli
+# animali (il gemello sugli uccelli è stato tolto con BIRDS il 2026-11-07). Campo separato (non
 # un Dictionary unico) per restare coerenti con lo schema già in uso per GRASS — nessun
 # consumatore reale li tocca ancora. Dal 2026-10-31 fish_meat è pesce crudo per gli umani: il pesce si toglie
 # alla pesca, non quando lo si mangia, quindi questo debito non riguarda il cibo umano.
 var pending_fish_space_debt: float = 0.0
-var pending_bird_space_debt: float = 0.0
 
 func _init(_x: int, _y: int) -> void:
 	x = _x
@@ -593,12 +550,6 @@ func get_pending_fish_space_debt() -> float:
 func set_pending_fish_space_debt(amount: float) -> void:
 	pending_fish_space_debt = max(amount, 0.0)
 
-func get_pending_bird_space_debt() -> float:
-	return pending_bird_space_debt
-
-func set_pending_bird_space_debt(amount: float) -> void:
-	pending_bird_space_debt = max(amount, 0.0)
-
 func get_river_space() -> int:
 	return river_space
 
@@ -622,23 +573,6 @@ func get_total_water_dedicated_space() -> int:
 # passata dal chiamante invece di essere ricavata qui.
 func get_empty_water_space(capacity: int) -> int:
 	return capacity - get_total_water_dedicated_space()
-
-func get_terrestrial_space(object_type: GameTypes.WorldObjectType) -> int:
-	return int(terrestrial_dedicated_space.get(object_type, 0))
-
-func set_terrestrial_space(object_type: GameTypes.WorldObjectType, amount: int) -> void:
-	terrestrial_dedicated_space[object_type] = max(amount, 0)
-
-func get_total_terrestrial_dedicated_space() -> int:
-	var total := 0
-	for amount in terrestrial_dedicated_space.values():
-		total += amount
-	return total
-
-# capacity è la capacità fisica della cella (ResourceCalculator.get_land_capacity_space), non
-# una costante fissa: stesso principio di get_empty_water_space sopra.
-func get_empty_terrestrial_space(capacity: int) -> int:
-	return capacity - get_total_terrestrial_dedicated_space()
 
 func get_total_dedicated_space() -> int:
 	var total := river_space

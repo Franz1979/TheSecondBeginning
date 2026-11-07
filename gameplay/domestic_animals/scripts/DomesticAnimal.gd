@@ -43,6 +43,11 @@ var guard_confront_point: Vector2 = Vector2(-1.0, -1.0)
 var guard_confront_running: bool = false
 var hunt_center: Vector2 = Vector2(-1.0, -1.0)
 var hunt_catching_up: bool = false
+# Inseguimento della preda del cacciatore (passo 3): preda inseguita (-1 nessuna), ore che restano a tenerla a bada (0 =
+# non la tiene), ultimo punto di corsa dato al corpo. Mai salvati.
+var hunt_chase_prey_id: int = -1
+var hunt_hold_hours_left: float = 0.0
+var hunt_chase_point: Vector2 = Vector2(-1.0, -1.0)
 
 
 func get_age_years(absolute_day: int) -> int:

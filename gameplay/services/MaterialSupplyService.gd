@@ -23,6 +23,9 @@ extends RefCounted
 # rifornimento non ha portato nulla nello zaino. Consumato dal tentativo successivo (try_supply_at_level_zero), che
 # allora rinuncia e lascia ricadere nell'attesa; il retry giornaliero ritenta da capo.
 const CONTEXT_SUPPLY_FAILED := "material_supply_failed"
+# Giro già ripianificato dal magazzino dopo un prelievo a vuoto (2026-11-07): un secondo prelievo a vuoto di fila non
+# ripianifica più (protezione dai loop), si torna al comportamento di prima. Tolto al primo prelievo riuscito.
+const CONTEXT_SUPPLY_REPLANNED := "material_supply_replanned"
 
 # Ordine del giocatore arrivato a metà di un giro con lo zaino carico (2026-09-29, richiesta utente): scritto da
 # HumanIndividual.assign_task (l'ordine va in coda), consumato da HumanIndividualActionService.finish_current_step al
@@ -484,6 +487,29 @@ static func drop_pending_supply_round(task: Task) -> bool:
 			has_pending_retrieve = true
 			break
 	if not has_pending_retrieve:
+		return false
+	task.remove_steps(task.current_step_index, end_index - task.current_step_index + 1)
+	return true
+
+
+# Step bloccato da un giro non ancora caricato (2026-11-07, ripresa senza materiale): lo step di lavoro sul cantiere subito
+# dopo l'Unload che chiude il giro, se il prelievo del giro non è ancora avvenuto; null altrimenti.
+static func get_pending_round_blocked_step(task: Task) -> Action:
+	var end_index := _find_round_end_index(task)
+	if end_index < 0 or end_index + 1 >= task.steps.size():
+		return null
+	for i in range(task.current_step_index, end_index):
+		if task.steps[i] is RetrieveAction and (task.steps[i] as RetrieveAction).material_supply:
+			return task.steps[end_index + 1]
+	return null
+
+
+# Prelievo di rifornimento andato a vuoto (2026-11-07, richiesta utente): toglie il resto del giro (Walk e Unload al
+# cantiere), così lo step bloccato torna corrente e si ripianifica dal magazzino invece di tornare al cantiere a zaino
+# vuoto. true = step rimossi.
+static func drop_rest_of_supply_round(task: Task) -> bool:
+	var end_index := _find_round_end_index(task)
+	if end_index < 0:
 		return false
 	task.remove_steps(task.current_step_index, end_index - task.current_step_index + 1)
 	return true

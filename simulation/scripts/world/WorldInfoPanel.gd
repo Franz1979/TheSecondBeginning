@@ -14,7 +14,7 @@ extends PanelContainer
 const TAB_GEOGRAFIA := 0
 const TAB_VEGETAZIONE := 1
 const TAB_RISORSE := 2
-# Fauna "passiva" (FISH, BIRDS): cresce e cala in MacroCellState per densità. Le mandrie non sono dati del mondo.
+# Fauna "passiva" (FISH): cresce e cala in MacroCellState per densità. Le mandrie non sono dati del mondo.
 const TAB_FAUNA_1 := 3
 
 @onready var title_label: Label = $MarginContainer/VBoxContainer/TitleLabel
@@ -49,14 +49,11 @@ const TAB_FAUNA_1 := 3
 @onready var veg_acorn_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/AcornNumberLabel
 @onready var veg_fruit_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/FruitNumberLabel
 @onready var veg_berry_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/BerryNumberLabel
-@onready var veg_eggs_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/VegetazioneTab/VegetazioneContent/EggsNumberLabel
 @onready var resources_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/RisorseTab/RisorseContent/SectionTitleLabel
 # Totale mondo, stesso principio dei veg_* sopra.
 @onready var res_stone_number_label: Label = $MarginContainer/VBoxContainer/TabContainer/RisorseTab/RisorseContent/StoneNumberLabel
 @onready var fauna_1_title_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/SectionTitleLabel
 @onready var fish_summary_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/FishSummaryContainer
-@onready var birds_separator_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/BirdsSeparatorLabel
-@onready var birds_summary_label: Label = $MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent/BirdsSummaryLabel
 @onready var actions_container: VBoxContainer = $MarginContainer/VBoxContainer/ActionsContainer
 
 # Riferimento world tenuto solo per rinfrescare il tab Fauna (contenuto world-level, indipendente
@@ -206,14 +203,12 @@ func refresh_world_tabs_if_active() -> void:
 
 
 # Totali mondo (somma su ogni world.cells, stessa iterazione 100x100 già usata da
-# _update_fish_summary/_update_birds_summary sotto) per le tre risorse vegetali rinnovabili, più
-# una sezione separata per i loro sottoprodotti deperibili (acorn/fruit/berry/eggs — derivati da
-# sottotipi di TREE/SHRUB/BIRDS, stock persistente per cella via
+# _update_fish_summary sotto) per le tre risorse vegetali rinnovabili, più
+# una sezione separata per i loro sottoprodotti deperibili (acorn/fruit/berry — derivati da
+# sottotipi di TREE/SHRUB, stock persistente per cella via
 # MacroCellState.secondary_resource_stock, vedi CaloricCalculator.update_secondary_resource_stock:
-# già aggiornato realmente ad ogni checkpoint stagionale, non un placeholder). "eggs" era escluso
-# in una versione precedente (nessun produttore reale, BIRDS non ancora implementato) — BIRDS
-# esiste da tempo ormai, quindi eggs è trattato qui esattamente come acorn/fruit/berry, stesso
-# meccanismo generico.
+# già aggiornato realmente ad ogni checkpoint stagionale, non un placeholder). Le uova dal 2026-11-07 sono lotti
+# sull'erba senza scorta della macrocella: niente totale qui.
 func _refresh_vegetazione_tab() -> void:
 	if _world == null:
 		veg_grass_number_label.text = "Grass: -"
@@ -222,7 +217,6 @@ func _refresh_vegetazione_tab() -> void:
 		veg_acorn_number_label.text = "Acorn: -"
 		veg_fruit_number_label.text = "Fruit: -"
 		veg_berry_number_label.text = "Berry: -"
-		veg_eggs_number_label.text = "Eggs: -"
 		return
 
 	var grass_quantity := 0
@@ -234,7 +228,6 @@ func _refresh_vegetazione_tab() -> void:
 	var acorn_stock := 0.0
 	var fruit_stock := 0.0
 	var berry_stock := 0.0
-	var eggs_stock := 0.0
 
 	for cell in _world.cells:
 		var state := _world.get_cell_state_at(cell.x, cell.y)
@@ -259,7 +252,6 @@ func _refresh_vegetazione_tab() -> void:
 		acorn_stock += state.get_secondary_resource_stock("acorn")
 		fruit_stock += state.get_secondary_resource_stock("fruit")
 		berry_stock += state.get_secondary_resource_stock("berry")
-		eggs_stock += state.get_secondary_resource_stock("eggs")
 
 	# "%s in %s cells" invece di "(occupied cells: %s)" — stesso formato compatto già usato da
 	# _add_fish_summary_row sotto (tab Fauna 1): con totali mondo (fino a 10000 celle) la forma
@@ -272,7 +264,7 @@ func _refresh_vegetazione_tab() -> void:
 	veg_acorn_number_label.text = "Acorn: " + NumberFormatter.format_int(int(round(acorn_stock)))
 	veg_fruit_number_label.text = "Fruit: " + NumberFormatter.format_int(int(round(fruit_stock)))
 	veg_berry_number_label.text = "Berry: " + NumberFormatter.format_int(int(round(berry_stock)))
-	veg_eggs_number_label.text = "Eggs: " + NumberFormatter.format_int(int(round(eggs_stock)))
+
 
 
 # Stone (ROCK), oggi l'unica risorsa minerale — spazio pronto per oil/coal/argilla quando
@@ -303,7 +295,6 @@ func _refresh_risorse_tab() -> void:
 # simulato a prescindere, dato che l'aggregazione FISH sotto itera l'intero world.cells (100x100).
 func _refresh_fauna_1_tab() -> void:
 	_update_fish_summary(_world)
-	_update_birds_summary(_world)
 
 
 # Tipi di corpo d'acqua su cui FISH può crescere (vedi FaunaGrowthService/FishPositionService):
@@ -359,34 +350,3 @@ func _add_fish_summary_row(label_text: String, totals: Dictionary) -> void:
 		tr("cells")
 	]
 	fish_summary_container.add_child(label)
-
-
-# Aggregato unico su tutta la mappa, nessun breakdown per TerrainBase (a differenza del
-# breakdown SEA/LAKE/RIVER di FISH sopra — scelta esplicita, vedi analisi BIRDS). "Celle
-# occupate" = celle con terrestrial_space[BIRDS] > 0, stesso segnale di occupazione usato da
-# _update_fish_summary sopra e dai service Fauna (FaunaGrowthService/FaunaMortalityService).
-func _update_birds_summary(world: World) -> void:
-	if world == null:
-		birds_summary_label.text = ""
-		return
-
-	var total_quantity := 0
-	var total_cells := 0
-	for cell in world.cells:
-		var state := world.get_cell_state_at(cell.x, cell.y)
-		if state == null:
-			continue
-		var birds_space := state.get_terrestrial_space(GameTypes.WorldObjectType.BIRDS)
-		if birds_space <= 0:
-			continue
-		total_quantity += state.get_resource_quantity(GameTypes.WorldObjectType.BIRDS)
-		total_cells += 1
-
-	birds_separator_label.text = " - - - - - - - - - -"
-	birds_summary_label.text = "%s: %s %s %s %s" % [
-		tr("birds"),
-		NumberFormatter.format_int(total_quantity),
-		tr("in"),
-		NumberFormatter.format_int(total_cells),
-		tr("cells")
-	]

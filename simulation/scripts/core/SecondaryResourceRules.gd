@@ -154,8 +154,7 @@ extends Resource
 # risorsa (2026-09-18, richiesta utente — eggs raccoglibile per microcella; RINOMINATO da
 # nest_probability il 2026-09-19, richiesta utente — wild_vegetables: STESSO meccanismo, un
 # secondo consumatore su GRASS oltre agli eggs, "lotto" generico invece di "nido" specifico di
-# eggs) — consultato da TerrainScatteredResourceService.compute_egg_nest_positions (eggs) e
-# LotCapacityService.refresh_grass_patch_lot_capacity (2026-09-19, GRASS_PATCH — wild_vegetables e
+# eggs) — consultato da LotCapacityService.refresh_grass_patch_lot_capacity (2026-09-19, GRASS_PATCH — wild_vegetables e
 # ogni futura risorsa dello stesso lot_source), che filtrano le posizioni GRASS correnti della
 # macrocella con hash(str(micro_seed) + salt) sulla posizione contro questa soglia — stesso idioma
 # già usato da ResourcePositionService per il bordo sfumato dei semi di rumore, salt DIVERSO per
@@ -166,6 +165,8 @@ extends Resource
 # di units_per_mature_plant sopra.
 @export var patch_probability: float = 0.0
 
+# NON PIÙ LETTO dal 2026-11-07 (uova passate a lot_source GRASS_PATCH con patch_capacity_min/max): il commento sotto
+# descrive il vecchio modello a scorta delle uova, l'unico che lo usava.
 # Intervallo [patch_weight_min, patch_weight_max] del peso di UN lotto (2026-09-18, richiesta
 # utente — eggs, "i nidi hanno tutti peso uniforme... rendi il peso variabile per nido";
 # RINOMINATO da nest_weight_min/max il 2026-09-19 insieme a patch_probability sopra) — consultato
@@ -298,6 +299,41 @@ extends Resource
 # munizione richiesta l'arma funziona solo se in cintura c'è un attrezzo di quella categoria: a ogni tiro consuma un uso
 # suo e uno della munizione, e probabilità di colpire e danno usano la forza d'attacco della munizione (HuntService).
 @export var required_ammo_category: int = -1
+
+@export_group("Trap")
+# Trappole da piazzare (2026-11-07, capanna del trappoliere — TrapService). Lavoro della zona in cui va (WorkAreaTypes.JOBS:
+# "hunt" per le trappole di terra, "fish" per quelle d'acqua); "" = non è una trappola.
+@export var trap_zone_job: String = ""
+# Cosa prende: decide la scelta del posto (TrapService.site_index). "birds" = BirdPresenceService.
+@export var trap_quarry: String = ""
+# Distanza minima (microcelle, la maggiore tra x e y) da un'altra trappola dello stesso tipo.
+@export var trap_min_spacing: int = 5
+# Giorni di lavoro per montarla sul posto (skill "trap": chi è più bravo fa prima).
+@export var trap_setup_days: float = 0.0
+# Prede che tiene prima di doverla svuotare (2026-11-07). Per una trappola max_uses (gruppo Tool) conta gli
+# svuotamenti: ognuno toglie un uso, a zero è rotta.
+@export var trap_capacity: int = 0
+# Cattura (2026-11-07, TrapService.advance_daily): un tiro al giorno. Prende qualcosa con probabilità
+# trap_daily_catch_chance × indice del momento; dentro quella fascia, quante prede si decide con la stessa estrazione
+# secondo trap_catch_count_weights (pesi per 1, 2, 3… prede, normalizzati).
+@export var trap_daily_catch_chance: float = 0.0
+@export var trap_catch_count_weights: Array[float] = []
+# Giorni dopo cui una preda lasciata nella trappola marcisce (o la porta via un predatore) e si perde.
+@export var trap_catch_spoil_days: int = 0
+# Svuotamento (2026-11-07, lavoro "Svuota trappola"): parte quando la trappola è piena o la preda più vecchia è lì da
+# trap_empty_after_days giorni; dura trap_empty_days giorni di lavoro (skill "trap"). Ogni preda ancora buona dà
+# trap_catch_yield unità di trap_catch_resource, vecchie quanto la preda (deperimento ereditato).
+@export var trap_empty_after_days: int = 0
+@export var trap_empty_days: float = 0.0
+@export var trap_catch_resource: String = ""
+@export var trap_catch_yield: int = 1
+# Riposo del posto (2026-11-07): rotta la trappola, la sua microcella resta a riposo (rete rotta disegnata, niente trappole
+# nuove di quel tipo proprio lì) per trap_rest_days giorni. 0 = nessun riposo.
+@export var trap_rest_days: int = 0
+# Usura a riposo (2026-11-07, richiesta utente): la trappola montata perde un uso ogni trap_idle_wear_days giorni passati
+# senza svuotamenti (fibre e corde lasciate fuori marciscono); lo svuotamento consuma già il suo uso e fa ripartire il
+# conto. Così una trappola che non prende mai niente prima o poi si rompe e libera il posto. 0 = nessuna usura a riposo.
+@export var trap_idle_wear_days: int = 0
 
 @export_group("Apparel")
 # Campi del vestiario (2026-10-11, richiesta utente — vestiti, scarpe, monili; category APPAREL). La durata di un capo

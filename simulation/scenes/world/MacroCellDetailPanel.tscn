@@ -171,18 +171,6 @@ theme_override_font_sizes/font_size = 11
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
 
-[node name="BirdsSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="BirdsNumberLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
-[node name="LandEmptySpaceLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/FaunaTab1/FaunaContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-
 [node name="SussistenzaTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2
@@ -237,18 +225,6 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 10
 
 [node name="FruitCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 10
-
-[node name="EggsSeparatorLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 10
-
-[node name="EggsUnitsLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 10
-
-[node name="EggsCaloriesLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/SussistenzaTab/SussistenzaContent"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 10
 

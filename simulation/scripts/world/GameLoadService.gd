@@ -156,6 +156,23 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for saved_animal in data["game"].get("domestic_animals", []):
 		game_data.domestic_animals.append(DomesticAnimal.from_save_data(saved_animal))
 	game_data.next_domestic_animal_id = int(data["game"].get("next_domestic_animal_id", 1))
+	# Trappole montate (2026-11-07) — .get() per i save precedenti: nessuna trappola, regola a zero.
+	game_data.placed_traps.clear()
+	for saved_trap in data["game"].get("placed_traps", []):
+		var trap := PlacedTrap.from_save_data(saved_trap)
+		if trap.trap_name != "":
+			game_data.placed_traps.append(trap)
+	game_data.next_placed_trap_id = int(data["game"].get("next_placed_trap_id", 1))
+	game_data.broken_traps.clear()
+	for saved_broken in data["game"].get("broken_traps", []):
+		if saved_broken is Dictionary:
+			game_data.broken_traps.append(saved_broken)
+	game_data.placed_traps_revision += 1
+	game_data.stock_traps_per_zone.clear()
+	var saved_trap_levels = data["game"].get("stock_traps_per_zone", {})
+	if saved_trap_levels is Dictionary:
+		for trap_name in saved_trap_levels.keys():
+			game_data.stock_traps_per_zone[String(trap_name)] = maxi(int(saved_trap_levels[trap_name]), 0)
 	game_data.domestic_starvation_days = data["game"].get("domestic_starvation_days", {})
 	game_data.domestic_first_arrival_day = data["game"].get("domestic_first_arrival_day", {})
 	game_data.domestic_stray_due_day = data["game"].get("domestic_stray_due_day", {})
@@ -472,6 +489,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var quantity_data = state_data.get("resource_quantity", {})
 			for key in quantity_data.keys():
 				state.resource_quantity[int(key)] = int(quantity_data[key])
+			# Uccelli tolti dalla simulazione il 2026-11-07: il numero dei salvataggi vecchi non si carica.
+			state.resource_quantity.erase(GameTypes.WorldObjectType.BIRDS)
 			var dedicated = state_data.get("dedicated_space", {})
 			for key in dedicated.keys():
 				state.dedicated_space[int(key)] = int(dedicated[key])
@@ -500,9 +519,6 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var water_space_data = state_data.get("water_dedicated_space", {})
 			for key in water_space_data.keys():
 				state.water_dedicated_space[int(key)] = int(water_space_data[key])
-			var terrestrial_space_data = state_data.get("terrestrial_dedicated_space", {})
-			for key in terrestrial_space_data.keys():
-				state.terrestrial_dedicated_space[int(key)] = int(terrestrial_space_data[key])
 			var pending_surplus_data = state_data.get("pending_migration_surplus", {})
 			for key in pending_surplus_data.keys():
 				state.pending_migration_surplus[int(key)] = float(pending_surplus_data[key])
@@ -511,7 +527,6 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				state.secondary_resource_stock[resource_name] = float(secondary_stock_data[resource_name])
 			state.pending_grass_space_debt = float(state_data.get("pending_grass_space_debt", 0.0))
 			state.pending_fish_space_debt = float(state_data.get("pending_fish_space_debt", 0.0))
-			state.pending_bird_space_debt = float(state_data.get("pending_bird_space_debt", 0.0))
 			# LOD0: assente = false (mai scoperta), vedi GameSaveService per il perché è condizionale.
 			state.has_ever_been_discovered = bool(state_data.get("has_ever_been_discovered", false))
 			# Guadi (2026-09-27, pathfinding): assente = nessun guado.
@@ -617,14 +632,6 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				for pos_data in resource_entry.get("lots", []):
 					per_lot[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = int(pos_data["harvested"])
 				state.berry_harvested_by_lot[resource_name] = per_lot
-			# Raccolto per nido di "eggs" (2026-09-18, richiesta utente) — SIBLING del blocco
-			# berry_harvested_by_lot sopra, formato FLAT {x,y,harvested} (stesso motivo di
-			# GameSaveService — eggs è l'unica risorsa di questa famiglia, vedi MacroCellState.
-			# eggs_harvested_by_lot). .get() con default [] per compatibilità coi save precedenti a
-			# questo campo, stesso principio di ogni altro blocco opzionale in questa funzione.
-			for pos_data in state_data.get("eggs_harvested_by_lot", []):
-				var eggs_pos := Vector2i(int(pos_data["x"]), int(pos_data["y"]))
-				state.eggs_harvested_by_lot[eggs_pos] = int(pos_data["harvested"])
 			# wild_vegetables (2026-09-19) — ora nel registro unificato "lot_registry" sopra, non
 			# più in una sezione dedicata.
 			for pos_data in state_data.get("vegetation_death_exceptions", []):
@@ -814,8 +821,18 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			# necessario, vedi Building.gd).
 			building.is_awaiting_material = bool(building_data.get("is_awaiting_material", false))
 			# Riscaldamento (2026-10-22): assente nei save precedenti.
-			building.heating_fuel_due = float(building_data.get("heating_fuel_due", 0.0))
+			# Salvataggi di prima del 2026-11-07: il vecchio debito diventa un anticipo negativo, saldato al primo consumo.
+			building.heating_fuel_credit = float(building_data.get("heating_fuel_credit", -float(building_data.get("heating_fuel_due", 0.0))))
 			building.heated_today = bool(building_data.get("heated_today", false))
+			# Zuppa di casa (2026-11-07): assente nei save precedenti. Le chiavi JSON tornano stringhe: id interi.
+			# Salvataggi con il vecchio giorno di cottura (solo prove del 2026-11-07): pentola ripartita piena.
+			building.soup_freshness = float(building_data.get("soup_freshness", 1.0 if int(building_data.get("soup_cooked_day", -1)) >= 0 else 0.0))
+			building.soup_portions_total = int(building_data.get("soup_portions_total", 0))
+			building.soup_shares = {}
+			var saved_shares: Variant = building_data.get("soup_shares", {})
+			if saved_shares is Dictionary:
+				for resident_key in (saved_shares as Dictionary).keys():
+					building.soup_shares[int(resident_key)] = float((saved_shares as Dictionary)[resident_key])
 			world.buildings.append(building)
 
 	var max_loaded_building_id := 0

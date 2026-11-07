@@ -31,6 +31,8 @@ const MIN_PARTICIPANTS: int = 2
 # Sosta in giorni di gioco (2026-10-29: 1-2 giorni, 8-16 secondi a 1x; con 0.25-0.5 ripartivano quasi subito).
 const STAY_DAYS_MIN: float = 1.0
 const STAY_DAYS_MAX: float = 2.0
+# In uscita: giorni di gioco, da quando esce il primo, dopo cui chi è rimasto indietro esce lo stesso (vedi advance).
+const STRAGGLER_EXIT_DAYS: float = 0.5
 # Distanza dalla meta (Fossa o magazzino) a cui il gruppo si ferma (microcelle).
 const PIT_ARRIVAL_RADIUS: float = 2.0
 # Ingresso e uscita (2026-10-31, richiesta utente): tra BORDER_CANDIDATES punti a caso del bordo il branco prende quello
@@ -404,14 +406,33 @@ static func advance(visit: WildAnimalVisit, world: World, game_delta: float, gam
 		return false
 	# In uscita: chi arriva al bordo esce subito; la visita finisce con l'ultimo.
 	var still_here := false
+	var someone_left := false
 	for i in range(visit.body_ids.size()):
 		if visit.body_ids[i] == 0:
+			someone_left = true
 			continue
 		if _has_arrived(visit, AnimalGroupRenderer.find_live_individual(visit.body_ids[i])):
 			AnimalGroupRenderer.remove_live_individual(visit.body_ids[i])
 			visit.body_ids[i] = 0
+			someone_left = true
 		else:
 			still_here = true
+	# Rimasti indietro (2026-11-07, richiesta utente — lupo incastrato contro la Fossa, visita mai finita e cani che
+	# abbaiavano per sempre): passati STRAGGLER_EXIT_DAYS da quando è uscito il primo, chi è ancora in scena esce lo stesso.
+	# Resta nel branco, vivo, e torna alla prossima visita.
+	if still_here and someone_left:
+		visit.straggler_days += game_delta
+		if visit.straggler_days >= STRAGGLER_EXIT_DAYS:
+			for i in range(visit.body_ids.size()):
+				if visit.body_ids[i] == 0:
+					continue
+				var body := AnimalGroupRenderer.find_live_individual(visit.body_ids[i])
+				print("[WILD ANIMAL VISITS] %s #%d rimasto indietro in %s, esce lo stesso." % [
+					visit.species, visit.animal_ids[i] if i < visit.animal_ids.size() else -1,
+					Vector2i(body.position.floor()) if body != null else Vector2i(-1, -1)])
+				AnimalGroupRenderer.remove_live_individual(visit.body_ids[i])
+				visit.body_ids[i] = 0
+			still_here = false
 	_debug_log_leaving(visit, game_data)
 	return false if still_here else _on_target_reached(visit)
 

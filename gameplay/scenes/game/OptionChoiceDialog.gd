@@ -468,6 +468,10 @@ func _build_pickup_option(row_key: String, options: Dictionary, margin: MarginCo
 			quantity.value = max_quantity
 		_fit_height()
 	)
+	menu.fixed_selection_changed.connect(func(is_fixed: bool) -> void:
+		repeat.visible = not is_fixed
+		_fit_height()
+	)
 	var row_count := menu.build(list, options.get("resources", []), options.get("default_choice", {}), bool(options.get("single_row", false)))
 	# Stima per la prima apertura (poi _fit_to_options_content misura il contenuto vero).
 	_option_panel_heights[row_key] = float(row_count + 2) * OPTION_LIST_ROW_HEIGHT
@@ -621,7 +625,8 @@ func _build_action_button(key: String, resource_name: String) -> Button:
 	var override: Dictionary = _row_overrides.get(key, {})
 	var text := String(override.get("text", IconRegistry.get_resource_display_name(resource_name)))
 	var icon_text := String(override.get("icon", ""))
-	_action_texts[key] = text
+	# "confirm_text" (2026-11-07): verbo del pulsante di conferma quando il nome della scheda non lo è (Trappole -> Piazza).
+	_action_texts[key] = String(override.get("confirm_text", text))
 	var button := Button.new()
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.custom_minimum_size = Vector2(0.0, ACTION_BUTTON_HEIGHT)

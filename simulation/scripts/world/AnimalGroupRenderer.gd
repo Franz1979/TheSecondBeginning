@@ -1572,6 +1572,8 @@ func set_individual_behavior(individual_id: int, behavior: AnimalVisualGroup.Beh
 	group.behavior_arrived = false
 	group.behavior_path.clear()
 	group.behavior_path_planned = false
+	group.behavior_blocked_time = 0.0
+	group.behavior_replan_via_center = false
 	if behavior == AnimalVisualGroup.Behavior.WANDER:
 		_randomize_group_phase(group)
 	elif behavior == AnimalVisualGroup.Behavior.STAND_AROUND:
@@ -1785,6 +1787,10 @@ func _step_go_to(group: AnimalVisualGroup, delta: float) -> void:
 		var plan := PathfindingService.plan_waypoints(macro_coords, group.position, group.behavior_point, zone_grid)
 		group.behavior_point = plan["target"]
 		group.behavior_path.assign(plan["path"])
+		# Dopo un blocco: prima al centro della sua microcella, da dove i tratti del percorso sono controllati.
+		if group.behavior_replan_via_center:
+			group.behavior_replan_via_center = false
+			group.behavior_path.push_front(group.position.floor() + Vector2(0.5, 0.5))
 		group.behavior_path_planned = true
 		group.behavior_path_target = group.behavior_point
 		group.behavior_path_block_version = block_version
@@ -1803,7 +1809,36 @@ func _step_go_to(group: AnimalVisualGroup, delta: float) -> void:
 		group.direction = to_goal / distance
 	if not group.behavior_run:
 		_advance_hop_cycle(group, delta)
+	var hopping := group.micro_phase == AnimalVisualGroup.MicroPhase.HOPPING and distance > 0.0
 	_hop_toward(group, distance, delta)
+	if hopping:
+		_check_go_to_progress(group, goal, distance, delta)
+
+
+# GO_TO che non avanza (2026-11-07, richiesta utente — lupo incastrato contro lo spigolo della Fossa: il percorso è
+# controllato da centro a centro delle microcelle, ma l'animale parte da un punto qualunque della sua, e la linea dritta
+# verso il punto successivo può tagliare l'angolo di una microcella bloccata; la collisione lo respingeva per sempre).
+# Se durante i balzi si avvicina alla meta di meno di GO_TO_BLOCKED_PROGRESS_RATIO di quanto dovrebbe per
+# GO_TO_BLOCKED_HOPS balzi interi, il percorso si ricalcola dalla posizione vera passando dal centro della microcella.
+const GO_TO_BLOCKED_PROGRESS_RATIO: float = 0.25
+const GO_TO_BLOCKED_HOPS: float = 3.0
+
+
+func _check_go_to_progress(group: AnimalVisualGroup, goal: Vector2, distance_before: float, delta: float) -> void:
+	var intended := minf(hop_speed * group.behavior_speed_scale * _wounded_speed_factor(group) * delta, distance_before)
+	if intended <= 0.0:
+		return
+	if distance_before - goal.distance_to(group.position) >= intended * GO_TO_BLOCKED_PROGRESS_RATIO:
+		group.behavior_blocked_time = 0.0
+		return
+	group.behavior_blocked_time += delta
+	if group.behavior_blocked_time < hop_duration_max * GO_TO_BLOCKED_HOPS:
+		return
+	group.behavior_blocked_time = 0.0
+	group.behavior_path_planned = false
+	group.behavior_replan_via_center = true
+	print("[ANIMAL GO_TO] corpo %d fermo in %s verso %s: percorso ricalcolato passando dal centro della microcella." % [
+		group.id, Vector2i(group.position.floor()), Vector2i(goal.floor())])
 
 
 # CHASE: dritto verso il bersaglio (behavior_point, aggiornato dal copione), a balzi e pause, con la collisione; a

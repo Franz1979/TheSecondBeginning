@@ -29,9 +29,19 @@ static func is_apparel(resource_name: String) -> bool:
 	return rules != null and rules.category == SecondaryResourceTypes.Category.APPAREL
 
 
-# Il deposito della casa di nucleo accetta solo combustibile e vestiario.
+# Ciotola della zuppa di casa (2026-11-07, HomeSoupService): sta nel deposito della casa e, abitata, è riservata come il
+# vestiario (is_bowl_reserved).
+const SOUP_BOWL := "clay_bowl"
+
+
+# Il deposito della casa di nucleo accetta solo combustibile, vestiario e la ciotola della zuppa.
 static func accepts(resource_name: String) -> bool:
-	return ProductionService.get_fuel_value(resource_name) > 0.0 or is_apparel(resource_name)
+	return ProductionService.get_fuel_value(resource_name) > 0.0 or is_apparel(resource_name) or resource_name == SOUP_BOWL
+
+
+# true se `resource_name` è la ciotola della zuppa nel deposito della casa di nucleo abitata `building`.
+static func is_bowl_reserved(building: Building, resource_name: String) -> bool:
+	return resource_name == SOUP_BOWL and is_wardrobe_house(building) and is_inhabited(building)
 
 
 # true se `resource_name` è vestiario riservato agli abitanti della casa `building` (casa di nucleo abitata).

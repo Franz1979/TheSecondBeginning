@@ -16,6 +16,9 @@ var rect: Rect2i = Rect2i()
 var enabled_jobs: Array[String] = []
 # Filtri per lavoro: id lavoro -> Dictionary (contenuto definito dai lavori stessi, JSON-nativo). Vuoto = nessun filtro.
 var filters: Dictionary = {}
+# Trappole volute in questa zona per tipo (2026-11-07, TrapService): nome -> numero. Assente = vale il numero del WM
+# (GameData.stock_traps_per_zone); 0 = nessuna qui.
+var trap_targets: Dictionary = {}
 # Contatore delle modifiche (runtime, non salvato): la vista si ridisegna quando cambia.
 var revision: int = 0
 
@@ -38,6 +41,7 @@ func to_save_data() -> Dictionary:
 		"rect_h": rect.size.y,
 		"enabled_jobs": Array(enabled_jobs),
 		"filters": filters,
+		"trap_targets": trap_targets,
 	}
 
 
@@ -61,6 +65,10 @@ static func from_save_data(data: Dictionary) -> WorkArea:
 			for category in job_filters["categories"]:
 				categories.append(int(category))
 			job_filters["categories"] = categories
+	var raw_traps = data.get("trap_targets", {})
+	if raw_traps is Dictionary:
+		for trap_name in raw_traps.keys():
+			area.trap_targets[String(trap_name)] = int(raw_traps[trap_name])
 	if not WorkAreaService.is_valid_rect(area.rect):
 		return null
 	return area
