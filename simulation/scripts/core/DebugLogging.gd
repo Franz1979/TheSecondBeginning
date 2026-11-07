@@ -110,7 +110,7 @@ const SHOW_VITALS_RECALC_LOGS := false
 # due regole scatta comunque in un verso o nell'altro, quindi la riga è sempre stampata per ognuno,
 # non solo quando cambia qualcosa). A false: nessun comportamento di simulazione cambia, solo il
 # print viene soppresso.
-const SHOW_VITALS_INTERACTION_LOGS := true
+const SHOW_VITALS_INTERACTION_LOGS := false
 # Riga [VITALS INTERACTION] solo per chi ha una malattia in corso (2026-10-24, prova dell'evento malattia), compreso il
 # giorno in cui guarisce; false = tutti.
 const VITALS_INTERACTION_LOG_ONLY_ILL := true
@@ -250,7 +250,7 @@ const SHOW_REST_CHOICE_LOGS := false
 # (HumanIndividualActionService), [BUILD]/[BUILD DEBUG]/[TRANSPORT] (GameScene),
 # [BUILD PROGRESS DEBUG]/[OCCUPIED SPACE DEBUG] (SetupSiteAction/ClearAction/BuildAction),
 # [ASSIGN HOUSE] (AssignHouseService).
-const SHOW_TRANSPORT_BUILD_LOGS := false
+const SHOW_TRANSPORT_BUILD_LOGS := true
 # FISH — [FISH] pesca (2026-10-31, prove della pesca nelle zone): tentativi, fine sessione o viaggio, cambio di punto
 # (FishAction), pesci consegnati (unload_action.gd), pesca successiva e fine della serie (WorkFollowUpService). Temporaneo:
 # da spegnere quando la pesca nelle zone funziona.
@@ -380,7 +380,7 @@ const SHOW_CLEAR_LOGS := false
 
 # Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
-const SHOW_JOB_BOARD_LOGS := false
+const SHOW_JOB_BOARD_LOGS := true
 
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per

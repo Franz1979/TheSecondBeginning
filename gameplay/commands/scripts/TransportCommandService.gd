@@ -53,6 +53,50 @@ static func assign_transport(
 		])
 
 
+# Cosa si può prelevare da `building` per il TransportSourceDialog (2026-11-06, estratto da GameScene._right_click_transport
+# per riusarlo nell'ordine "Trasporta" del cassetto): {} se è un cantiere o non ha niente; altrimenti {"grouped": bool,
+# "all": risorsa -> pezzi (magazzino più Prodotti finiti), "products"/"delivered": i due gruppi di una workstation}.
+static func source_choices(building: Building) -> Dictionary:
+	if building == null or not building.is_complete:
+		return {}
+	var source_names: Array = building.stored_resources.keys()
+	for output_name in building.production_output.keys():
+		if not source_names.has(output_name):
+			source_names.append(output_name)
+	var available_quantities: Dictionary = {}
+	for resource_name in source_names:
+		var quantity: int = BuildingStorageService.get_available_quantity(building, String(resource_name))
+		if quantity > 0:
+			available_quantities[String(resource_name)] = quantity
+	if available_quantities.is_empty():
+		return {}
+	var choices := {"grouped": false, "all": available_quantities}
+	if building.rules != null and building.rules.is_workstation:
+		choices["grouped"] = true
+		choices["products"] = ProductionService.get_all_products_quantities(building)
+		choices["delivered"] = ProductionService.get_stored_ingredient_quantities(building)
+	return choices
+
+
+# Ordine "Trasporta" del cassetto (2026-11-06): in coda senza destinatario, come gli ordini del magazzino. Rifiutato con
+# l'avviso (stesso testo del trasporto col clic destro) se la destinazione non ha posto per quella risorsa. true se creato.
+static func create_drawer_transport_order(
+	ctx: GameContext, source: Building, target: Building, resource_name: String, quantity: int, effects: GameEffects
+) -> bool:
+	if source == null or target == null or source == target or quantity <= 0:
+		return false
+	if TaskBuilderService.transport_trip_target(target, resource_name, quantity) <= 0:
+		effects.command_icon_at_microcell(Vector2i(target.macro_x, target.macro_y), Vector2i(target.micro_x, target.micro_y), "task_rejected")
+		CommandFeedback.reject(null, GameContext.tr_text("drawer_transport_reject_not_needed").format({
+			"building": target.get_display_name(), "resource": IconRegistry.get_resource_display_name(resource_name),
+		}), effects)
+		return false
+	DrawerOrderService.add_transport_order(ctx.game_data, source, target, resource_name, quantity)
+	effects.command_icon_at_microcell(Vector2i(target.macro_x, target.macro_y), Vector2i(target.micro_x, target.micro_y), "transport")
+	effects.refresh_pending()
+	return true
+
+
 # Raccolta sulla microcella `target_position` (clic destro, dialog della raccolta): zona 1×1 sulla cella (non entra in
 # GameData.work_areas), Task della raccolta su zona (TaskBuilderService.build_haul_zone_task), icona "pickup" sulla cella.
 # `quantity_requested` -1 = nessun tetto; `criterion_kind`/`criterion_category`: criterio di PickUpAction (NAME, CATEGORY,
@@ -164,7 +208,11 @@ static func assign_drawer_transport_job(ctx: GameContext, worker: HumanIndividua
 	DrawerOrderService.remove(ctx.game_data, order_id)
 	var job_keys: Array[String] = [String(job["key"])]
 	CommandFeedback.forget_job_board_waits(ctx.game_data, job_keys, effects)
-	# Travois (2026-10-23): più di un viaggio di carico -> lo prende prima, se ce n'è uno libero.
-	if ToolFetchService.needs_towing_for(worker, String(pick["resource"]), int(pick["quantity"])):
+	# Travois (2026-10-23): più di un viaggio di carico -> lo prende prima, se ce n'è uno libero. Riempimento delle giare
+	# (2026-11-07): sempre, se non lo traina già.
+	if order.has(WaterShelterStockService.WATER_TARGET_KEY):
+		if not worker.is_towing():
+			ZoneOrderCommandService.start_towed_fetch(ctx, worker, "riempimento giare #%d" % order_id, effects)
+	elif ToolFetchService.needs_towing_for(worker, String(pick["resource"]), int(pick["quantity"])):
 		ZoneOrderCommandService.start_towed_fetch(ctx, worker, "trasporto #%d" % order_id, effects)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)

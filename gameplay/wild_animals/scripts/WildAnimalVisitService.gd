@@ -133,7 +133,7 @@ static func tick_day(ctx: GameContext) -> void:
 	for group in ctx.game_data.wild_animal_groups:
 		if group.animals.is_empty() or find_visit(ctx.game_data, group.id) != null or today < group.next_visit_day:
 			continue
-		var faces := visit_dice_faces(ctx.world, ctx.individuals.size())
+		var faces := visit_dice_faces(ctx.world, ctx.individuals.size(), ctx.game_data, group)
 		if faces > 0.0 and randf() * faces < 1.0:
 			print("[WILD ANIMAL VISITS] %s: visita spontanea, giorno %d (dado da %.1f facce, %d abitanti)" % [
 				group.species, today, faces, ctx.individuals.size()])
@@ -141,13 +141,24 @@ static func tick_day(ctx: GameContext) -> void:
 
 
 # Facce del dado giornaliero (vedi MIN_VILLAGERS_FOR_VISITS); 0 = nessuna visita possibile (pochi abitanti, nessun magazzino).
-static func visit_dice_faces(world: World, villagers: int) -> float:
+# Dopo il primo arrivo della specie domestica, oltre WildAnimalGroupRules.visit_thinning_population abitanti le facce
+# crescono in proporzione (visite più rade).
+static func visit_dice_faces(world: World, villagers: int, game_data: GameData = null, group: WildAnimalGroup = null) -> float:
 	var center := WildAnimalGroupService.find_anchor_storage(world)
 	if center == null or villagers < MIN_VILLAGERS_FOR_VISITS:
 		return 0.0
+	var faces := maxf(VISIT_DICE_STORAGE_BASE / float(villagers), VISIT_DICE_STORAGE_MIN)
 	if _find_fullest_pit(world, Vector2i(center.macro_x, center.macro_y)) != null:
-		return maxf(VISIT_DICE_PIT_BASE / float(villagers), VISIT_DICE_PIT_MIN)
-	return maxf(VISIT_DICE_STORAGE_BASE / float(villagers), VISIT_DICE_STORAGE_MIN)
+		faces = maxf(VISIT_DICE_PIT_BASE / float(villagers), VISIT_DICE_PIT_MIN)
+	if game_data == null or group == null:
+		return faces
+	var group_rules := WildAnimalGroupService.get_rules(group.species)
+	var threshold := group_rules.visit_thinning_population if group_rules != null else 0
+	var domestic_species := _domestic_species_for(group.species)
+	if threshold > 0 and villagers > threshold and domestic_species != "" \
+			and DomesticAnimalService.is_domesticated(game_data, domestic_species):
+		faces *= float(villagers) / float(threshold)
+	return faces
 
 
 # I lupi sono usciti, o sono morti tutti i presenti: da qui parte l'attesa prima del prossimo tiro.
@@ -311,7 +322,10 @@ static func advance_all(game_data: GameData, world: World, game_delta: float, fo
 	if game_data == null or game_data.wild_animal_visits.is_empty() or game_delta <= 0.0:
 		return
 	var departed: Array[WildAnimalVisit] = []
-	for visit in game_data.wild_animal_visits:
+	# Su una copia: un cane di guardia può uccidere l'ultimo presente e togliere la visita durante il giro (passo 8.4).
+	for visit in game_data.wild_animal_visits.duplicate():
+		if not game_data.wild_animal_visits.has(visit):
+			continue
 		if visit.needs_restore and not _restore_after_load(visit, game_data, world):
 			departed.append(visit)
 			continue
@@ -354,10 +368,13 @@ static func advance(visit: WildAnimalVisit, world: World, game_delta: float, gam
 	if not has_bodies and PathfindingService.get_live_cell(visit.macro_coords) != null:
 		return false
 	_notify_visit_news(visit, game_data, effects)
+	# Cani di guardia (passo 8.1): abbaio d'allarme e posizione aggiornata come zona da cui stare alla larga.
+	DomesticAnimalGuardService.update_visit(visit, game_data, game_delta)
 	# Gli hanno tirato (lupi L7): la carica o la sosta finiscono qui, senza esito della visita, e se ne vanno di corsa.
 	if visit.hunted and visit.phase != WildAnimalVisit.Phase.LEAVING:
 		visit.attack_target_id = -1
 		DangerFleeService.end_danger(individuals, visit.group_id)
+		DomesticAnimalGuardService.end_run(visit, game_data, world)
 		_start_leaving(visit, world)
 	# In arrivo e in sosta (2026-10-31, richiesta utente: il branco che attraversa il villaggio deve poter attaccare per
 	# strada). Una palizzata in mezzo toglie la linea retta (_is_line_clear): chi sta dietro non viene notato.
@@ -424,7 +441,7 @@ static func spawn_bodies(visit: WildAnimalVisit, game_data: GameData, renderer: 
 	renderer.reaction_points = visit.reaction_points
 	renderer.reaction_radii = visit.reaction_radii
 	renderer.chase_no_enter_points = visit.safe_points
-	renderer.chase_no_enter_radius = FEAR_SAFE_RADIUS
+	renderer.chase_no_enter_radii = visit.safe_radii
 	var group := _find_group(game_data, visit.group_id)
 	var wild_rules := _wild_rules(visit.species)
 	var today := game_data.get_absolute_day()
@@ -620,6 +637,9 @@ static func _collect_reaction_sources(visit: WildAnimalVisit, world: World, wild
 	visit.reaction_radii.clear()
 	visit.shelter_rects.clear()
 	visit.safe_points.clear()
+	visit.safe_radii.clear()
+	visit.building_reaction_count = 0
+	visit.building_safe_count = 0
 	if wild_rules == null or world == null:
 		return
 	for building in world.buildings:
@@ -640,6 +660,9 @@ static func _collect_reaction_sources(visit: WildAnimalVisit, world: World, wild
 		# elencati che respingono col raggio di default.
 		if radius > 0.0 and wild_rules.building_reactions.has(building.building_type_name):
 			visit.safe_points.append(point)
+			visit.safe_radii.append(FEAR_SAFE_RADIUS)
+	visit.building_reaction_count = visit.reaction_points.size()
+	visit.building_safe_count = visit.safe_points.size()
 	if not visit.reaction_points.is_empty():
 		print("[WILD ANIMAL VISITS] %s: %d edifici a cui reagire" % [visit.species, visit.reaction_points.size()])
 
@@ -667,6 +690,8 @@ static func _find_attack_target(visit: WildAnimalVisit, individuals: Array[Human
 				and not visit.shelter_rects.any(func(rect: Rect2) -> bool: return rect.has_point(member.position)):
 			defenders.append(member)
 			strengths.append(_person_strength(member, game_data))
+	# Cani di guardia (passo 8.2): pesano nella difesa di chi sta entro il loro guard_help_radius.
+	var dogs := DomesticAnimalGuardService.guard_dogs(game_data, visit.macro_coords)
 	var target: HumanIndividual = null
 	var target_chance := -1.0
 	var target_defense := 0.0
@@ -678,13 +703,16 @@ static func _find_attack_target(visit: WildAnimalVisit, individuals: Array[Human
 			if defenders[k].position.distance_to(candidate.position) <= defense_radius:
 				defense += strengths[k]
 				nearby += 1
+		var dog_defense := DomesticAnimalGuardService.defense_near(dogs, candidate.position)
+		defense += float(dog_defense["strength"])
 		defense = maxf(defense, WEAK_PERSON_STRENGTH)
 		var chance := minf(ATTACK_CHANCE_CAP,
 			ATTACK_BASE_CHANCE * visit.attack_aggression / 100.0 * float(visit.attack_wolves) / defense)
 		var age_band := HumanIndividualActionService._resolve_age_band(candidate, game_data)
-		candidate_texts.append("#%d %s %s%s difesa %.1f (%d persone) %d%%" % [candidate.id, candidate.name,
+		candidate_texts.append("#%d %s %s%s difesa %.1f (%d persone, %d cani) %d%%" % [candidate.id, candidate.name,
 			String(HumanTypes.AgeBand.keys()[age_band]).to_lower(),
-			" ferito/malato" if not candidate.health_conditions.is_empty() else "", defense, nearby, roundi(chance * 100.0)])
+			" ferito/malato" if not candidate.health_conditions.is_empty() else "", defense, nearby, int(dog_defense["count"]),
+			roundi(chance * 100.0)])
 		if chance > target_chance:
 			target = candidate
 			target_chance = chance
@@ -725,9 +753,12 @@ static func _is_safe(visit: WildAnimalVisit, point: Vector2) -> bool:
 	return visit.shelter_rects.any(func(rect: Rect2) -> bool: return rect.has_point(point)) or _in_fear_zone(visit, point)
 
 
-# Entro FEAR_SAFE_RADIUS da un edificio che la specie teme (safe_points: il focolare).
+# Entro il raggio di una zona sicura (safe_points/safe_radii: il focolare, i cani di guardia).
 static func _in_fear_zone(visit: WildAnimalVisit, point: Vector2) -> bool:
-	return visit.safe_points.any(func(safe_point: Vector2) -> bool: return safe_point.distance_to(point) <= FEAR_SAFE_RADIUS)
+	for i in range(visit.safe_points.size()):
+		if visit.safe_points[i].distance_to(point) <= visit.safe_radii[i]:
+			return true
+	return false
 
 
 # Nessuna microcella bloccata (visit.blocked_test) sulla linea da `from` a `to`, escluse quella di partenza (l'animale ci
@@ -776,8 +807,12 @@ static func _start_charge(visit: WildAnimalVisit, target: HumanIndividual, world
 		if visit.shelter_rects.any(func(rect: Rect2) -> bool: return rect.has_point(member.position)):
 			return false
 		return wolf_positions.any(func(wolf: Vector2) -> bool: return _is_line_clear(visit, wolf, member.position))
+	# Cani di guardia (passo 8.2): corrono comunque tutti; nella scelta di chi chiamare stanno in fila con le persone, per
+	# distanza (2026-11-07, decisione utente).
+	var dogs := DomesticAnimalGuardService.start_run(visit, game_data, target.position)
+	visit.drive_off_threats = wolf_positions.size()
 	var drive_off := DangerFleeService.start_drive_off(individuals, target, DANGER_PROFILE, visit.group_id,
-		wolf_positions, can_help, game_data)
+		wolf_positions, can_help, game_data, dogs)
 	visit.defender_ids = drive_off["helper_ids"]
 	visit.defenders_needed = int(drive_off["needed"]) if not visit.defender_ids.is_empty() else 0
 
@@ -789,6 +824,11 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 		game_data: GameData, world: World, folk: Folk, effects: GameEffects) -> void:
 	var target := _find_individual(individuals, visit.attack_target_id)
 	visit.charge_remaining -= delta
+	DomesticAnimalGuardService.update_run(visit, game_data)
+	# Scontro dei cani col branco (passo 8.4); ucciso l'ultimo presente, la visita è già tolta.
+	if DomesticAnimalGuardService.resolve_clashes(visit, game_data, individuals, effects) or visit.animal_ids.is_empty():
+		DomesticAnimalGuardService.end_run(visit, game_data, world)
+		return
 	var end_reason := ""
 	if target == null:
 		end_reason = "persona sparita"
@@ -796,7 +836,7 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 		end_reason = "persona uscita dalla macrocella"
 	elif visit.shelter_rects.any(func(rect: Rect2) -> bool: return rect.has_point(target.position)):
 		end_reason = "persona al riparo in un edificio"
-	elif visit.defenders_needed > 0 and _defenders_arrived(visit, individuals) >= visit.defenders_needed:
+	elif _drive_off_ready(visit, individuals, game_data):
 		visit.drive_off_shouting += delta
 		var profile := DangerFleeService.get_profile(DANGER_PROFILE)
 		if profile == null or visit.drive_off_shouting >= profile.drive_off_shout_days:
@@ -887,6 +927,21 @@ static func _redirect_flight(visit: WildAnimalVisit, target: HumanIndividual, wo
 		game_data, true)
 
 
+# Cacciata pronta (passo 8.2, persone e cani insieme): arrivati almeno DangerProfile.drive_off_min_helpers aiutanti
+# (persona 1, cane guard_helper_weight), che coprono tutti i presenti alla carica (persona drive_off_threats_per_helper,
+# cane guard_threats_per_dog). Con le sole persone è la regola di prima.
+static func _drive_off_ready(visit: WildAnimalVisit, individuals: Array[HumanIndividual], game_data: GameData) -> bool:
+	if visit.defender_ids.is_empty() and visit.guard_dog_ids.is_empty():
+		return false
+	var profile := DangerFleeService.get_profile(DANGER_PROFILE)
+	if profile == null:
+		return false
+	var people := _defenders_arrived(visit, individuals)
+	var dogs := DomesticAnimalGuardService.arrived_support(visit, game_data)
+	var threats := visit.drive_off_threats if visit.drive_off_threats > 0 else visit.animal_ids.size()
+	return float(people) + float(dogs["helpers"]) >= float(profile.drive_off_min_helpers) - 0.001 		and people * profile.drive_off_threats_per_helper + int(dogs["threats"]) >= threats
+
+
 # Aiutanti arrivati: corsa finita (gridano sul posto) o entro DRIVE_OFF_GIVE_UP_DISTANCE da un presente.
 static func _defenders_arrived(visit: WildAnimalVisit, individuals: Array[HumanIndividual]) -> int:
 	if visit.defender_ids.is_empty():
@@ -915,6 +970,8 @@ static func _on_driven_off(visit: WildAnimalVisit, individuals: Array[HumanIndiv
 		var member := _find_individual(individuals, defender_id)
 		if member != null:
 			names.append(member.name)
+	if not visit.guard_dog_ids.is_empty():
+		names.append(GameContext.tr_text("wild_animal_driven_off_dogs").format({"count": visit.guard_dog_ids.size()}))
 	var group := _find_group(game_data, visit.group_id)
 	if group != null:
 		group.driven_off_count += 1
@@ -948,6 +1005,7 @@ static func _end_charge(visit: WildAnimalVisit, individuals: Array[HumanIndividu
 		folk: Folk, effects: GameEffects) -> void:
 	visit.attack_target_id = -1
 	DangerFleeService.end_danger(individuals, visit.group_id)
+	DomesticAnimalGuardService.end_run(visit, game_data, world)
 	apply_visit_outcome(visit, game_data, world, folk, effects)
 	_start_leaving(visit, world)
 
@@ -982,8 +1040,8 @@ static func apply_visit_outcome(visit: WildAnimalVisit, game_data: GameData, wor
 	var domestic_species := _domestic_species_for(group.species)
 	var whole_points := 0
 	var domestic_rules := DomesticAnimalCalculator.get_rules(domestic_species)
-	# Con tutti i cani arrivati i lupi restano un pericolo, ma senza più punti.
-	if domestic_rules != null and not DomesticAnimalService.has_all_arrivals(game_data, domestic_rules):
+	# Dopo il primo arrivo dei cani i lupi restano un pericolo, ma senza più punti.
+	if domestic_rules != null and not DomesticAnimalService.is_domesticated(game_data, domestic_species):
 		group.pending_domestication_points += visit_points
 		whole_points = int(floor(group.pending_domestication_points))
 		group.pending_domestication_points -= whole_points
@@ -1012,6 +1070,9 @@ static func _release_domestic_arrivals(visit: WildAnimalVisit, group: WildAnimal
 		return
 	if DomesticationPointsService.get_points(game_data, rules.species_name) < rules.domestication_points_required:
 		return
+	# Solo il primo arrivo viene dal branco (2026-11-06): poi i rimpiazzi arrivano da fuori (DomesticAnimalLifeService).
+	if DomesticAnimalService.is_domesticated(game_data, rules.species_name):
+		return
 	var storage := WildAnimalGroupService.find_anchor_storage(world)
 	var village_id := storage.village_id if storage != null else -1
 	var today := game_data.get_absolute_day()
@@ -1033,6 +1094,7 @@ static func _release_domestic_arrivals(visit: WildAnimalVisit, group: WildAnimal
 			_leave_visit(visit, leaver.id)
 			arrived += 1
 	if arrived > 0:
+		game_data.domestic_first_arrival_day[rules.species_name] = today
 		print("[WILD ANIMAL VISITS] %s: %d lasciano il branco per diventare %s, nel branco ne restano %d" % [
 			group.species, arrived, rules.species_name, group.animals.size()])
 		_notify_group(effects, "notification_domestic_arrival_%s" % rules.species_name, {"count": arrived})
@@ -1116,7 +1178,7 @@ static func debug_dice_line(game_data: GameData, world: World, group: WildAnimal
 	if group.animals.is_empty():
 		return "Visite: nessun animale, nuovo gruppo tra %d giorni" % (group.new_pack_day - today)
 	var last_text := "ultima %d giorni fa" % (today - group.last_visit_end_day) if group.last_visit_end_day >= 0 else "nessuna finita"
-	var faces := visit_dice_faces(world, villagers)
+	var faces := visit_dice_faces(world, villagers, game_data, group)
 	var dice_text := "dado da %.1f facce (%.1f%% al giorno)" % [faces, 100.0 / faces] if faces > 0.0 else "nessun dado (%d abitanti)" % villagers
 	var wait_text := ", attesa ancora %d giorni" % (group.next_visit_day - today) if today < group.next_visit_day else ""
 	return "Visite: %s, %s%s" % [last_text, dice_text, wait_text]

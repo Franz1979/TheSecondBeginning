@@ -62,6 +62,39 @@ static func is_narrow(positions: Dictionary, pos: Vector2i) -> bool:
 	return true
 
 
+# Dove si può costruire il guado di pietre (2026-11-04, richiesta utente — BuildingRules.requires_narrow_stream): un tratto
+# largo 1 (is_narrow) che il ruscello attraversa davvero. Con due vicini è un passaggio normale; con uno solo è valido
+# soltanto sul bordo della macrocella, dove il ruscello prosegue nella vicina: altrove è la sacca di un'insenatura, e la
+# cella del corso principale accanto ha 3 vicini, quindi is_narrow la esclude già.
+static func is_ford_site(positions: Dictionary, pos: Vector2i) -> bool:
+	if not is_narrow(positions, pos):
+		return false
+	var neighbors := 0
+	for direction in _DIRECTIONS:
+		if positions.has(pos + direction):
+			neighbors += 1
+	if neighbors == 2:
+		return true
+	return neighbors == 1 and (pos.x == 0 or pos.y == 0 or pos.x == World.WIDTH - 1 or pos.y == World.HEIGHT - 1)
+
+
+# Angolo del guado (2026-11-04, richiesta utente): la fila di pietre, disegnata lungo Y, attraversa il ruscello. Tratto
+# dritto o bordo: perpendicolare al corso. Curva: in diagonale, dalla riva esterna a quella interna. Fuori dal ruscello: 0.
+static func ford_angle(positions: Dictionary, pos: Vector2i) -> float:
+	var neighbors := 0
+	var sum := Vector2i.ZERO
+	var last := Vector2i.ZERO
+	for direction: Vector2i in _DIRECTIONS:
+		if positions.has(pos + direction):
+			neighbors += 1
+			sum += direction
+			last = direction
+	if neighbors == 0:
+		return 0.0
+	var across: Vector2 = Vector2(sum) if neighbors == 2 and sum != Vector2i.ZERO else Vector2(last).orthogonal()
+	return atan2(-across.x, across.y)
+
+
 # Tracciato completo:
 #   "positions": Dictionary Vector2i -> true (logica: tratti, insenature, pozza);
 #   "paths": Array di PackedVector2Array, linee centrali in unità di microcella (per il disegno);

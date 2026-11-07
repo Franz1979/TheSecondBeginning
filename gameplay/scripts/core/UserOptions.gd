@@ -77,6 +77,8 @@ var work_area_auto_zone: bool = true
 var work_area_gather_trips: int = 5
 # Pietre da estrarre del comando Estrai nelle zone (2026-10-05), QuarryZoneService.COUNT_MIN..COUNT_MAX, la prima volta 3.
 var work_area_quarry_count: int = 3
+# Ultima fonte scelta nel comando Estrai (2026-11-04, ExtractionSourceService).
+var work_area_quarry_source: String = "rock"
 # Piante da tagliare del comando Taglia nelle zone (2026-10-06), CutZoneService.COUNT_MIN..COUNT_MAX, la prima volta 2.
 var work_area_cut_count: int = 2
 var hunt_zone_meat_target: int = 10
@@ -152,6 +154,7 @@ func load_from_disk() -> void:
 	# Letti così come sono: i dialog li riportano nei valori ammessi (PickupChoiceDialog, anche in modalità caccia).
 	work_area_gather_trips = int(config.get_value(SECTION, "work_area_gather_trips", 5))
 	work_area_quarry_count = int(config.get_value(SECTION, "work_area_quarry_count", 3))
+	work_area_quarry_source = String(config.get_value(SECTION, "work_area_quarry_source", "rock"))
 	work_area_cut_count = int(config.get_value(SECTION, "work_area_cut_count", 2))
 	hunt_zone_meat_target = int(config.get_value(SECTION, "hunt_zone_meat_target", 10))
 	fish_zone_target = int(config.get_value(SECTION, "fish_zone_target", 10))
@@ -182,6 +185,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "work_area_auto_zone", work_area_auto_zone)
 	config.set_value(SECTION, "work_area_gather_trips", work_area_gather_trips)
 	config.set_value(SECTION, "work_area_quarry_count", work_area_quarry_count)
+	config.set_value(SECTION, "work_area_quarry_source", work_area_quarry_source)
 	config.set_value(SECTION, "work_area_cut_count", work_area_cut_count)
 	config.set_value(SECTION, "hunt_zone_meat_target", hunt_zone_meat_target)
 	config.set_value(SECTION, "fish_zone_target", fish_zone_target)

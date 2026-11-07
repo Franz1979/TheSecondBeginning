@@ -83,15 +83,18 @@ static func end_danger(individuals: Array[HumanIndividual], danger_id: int) -> v
 # Callable(HumanIndividual) -> bool di chi crea il pericolo: per i lupi fuori dagli edifici e con la linea libera)
 # corrono verso la minaccia più vicina tra `threat_positions` e si fermano a drive_off_stop_distance da lei. Servono
 # almeno drive_off_min_helpers e uno ogni drive_off_threats_per_helper minacce; meno di così non parte nessuno.
-# {"helper_ids": Array[int] partiti, "needed": int richiesti}.
+# Aiuto che corre comunque (`support`, i cani di guardia, 2026-11-07, decisione utente): Array di {"position": Vector2,
+# "helper": float, "threats": int}. Persone e aiuto stanno in un'unica fila per distanza da `target`: si scorre dal più
+# vicino finché la somma basta (aiutanti, persona 1; minacce coperte, persona drive_off_threats_per_helper) e corrono le
+# persone incontrate fino lì. Se non basta tutta la fila non corre nessuna persona.
+# {"helper_ids": Array[int] partiti, "needed": int persone scelte}.
 static func start_drive_off(individuals: Array[HumanIndividual], target: HumanIndividual, profile_name: String,
-		danger_id: int, threat_positions: Array[Vector2], can_help: Callable, game_data: GameData) -> Dictionary:
+		danger_id: int, threat_positions: Array[Vector2], can_help: Callable, game_data: GameData,
+		support: Array = []) -> Dictionary:
 	var helper_ids: Array[int] = []
 	var profile := get_profile(profile_name)
 	if profile == null or not profile.drive_off_enabled or target == null or threat_positions.is_empty():
 		return {"helper_ids": helper_ids, "needed": 0}
-	var needed := maxi(profile.drive_off_min_helpers,
-		ceili(float(threat_positions.size()) / float(maxi(profile.drive_off_threats_per_helper, 1))))
 	var candidates: Array[HumanIndividual] = []
 	for member in individuals:
 		if member == null or member == target or member.home_macro_coords != target.home_macro_coords:
@@ -105,12 +108,37 @@ static func start_drive_off(individuals: Array[HumanIndividual], target: HumanIn
 		if can_help.is_valid() and not bool(can_help.call(member)):
 			continue
 		candidates.append(member)
-	if candidates.size() < needed:
-		print("[DRIVE OFF] #%d %s: %d adulti disponibili, ne servono %d, nessuno interviene" % [
-			target.id, target.name, candidates.size(), needed])
-		return {"helper_ids": helper_ids, "needed": needed}
-	var definition := TaskDefinitionCache.get_definition(DRIVE_OFF_TASK_DEFINITION_PATH)
+	var queue: Array[Dictionary] = []
 	for member in candidates:
+		queue.append({"distance": member.position.distance_to(target.position), "member": member, "helper": 1.0,
+			"threats": profile.drive_off_threats_per_helper})
+	for entry in support:
+		queue.append({"distance": (entry["position"] as Vector2).distance_to(target.position), "member": null,
+			"helper": float(entry["helper"]), "threats": int(entry["threats"])})
+	queue.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["distance"]) < float(b["distance"]))
+	var chosen: Array[HumanIndividual] = []
+	var helpers := 0.0
+	var covered := 0
+	var support_used := 0
+	var enough := false
+	for entry in queue:
+		if entry["member"] != null:
+			chosen.append(entry["member"])
+		else:
+			support_used += 1
+		helpers += float(entry["helper"])
+		covered += int(entry["threats"])
+		if helpers >= float(profile.drive_off_min_helpers) - 0.001 and covered >= threat_positions.size():
+			enough = true
+			break
+	if not enough:
+		print("[DRIVE OFF] #%d %s: %d adulti e %d animali di guardia non bastano per %d minacce, nessuna persona interviene" % [
+			target.id, target.name, candidates.size(), support.size(), threat_positions.size()])
+		return {"helper_ids": helper_ids, "needed": 0}
+	print("[DRIVE OFF] #%d %s: per vicinanza bastano %d persone e %d animali di guardia (%d minacce)" % [
+		target.id, target.name, chosen.size(), support_used, threat_positions.size()])
+	var definition := TaskDefinitionCache.get_definition(DRIVE_OFF_TASK_DEFINITION_PATH)
+	for member in chosen:
 		var nearest := threat_positions[0]
 		for threat in threat_positions:
 			if threat.distance_to(member.position) < nearest.distance_to(member.position):
@@ -125,7 +153,7 @@ static func start_drive_off(individuals: Array[HumanIndividual], target: HumanIn
 		if member.assign_task(task, GameContext.age_band_for(member, game_data), true):
 			helper_ids.append(member.id)
 			print("[DRIVE OFF] #%d %s corre a scacciare il pericolo (%s)" % [member.id, member.name, profile_name])
-	return {"helper_ids": helper_ids, "needed": needed}
+	return {"helper_ids": helper_ids, "needed": chosen.size()}
 
 
 # Fuga allo scoperto da rifare (2026-10-30, richiesta utente — Talin morso 3 volte mentre aspettava dove era corso

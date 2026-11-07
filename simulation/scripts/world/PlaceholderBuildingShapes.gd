@@ -19,7 +19,9 @@ const TYPES: Array[String] = ["burial", "earthwork", "stacked_stones", "rubble",
 
 # Guado di pietre (stone_ford, 2026-10-31, richiesta utente): pietre piatte in fila sul ruscello, vista dall'alto, ognuna
 # col suo bordo scuro d'ombra sotto (come i banchi del ceppo dell'insegnamento). La fila va lungo Y (attraversa un ruscello
-# che scorre lungo X); ruota con la direzione scelta al piazzamento. Centro (x, y) e raggio (z).
+# che scorre lungo X); sulla mappa e in anteprima l'angolo viene dal ruscello (StreamMicrocellService.ford_angle, passato
+# in draw come angle_override), non dalla direzione dell'edificio. Centro (x, y) e raggio (z).
+const STONE_FORD_TYPE := "stone_ford"
 const STONE_FORD_STONES: Array[Vector3] = [
 	Vector3(0.3, -3.7, 1.15), Vector3(-0.4, -1.3, 1.3), Vector3(0.4, 1.2, 1.3), Vector3(-0.3, 3.6, 1.15),
 ]
@@ -151,10 +153,12 @@ static func burial_slab_center_microcell(direction: GameTypes.Direction = GameTy
 
 static func draw(
 	canvas: CanvasItem, building_type: String, canvas_center: Vector2, invalid: bool = false, scale: float = 1.0,
-	direction: GameTypes.Direction = GameTypes.Direction.SOUTH
+	direction: GameTypes.Direction = GameTypes.Direction.SOUTH, angle_override: float = NAN
 ) -> void:
 	# Tutto si disegna attorno all'origine dentro la trasformazione della direzione, ripristinata alla fine.
-	canvas.draw_set_transform(canvas_center, _direction_angle(building_type, direction), Vector2(_direction_mirror(building_type, direction), 1.0))
+	# `angle_override` (guado di pietre): angolo libero al posto delle quattro direzioni.
+	var draw_angle := _direction_angle(building_type, direction) if is_nan(angle_override) else angle_override
+	canvas.draw_set_transform(canvas_center, draw_angle, Vector2(_direction_mirror(building_type, direction), 1.0))
 	var center := Vector2.ZERO
 	var tint := func(color: Color) -> Color: return INVALID_TINT if invalid else color
 	var p := func(x: float, y: float) -> Vector2: return center + Vector2(x, y) * scale

@@ -23,6 +23,10 @@ const KEY_REMAINING_USES := "remaining_uses"
 # tolto di dosso riparte dal valore che aveva. Chiave scritta solo se > 0, quindi gli attrezzi (che non deperiscono)
 # restano nel formato di sempre.
 const KEY_DECAY_FRACTION := "decay_fraction"
+# Acqua contenuta (2026-11-06, richiesta utente — giare: SecondaryResourceRules.water_capacity, 400 per la giara). Scritta
+# solo se > 0. Pesa WATER_SPACE_PER_UNIT ciascuna (ogni 10 d'acqua, 1 di spazio): HumanIndividual.get_carried_space.
+const KEY_WATER := "water"
+const WATER_SPACE_PER_UNIT: float = 0.1
 
 
 static func create(remaining_uses: int, decay_fraction: float = 0.0) -> Dictionary:
@@ -47,6 +51,25 @@ static func set_decay_fraction(instance: Dictionary, decay_fraction: float) -> v
 		instance.erase(KEY_DECAY_FRACTION)
 
 
+static func get_water(instance: Dictionary) -> int:
+	return int(instance.get(KEY_WATER, 0))
+
+
+static func set_water(instance: Dictionary, water: int) -> void:
+	if water > 0:
+		instance[KEY_WATER] = water
+	else:
+		instance.erase(KEY_WATER)
+
+
+# Acqua di tutte le istanze di una voce (i pezzi nuovi sono vuoti).
+static func get_entry_water(entry: Dictionary) -> int:
+	var total := 0
+	for instance in get_used_instances(entry):
+		total += get_water(instance)
+	return total
+
+
 # Utilizzabile = almeno un uso residuo. Un attrezzo a 0 usi è rotto: sparisce, non si stocca.
 static func is_usable(instance: Dictionary) -> bool:
 	return get_remaining_uses(instance) > 0
@@ -54,17 +77,21 @@ static func is_usable(instance: Dictionary) -> bool:
 
 # Usi pieni = indistinguibile da un pezzo nuovo (rientra nella quantità dei nuovi). max_uses <= 0
 # (attrezzo che non si usura, vedi SecondaryResourceRules.max_uses) = sempre "pieno".
+# Un pezzo con dell'acqua dentro (2026-11-06, giare) non è mai uguale a uno nuovo: resta un'istanza.
 static func is_full(instance: Dictionary, max_uses: int) -> bool:
+	if get_water(instance) > 0:
+		return false
 	return max_uses <= 0 or get_remaining_uses(instance) >= max_uses
 
 
-# Copia indipendente dell'istanza, con i soli campi noti normalizzati al tipo atteso (i campi futuri
+# Copia indipendente dell'istanza, con i soli campi noti normalizzati al tipo atteso (acqua compresa) (i campi futuri
 # eventualmente presenti vengono conservati). Usata al caricamento e quando un'istanza entra in un
 # contenitore, così nessuno condivide lo stesso Dictionary.
 static func normalized(instance: Dictionary) -> Dictionary:
 	var copy: Dictionary = instance.duplicate(true)
 	copy[KEY_REMAINING_USES] = get_remaining_uses(instance)
 	set_decay_fraction(copy, clampf(get_decay_fraction(instance), 0.0, 1.0))
+	set_water(copy, maxi(get_water(instance), 0))
 	return copy
 
 

@@ -12,12 +12,20 @@ const FRAMED_CALL_INTERVAL_MSEC: int = 30000
 
 
 # Ogni fotogramma (GameScene._sync_domestic_animal_bodies). `renderers`: chiave di _renderer_key -> renderer, tenuto dalla
-# scena; `make_renderer`: Callable(LiveMacroCell, DomesticAnimalRules) -> AnimalGroupRenderer.
-static func sync_bodies(game_data: GameData, world: World, renderers: Dictionary, make_renderer: Callable) -> void:
+# scena; `make_renderer`: Callable(LiveMacroCell, DomesticAnimalRules) -> AnimalGroupRenderer. `individuals` e
+# `game_delta` (giorni) per chi segue le persone (passo 8.3, DomesticAnimalFollowService).
+static func sync_bodies(game_data: GameData, world: World, renderers: Dictionary, make_renderer: Callable,
+		individuals: Array[HumanIndividual], game_delta: float) -> void:
+	# Cacciatori e loro animale (2026-11-07, DomesticAnimalHuntService): prima del giro, chi è a caccia non segue la gente.
+	DomesticAnimalHuntService.assign(game_data, world, individuals)
 	for animal in game_data.domestic_animals:
 		var body := AnimalGroupRenderer.find_live_individual(animal.body_id) if animal.body_id != 0 else null
 		if body != null:
 			animal.position = body.position
+			if DomesticAnimalGuardService.update_confront_animal(animal, game_data):
+				continue
+			if not DomesticAnimalHuntService.update_animal(animal, individuals):
+				DomesticAnimalFollowService.update_animal(animal, game_data, world, individuals, game_delta)
 			continue
 		animal.body_id = 0
 		# Cella non viva: si esce subito, questo giro è per ogni fotogramma.
@@ -47,8 +55,25 @@ static func sync_bodies(game_data: GameData, world: World, renderers: Dictionary
 		body = renderer.add_identified_individual(band, animal.position, 0, animal.id)
 		animal.body_id = body.id
 		body.health *= animal.health_ratio
+		# Corpo nuovo: comincia dal magazzino e sceglie chi seguire al prossimo fotogramma.
+		animal.follow_person_id = -1
+		animal.follow_hours_left = 0.0
+		animal.guard_running = false
+		animal.hunt_person_id = -1
+		animal.hunt_catching_up = false
+		animal.guard_confront_group_id = -1
 		AnimalGroupRenderer.set_live_behavior(body.id, AnimalVisualGroup.Behavior.STAND_AROUND, home,
 			rules.roam_radius_min, rules.roam_radius_max, rules.roam_speed_scale)
+
+
+# Torna a gironzolare attorno al magazzino, come quando il corpo compare (finita la guardia, passo 8.2).
+static func send_home(animal: DomesticAnimal, world: World) -> void:
+	var rules := DomesticAnimalCalculator.get_rules(animal.species)
+	if rules == null or animal.body_id == 0:
+		return
+	AnimalGroupRenderer.set_live_behavior(animal.body_id, AnimalVisualGroup.Behavior.STAND_AROUND,
+		_home_point(animal, WildAnimalGroupService.find_anchor_storage(world)),
+		rules.roam_radius_min, rules.roam_radius_max, rules.roam_speed_scale)
 
 
 static func _home_point(animal: DomesticAnimal, storage: Building) -> Vector2:

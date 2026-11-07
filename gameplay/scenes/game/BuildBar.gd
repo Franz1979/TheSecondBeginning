@@ -123,7 +123,13 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Guado di pietre (2026-10-31, richiesta utente) — slot 25, submenu_row.slot_count portato a 27; Hut resta l'ultimo
 	# (slot 26). Categoria MOVEMENT, richiede paleolithic_constructions; si piazza solo su un ruscello stretto.
 	"stone_ford": 25,
-	"hut": 26,
+	# Capanna del vasellaio (2026-11-03, richiesta utente) — slot 26, submenu_row.slot_count portato a 28; Hut resta l'ultimo
+	# (slot 27). Categoria PRODUCTION, richiede pottery.
+	"potter_hut": 26,
+	# Tettoia dell'acqua (2026-11-06, richiesta utente) — slot 27, submenu_row.slot_count portato a 29; Hut resta l'ultimo
+	# (slot 28). Categoria OTHER, richiede pottery.
+	"water_shelter": 27,
+	"hut": 28,
 }
 
 # Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 10). RUINS esclusa:
@@ -153,10 +159,8 @@ var _state: _ViewState = _ViewState.LEVEL_1
 var _category_by_type: Dictionary = {}
 # Categoria aperta in BUILDINGS (-1 = nessuna).
 var _current_category: int = -1
-# Per ogni slot di category_row: il contenitore dell'icona (sostituita quando cambia l'edificio rappresentativo) e il
-# tipo che mostra adesso ("" = ancora nessuno).
+# Per ogni slot di category_row: il contenitore dell'icona fissa della categoria (IconRegistry.BUILDING_CATEGORY_ICONS).
 var _category_icon_holders: Array[Control] = []
-var _category_icon_types: Array[String] = []
 # Spunta "Nascondi superati" nella riga del titolo (UserOptions.build_bar_hide_superseded), visibile con le categorie e
 # con gli edifici.
 var _hide_superseded_check: Button = null
@@ -258,7 +262,7 @@ func _ready() -> void:
 	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
 	# Legnaia (2026-10-08): richiede advanced_paleolithic_constructions, disabilitata da _refresh_building_slots_buildable.
 	# Capanna del vestiario (2026-10-11): richiede advanced_paleolithic_constructions, come la legnaia.
-	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack", "healer_hut", "star_circle", "stone_ford"]:
+	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack", "healer_hut", "star_circle", "stone_ford", "potter_hut", "water_shelter"]:
 		submenu_row.configure_slot(
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)
@@ -309,7 +313,15 @@ func _build_category_row() -> void:
 		var holder := Control.new()
 		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_category_icon_holders.append(holder)
-		_category_icon_types.append("")
+		# Icona fissa della categoria (2026-11-07, IconRegistry.BUILDING_CATEGORY_ICONS).
+		var icon_label := Label.new()
+		icon_label.text = IconRegistry.get_building_category_icon(CATEGORY_ORDER[i])
+		icon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		icon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon_label.custom_minimum_size = Vector2(CATEGORY_ICON_SIDE, CATEGORY_ICON_SIDE)
+		icon_label.set_anchors_preset(Control.PRESET_FULL_RECT)
+		holder.add_child(icon_label)
 		category_row.configure_slot(
 			i, "", _category_name(CATEGORY_ORDER[i]), StringName("build_category_%d" % i), "", true, holder
 		)
@@ -350,9 +362,8 @@ func _visible_types_of_category(category: int) -> Array[String]:
 	return result
 
 
-# Ricalcola cosa si vede: slot degli edifici (categoria aperta, non scoperti e superati nascosti) e slot delle categorie (icona
-# dell'edificio rappresentativo = l'ultimo costruibile in ordine di slot, altrimenti il primo; spenta se nessuno è
-# costruibile; nascosta se la categoria non ha edifici nella barra).
+# Ricalcola cosa si vede: slot degli edifici (categoria aperta, non scoperti e superati nascosti) e slot delle categorie
+# (icona fissa; spenta se nessun edificio è costruibile; nascosta se la categoria non ha edifici nella barra).
 func _refresh_building_filter() -> void:
 	for building_type_name in BUILDING_SLOT_INDEX_BY_TYPE.keys():
 		var shown := int(_category_by_type.get(building_type_name, -1)) == _current_category \
@@ -363,18 +374,12 @@ func _refresh_building_filter() -> void:
 		category_row.set_slot_visible(i, not types.is_empty())
 		if types.is_empty():
 			continue
-		var representative := types[0]
 		var any_buildable := false
 		for building_type_name in types:
 			if _is_type_buildable(building_type_name):
-				representative = building_type_name
 				any_buildable = true
+				break
 		category_row.set_slot_disabled(i, not any_buildable, tr("build_bar_category_none_available"))
-		if representative != _category_icon_types[i]:
-			_category_icon_types[i] = representative
-			for child in _category_icon_holders[i].get_children():
-				child.queue_free()
-			_category_icon_holders[i].add_child(IconRegistry.build_building_icon_box(representative, CATEGORY_ICON_SIDE))
 
 
 func _on_category_action_pressed(action_id: StringName) -> void:

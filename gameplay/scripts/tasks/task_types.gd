@@ -134,6 +134,11 @@ enum ActionType {
 	FISH,
 	# SLAUGHTER (2026-11-04, Macella sugli animali domestici — SlaughterAction, slaughter.tres) — IN CODA (39).
 	SLAUGHTER,
+	# FILL_JAR (2026-11-06, giare d'acqua — FillJarAction, fill_jar.tres) — IN CODA (40).
+	FILL_JAR,
+	# TAKE_JAR / PUT_JAR (2026-11-06, giare — TakeJarAction/PutJarAction, fill_jar.tres) — IN CODA (41, 42).
+	TAKE_JAR,
+	PUT_JAR,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

@@ -16,6 +16,8 @@ var carcass_pile: GroundPile = null
 var plant: Dictionary = {}
 # Roccia colpita ({"macro_coords", "position", ...}), {} = nessuna.
 var rock: Dictionary = {}
+# Microcella di argilla sotto il mouse, se l'idea è scoperta ({"macro_coords", "position"}), {} = nessuna (2026-11-04).
+var clay: Dictionary = {}
 # Microcella di ruscello con almeno un pesce sotto il mouse ({"macro_coords", "position"}), {} = nessuna (2026-10-31, pesca).
 var stream_fish: Dictionary = {}
 # Candidati della raccolta nel punto (GameScene._resolve_pickup_candidates), già filtrati dalla nebbia.

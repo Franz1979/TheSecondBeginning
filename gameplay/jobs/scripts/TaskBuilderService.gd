@@ -11,6 +11,7 @@ extends RefCounted
 const TRANSPORT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/transport.tres"
 const CUT_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/cut.tres"
 const QUARRY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/quarry.tres"
+const DIG_CLAY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/dig_clay.tres"
 const FISH_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/fish.tres"
 const REPAIR_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/repair.tres"
 const PRODUCE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/produce.tres"
@@ -168,15 +169,19 @@ static func build_cut_task(worker: HumanIndividual, plant: Dictionary, work_area
 # Task Quarry (Walk + Quarry) sulla roccia `rock_position` della macrocella `macro_coords`; zona e serie come in
 # build_cut_task.
 static func build_quarry_task(
-	worker: HumanIndividual, macro_coords: Vector2i, rock_position: Vector2i, work_area_id: int = -1, series: Dictionary = {}
+	worker: HumanIndividual, macro_coords: Vector2i, rock_position: Vector2i, work_area_id: int = -1, series: Dictionary = {},
+	source: String = ExtractionSourceService.SOURCE_ROCK
 ) -> Task:
-	var definition := TaskDefinitionCache.get_definition(QUARRY_TASK_DEFINITION_PATH)
+	var definition := TaskDefinitionCache.get_definition(
+		DIG_CLAY_TASK_DEFINITION_PATH if source == ExtractionSourceService.SOURCE_CLAY else QUARRY_TASK_DEFINITION_PATH
+	)
 	if definition == null:
 		return null
 	var task := TaskFactory.build_task(definition, {
 		"target_position": PathfindingService.random_point_in_microcell(Vector2(rock_position) + macro_offset(worker, macro_coords)),
 		"quarry_macro_coords": macro_coords,
 		"quarry_position": rock_position,
+		"quarry_source": source,
 	})
 	if work_area_id != -1:
 		task.context[QuarryZoneService.CONTEXT_WORK_AREA_ID] = work_area_id

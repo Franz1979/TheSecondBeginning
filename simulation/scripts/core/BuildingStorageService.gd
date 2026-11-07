@@ -370,6 +370,11 @@ static func store(building: Building, resource_name: String, quantity: int, deca
 static func store_tool_instance(building: Building, resource_name: String, instance: Dictionary) -> bool:
 	if not ToolInstance.uses_instances(resource_name):
 		return false
+	# Giara con dell'acqua (2026-11-06): l'acqua sta solo nelle Tettoie dell'acqua, che non passano da qui
+	# (WaterJarService.put_jar). In ogni altro deposito entra vuota: l'acqua si versa.
+	if ToolInstance.get_water(instance) > 0:
+		instance = instance.duplicate(true)
+		ToolInstance.set_water(instance, 0)
 	if ToolInstance.is_full(instance, ToolInstance.get_max_uses(resource_name)):
 		return store(building, resource_name, 1, ToolInstance.get_decay_fraction(instance)) == 1
 	if not ToolInstance.is_usable(instance):

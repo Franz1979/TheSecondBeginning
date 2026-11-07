@@ -80,6 +80,9 @@ signal inventory_interval_changed(hours: int)
 # fuel_rule_toggled / fuel_min_changed.
 signal fuel_rule_toggled(enabled: bool)
 signal fuel_min_changed(type_name: String, level: int)
+# Regola "Acqua per tettoia" (2026-11-07, giare passo 3): valore da GameScene (set_water_rule, prima di _ready); i cambi
+# escono con water_per_shelter_changed. L'acqua di ogni tettoia si legge nel pannello della tettoia, non qui.
+signal water_per_shelter_changed(level: int)
 # Regola "Rifornisci le Attrezzerie" (2026-10-18, ToolkitStockService): accesa/spenta e pezzi voluti per tipo e attrezzo.
 signal toolkit_rule_toggled(enabled: bool)
 signal toolkit_target_changed(type_name: String, tool_name: String, level: int)
@@ -88,6 +91,10 @@ signal toolkit_target_changed(type_name: String, tool_name: String, level: int)
 # e set_toolkit_rule.
 signal rule_rows_refresh_requested
 var _fuel_rule_enabled: bool = false
+var _water_per_shelter: int = 0
+var _water_max: int = 0
+var _water_missing: int = 0
+const WATER_MISSING_COLOR := Color(0.95, 0.35, 0.30, 1.0)
 var _fuel_rows: Array[Dictionary] = []
 var _toolkit_rule_enabled: bool = false
 # [{"type", "name", "tools": [{"tool", "level", "max"}]}] (ToolkitStockService.get_rule_rows).
@@ -270,6 +277,38 @@ func set_fuel_rule(enabled: bool, rows: Array[Dictionary]) -> void:
 	_fuel_rows = rows.duplicate()
 
 
+# `max_level`: capienza d'acqua di una tettoia; `missing`: giare che mancano nei magazzini (riga rossa), all'ultimo Inventario.
+func set_water_rule(level: int, max_level: int, missing: int = 0) -> void:
+	_water_per_shelter = level
+	_water_max = max_level
+	_water_missing = missing
+
+
+# Regola "Acqua per tettoia": titolo con il campo compatto a destra (+ e − uno sopra l'altro, a passi di 100, 0 = spenta).
+func _build_water_rule_rows() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_water_tooltip"))
+	var label := Label.new()
+	label.text = tr("warehouse_rule_water")
+	# Giare che mancano (2026-11-07): nella stessa riga, in rosso.
+	if _water_missing > 0:
+		label.text += " · " + tr("warehouse_rule_water_missing").format({"count": _water_missing})
+		label.add_theme_color_override("font_color", WATER_MISSING_COLOR)
+	label.tooltip_text = TooltipText.wrap(row.tooltip_text)
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	row.add_child(build_level_field(_water_per_shelter, func(level: int) -> void:
+		_water_per_shelter = level
+		water_per_shelter_changed.emit(level)
+	, "warehouse_rule_water_tooltip", 100, 0, true, LEVEL_NONE_TEXT, _water_max if _water_max > 0 else LEVEL_MAX))
+	return row
+
+
 func set_banquet_rule(safe_only: bool) -> void:
 	_banquet_safe_only = safe_only
 
@@ -418,7 +457,7 @@ func _fill_toolkit_popup(box: VBoxContainer) -> void:
 			tool_label.tooltip_text = TooltipText.wrap(tr("warehouse_rule_toolkit_tool_tooltip").format({"max": max_units}))
 			tool_label.mouse_filter = Control.MOUSE_FILTER_PASS
 			row.add_child(tool_label)
-			row.add_child(_build_level_field(int(tool_entry.get("level", 0)), func(level: int) -> void:
+			row.add_child(build_level_field(int(tool_entry.get("level", 0)), func(level: int) -> void:
 				var clamped := mini(level, max_units)
 				tool_entry["level"] = clamped
 				toolkit_target_changed.emit(type_name, tool_name, clamped)
@@ -438,7 +477,7 @@ func _fill_fuel_popup(box: VBoxContainer) -> void:
 		label.tooltip_text = TooltipText.wrap(row.tooltip_text)
 		label.mouse_filter = Control.MOUSE_FILTER_PASS
 		row.add_child(label)
-		row.add_child(_build_level_field(int(entry.get("level", 0)), func(level: int) -> void:
+		row.add_child(build_level_field(int(entry.get("level", 0)), func(level: int) -> void:
 			entry["level"] = level
 			fuel_min_changed.emit(type_name, level)
 		, "warehouse_rule_fuel_type_tooltip"))
@@ -633,6 +672,7 @@ func _build_rules_section() -> void:
 	DashedSeparator.add_item(_rules_box, _build_workstation_food_rule_row())
 	DashedSeparator.add_item(_rules_box, _build_fuel_rule_rows())
 	DashedSeparator.add_item(_rules_box, _build_toolkit_rule_rows())
+	DashedSeparator.add_item(_rules_box, _build_water_rule_rows())
 	DashedSeparator.add_item(_rules_box, _build_banquet_rule_rows())
 	if _excess_meat_state.size() == 3:
 		var options: Array[Dictionary] = []
@@ -733,13 +773,14 @@ func _apply_quantities() -> void:
 # `step` e `min_value` (2026-10-17, calorie dei banchetti: passi di 100, minimo 500); di base 1 e 0, come prima.
 # `compact` (2026-10-18, righe delle risorse): [campo stretto][+ sopra, − sotto]; anche la rotella cambia il valore (±1,
 # Shift ±10). `none_text`: testo del valore 0 ("—", o "∞" per il massimo).
-func _build_level_field(
+# Statica dal 2026-11-07 (riusata dal pannello della Tettoia dell'acqua, BuildingInfoPanel: "Livello voluto").
+static func build_level_field(
 	initial: int, on_change: Callable, tooltip_key: String = "warehouse_min_level_tooltip", step: int = 1, min_value: int = 0,
-	compact: bool = false, none_text: String = LEVEL_NONE_TEXT
+	compact: bool = false, none_text: String = LEVEL_NONE_TEXT, max_value: int = LEVEL_MAX
 ) -> Control:
-	var tooltip := tr(tooltip_key)
+	var tooltip := TranslationServer.translate(tooltip_key)
 	if compact:
-		tooltip += "\n" + tr("warehouse_level_wheel_hint")
+		tooltip += "\n" + TranslationServer.translate("warehouse_level_wheel_hint")
 	var field := HBoxContainer.new()
 	field.add_theme_constant_override("separation", 0)
 	field.tooltip_text = TooltipText.wrap(tooltip)
@@ -756,7 +797,7 @@ func _build_level_field(
 	edit.set_meta("none_text", none_text)
 	edit.text = _level_text(initial, none_text)
 	var commit := func(value: int) -> void:
-		var clamped := clampi(value, min_value, LEVEL_MAX)
+		var clamped := clampi(value, min_value, max_value)
 		edit.text = _level_text(clamped, none_text)
 		if clamped == int(edit.get_meta("level")):
 			return
@@ -809,7 +850,7 @@ func _build_level_field(
 
 
 # Campo compatto: font piccolo, margini minimi, bordo sottile (più chiaro col fuoco).
-func _style_compact_edit(edit: LineEdit) -> void:
+static func _style_compact_edit(edit: LineEdit) -> void:
 	edit.add_theme_font_size_override("font_size", LEVEL_COMPACT_FONT_SIZE)
 	edit.add_theme_constant_override("minimum_character_width", 0)
 	for state in ["normal", "focus", "read_only"]:
@@ -826,14 +867,14 @@ func _style_compact_edit(edit: LineEdit) -> void:
 
 
 # + e − compatti: senza sfondo né margini, solo il segno, uno sopra l'altro.
-func _style_compact_button(button: Button) -> void:
+static func _style_compact_button(button: Button) -> void:
 	button.custom_minimum_size = LEVEL_COMPACT_BUTTON_SIZE
 	button.add_theme_font_size_override("font_size", LEVEL_COMPACT_BUTTON_FONT_SIZE)
 	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
 		button.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 
 
-func _level_button(text: String, tooltip: String) -> Button:
+static func _level_button(text: String, tooltip: String) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.flat = true
@@ -844,7 +885,7 @@ func _level_button(text: String, tooltip: String) -> Button:
 	return button
 
 
-func _level_text(level: int, none_text: String = LEVEL_NONE_TEXT) -> String:
+static func _level_text(level: int, none_text: String = LEVEL_NONE_TEXT) -> String:
 	return none_text if level <= 0 else str(level)
 
 
@@ -1020,7 +1061,7 @@ func _rebuild_rows(names: Array[String]) -> void:
 			food_row.add_child(_food_days_label)
 			# Giorni minimi (2026-10-18): campo compatto come le righe (+ e − impilati a destra), in fondo alla riga (colonna
 			# "Max", così la scritta del totale ha più spazio) e alto quanto quelli delle righe, centrato.
-			var days_field := _build_level_field(
+			var days_field := build_level_field(
 				_min_food_days, _on_food_days_level_changed, "warehouse_food_days_auto_tooltip", 1, 0, true
 			)
 			days_field.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1130,14 +1171,14 @@ func _build_row(resource_name: String) -> Control:
 		return row
 	var tooltip_key := "warehouse_min_level_auto_tooltip" if StockRequestService.source_kind_for(resource_name) != "" else "warehouse_min_level_tooltip"
 	var on_change := func(level: int) -> void: _on_resource_level_changed(resource_name, level)
-	var field := _build_level_field(int(_min_levels.get(resource_name, 0)), on_change, tooltip_key, 1, 0, true)
+	var field := build_level_field(int(_min_levels.get(resource_name, 0)), on_change, tooltip_key, 1, 0, true)
 	row.add_child(field)
 	if not _level_edits.has(resource_name):
 		_level_edits[resource_name] = []
 	(_level_edits[resource_name] as Array).append(field.get_child(0))
 	# Massimo (2026-10-18, Fossa dei rifiuti): secondo campo, stessa forma.
 	var on_max_change := func(level: int) -> void: _on_resource_max_changed(resource_name, level)
-	var max_field := _build_level_field(
+	var max_field := build_level_field(
 		int(_max_levels.get(resource_name, 0)), on_max_change, "warehouse_max_level_tooltip", 1, 0, true, LEVEL_INFINITE_TEXT
 	)
 	row.add_child(max_field)

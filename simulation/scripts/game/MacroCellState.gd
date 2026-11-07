@@ -42,6 +42,13 @@ var active_growth_bonuses: Dictionary = {} # NaturalEventType -> {multiplier: fl
 var pending_migration_surplus: Dictionary = {}
 var stone_positions: Array = [] # Array[Vector2i], posizioni microcella occupate da stone (100x100)
 var stone_positions_generated: bool = false # separato dall'array vuoto: distingue "mai aperta" da "aperta ma senza stone"
+# Giacimenti di argilla (2026-11-03, Vasellame — ClayDepositService): Vector2i (microcella) -> true. Flag separato da quello
+# delle rocce: le celle già visitate nei salvataggi vecchi ricevono l'argilla alla prossima attivazione. PERSISTITO.
+var clay_positions: Dictionary = {}
+var clay_positions_generated: bool = false
+# Argilla tolta (2026-11-04, ClayDepositService.extract): Vector2i (microcella) -> unità tolte, solo le microcelle toccate e
+# non ancora esaurite. PERSISTITO (chiave assente se vuoto).
+var extracted_clay_by_position: Dictionary = {}
 # Roccia tolta (2026-10-05, richiesta utente — Quarry): Vector2i (posizione della roccia) -> unità di ROCK tolte da
 # RockStoneService.extract, solo le rocce toccate. La stessa quantità è già sottratta da resource_quantity[ROCK]; la
 # quota iniziale di ogni roccia non si salva: la ricava RockStoneService dalla posizione, sul totale ricostruito

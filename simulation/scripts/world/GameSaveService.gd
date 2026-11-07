@@ -72,6 +72,7 @@ func save_game_to_json(
 			# Punti addomesticazione per specie domestica (vedi GameData, DomesticationPointsService).
 			"domestication_points": game_data.domestication_points,
 			"domesticated_species": game_data.domesticated_species,
+			"domestication_years": game_data.domestication_years,
 			"encountered_wild_species": game_data.encountered_wild_species,
 			# Animali domestici (vedi GameData, DomesticAnimal.to_save_data).
 			"domestic_animals": game_data.domestic_animals.map(
@@ -79,6 +80,8 @@ func save_game_to_json(
 			),
 			"next_domestic_animal_id": game_data.next_domestic_animal_id,
 			"domestic_starvation_days": game_data.domestic_starvation_days,
+			"domestic_first_arrival_day": game_data.domestic_first_arrival_day,
+			"domestic_stray_due_day": game_data.domestic_stray_due_day,
 			# Gruppi di animali che frequentano il villaggio (vedi GameData, WildAnimalGroup.to_save_data).
 			"wild_animal_groups": game_data.wild_animal_groups.map(
 				func(group: WildAnimalGroup) -> Dictionary: return group.to_save_data()
@@ -158,6 +161,7 @@ func save_game_to_json(
 			"stock_excess_meat_destination": game_data.stock_excess_meat_destination,
 			"stock_excess_fish_destination": game_data.stock_excess_fish_destination,
 			"stock_fuel_rule_enabled": game_data.stock_fuel_rule_enabled,
+			"stock_water_per_shelter": game_data.stock_water_per_shelter,
 			"stock_fuel_min_by_type": game_data.stock_fuel_min_by_type,
 			"stock_toolkit_rule_enabled": game_data.stock_toolkit_rule_enabled,
 			"stock_toolkit_targets": game_data.stock_toolkit_targets,
@@ -252,6 +256,17 @@ func save_game_to_json(
 			state_data["stone_positions"] = stone_positions_data
 			# PEBBLE (RIVISTO 2026-10-05): la quantità iniziale di ogni roccia si ricava dalla posizione e non si salva;
 			# il raccolto delle sole rocce toccate sta nel registro unificato sotto (lot_registry).
+		# Giacimenti di argilla (2026-11-03, ClayDepositService): chiave assente = mai generati.
+		if state.clay_positions_generated:
+			var clay_positions_data: Array = []
+			for pos in state.clay_positions:
+				clay_positions_data.append({"x": pos.x, "y": pos.y})
+			state_data["clay_positions"] = clay_positions_data
+		if not state.extracted_clay_by_position.is_empty():
+			var extracted_clay_data: Array = []
+			for pos in state.extracted_clay_by_position.keys():
+				extracted_clay_data.append({"x": pos.x, "y": pos.y, "amount": int(state.extracted_clay_by_position[pos])})
+			state_data["extracted_clay_by_position"] = extracted_clay_data
 		# Assente se vuoto (nessun meccanismo di taglio esiste ancora, sempre il caso oggi), stesso
 		# principio di stone_positions sopra — non appesantire il salvataggio per un campo mai
 		# popolato. Chiave Vector3i (x, y lotto + "i" indice individuo): "i" va salvato insieme a
@@ -429,6 +444,8 @@ func save_game_to_json(
 			"repair_auto_excluded": building.repair_auto_excluded,
 			# Rito ordinato dal pannello (2026-10-14), vedi Building.requested_rite_id.
 			"requested_rite_id": building.requested_rite_id,
+			# Livello d'acqua della singola tettoia (2026-11-07), vedi Building.water_target_override.
+			"water_target_override": building.water_target_override,
 			# Fine dell'ultimo rito per tipo (2026-10-26), vedi Building.last_rite_end_day.
 			"last_rite_end_day": building.last_rite_end_day,
 			# Soglia di calorie del banchetto (2026-10-17), vedi Building.feast_calorie_threshold.

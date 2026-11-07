@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_water_shelter"]
+
+[resource]
+script = ExtResource("1_water_shelter")
+building_name = "building_water_shelter"
+category = 10
+required_idea_id = "pottery"
+required_labor = 1500
+lifespan_years = 15
+max_durability = 100
+defense = 10
+required_materials = {
+"fiber_rope": 8,
+"stick": 30,
+"wood": 8
+}
+required_space = 1
+has_door = false
+visibility_radius = 2
+storage_slot_count = 10
+storage_space_per_slot = 90
+storage_accepted_resources = Array[String](["clay_jar"])
+storage_event_only = true
+categories_locked = true

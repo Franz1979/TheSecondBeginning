@@ -110,6 +110,14 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 	var row_name := GameContext.tr_text("drawer_order_dry_row").format({"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name)})
 	var is_waste := order.has(WarehouseManagerService.STOCK_WASTE_KEY)
 	var is_toolkit := order.has(ToolkitStockService.TOOLKIT_TARGET_KEY)
+	# Acqua per tettoia (2026-11-07): "Tettoia dell'acqua: riempi 2 giare".
+	var is_water := order.has(WaterShelterStockService.WATER_TARGET_KEY)
+	if is_water:
+		var water_target := WarehouseManagerService.find_building(ctx.world, int(order[WaterShelterStockService.WATER_TARGET_KEY]))
+		target = water_target
+		row_name = GameContext.tr_text("drawer_order_water_row").format({
+			"quantity": int(order.get("quantity", 1)), "building": water_target.get_display_name() if water_target != null else "",
+		})
 	# Attrezzeria (2026-10-18): "Legnaia: porta 2 Asce".
 	if is_toolkit:
 		var toolkit_target := WarehouseManagerService.find_building(ctx.world, int(order[ToolkitStockService.TOOLKIT_TARGET_KEY]))
@@ -120,6 +128,17 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 	# Eccedenza da buttare (2026-10-18): "Buttare · 70 Rametti".
 	if is_waste:
 		row_name = GameContext.tr_text("drawer_order_waste_row").format({"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name)})
+	# Ordine "Trasporta" del giocatore (2026-11-06): "Trasporta 3 Giara · Capanna del vasaio → Sito di deposito".
+	var is_player := DrawerOrderService.is_player_transport_order(order)
+	if is_player:
+		var player_source := WarehouseManagerService.find_building(ctx.world, int(order[DrawerOrderService.TRANSPORT_SOURCE_KEY]))
+		var player_target := WarehouseManagerService.find_building(ctx.world, int(order.get(DrawerOrderService.TRANSPORT_TARGET_KEY, -1)))
+		target = player_target
+		row_name = GameContext.tr_text("drawer_order_player_transport_row").format({
+			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
+			"source": player_source.get_display_name() if player_source != null else "",
+			"target": player_target.get_display_name() if player_target != null else "",
+		})
 	var icon: Dictionary = {"resource": resource_name}
 	if is_fuel:
 		var fuel_target := WarehouseManagerService.find_building(ctx.world, int(order[FuelStockService.FUEL_TARGET_KEY]))
@@ -136,7 +155,7 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 			"building": fuel_target.get_display_name() if fuel_target != null else "",
 		})
 	return {
-		"key": JobBoardService.drawer_order_key(order_id), "kind": "pile", "name": row_name, "text": row_name,
+		"key": JobBoardService.drawer_order_key(order_id), "kind": "transport", "name": row_name, "text": row_name,
 		"log_name": "ordine del cassetto #%d trasporto: %d %s" % [order_id, quantity, resource_name],
 		"icon": icon,
 		"macro": Vector2i(target.macro_x, target.macro_y) if target != null else Vector2i(-1, -1),
@@ -144,7 +163,7 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 		"entry_kind": "drawer_order", "id": order_id, "sort": float(order_id) + DrawerOrderService.PRODUCE_JOB_SORT_OFFSET,
 		"assigned": false, "hidden": false, "warehouse": order.has(StockRequestService.ORDER_KEY),
 		"blocked_reason": "" if not pick.is_empty() else GameContext.tr_text(
-			"pending_stock_waste_blocked" if is_waste else ("pending_stock_toolkit_blocked" if is_toolkit else ("pending_stock_fuel_blocked" if is_fuel else "pending_stock_dry_blocked"))
+			"pending_stock_water_blocked" if is_water else ("drawer_order_player_transport_blocked" if is_player else ("pending_stock_waste_blocked" if is_waste else ("pending_stock_toolkit_blocked" if is_toolkit else ("pending_stock_fuel_blocked" if is_fuel else "pending_stock_dry_blocked"))))
 		),
 		"target": target, "provider": provider, "order": order,
 	}
@@ -159,6 +178,9 @@ static func transport_rejection(ctx: GameContext, worker: HumanIndividual, job: 
 	var task := WarehouseManagerService.transport_order_task(worker, order, pick)
 	if task == null:
 		return "nessun posto nella destinazione"
+	# Riempimento delle giare (2026-11-07): una giara piena non si porta a mano, serve un travois (trainato o da prendere).
+	if order.has(WaterShelterStockService.WATER_TARGET_KEY) and not ToolFetchService.can_get_towed(ctx, worker):
+		return "nessun travois per la giara piena"
 	return worker.get_assign_rejection_reason(task, ctx.age_band_of(worker))
 
 
@@ -189,6 +211,8 @@ static func _zone_job(ctx: GameContext, provider: Dictionary, order: Dictionary,
 	var row_key := "drawer_order_quarry_row" if is_quarry else "drawer_order_cut_row"
 	var icon_key := "quarry" if is_quarry else "cut"
 	var row_args := {"count": total, "done": done, "total": total}
+	if is_quarry and DrawerOrderService.order_source(order) == ExtractionSourceService.SOURCE_CLAY:
+		row_key = "drawer_order_clay_row"
 	if order_type == DrawerOrderService.TYPE_GATHER:
 		row_key = "drawer_order_gather_row"
 		row_args["target"] = gather_target_text(order)
@@ -310,7 +334,7 @@ static func pick_zone_target(ctx: GameContext, worker: HumanIndividual, job: Dic
 	elif order_type == DrawerOrderService.TYPE_HUNT:
 		area = HuntZoneService.choose_work_area(ctx.game_data, worker, ctx.live_cells)
 	elif order_type == DrawerOrderService.TYPE_QUARRY:
-		area = QuarryZoneService.choose_work_area(ctx.game_data, ctx.world, worker, reserved)
+		area = QuarryZoneService.choose_work_area(ctx.game_data, ctx.world, worker, reserved, DrawerOrderService.order_source(order))
 	elif order_type == DrawerOrderService.TYPE_GATHER:
 		area = HaulZoneService.choose_work_area(
 			ctx.game_data, ctx.world, worker, int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)),
@@ -332,7 +356,7 @@ static func pick_zone_target(ctx: GameContext, worker: HumanIndividual, job: Dic
 		if not ctx.live_cells.has(area.macro_coords):
 			return {}
 		var macro_state := ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		var rock: Variant = QuarryZoneService.choose_rock(area, macro_state, worker, reserved)
+		var rock: Variant = QuarryZoneService.choose_rock(area, macro_state, worker, reserved, DrawerOrderService.order_source(order))
 		if rock == null:
 			return {}
 		return {"area": area, "rock": {"macro_coords": area.macro_coords, "position": rock}}
@@ -352,8 +376,8 @@ static func probe_key(job: Dictionary) -> String:
 	if not DrawerOrderService.is_zone_order_type(order_type):
 		return String(job["key"])
 	# Taglio/estrazione (2026-10-23): anche il bersaglio scelto dall'ordine, che entra nella task di prova.
-	return "zone|%s|%d|%d|%d|%s|%s|%d|%s" % [
-		order_type, int(order.get("zone_id", -1)), int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)),
+	return "zone|%s|%s|%d|%d|%d|%s|%s|%d|%s" % [
+		order_type, DrawerOrderService.order_source(order), int(order.get("zone_id", -1)), int(order.get("criterion_kind", PickUpAction.CriterionKind.ALL)),
 		int(order.get("criterion_category", -1)), String(order.get("resource_name", "")), DrawerOrderService.order_cut_yield(order),
 		maxi(int(order.get("count", 1)), 1), DrawerOrderTargetService.target_signature(order),
 	]
@@ -444,12 +468,49 @@ static func zone_rejection(ctx: GameContext, worker: HumanIndividual, job: Dicti
 		task = TaskBuilderService.build_fish_task(worker, fish_macro, spot["position"])
 	elif order_type == DrawerOrderService.TYPE_QUARRY:
 		var rock: Dictionary = pick["rock"]
-		task = TaskBuilderService.build_quarry_task(worker, rock["macro_coords"], rock["position"], area.id)
+		task = TaskBuilderService.build_quarry_task(worker, rock["macro_coords"], rock["position"], area.id, {}, DrawerOrderService.order_source(order))
 	else:
 		task = TaskBuilderService.build_cut_task(worker, pick["plant"], area.id)
 	if task == null:
 		return "definizione mancante"
+	if order_type == DrawerOrderService.TYPE_QUARRY or order_type == DrawerOrderService.TYPE_CUT:
+		var carry_rejection := _extraction_carry_rejection(ctx, worker, order_type, order, pick, categories)
+		if carry_rejection != "":
+			return carry_rejection
 	return worker.get_assign_rejection_reason(task, age_band)
+
+
+# Cava e taglio (2026-11-07, richiesta utente — Mira e Athok estraevano una pietra che non riuscivano a portare: serie
+# interrotta e ordine di nuovo in lista dopo ogni estrazione): chi, con gli attrezzi del lavoro in cintura, non porta
+# nemmeno un'unità della resa non prende l'ordine. La capacità conta gli attrezzi ancora da prendere (ognuno occupa un
+# posto della cintura e ne toglie il bonus); un travois ancora da prendere non conta. "" = idoneo.
+static func _extraction_carry_rejection(
+	ctx: GameContext, worker: HumanIndividual, order_type: String, order: Dictionary, pick: Dictionary, categories: Array
+) -> String:
+	var product := ""
+	if order_type == DrawerOrderService.TYPE_QUARRY:
+		if DrawerOrderService.order_source(order) == ExtractionSourceService.SOURCE_CLAY:
+			product = ClayDepositService.RESOURCE_NAME
+		else:
+			var rock_rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
+			product = rock_rules.extraction_yield_resource_name if rock_rules != null else ""
+	else:
+		var plant: Dictionary = pick.get("plant", {})
+		var cell: LiveMacroCell = ctx.live_cells.get(plant.get("macro_coords", Vector2i(-1, -1)))
+		if not plant.is_empty() and cell != null and cell.macro_state != null:
+			product = String(PlantCutService.compute_yield(
+				cell.macro_state, plant["object_type"], plant["individual_key"], ctx.game_data.year
+			).get("resource_name", ""))
+	if product == "":
+		return ""
+	var rules := CaloricCalculator.get_caloric_source_rules(product)
+	if rules == null or rules.space_per_unit <= 0.0:
+		return ""
+	var tools_to_fetch := ToolFetchService.member_missing_categories(worker, categories).size()
+	var capacity := worker.max_carry_capacity - float(tools_to_fetch) * worker._carry_bonus_per_empty_tool_slot()
+	if int(floor(capacity / rules.space_per_unit + FoodSelectionService.UNIT_FIT_EPSILON)) >= 1:
+		return ""
+	return "non riesce a portare nemmeno un'unità di %s con gli attrezzi in cintura" % IconRegistry.get_resource_display_name(product)
 
 
 # "Produci": mai nessuno (alla presa l'ordine diventa un ordine dell'edificio ed esce dall'elenco). Ordini di zona: chi

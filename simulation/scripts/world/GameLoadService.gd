@@ -143,6 +143,11 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.domesticated_species.clear()
 	for species in data["game"].get("domesticated_species", []):
 		game_data.domesticated_species.append(String(species))
+	# Anno della prima addomesticazione (2026-11-07): JSON lo rende float.
+	game_data.domestication_years.clear()
+	var saved_domestication_years: Dictionary = data["game"].get("domestication_years", {})
+	for species in saved_domestication_years:
+		game_data.domestication_years[String(species)] = int(saved_domestication_years[species])
 	game_data.encountered_wild_species.clear()
 	for species in data["game"].get("encountered_wild_species", []):
 		game_data.encountered_wild_species.append(String(species))
@@ -152,6 +157,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		game_data.domestic_animals.append(DomesticAnimal.from_save_data(saved_animal))
 	game_data.next_domestic_animal_id = int(data["game"].get("next_domestic_animal_id", 1))
 	game_data.domestic_starvation_days = data["game"].get("domestic_starvation_days", {})
+	game_data.domestic_first_arrival_day = data["game"].get("domestic_first_arrival_day", {})
+	game_data.domestic_stray_due_day = data["game"].get("domestic_stray_due_day", {})
 	# Gruppi di animali in visita (2026-10-26) — .get() per i save precedenti: nessun gruppo, li ricrea
 	# WildAnimalGroupService.ensure_groups al primo giorno.
 	game_data.wild_animal_groups.clear()
@@ -294,6 +301,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.stock_excess_fish_destination = String(data["game"].get("stock_excess_fish_destination", "warehouse"))
 	# Regola del combustibile: il primo salvataggio (un solo N per tutti, "stock_fuel_min_per_building") la accende soltanto.
 	game_data.stock_fuel_rule_enabled = bool(data["game"].get("stock_fuel_rule_enabled", int(data["game"].get("stock_fuel_min_per_building", 0)) > 0))
+	# Acqua per tettoia (2026-11-07): 0 (spenta) per i salvataggi precedenti.
+	game_data.stock_water_per_shelter = maxi(int(data["game"].get("stock_water_per_shelter", 0)), 0)
 	# Regola dei banchetti spontanei (2026-10-17) — 500 e accesa per i salvataggi precedenti.
 	game_data.stock_banquet_safe_only = bool(data["game"].get("stock_banquet_safe_only", true))
 	# Carne lasciata nelle postazioni (2026-10-20) — accesa per i salvataggi precedenti.
@@ -519,6 +528,13 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 				# PEBBLE — nasce/vive insieme a stone_positions (vedi GameSaveService), ora
 				# ricaricato dal registro unificato "lot_registry" sotto, non più da una sezione
 				# dedicata.
+			# Giacimenti di argilla (2026-11-03) — assenti nei salvataggi precedenti: generati alla prossima attivazione.
+			if state_data.has("clay_positions"):
+				for pos_data in state_data["clay_positions"]:
+					state.clay_positions[Vector2i(int(pos_data["x"]), int(pos_data["y"]))] = true
+				state.clay_positions_generated = true
+			for extracted_clay_data in state_data.get("extracted_clay_by_position", []):
+				state.extracted_clay_by_position[Vector2i(int(extracted_clay_data["x"]), int(extracted_clay_data["y"]))] = int(extracted_clay_data["amount"])
 			# Lavoro di taglio già fatto (2026-10-04, task Cut) — assente nei salvataggi precedenti.
 			var cut_progress_data: Variant = state_data.get("cut_work_progress", {})
 			if cut_progress_data is Dictionary:
@@ -668,6 +684,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.repair_auto_excluded = bool(building_data.get("repair_auto_excluded", false))
 			# Rito ordinato dal pannello (2026-10-14) — "" per i salvataggi precedenti.
 			building.requested_rite_id = String(building_data.get("requested_rite_id", ""))
+			# Livello d'acqua della singola tettoia (2026-11-07) — regola generale per i salvataggi precedenti.
+			building.water_target_override = int(building_data.get("water_target_override", -1))
 			# Fine dell'ultimo rito per tipo (2026-10-26) — vuoto per i salvataggi precedenti.
 			building.last_rite_end_day = {}
 			var saved_last_rite_end_day: Variant = building_data.get("last_rite_end_day", {})

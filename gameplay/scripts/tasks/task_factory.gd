@@ -219,11 +219,15 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.QUARRY:
-				# 2 argomenti (macrocella, posizione della roccia) — 2026-10-05, QuarryAction (quarry.tres).
+				# 2 argomenti (macrocella, posizione del bersaglio) — 2026-10-05, QuarryAction (quarry.tres); un terzo facoltativo,
+				# la fonte (2026-11-04, dig_clay.tres), senza è la roccia.
 				if step_definition.context_keys.size() < 2 or not context.has(step_definition.context_keys[0]) 						or not context.has(step_definition.context_keys[1]):
 					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step QUARRY di TaskDefinition '%s'." % definition.task_name)
 					continue
-				steps.append(QuarryAction.new(context[step_definition.context_keys[0]], context[step_definition.context_keys[1]]))
+				steps.append(QuarryAction.new(
+					context[step_definition.context_keys[0]], context[step_definition.context_keys[1]],
+					String(context[step_definition.context_keys[2]]) if step_definition.context_keys.size() > 2 else ExtractionSourceService.SOURCE_ROCK
+				))
 				step_descriptions.append(step_definition.step_description)
 			# Task Seppellisci (2026-10-04, cumulo sepolcrale passo 2, vedi bury.tres): context_keys[0] = id del corpo
 			# (record DEAD_BODY), per CARRY_BODY context_keys[1] = cumulo scelto all'assegnazione.
@@ -298,6 +302,21 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					push_error("TaskFactory.build_task: context_keys mancanti/non risolvibili per step SLAUGHTER di TaskDefinition '%s'" % definition.task_name)
 					continue
 				steps.append(SlaughterAction.new(int(context[step_definition.context_keys[0]])))
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.FILL_JAR:
+				# Riempimento della giara alla riva (2026-11-06): nessun argomento, la riva è il Walk prima.
+				steps.append(FillJarAction.new())
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.TAKE_JAR, TaskTypes.ActionType.PUT_JAR:
+				# 1 argomento (l'edificio: sorgente della giara o Tettoia dell'acqua) — 2026-11-06, giare.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante/non risolvibile per step TAKE_JAR/PUT_JAR di TaskDefinition '%s'." % definition.task_name)
+					continue
+				var jar_building: Building = context[step_definition.context_keys[0]]
+				if step_definition.action_type == TaskTypes.ActionType.TAKE_JAR:
+					steps.append(TakeJarAction.new(jar_building))
+				else:
+					steps.append(PutJarAction.new(jar_building))
 				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.FISH:
 				# 2 argomenti (macrocella, microcella del ruscello) — 2026-10-31, FishAction (fish.tres); la riva è il Walk prima.

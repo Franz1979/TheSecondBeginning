@@ -32,7 +32,7 @@ const EMERGENCY_THRESHOLD: float = 0.25
 # Calo dopo cui si riprova a cercare una riva, in giorni di consumo (2 ore).
 const RETRY_DROP_DAYS: float = 2.0 / 24.0
 # Distanza massima dall'acqua (in microcelle, anche in diagonale) entro cui non si perde acqua.
-const WATER_BAND_RADIUS: int = 3
+const WATER_BAND_RADIUS: int = 10
 # Distanza massima (microcelle) dal punto d'acqua più vicino di quello scelto da pick_water_point.
 const WATER_POINT_SPREAD: float = 4.0
 # Salute persa al giorno (su 5000 di un adulto): sotto EMERGENCY_THRESHOLD come un'infezione, a zero più del doppio.
@@ -60,6 +60,9 @@ static func apply_drain(individual: HumanIndividual, game_delta: float, effects:
 	individual.current_thirst = maxf(individual.current_thirst - individual.daily_water_consumption * game_delta, 0.0)
 	if individual.waterskin_water > 0.0 and _ratio(individual) < SIP_THRESHOLD:
 		_drink_from_waterskin(individual, effects)
+	# Giara con acqua in mano (2026-11-07, richiesta utente): beve da quella sul posto, senza interrompere il lavoro.
+	if _ratio(individual) < SIP_THRESHOLD and WaterJarService.drink_from_carried_jars(individual) > 0.0 and effects != null:
+		effects.individual_icon(individual, DRINK_ICON_KEY)
 	if individual.current_thirst > 0.0:
 		individual.dehydration_elapsed = 0.0
 		return false
@@ -116,7 +119,8 @@ static func waterskin_capacity(individual: HumanIndividual) -> float:
 
 # Rive della cella viva, calcolate una volta all'attivazione (l'acqua non cambia in partita): microcelle del ruscello
 # (calpestabili), microcelle accanto al ruscello o alla fascia del fiume, e la fila di bordo verso un lago vicino. Poi la
-# fascia senza calo: le rive allargate di WATER_BAND_RADIUS - 1 (la riva è già a 1 dall'acqua).
+# fascia senza calo: le rive allargate di WATER_BAND_RADIUS - 1 (la riva è già a 1 dall'acqua), un giro di bordo alla
+# volta, così ogni microcella si tocca una volta sola anche con una fascia larga.
 # Le microcelle bloccate (rocce, edifici) si scartano al momento della ricerca, non qui.
 static func build_water_access(cell: LiveMacroCell, macro_world: World) -> void:
 	var access: Dictionary = {}
@@ -145,14 +149,18 @@ static func build_water_access(cell: LiveMacroCell, macro_world: World) -> void:
 					access[position] = true
 	cell.water_access = access
 	cell.drink_spots = access.keys()
-	var band: Dictionary = {}
-	var reach := WATER_BAND_RADIUS - 1
-	for position in access:
-		for dy in range(-reach, reach + 1):
-			for dx in range(-reach, reach + 1):
-				var near: Vector2i = position + Vector2i(dx, dy)
-				if near.x >= 0 and near.y >= 0 and near.x < World.WIDTH and near.y < World.HEIGHT:
-					band[near] = true
+	var band: Dictionary = access.duplicate()
+	var frontier: Array = cell.drink_spots
+	for step in range(WATER_BAND_RADIUS - 1):
+		var next_frontier: Array = []
+		for position in frontier:
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					var near: Vector2i = position + Vector2i(dx, dy)
+					if near.x >= 0 and near.y >= 0 and near.x < World.WIDTH and near.y < World.HEIGHT and not band.has(near):
+						band[near] = true
+						next_frontier.append(near)
+		frontier = next_frontier
 	cell.water_band = band
 
 
@@ -335,10 +343,18 @@ static func assign_drink_task(
 		return false
 	var definition_path := EMERGENCY_DRINK_TASK_DEFINITION_PATH if emergency else DRINK_TASK_DEFINITION_PATH
 	var target: Variant = _find_drink_target(individual)
+	# Tettoia dell'acqua (2026-11-07, giare passo 4): vale come punto d'acqua se ha almeno quanto manca al corpo; vince la
+	# più vicina tra lei e la riva, in linea d'aria.
+	var shelter := WaterJarService.find_drink_shelter(individual, individual.max_thirst - individual.current_thirst)
+	var use_shelter := not shelter.is_empty() and (target == null or float(shelter["distance_squared"]) < individual.position.distance_squared_to(target))
+	if use_shelter:
+		target = shelter["point"]
 	if target == null:
 		_postpone_retry(individual, "nessuna riva raggiungibile")
 		return false
 	var task := TaskFactory.build_task(TaskDefinitionCache.get_definition(definition_path), {"drink_target_position": target})
+	if use_shelter:
+		task.context[WaterJarService.CONTEXT_DRINK_SHELTER_ID] = (shelter["shelter"] as Building).id
 	if not individual.can_assign_task(task, age_band) or not individual.assign_task(task, age_band, is_interrupt_transition):
 		_postpone_retry(individual, "compito rifiutato")
 		return false

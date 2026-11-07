@@ -26,6 +26,23 @@ var body_id: int = 0
 # salvati.
 var was_framed: bool = false
 var last_framed_call_msec: int = -1
+# Dietro alle persone (passo 8.3, DomesticAnimalFollowService): persona seguita (-1 nessuna), ore di gioco alla prossima
+# scelta, centro dell'anello dato al corpo. Corsa di guardia in corso (DomesticAnimalGuardService). Mai salvati.
+var follow_person_id: int = -1
+var follow_hours_left: float = 0.0
+var follow_center: Vector2 = Vector2.ZERO
+var guard_running: bool = false
+# A caccia con una persona (DomesticAnimalHuntService, 2026-11-07): cacciatore (-1 nessuno), centro dato al corpo, di corsa
+# per raggiungerlo. Mai salvati: dopo un caricamento il cacciatore se ne riprende uno al primo fotogramma.
+var hunt_person_id: int = -1
+# Contro il branco in arrivo o in sosta (DomesticAnimalGuardService, 2026-11-07): gruppo affrontato (-1 nessuno), punto da
+# cui è partito, punto dove si piazza, di corsa per arrivarci. Mai salvati.
+var guard_confront_group_id: int = -1
+var guard_post: Vector2 = Vector2.ZERO
+var guard_confront_point: Vector2 = Vector2(-1.0, -1.0)
+var guard_confront_running: bool = false
+var hunt_center: Vector2 = Vector2(-1.0, -1.0)
+var hunt_catching_up: bool = false
 
 
 func get_age_years(absolute_day: int) -> int:

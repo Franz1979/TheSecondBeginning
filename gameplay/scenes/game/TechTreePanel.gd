@@ -287,7 +287,7 @@ func _depth_of(
 # dell'elenco nei dati che ha un riquadro in una colonna precedente, _first_parent). Ogni idea sta sulla riga del primo
 # prerequisito; con più figli dello stesso primo prerequisito (in ordine di id) il primo prende la riga del padre, gli
 # altri le righe libere subito sotto il sottoalbero del fratello precedente, e tutto ciò che segue scala in basso. Le
-# radici (nessun primo prerequisito) in ordine di colonna e poi di id, ognuna con lo spazio per i suoi discendenti
+# radici (nessun primo prerequisito) in ordine di colonna, di Idea.tree_order e poi di id, ognuna con lo spazio per i suoi discendenti
 # (_place_subtree).
 func _layout_ideas(ideas: Dictionary) -> Dictionary:
 	var era_names := EraCalculator.list_era_names()
@@ -342,9 +342,14 @@ func _layout_ideas(ideas: Dictionary) -> Dictionary:
 			if not children.has(parent):
 				children[parent] = []
 			(children[parent] as Array).append(idea_id)
+	# Radici (2026-11-07): Idea.tree_order dall'alto, poi l'id.
 	roots.sort_custom(func(a: String, b: String) -> bool:
 		if column_of[a] != column_of[b]:
 			return column_of[a] < column_of[b]
+		var order_a: int = (ideas[a] as Idea).tree_order
+		var order_b: int = (ideas[b] as Idea).tree_order
+		if order_a != order_b:
+			return order_a < order_b
 		return a < b
 	)
 

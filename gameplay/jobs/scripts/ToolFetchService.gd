@@ -690,6 +690,15 @@ static func try_return_borrowed_tools(individual: HumanIndividual, age_band: Hum
 			# Caccia in coda: armi e munizioni servono anche se gli step (pattuglia) non le dichiarano ancora.
 			if open_task.context.has(ZONE_ORDER_TOOL_FETCH_KEY) or HuntService.is_hunt_task(open_task):
 				return false
+			# Seguiti di una serie non ancora finita (2026-11-07, richiesta utente — piccone riposto dopo ogni estrazione,
+			# arma prima di macellare): contano come se usassero gli attrezzi della serie, che torna a usarli subito dopo.
+			# Macellazione di una serie di caccia: come una caccia in coda, si tiene tutto (armi e munizioni).
+			var meat_series := HuntZoneService.get_meat_series(open_task.context)
+			if not meat_series.is_empty() and not HuntZoneService.is_meat_series_complete(meat_series):
+				return false
+			for category in _series_tool_categories(open_task):
+				if not queue_needs.has(category):
+					queue_needs.append(category)
 			for category in ToolGateService.get_required_categories(open_task):
 				if not queue_needs.has(category):
 					queue_needs.append(category)
@@ -722,6 +731,19 @@ static func try_return_borrowed_tools(individual: HumanIndividual, age_band: Hum
 				individual.id, individual.name, tool_name, destination.building_type_name, destination.id
 			])
 	return assigned_any
+
+
+# Attrezzi della serie a cui appartiene una consegna fino a mucchio vuoto ancora da finire: piccone per la cava, ascia per
+# il taglio (gli stessi che WorkFollowUpService.continue_quarry_series / continue_cut_series chiedono in cintura).
+static func _series_tool_categories(task: Task) -> Array[TaskTypes.ToolCategory]:
+	var categories: Array[TaskTypes.ToolCategory] = []
+	var quarry_series := QuarryZoneService.get_delivery_series(task)
+	if not quarry_series.is_empty() and not QuarryZoneService.is_series_complete(quarry_series):
+		categories.append(TaskTypes.ToolCategory.DIGGING)
+	var cut_series := CutZoneService.get_delivery_series(task)
+	if not cut_series.is_empty() and not CutZoneService.is_series_complete(cut_series):
+		categories.append(TaskTypes.ToolCategory.CHOPPING)
+	return categories
 
 
 static func _tool_covers_any(tool_name: String, categories: Array[TaskTypes.ToolCategory]) -> bool:
@@ -873,6 +895,25 @@ static func start_towed_fetch(ctx: GameContext, worker: HumanIndividual, work_la
 			])
 		return task
 	return null
+
+
+# true se `worker` traina già un mezzo, lo sta già andando a prendere o ne trova uno libero e raggiungibile (stessa
+# ricerca di start_towed_fetch, senza assegnare niente). 2026-11-06, giare piene: un lavoro che senza mezzo non si può
+# fare si rifiuta prima di partire.
+static func can_get_towed(ctx: GameContext, worker: HumanIndividual) -> bool:
+	if worker.is_towing():
+		return true
+	if ctx.world == null:
+		return false
+	for task in JobWorkScanService.open_tasks(worker):
+		if task.context.has(TOWED_FETCH_KEY):
+			return true
+	var reserved := _reserved_fetches(worker, TOWED_FETCH_KEY)
+	var reachability := PathfindingService.reachability_for(worker)
+	for towed_name in fetchable_tool_names(TaskTypes.ToolCategory.TOWING):
+		if _find_towed_source(ctx.world, worker, towed_name, reserved, reachability) != null:
+			return true
+	return false
 
 
 # Sorgente del mezzo: l'appoggio raggiungibile più vicino con un mezzo non prenotato, altrimenti il deposito più vicino.

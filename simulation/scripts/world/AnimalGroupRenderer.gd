@@ -530,9 +530,9 @@ var avoidance_strength: float = AVOID_BIAS_PER_HOP
 # copione di una visita (WildAnimalVisitService.spawn_bodies): la fauna del mondo resta col disagio di sempre.
 var reaction_points: Array[Vector2] = []
 var reaction_radii: Array[float] = []
-# Zone in cui CHASE non entra (centri in microcelle e raggio): chi insegue si ferma al bordo.
+# Zone in cui CHASE non entra (centri in microcelle e raggio di ciascuna, stessi indici): chi insegue si ferma al bordo.
 var chase_no_enter_points: Array[Vector2] = []
-var chase_no_enter_radius: float = 0.0
+var chase_no_enter_radii: Array[float] = []
 # Mandria che sta uscendo dalla cella (start_herd_leaving), e chi è arrivato al bordo in questo fotogramma.
 var _herd_leaving: bool = false
 var _herd_exited_ids: Dictionary = {}
@@ -1824,8 +1824,8 @@ func _step_chase(group: AnimalVisualGroup, delta: float) -> void:
 
 
 func _in_chase_no_enter(point: Vector2) -> bool:
-	for zone_center in chase_no_enter_points:
-		if zone_center.distance_to(point) <= chase_no_enter_radius:
+	for i in range(mini(chase_no_enter_points.size(), chase_no_enter_radii.size())):
+		if chase_no_enter_points[i].distance_to(point) <= chase_no_enter_radii[i]:
 			return true
 	return false
 

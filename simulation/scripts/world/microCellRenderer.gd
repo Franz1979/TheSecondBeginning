@@ -256,6 +256,9 @@ var river_thickness_ratio: float = 0.0 # river_space / MacroCellState.TOTAL_SPAC
 # Ruscello (StreamMicrocellService.get_layout): nastro d'acqua più stretto della microcella, con rive
 # frastagliate e un alone di fango, cotto in un unico ArrayMesh in set_streams (1 draw call).
 var _stream_mesh: ArrayMesh = null
+# Microcelle del ruscello (set_streams): da qui il guado di pietre ricava il suo angolo.
+var _stream_positions: Dictionary = {}
+var _clay_mesh: ArrayMesh = null
 
 var stone_positions: Array = [] # Array[Vector2i]
 var depleted_stone_positions: Dictionary = {} # Vector2i -> true, vedi set_depleted_stone_positions
@@ -561,10 +564,15 @@ const STREAM_WIDENING_RADIUS: float = 5.5
 const COLOR_STREAM_MUD := Color(0.42, 0.36, 0.24, 0.55)
 const STREAM_FAN_SEGMENTS: int = 8
 const STREAM_POND_SEGMENTS: int = 14
+const COLOR_CLAY_DARK := Color(0.50, 0.33, 0.24, 0.8)
+const COLOR_CLAY_LIGHT := Color(0.66, 0.46, 0.33, 0.8)
+# Spostamento massimo degli spigoli di una microcella di argilla, in pixel: bordi irregolari.
+const CLAY_CORNER_JITTER: float = 3.0
 
 
 # Tracciato del ruscello di questa macrocella (StreamMicrocellService.get_layout; layout vuoto = nessun ruscello).
 func set_streams(layout: Dictionary) -> void:
+	_stream_positions = layout.get("positions", {})
 	var mud_vertices := PackedVector2Array()
 	var mud_colors := PackedColorArray()
 	var water_vertices := PackedVector2Array()
@@ -626,6 +634,44 @@ func set_streams(layout: Dictionary) -> void:
 	arrays[Mesh.ARRAY_COLOR] = mud_colors
 	_stream_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	queue_redraw()
+
+
+# Giacimenti di argilla (2026-11-03, ClayDepositService): un unico ArrayMesh (1 draw call). Spigoli e colore dipendono dallo
+# spigolo della griglia, non dalla microcella: le microcelle vicine li condividono, così la chiazza non mostra le mattonelle.
+func set_clay_positions(positions: Dictionary) -> void:
+	if positions.is_empty():
+		_clay_mesh = null
+		queue_redraw()
+		return
+	var vertices := PackedVector2Array()
+	var colors := PackedColorArray()
+	for position: Vector2i in positions:
+		var top_left := position
+		var top_right := position + Vector2i(1, 0)
+		var bottom_right := position + Vector2i(1, 1)
+		var bottom_left := position + Vector2i(0, 1)
+		for corner: Vector2i in [top_left, top_right, bottom_right, top_left, bottom_right, bottom_left]:
+			vertices.append(_clay_corner_point(corner))
+			colors.append(COLOR_CLAY_DARK.lerp(COLOR_CLAY_LIGHT, _stream_noise(corner, 6)))
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = vertices
+	arrays[Mesh.ARRAY_COLOR] = colors
+	_clay_mesh = ArrayMesh.new()
+	_clay_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	queue_redraw()
+
+
+static func _clay_corner_point(corner: Vector2i) -> Vector2:
+	var jitter := Vector2(_stream_noise(corner, 4) - 0.5, _stream_noise(corner, 5) - 0.5) * CLAY_CORNER_JITTER * 2.0
+	return Vector2(corner * CELL_SIZE) + jitter
+
+
+func _draw_clay() -> void:
+	if _clay_mesh == null:
+		return
+	draw_mesh(_clay_mesh, null)
+	_debug_draw_primitive_count += 1
 
 
 func _draw_streams() -> void:
@@ -1407,6 +1453,7 @@ func _draw() -> void:
 			draw_rect(rect, TerrainColors.GRID, false, 1.0)
 
 	var grid_size: int = World.WIDTH * CELL_SIZE
+	_draw_clay()
 	if is_river:
 		_draw_river(grid_size)
 	_draw_streams()
@@ -1562,6 +1609,11 @@ func _draw_buildings() -> void:
 				bool(entry.get("gate_open", true))
 			)
 			continue
+		# Guado di pietre (2026-11-04): sempre di traverso al ruscello, qualunque sia la rotazione salvata.
+		if building_type_name == PlaceholderBuildingShapes.STONE_FORD_TYPE:
+			var ford_angle := StreamMicrocellService.ford_angle(_stream_positions, entry.get("position", Vector2i.ZERO))
+			PlaceholderBuildingShapes.draw(self, building_type_name, ground, false, 1.0, GameTypes.Direction.SOUTH, ford_angle)
+			continue
 		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 			PlaceholderBuildingShapes.draw(self, building_type_name, ground, false, 1.0, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
@@ -1572,6 +1624,10 @@ func _draw_buildings() -> void:
 		# Capanna del guaritore (2026-10-25): vista dall'alto, ruota con la porta; fumo solo mentre scalda un infuso (HealerHutShape).
 		if building_type_name == HealerHutShape.TYPE:
 			HealerHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
+			continue
+		# Capanna del vasellaio (2026-11-03): vista dall'alto, ruota con la porta (PotterHutShape).
+		if building_type_name == PotterHutShape.TYPE:
+			PotterHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		# Essiccatoio (2026-10-31): vista dall'alto, ruota con la direzione scelta (DryingRackShape).
 		if building_type_name == DryingRackShape.TYPE:
@@ -1588,6 +1644,10 @@ func _draw_buildings() -> void:
 		# Appoggio per travois (2026-10-23, 1x1): staccionata con i travois presenti appoggiati.
 		if building_type_name == TravoisRackShape.TYPE:
 			TravoisRackShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), int(entry.get("travois_count", 0)))
+			continue
+		# Tettoia dell'acqua (2026-11-06, 1x1, rotonda: la rotazione non cambia niente): pali, tetto trasparente e le giare.
+		if building_type_name == WaterShelterShape.TYPE:
+			WaterShelterShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), entry.get("jar_waters", []))
 			continue
 		# Cerchio del consiglio (2026-10-26, 2x2): anello di grandi pietre sul rettangolo intero, fondo dai tile di terra.
 		if building_type_name == CouncilCircleShape.TYPE or building_type_name == CouncilCircleShape.STAR_TYPE:
@@ -1944,6 +2004,10 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"clothing_hut",
 	# Capanna del guaritore (2026-10-25).
 	"healer_hut",
+	# Capanna del vasellaio (2026-11-03).
+	"potter_hut",
+	# Tettoia dell'acqua (2026-11-06).
+	"water_shelter",
 	# Ceppo dell'insegnamento (2026-10-16).
 	"teaching_stump",
 	# Spiazzo delle feste (2026-10-17): un tile per microcella del rettangolo ("dirt_cells"), sotto il cerchio di sassi.

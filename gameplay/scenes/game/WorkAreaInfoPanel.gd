@@ -16,7 +16,9 @@ extends VBoxContainer
 #   - "hunt" (Caccia): {"all": bool, "species": [String]};
 #   - "cut" (Taglio, 2026-10-06): {"all": bool, "groups": [String] ("tree"/"shrub" spuntati per intero), "plants":
 #     [String] (CutZoneService.plant_key, piante spuntate nei tipi parziali)} — radice "Tutte le piante" -> Alberi/Arbusti
-#     -> sottotipi, stesse funzioni dell'albero della Raccolta.
+#     -> sottotipi, stesse funzioni dell'albero della Raccolta;
+#   - "quarry" (Estrazione, 2026-11-04): {"all": bool, "sources": [String] (ExtractionSourceService)} — radice "Tutte le
+#     risorse" -> Pietra/Argilla. Con una sola fonte conosciuta l'albero non si mostra.
 # La Raccolta propone solo ciò che la PickUpAction raccoglie da terra (TerrainScatteredResourceService.is_pickable:
 # lotti del terreno e frutti/uova): niente carni, caccia, pesca, produzione, né "forage" (pascolo aggregato degli
 # animali, non raccoglibile). Un lavoro appena abilitato parte col filtro iniziale del lavoro
@@ -38,6 +40,7 @@ const TREE_INDENT: float = 14.0
 const EXPAND_BUTTON_WIDTH: float = 20.0
 const HUNT_ROOT_KEY := "hunt:root"
 const HAUL_ROOT_KEY := "haul:root"
+const QUARRY_ROOT_KEY := "quarry:root"
 const CUT_ROOT_KEY := "cut:root"
 
 var _area: WorkArea = null
@@ -167,6 +170,8 @@ func _build_jobs() -> void:
 				_build_hunt_filters()
 			CUT_JOB:
 				_build_cut_filters()
+			QuarryZoneService.QUARRY_JOB:
+				_build_quarry_filters()
 
 
 func _job_check_box(job_id: String) -> CheckBox:
@@ -337,6 +342,48 @@ func _save_hunt_selection(filters: Dictionary, species_names: Array[String], che
 				selected.append(species)
 	filters["all"] = everything
 	filters["species"] = selected
+	area_changed.emit(_area)
+	_rebuild()
+
+
+# --- Estrazione: "Tutte le risorse" -> Pietra/Argilla (2026-11-04) ---
+
+func _build_quarry_filters() -> void:
+	var sources := ExtractionSourceService.list_known_sources()
+	if sources.size() < 2:
+		return
+	var filters := _job_filters(QuarryZoneService.QUARRY_JOB)
+	var checked: Dictionary = {}
+	for source in sources:
+		if QuarryZoneService.area_accepts_source(_area, source):
+			checked[source] = true
+	var box := _indented_box()
+	var root_text := "%s (%d/%d)" % [tr("work_area_filter_all_quarry"), _count_checked(sources, checked), sources.size()]
+	box.add_child(_tree_row(0, QUARRY_ROOT_KEY, root_text, _state_of(sources, checked), func(pressed: bool) -> void:
+		for source in sources:
+			_set_checked(checked, source, pressed)
+		_save_quarry_selection(filters, sources, checked)
+	))
+	if not _expanded.has(QUARRY_ROOT_KEY):
+		return
+	for source in sources:
+		var leaf_source: String = source
+		var leaf_text := IconRegistry.get_resource_display_name(ExtractionSourceService.get_resource_name(leaf_source))
+		box.add_child(_tree_row(1, "", leaf_text, 2 if checked.has(leaf_source) else 0, func(pressed: bool) -> void:
+			_set_checked(checked, leaf_source, pressed)
+			_save_quarry_selection(filters, sources, checked)
+		))
+
+
+func _save_quarry_selection(filters: Dictionary, sources: Array[String], checked: Dictionary) -> void:
+	var everything := _count_checked(sources, checked) == sources.size()
+	var selected: Array = []
+	if not everything:
+		for source in sources:
+			if checked.has(source):
+				selected.append(source)
+	filters["all"] = everything
+	filters["sources"] = selected
 	area_changed.emit(_area)
 	_rebuild()
 

@@ -54,6 +54,16 @@ var shelter_rects: Array[Rect2] = []
 # Zone sicure (2026-10-30): centro degli edifici che la specie teme esplicitamente (building_reactions positivo: il
 # focolare); entro WildAnimalVisitService.FEAR_SAFE_RADIUS non si attacca e la carica non entra.
 var safe_points: Array[Vector2] = []
+# Raggio di ogni zona sicura, stessi indici di safe_points (FEAR_SAFE_RADIUS per gli edifici, guard_keep_away_radius per
+# i cani di guardia).
+var safe_radii: Array[float] = []
+# Guardia dei cani (passo 8.1, 2026-11-06): in fondo a reaction_points/reaction_radii e safe_points/safe_radii, dopo gli
+# edifici, stanno i cani di guardia, riscritti a ogni fotogramma (DomesticAnimalGuardService.update_visit). Quanti sono gli
+# edifici, e ore di gioco al prossimo abbaio per cane (id del DomesticAnimal -> ore). Mai salvati.
+var building_reaction_count: int = 0
+var building_safe_count: int = 0
+var guard_bark_hours_left: Dictionary = {}
+var guard_alarm_logged: bool = false
 # Collisione con rocce, edifici e acqua durante la sosta: la stessa griglia della fauna
 # (PathfindingService.blocked_test_for, Callable(Vector2i) -> bool), presa all'inizio della visita.
 var blocked_test: Callable = Callable()
@@ -83,6 +93,15 @@ var redirect_cooldown: float = 0.0
 # perché rinunci (0 = nessuno interviene) e branco scacciato (se ne va di corsa).
 var defender_ids: Array[int] = []
 var defenders_needed: int = 0
+# Cani di guardia che corrono contro il branco in questa carica (id dei DomesticAnimal, passo 8.2) e animali del branco
+# presenti alla carica, da coprire con la cacciata (persone e cani insieme).
+var guard_dog_ids: Array[int] = []
+var drive_off_threats: int = 0
+# Ultimo punto dato a ogni cane che corre (id -> Vector2), per non ripianificare a ogni fotogramma. Mai salvato.
+var guard_dog_points: Dictionary = {}
+# Cani che hanno già avuto lo scontro col branco in questa carica (id -> true, passo 8.4: ferita e morso una volta sola).
+# Mai salvato.
+var guard_dogs_clashed: Dictionary = {}
 var driven_off: bool = false
 # Gli hanno tirato (lupi L7, 2026-11-01): il branco se ne va di corsa, senza punti né calma (WildAnimalVisitService.on_member_shot_at).
 var hunted: bool = false
@@ -117,7 +136,7 @@ func to_save_data() -> Dictionary:
 		"charge_min_distance": charge_min_distance if is_finite(charge_min_distance) else -1.0,
 		"charge_start_distance": charge_start_distance, "charge_pause": charge_pause, "bites": bites,
 		"attacked": attacked, "arrival_announced": arrival_announced,
-		"defender_ids": defender_ids, "defenders_needed": defenders_needed, "driven_off": driven_off, "hunted": hunted, "hunted_notified": hunted_notified, "drive_off_shouting": drive_off_shouting, "driven_off_announced": driven_off_announced, "charge_announced": charge_announced,
+		"defender_ids": defender_ids, "defenders_needed": defenders_needed, "guard_dog_ids": guard_dog_ids, "drive_off_threats": drive_off_threats, "driven_off": driven_off, "hunted": hunted, "hunted_notified": hunted_notified, "drive_off_shouting": drive_off_shouting, "driven_off_announced": driven_off_announced, "charge_announced": charge_announced,
 	}
 
 
@@ -162,6 +181,9 @@ static func from_save_data(data: Dictionary) -> WildAnimalVisit:
 	for value in data.get("defender_ids", []):
 		visit.defender_ids.append(int(value))
 	visit.defenders_needed = int(data.get("defenders_needed", 0))
+	for value in data.get("guard_dog_ids", []):
+		visit.guard_dog_ids.append(int(value))
+	visit.drive_off_threats = int(data.get("drive_off_threats", 0))
 	visit.driven_off = bool(data.get("driven_off", false))
 	visit.hunted = bool(data.get("hunted", false))
 	visit.hunted_notified = bool(data.get("hunted_notified", false))

@@ -255,7 +255,7 @@ func _build_indent(level: int) -> Control:
 func _build_text_row(text: String, level: int) -> Control:
 	var row := HBoxContainer.new()
 	row.add_child(_build_indent(level))
-	row.add_child(_build_choice_button(text))
+	row.add_child(build_choice_button(text))
 	return row
 
 
@@ -265,6 +265,14 @@ func _build_resource_row(resource_name: String, quantity: int, level: int) -> Co
 	var row := HBoxContainer.new()
 	row.add_child(_build_indent(level))
 
+	row.add_child(build_resource_icon_box(resource_name))
+
+	row.add_child(build_choice_button("%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]))
+	return row
+
+
+# Riquadro con l'icona della risorsa (usato anche da ResourceChoiceRows).
+static func build_resource_icon_box(resource_name: String) -> Control:
 	var icon_box := Control.new()
 	icon_box.custom_minimum_size = Vector2(RESOURCE_ROW_ICON_SIZE, RESOURCE_ROW_ICON_SIZE)
 	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
@@ -287,13 +295,10 @@ func _build_resource_row(resource_name: String, quantity: int, level: int) -> Co
 		fallback_label.anchor_right = 1.0
 		fallback_label.anchor_bottom = 1.0
 		icon_box.add_child(fallback_label)
-	row.add_child(icon_box)
-
-	row.add_child(_build_choice_button("%s (%d)" % [IconRegistry.get_resource_display_name(resource_name), quantity]))
-	return row
+	return icon_box
 
 
-func _build_choice_button(text: String) -> Button:
+static func build_choice_button(text: String) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -304,7 +309,7 @@ func _build_choice_button(text: String) -> Button:
 	return button
 
 
-func _apply_selected_style(button: Button) -> void:
+static func _apply_selected_style(button: Button) -> void:
 	var style := StyleBoxFlat.new()
 	style.bg_color = SELECTED_BG_COLOR
 	style.border_color = SELECTED_BORDER_COLOR

@@ -10,3 +10,4 @@ summary = "idea_domestication_summary"
 description = "idea_domestication_description"
 era = "paleolithic"
 discovery_only = true
+tree_order = 10

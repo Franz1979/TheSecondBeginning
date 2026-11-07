@@ -41,6 +41,8 @@ const EVENTS: Dictionary = {
 	# Uccisione ordinata con Macella (2026-11-04): solo il verso della specie, evento "domestic_animal_slaughtered:<specie>";
 	# specie assente = nessun suono. La macellazione della carcassa non ha suono.
 	&"domestic_animal_slaughtered:dog": &"dog_yelp",
+	# Abbaio d'allarme verso un branco in visita (2026-11-06, cane passo 8.1): evento "domestic_animal_alarm:<specie>".
+	&"domestic_animal_alarm:dog": &"dog_defense",
 	# Branco scacciato da un gruppo di persone (2026-10-30, lupi L6.1): grido di guerra di chi lo scaccia.
 	&"wild_animal_driven_off": &"war_cry",
 	# Suono predefinito dei riti completati (2026-10-04, richiesta utente — prima church_bell, che resta nel banco per

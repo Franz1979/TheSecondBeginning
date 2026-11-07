@@ -71,6 +71,40 @@ static func assign_quarry(ctx: GameContext, worker: HumanIndividual, rock: Dicti
 	_assign_extraction(ctx, worker, task, macro_coords, rock_position, "task_activity_quarry", "quarry", quarry_product, silent, effects)
 
 
+# Estrazione dell'argilla (2026-11-04) sulla microcella `clay` ({"macro_coords", "position"}). Rifiuto con messaggio se è già
+# nel lavoro di un pipottino o se ci passa una strada: va tolta prima, uno scavo non deve farla sparire. Parametri come
+# assign_quarry (zona, serie, silenzioso); col clic destro nessuno dei tre.
+static func assign_dig_clay(
+	ctx: GameContext, worker: HumanIndividual, clay: Dictionary, effects: GameEffects, work_area_id: int = -1, series: Dictionary = {}, silent: bool = false
+) -> void:
+	if worker == null or clay.is_empty():
+		return
+	var macro_coords: Vector2i = clay["macro_coords"]
+	var position: Vector2i = clay["position"]
+	var cell: LiveMacroCell = ctx.live_cells.get(macro_coords)
+	if cell == null or ClayDepositService.get_remaining(cell.macro_state, position) <= 0:
+		return
+	if QuarryZoneService.is_under_building(macro_coords, position):
+		if silent:
+			return
+		effects.command_icon_at_microcell(macro_coords, position, "task_rejected")
+		CommandFeedback.reject(worker, GameContext.tr_text("clay_reject_building"), effects)
+		return
+	var holder := find_target_holder(ctx.individuals, func(step: Action) -> bool:
+		return step is QuarryAction and (step as QuarryAction).is_same_rock(macro_coords, position, ExtractionSourceService.SOURCE_CLAY)
+	)
+	if holder != null:
+		if silent:
+			return
+		effects.command_icon_at_microcell(macro_coords, position, "task_rejected")
+		CommandFeedback.reject(worker, GameContext.tr_text("clay_reject_reserved").format({"name": holder.name}), effects)
+		return
+	var task := TaskBuilderService.build_quarry_task(worker, macro_coords, position, work_area_id, series, ExtractionSourceService.SOURCE_CLAY)
+	if task == null:
+		return
+	_assign_extraction(ctx, worker, task, macro_coords, position, "task_activity_clay", "quarry", ClayDepositService.RESOURCE_NAME, silent, effects)
+
+
 # "Taglia tutto qui" (`all_plants`: {"macro_coords", "lot"}): serie sulle piante disponibili della microcella, la prima
 # scelta per `worker`. Nessuna pianta: messaggio.
 static func assign_cut_all_plants(ctx: GameContext, worker: HumanIndividual, all_plants: Dictionary, effects: GameEffects) -> void:
@@ -103,15 +137,22 @@ static func assign_work_area_cut(ctx: GameContext, worker: HumanIndividual, area
 # Una estrazione nella zona `area`: la roccia migliore per `worker` (QuarryZoneService.choose_rock: pietra rimasta,
 # raggiungibile, non prenotata), poi assign_quarry con la zona per l'etichetta. Nessuna roccia: messaggio.
 # `count`: estrazioni della serie (QuarryZoneService.make_series), questa è la prima.
-static func assign_work_area_quarry(ctx: GameContext, worker: HumanIndividual, area: WorkArea, count: int, effects: GameEffects) -> void:
+static func assign_work_area_quarry(
+	ctx: GameContext, worker: HumanIndividual, area: WorkArea, count: int, effects: GameEffects, source: String = ExtractionSourceService.SOURCE_ROCK
+) -> void:
 	if worker == null or area == null or not ctx.individuals.has(worker):
 		return
 	var macro_state := ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-	var rock: Variant = QuarryZoneService.choose_rock(area, macro_state, worker, QuarryZoneService.collect_reserved_rocks(ctx.individuals))
+	var rock: Variant = QuarryZoneService.choose_rock(area, macro_state, worker, QuarryZoneService.collect_reserved_rocks(ctx.individuals), source)
 	if rock == null:
-		CommandFeedback.reject(worker, GameContext.tr_text("work_area_quarry_no_rock"), effects)
+		CommandFeedback.reject(worker, QuarryZoneService.no_target_text(source), effects)
 		return
-	assign_quarry(ctx, worker, {"macro_coords": area.macro_coords, "position": rock}, area.id, QuarryZoneService.make_series(area.id, count), false, effects)
+	var target := {"macro_coords": area.macro_coords, "position": rock}
+	var series := QuarryZoneService.make_series(area.id, count, source)
+	if source == ExtractionSourceService.SOURCE_CLAY:
+		assign_dig_clay(ctx, worker, target, effects, area.id, series)
+	else:
+		assign_quarry(ctx, worker, target, area.id, series, false, effects)
 
 
 # Zona automatica dopo "Piante da tagliare": per ciascuno la zona migliore (CutZoneService.choose_work_area), le
@@ -128,14 +169,16 @@ static func assign_auto_zone_cut(ctx: GameContext, workers: Array[HumanIndividua
 
 
 # Zona automatica dopo "Pietre da estrarre", come assign_auto_zone_cut.
-static func assign_auto_zone_quarry(ctx: GameContext, workers: Array[HumanIndividual], count: int, effects: GameEffects) -> void:
+static func assign_auto_zone_quarry(
+	ctx: GameContext, workers: Array[HumanIndividual], count: int, effects: GameEffects, source: String = ExtractionSourceService.SOURCE_ROCK
+) -> void:
 	var reserved := QuarryZoneService.collect_reserved_rocks(ctx.individuals)
 	for worker in workers:
-		var area := QuarryZoneService.choose_work_area(ctx.game_data, ctx.world, worker, reserved)
+		var area := QuarryZoneService.choose_work_area(ctx.game_data, ctx.world, worker, reserved, source)
 		if area == null:
-			CommandFeedback.reject(worker, GameContext.tr_text("work_area_quarry_no_rock"), effects)
+			CommandFeedback.reject(worker, QuarryZoneService.no_target_text(source), effects)
 			continue
-		assign_work_area_quarry(ctx, worker, area, count, effects)
+		assign_work_area_quarry(ctx, worker, area, count, effects, source)
 		reserved = QuarryZoneService.collect_reserved_rocks(ctx.individuals)
 
 
@@ -152,13 +195,15 @@ static func cut_pick_area_ids(ctx: GameContext, workers: Array[HumanIndividual])
 
 
 # Zone di cava con almeno una roccia disponibile per qualcuno di `workers` (scelta a mano della zona).
-static func quarry_pick_area_ids(ctx: GameContext, workers: Array[HumanIndividual]) -> Array[int]:
+static func quarry_pick_area_ids(
+	ctx: GameContext, workers: Array[HumanIndividual], source: String = ExtractionSourceService.SOURCE_ROCK
+) -> Array[int]:
 	var reserved := QuarryZoneService.collect_reserved_rocks(ctx.individuals)
 	var valid_ids: Array[int] = []
 	for area in QuarryZoneService.list_quarry_work_areas(ctx.game_data):
 		var macro_state := ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
 		for worker in workers:
-			if not QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved, true).is_empty():
+			if not QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved, true, source).is_empty():
 				valid_ids.append(area.id)
 				break
 	return valid_ids

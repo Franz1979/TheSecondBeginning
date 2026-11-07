@@ -28,3 +28,8 @@ extends Resource
 @export var litter_max: int = 3
 # Oltre questo numero se ne vanno i giovani più grandi (dispersione semplificata).
 @export var max_group_size: int = 12
+
+@export_group("Visits")
+# Oltre questi abitanti, e solo dopo il primo arrivo della specie domestica che ne deriva, le visite si diradano in
+# proporzione: col doppio degli abitanti, metà visite (2026-11-06, richiesta utente). 0 = mai.
+@export var visit_thinning_population: int = 0

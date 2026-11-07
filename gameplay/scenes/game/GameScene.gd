@@ -49,6 +49,8 @@ signal wild_animal_driven_off(global_pos: Vector2)
 signal domestic_animal_called(global_pos: Vector2, species: String)
 # Macella (2026-11-04): uccisione ordinata dal giocatore, per il suono (AudioEventListener).
 signal domestic_animal_slaughtered(global_pos: Vector2, species: String)
+# Abbaio d'allarme di un animale di guardia (cane, passo 8.1, 2026-11-06).
+signal domestic_animal_alarmed(global_pos: Vector2, species: String)
 # Emesso quando nella campanella "In sospeso" compare almeno una riga NUOVA (chiave mai vista al giro prima), una volta
 # per giro anche se ne compaiono più insieme; mai al primo giro (apertura o caricamento di una partita), né quando una
 # riga esistente cambia testo. Stesso momento del lampeggio della scheda (_refresh_pending_entries). Ascoltato da
@@ -723,6 +725,10 @@ func _ready() -> void:
 	add_child(cut_count_dialog)
 	cut_count_dialog.count_chosen.connect(_on_cut_count_chosen)
 	cut_count_dialog.show_auto_zone_toggle = true
+	# "Riempi giare" sulla Tettoia dell'acqua (2026-11-06, giare passo 1).
+	fill_jar_count_dialog = CountChoiceDialog.new()
+	add_child(fill_jar_count_dialog)
+	fill_jar_count_dialog.count_chosen.connect(_on_fill_jar_count_chosen)
 	extraction_choice_dialog.resource_chosen.connect(_on_extraction_choice_made)
 	# Elenco delle piante sotto "Taglia" (2026-10-05): contorno sulla mappa e ripristino della selezione alla chiusura.
 	extraction_choice_dialog.option_hovered.connect(_on_extraction_option_hovered)
@@ -859,6 +865,7 @@ func _ready() -> void:
 	# Veglia delle stelle (2026-10-29): richiamo della guida alla chiamata, icona e coro all'inizio.
 	StarVigilService.call_sound_emitter = _emit_star_vigil_called
 	DomesticAnimalSlaughterService.kill_sound_emitter = _emit_domestic_animal_slaughtered
+	DomesticAnimalGuardService.bark_emitter = _emit_domestic_animal_alarmed
 	StarVigilService.start_effect_emitter = _spawn_social_rite_started_effect.bind(StarVigilService.RITE_ID)
 	JobBoardService.open_jobs_counter = _job_board_open_job_count
 	options_menu.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(options_menu))
@@ -891,6 +898,7 @@ func _ready() -> void:
 	building_info_panel.empty_pit_requested.connect(_on_empty_pit_requested)
 	building_info_panel.cancel_empty_pit_requested.connect(_on_cancel_empty_pit_requested)
 	building_info_panel.waste_closed_toggle_requested.connect(_on_waste_closed_toggle_requested)
+	building_info_panel.water_target_changed.connect(_on_water_target_changed)
 	building_info_panel.gate_toggle_requested.connect(_on_gate_toggle_requested)
 	building_info_panel.village_center_move_requested.connect(_on_village_center_move_requested)
 	building_info_panel.village_naming_requested.connect(_on_village_naming_requested)
@@ -1265,7 +1273,8 @@ func _process(delta: float) -> void:
 	_sync_visitor_party_views()
 	_sync_wild_animal_visit_bodies()
 	if game_data != null:
-		DomesticAnimalBodyService.sync_bodies(game_data, macro_world, _domestic_animal_renderers, _make_domestic_animal_renderer)
+		DomesticAnimalBodyService.sync_bodies(game_data, macro_world, _domestic_animal_renderers, _make_domestic_animal_renderer,
+			human_individuals, game_delta)
 		var camera_view: Rect2 = get_viewport().get_canvas_transform().affine_inverse() * get_viewport_rect()
 		for framed in DomesticAnimalBodyService.collect_newly_framed(game_data, _domestic_animal_renderers, camera_view):
 			domestic_animal_called.emit(framed["position"], framed["species"])
@@ -1398,6 +1407,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	# Scelta dell'edificio da demolire (2026-10-14, Demolisci della barra delle costruzioni).
 	if _demolish_pick_active and _handle_demolish_pick_input(event):
+		return
+	# Ordine "Trasporta" del cassetto (2026-11-06): partenza e destinazione col clic sinistro.
+	if _transport_order_stage != TransportOrderStage.NONE and _handle_transport_order_input(event):
 		return
 
 	# Modalità "disegna area" (2026-09-27, richiesta utente — zone di lavoro): stessa priorità dei blocchi sopra, vedi
@@ -1922,6 +1934,7 @@ func _cancel_map_picks() -> void:
 			on_cancel.call()
 	if _demolish_pick_active:
 		_exit_demolish_pick_mode()
+	_exit_transport_order_mode()
 
 
 # Effetto di H su `member` (2026-10-09, estratto da _stop_selected_individual_task per la X delle righe "Diretto" del
@@ -2361,6 +2374,7 @@ func _collect_right_click_targets(event: InputEvent) -> RightClickTargets:
 	targets.carcass_pile = _find_carcass_pile_at_click()
 	targets.plant = vegetation_selector_controller.find_live_at_mouse(live_cells)
 	targets.rock = stone_selector_controller.try_select(event, live_cells, MOUSE_BUTTON_RIGHT)
+	targets.clay = _clay_at_click()
 	targets.stream_fish = _stream_fish_at_click()
 	targets.pickup_candidates = _resolve_pickup_candidates(event, game_data.get_absolute_day())
 	var building_hit := building_selector_controller.try_select(
@@ -2384,6 +2398,8 @@ func _run_right_click_command(command: RightClickCommandService.Command, targets
 			return _right_click_cut(targets)
 		RightClickCommandService.Command.QUARRY:
 			return _right_click_quarry(targets)
+		RightClickCommandService.Command.CLAY:
+			return _right_click_clay(targets)
 		RightClickCommandService.Command.FISH:
 			return _right_click_fish(targets)
 		RightClickCommandService.Command.PICKUP:
@@ -2392,7 +2408,48 @@ func _run_right_click_command(command: RightClickCommandService.Command, targets
 			return _right_click_build(targets)
 		RightClickCommandService.Command.TRANSPORT:
 			return _right_click_transport(targets)
+		RightClickCommandService.Command.FILL_JAR:
+			return _right_click_fill_jar(targets)
 	return false
+
+
+# Riempimento delle giare (2026-11-06, richiesta utente — giare: passo 1): clic destro sulla Tettoia dell'acqua, numero di
+# giare da riempire dal dialogo (al massimo le giare vuote più i posti liberi, WaterJarService.fillable_count), poi
+# WaterJarCommandService. Tettoia piena d'acqua: X e motivo subito.
+func _right_click_fill_jar(targets: RightClickTargets) -> bool:
+	var shelter := targets.building
+	if shelter == null:
+		return false
+	var age_band := _resolve_age_band(individual)
+	if age_band == HumanTypes.AgeBand.INFANT or age_band == HumanTypes.AgeBand.CHILD:
+		_report_assign_rejection(individual, HumanIndividual.ASSIGN_REJECT_TOO_YOUNG, "task_activity_fill_jar")
+		var shelter_macro := Vector2i(shelter.macro_x, shelter.macro_y)
+		if live_cells.has(shelter_macro):
+			_spawn_command_icon_at_microcell(live_cells[shelter_macro], Vector2i(shelter.micro_x, shelter.micro_y), "task_rejected")
+		return true
+	var room := WaterJarService.fillable_count(shelter)
+	if room <= 0:
+		var effects := GameEffects.new()
+		WaterJarCommandService.assign_fill(_game_context(), individual, shelter, 1, effects)
+		_apply_effects(effects)
+		return true
+	_fill_jar_pending = {"individual": individual, "shelter": shelter}
+	fill_jar_count_dialog.popup_anchor = {}
+	fill_jar_count_dialog.open_dialog(
+		tr("fill_jar_dialog_title"), tr("fill_jar_dialog_message"), tr("fill_jar_dialog_count"), 1, room, room
+	)
+	return true
+
+
+func _on_fill_jar_count_chosen(count: int) -> void:
+	var worker: HumanIndividual = _fill_jar_pending.get("individual", null)
+	var shelter: Building = _fill_jar_pending.get("shelter", null)
+	_fill_jar_pending = {}
+	if worker == null or shelter == null or not human_individuals.has(worker) or shelter.is_demolished:
+		return
+	var effects := GameEffects.new()
+	WaterJarCommandService.assign_fill(_game_context(), worker, shelter, count, effects)
+	_apply_effects(effects)
 
 
 # Stato del trigger a due click (2026-09-12, richiesta utente) — `_transport_source_building`
@@ -2475,48 +2532,16 @@ func _right_click_transport(targets: RightClickTargets) -> bool:
 		# available_quantities: Dictionary[String, int] — appiattito da stored_resources (Dictionary
 		# [String, Dictionary{"quantity":int,"decay_fraction":float}]), stesso "spacchettamento" già
 		# fatto da RetrieveAction.activate()/BuildingStorageService.withdraw per la stessa struttura.
-		var available_quantities: Dictionary = {}
-		# Un cantiere non completo non è una sorgente di prelievo (2026-09-27, richiesta utente): il suo materiale si
-		# recupera annullandolo (cade a terra). Trattato come un edificio senza risorse: il click prosegue.
-		if not hit_building.is_complete:
-			return false
-		# stored_resources più il buffer di uscita della produzione (2026-09-23): il prodotto di una
-		# workstation si ritira con la normale Transport.
-		var source_names: Array = hit_building.stored_resources.keys()
-		for output_name in hit_building.production_output.keys():
-			if not source_names.has(output_name):
-				source_names.append(output_name)
-		for resource_name in source_names:
-			var quantity: int = BuildingStorageService.get_available_quantity(hit_building, String(resource_name))
-			if quantity > 0:
-				available_quantities[String(resource_name)] = quantity
-
-		# Nessuna risorsa da prelevare (2026-09-20): il comando non e' piu' di debug, quindi il click destro su un
-		# edificio vuoto NON viene inghiottito (return false: prosegue il movimento normale). Stessa scelta per
-		# CHILD/INFANT sopra.
-		if available_quantities.is_empty():
+		# Cosa si può prelevare (TransportCommandService.source_choices): magazzino più Prodotti finiti; un cantiere non è
+		# una sorgente (il suo materiale si recupera annullandolo). Nessuna risorsa (2026-09-20): il click destro NON viene
+		# inghiottito (return false: prosegue il movimento normale), come per CHILD/INFANT sopra.
+		var choices := TransportCommandService.source_choices(hit_building)
+		if choices.is_empty():
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 				print("[TRANSPORT] %s #%d non ha risorse da prelevare." % [hit_building.building_type_name, hit_building.id])
 			return false
-
 		_transport_pending_source_building = hit_building
-		var display_name: String = tr(hit_building.rules.building_name) if hit_building.rules != null else hit_building.building_type_name
-		var dialog_title: String = tr("transport_dialog_title")
-		var dialog_message: String = tr("transport_dialog_message").format({"building": display_name})
-		# Workstation (2026-09-24, richiesta utente): due gruppi separati — "Prodotti" e "Materiali consegnati".
-		# Gli altri edifici restano con la lista unica. Dal 2026-10-03 (essiccazione passo 3): "Prodotti" = buffer più i
-		# prodotti nello storage, "Materiali consegnati" = i soli ingredienti nello storage (ProductionService.
-		# is_workstation_ingredient). Una risorsa per viaggio, scelta dall'elenco (la voce "Prendi tutti i prodotti" è
-		# stata tolta il 2026-10-03).
-		if hit_building.rules != null and hit_building.rules.is_workstation:
-			var product_quantities: Dictionary = ProductionService.get_all_products_quantities(hit_building)
-			var delivered_quantities: Dictionary = ProductionService.get_stored_ingredient_quantities(hit_building)
-			transport_source_dialog.open_grouped_dialog(dialog_title, dialog_message, product_quantities, delivered_quantities, UserOptions.repeat_default)
-			return true
-		# open_dialog (2026-09-17) — titolo/messaggio ora risolti QUI (tr()+format()), non più dentro
-		# OptionChoiceDialog stesso — vedi quel file per il perché (generalizzazione, riuso anche dal
-		# comando di raccolta manuale sotto).
-		transport_source_dialog.open_dialog(dialog_title, dialog_message, available_quantities, UserOptions.repeat_default)
+		_open_transport_source_dialog(hit_building, choices)
 		return true
 
 	if hit_building == _transport_source_building:
@@ -2539,6 +2564,10 @@ func _right_click_transport(targets: RightClickTargets) -> bool:
 # resta in attesa del click destro sulla destinazione, stesso comportamento "sorgente impostata,
 # aspetto destinazione" già esistente prima del dialog.
 func _on_transport_source_resource_chosen(resource_name: String, quantity: int, repeat: bool) -> void:
+	# Stesso dialog per l'ordine "Trasporta" del cassetto (2026-11-06): lì si passa alla scelta della destinazione.
+	if _transport_order_stage == TransportOrderStage.DIALOG:
+		_on_transport_order_resource_chosen(resource_name, quantity)
+		return
 	if _transport_pending_source_building == null:
 		return
 	_transport_source_building = _transport_pending_source_building
@@ -2556,6 +2585,116 @@ func _on_transport_source_resource_chosen(resource_name: String, quantity: int, 
 		print("[TRANSPORT] sorgente impostata: %s #%d, risorsa='%s' quantità=%d. Ora click destro sull'edificio destinazione." % [
 		_transport_source_building.building_type_name, _transport_source_building.id, resource_name, quantity
 	])
+
+
+# TransportSourceDialog sulle risorse di `building` (`choices` = TransportCommandService.source_choices). Workstation
+# (2026-09-24, richiesta utente): due gruppi separati, "Prodotti" (buffer più prodotti nello storage) e "Materiali
+# consegnati" (i soli ingredienti); gli altri edifici con la lista unica. Una risorsa per viaggio.
+func _open_transport_source_dialog(building: Building, choices: Dictionary) -> void:
+	var display_name: String = tr(building.rules.building_name) if building.rules != null else building.building_type_name
+	var dialog_title: String = tr("transport_dialog_title")
+	var dialog_message: String = tr("transport_dialog_message").format({"building": display_name})
+	if bool(choices.get("grouped", false)):
+		transport_source_dialog.open_grouped_dialog(dialog_title, dialog_message, choices["products"], choices["delivered"], UserOptions.repeat_default)
+	else:
+		transport_source_dialog.open_dialog(dialog_title, dialog_message, choices["all"], UserOptions.repeat_default)
+
+
+# --- Ordine "Trasporta" del cassetto (2026-11-06, richiesta utente) ---
+# Bottone "Trasporta" dell'Assegnazione compiti: clic sinistro sull'edificio di partenza, risorsa e quantità nel
+# TransportSourceDialog (la casella "Ripeti" non conta: l'ordine fa i viaggi che servono), clic sinistro sulla destinazione.
+# L'ordine va in coda (TransportCommandService.create_drawer_transport_order) e lo prende chi è libero. Esc, H, clic destro
+# o un secondo clic sul bottone annullano. Il dialog annullato non avvisa: un clic su un edificio riparte dalla partenza.
+enum TransportOrderStage { NONE, SOURCE, DIALOG, TARGET }
+var _transport_order_stage: TransportOrderStage = TransportOrderStage.NONE
+var _transport_order_source: Building = null
+var _transport_order_resource: String = ""
+var _transport_order_quantity: int = 0
+
+
+func _on_drawer_transport_order_requested() -> void:
+	if _transport_order_stage != TransportOrderStage.NONE:
+		_exit_transport_order_mode()
+		return
+	if game_data == null or not JobBoardService.is_enabled(human_folk):
+		return
+	_cancel_map_picks()
+	_transport_order_stage = TransportOrderStage.SOURCE
+	_show_transport_order_banner("drawer_transport_banner_source")
+
+
+func _show_transport_order_banner(text_key: String) -> void:
+	if worker_pick_banner_label != null:
+		worker_pick_banner_label.text = tr(text_key)
+	if worker_pick_banner != null:
+		worker_pick_banner.visible = true
+
+
+func _exit_transport_order_mode() -> void:
+	if _transport_order_stage == TransportOrderStage.NONE:
+		return
+	_transport_order_stage = TransportOrderStage.NONE
+	_transport_order_source = null
+	_transport_order_resource = ""
+	_transport_order_quantity = 0
+	if transport_source_dialog.visible:
+		transport_source_dialog.hide()
+	if worker_pick_banner != null:
+		worker_pick_banner.visible = false
+
+
+# Consuma l'evento mentre la modalità è attiva (chiamata SOLO da _unhandled_input).
+func _handle_transport_order_input(event: InputEvent) -> bool:
+	if event is InputEventKey and event.pressed and not event.echo and (event.keycode == KEY_ESCAPE or event.keycode == KEY_H):
+		_exit_transport_order_mode()
+		get_viewport().set_input_as_handled()
+		return true
+	if not (event is InputEventMouseButton) or not event.pressed:
+		return false
+	if event.button_index == MOUSE_BUTTON_RIGHT:
+		_exit_transport_order_mode()
+		get_viewport().set_input_as_handled()
+		return true
+	if event.button_index != MOUSE_BUTTON_LEFT:
+		return false
+	get_viewport().set_input_as_handled()
+	var building_hit := building_selector_controller.try_select(
+		event, live_cells, macro_world.buildings if macro_world != null else []
+	)
+	if building_hit.is_empty():
+		return true
+	var building := _find_building_by_id(int(building_hit["building_id"]))
+	if building == null:
+		return true
+	if _transport_order_stage == TransportOrderStage.TARGET:
+		if building == _transport_order_source:
+			return true
+		var effects := GameEffects.new()
+		var created := TransportCommandService.create_drawer_transport_order(
+			_game_context(), _transport_order_source, building, _transport_order_resource, _transport_order_quantity, effects
+		)
+		_apply_effects(effects)
+		if created:
+			_exit_transport_order_mode()
+		return true
+	# Partenza (anche di nuovo, dopo un dialog annullato): niente da prendere = si resta in attesa di un altro edificio.
+	var choices := TransportCommandService.source_choices(building)
+	if choices.is_empty():
+		return true
+	_transport_order_source = building
+	_transport_order_stage = TransportOrderStage.DIALOG
+	_open_transport_source_dialog(building, choices)
+	return true
+
+
+func _on_transport_order_resource_chosen(resource_name: String, quantity: int) -> void:
+	if _transport_order_source == null:
+		_exit_transport_order_mode()
+		return
+	_transport_order_resource = resource_name
+	_transport_order_quantity = quantity
+	_transport_order_stage = TransportOrderStage.TARGET
+	_show_transport_order_banner("drawer_transport_banner_target")
 
 
 # DEBUG "usa e getta" (2026-09-09, richiesta utente) — svuota lo zaino dell'individuo SELEZIONATO
@@ -4316,10 +4455,20 @@ func _order_quarry(selected: Array[HumanIndividual]) -> void:
 	# "Pietre da estrarre" (2026-10-05, passo 2): la zona segue alla conferma (_on_quarry_count_chosen).
 	_quarry_dialog_workers = workers
 	quarry_count_dialog.popup_anchor = _popup_anchor
+	# Pietra o Argilla (2026-11-04): solo con più di una fonte conosciuta; altrimenti il dialogo di sempre.
+	var choices := ExtractionSourceService.list_source_choices()
+	var many_sources := choices.size() >= 2
+	quarry_count_dialog.set_choices(choices, UserOptions.work_area_quarry_source, _quarry_count_tooltip(many_sources))
 	quarry_count_dialog.open_dialog(
-		tr("quarry_order_dialog_title"), tr("quarry_order_dialog_message"), tr("quarry_order_dialog_count"),
+		tr("quarry_order_dialog_title"), tr("quarry_order_dialog_message_sources") if many_sources else tr("quarry_order_dialog_message"),
+		tr("quarry_order_dialog_count_sources") if many_sources else tr("quarry_order_dialog_count"),
 		QuarryZoneService.COUNT_MIN, QuarryZoneService.COUNT_MAX, UserOptions.work_area_quarry_count
 	)
+
+
+# Spiegazione al passaggio sul numero di estrazioni: serve solo quando si può scegliere tra più risorse.
+func _quarry_count_tooltip(many_sources: bool) -> String:
+	return tr("quarry_order_dialog_count_tooltip").format({"clay": ClayDepositService.UNITS_PER_EXTRACTION}) if many_sources else ""
 
 
 # Conferma di "Pietre da estrarre": valore ricordato, poi la zona come per gli altri comandi — automatica (per
@@ -4327,6 +4476,10 @@ func _order_quarry(selected: Array[HumanIndividual]) -> void:
 # una serie di `count` estrazioni (QuarryZoneService.make_series).
 func _on_quarry_count_chosen(count: int) -> void:
 	UserOptions.work_area_quarry_count = count
+	var chosen_source := quarry_count_dialog.get_selected_choice()
+	if chosen_source != "":
+		UserOptions.work_area_quarry_source = chosen_source
+	var source := chosen_source if chosen_source != "" else ExtractionSourceService.SOURCE_ROCK
 	UserOptions.save_to_disk()
 	var workers: Array[HumanIndividual] = []
 	for worker in _quarry_dialog_workers:
@@ -4339,22 +4492,22 @@ func _on_quarry_count_chosen(count: int) -> void:
 	# Zona automatica e zone valide per la scelta a mano: ExtractionCommandService (5B.3).
 	if UserOptions.work_area_auto_zone:
 		var effects := GameEffects.new()
-		ExtractionCommandService.assign_auto_zone_quarry(_game_context(), workers, count, effects)
+		ExtractionCommandService.assign_auto_zone_quarry(_game_context(), workers, count, effects, source)
 		_apply_effects(effects)
 		return
-	var valid_ids := ExtractionCommandService.quarry_pick_area_ids(_game_context(), workers)
+	var valid_ids := ExtractionCommandService.quarry_pick_area_ids(_game_context(), workers, source)
 	if valid_ids.is_empty():
 		for worker in workers:
-			_report_command_rejection(worker, tr("work_area_quarry_no_rock"))
+			_report_command_rejection(worker, QuarryZoneService.no_target_text(source))
 		return
-	_enter_work_area_pick_mode(workers, {"job": QuarryZoneService.QUARRY_JOB, "count": count}, valid_ids)
+	_enter_work_area_pick_mode(workers, {"job": QuarryZoneService.QUARRY_JOB, "count": count, "source": source}, valid_ids)
 
 
 # Una estrazione nella zona `area`, prima di una serie di `count` (2026-10-24, 5B.3 —
 # ExtractionCommandService.assign_work_area_quarry).
-func _assign_work_area_quarry(worker: HumanIndividual, area: WorkArea, count: int = 1) -> void:
+func _assign_work_area_quarry(worker: HumanIndividual, area: WorkArea, count: int = 1, source: String = ExtractionSourceService.SOURCE_ROCK) -> void:
 	var effects := GameEffects.new()
-	ExtractionCommandService.assign_work_area_quarry(_game_context(), worker, area, count, effects)
+	ExtractionCommandService.assign_work_area_quarry(_game_context(), worker, area, count, effects, source)
 	_apply_effects(effects)
 
 
@@ -4700,7 +4853,10 @@ func _handle_work_area_pick_input(event: InputEvent) -> bool:
 					))
 				elif String(order.get("job", "")) == QuarryZoneService.QUARRY_JOB:
 					# Estrazione in zona (2026-10-05): serie di "count" estrazioni, la prima sulla roccia scelta.
-					_assign_work_area_quarry(worker, area, int(order.get("count", QuarryZoneService.COUNT_DEFAULT)))
+					_assign_work_area_quarry(
+						worker, area, int(order.get("count", QuarryZoneService.COUNT_DEFAULT)),
+						String(order.get("source", ExtractionSourceService.SOURCE_ROCK))
+					)
 				elif String(order.get("job", "")) == CutZoneService.CUT_JOB:
 					# Taglio in zona (2026-10-06): serie di "count" tagli, il primo sulla pianta scelta.
 					_assign_work_area_cut(worker, area, int(order.get("count", CutZoneService.COUNT_DEFAULT)))
@@ -5049,6 +5205,9 @@ var _extraction_pending: Dictionary = {}
 # Popup "Pietre da estrarre" del comando Estrai nelle zone e pipottini in attesa della sua conferma (2026-10-05).
 var quarry_count_dialog: CountChoiceDialog
 var _quarry_dialog_workers: Array[HumanIndividual] = []
+# Popup "Riempi giare" e chi aspetta la sua conferma ({"individual", "shelter"}), 2026-11-06.
+var fill_jar_count_dialog: CountChoiceDialog
+var _fill_jar_pending: Dictionary = {}
 # Popup "Piante da tagliare" del comando Taglia nelle zone e pipottini in attesa della sua conferma (2026-10-06).
 var cut_count_dialog: CountChoiceDialog
 var _cut_dialog_workers: Array[HumanIndividual] = []
@@ -5274,6 +5433,8 @@ func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -
 			return
 		var plants: Dictionary = pending.get("plants", {})
 		_assign_cut_task(worker, plants.get(String(chosen_key) if chosen_key != null else "", pending["plant"]))
+	elif choice == EXTRACTION_CHOICE_QUARRY and pending.has("clay"):
+		_assign_dig_clay_task(worker, pending["clay"])
 	elif choice == EXTRACTION_CHOICE_QUARRY:
 		_assign_quarry_task(worker, pending["rock"])
 	elif choice == EXTRACTION_CHOICE_GATHER and worker == individual and pending.has("pickup_resources"):
@@ -5362,6 +5523,52 @@ func _assign_quarry_task(worker: HumanIndividual, rock: Dictionary, work_area_id
 	var effects := GameEffects.new()
 	ExtractionCommandService.assign_quarry(_game_context(), worker, rock, work_area_id, series, silent, effects)
 	_apply_effects(effects)
+
+
+# Argilla col clic destro (2026-11-04): la microcella del giacimento sotto il mouse, solo dopo l'idea Vasellame.
+func _clay_at_click() -> Dictionary:
+	if TerrainScatteredResourceService.is_resource_locked(ClayDepositService.RESOURCE_NAME):
+		return {}
+	var hit := _resolve_microcell_at_click()
+	if hit.is_empty():
+		return {}
+	var cell: LiveMacroCell = live_cells.get(hit["macro_coords"])
+	if cell == null or not ClayDepositService.has_clay(cell.macro_state, hit["lot"]):
+		return {}
+	return {"macro_coords": hit["macro_coords"], "position": hit["lot"]}
+
+
+# Se sulla microcella c'è anche qualcosa da raccogliere si sceglie, come sulle rocce; altrimenti si estrae subito.
+func _right_click_clay(targets: RightClickTargets) -> bool:
+	var clay := targets.clay
+	var candidates := targets.pickup_candidates
+	if candidates.is_empty():
+		_assign_dig_clay_task(individual, clay)
+		return true
+	_extraction_pending = {"individual": individual, "clay": clay, "candidates": candidates}
+	var gather_options := {EXTRACTION_CHOICE_GATHER: {
+		"type": "check", "text": tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_TRIPS}),
+		"value": UserOptions.repeat_default,
+	}}
+	_open_extraction_choice(
+		EXTRACTION_CHOICE_QUARRY, tr("clay_choice_dialog_title"), tr("clay_choice_dialog_message"),
+		tr("clay_choice_gather"), tr("clay_choice_dig"), "quarry", true, gather_options
+	)
+	return true
+
+
+func _assign_dig_clay_task(worker: HumanIndividual, clay: Dictionary) -> void:
+	var effects := GameEffects.new()
+	ExtractionCommandService.assign_dig_clay(_game_context(), worker, clay, effects)
+	_apply_effects(effects)
+
+
+# Argilla estratta (QuarryAction.clay_extracted): se la microcella si è esaurita il giacimento sparisce dal disegno.
+func _on_clay_extracted(macro_coords: Vector2i, position: Vector2i) -> void:
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	if cell == null or cell.renderer == null or ClayDepositService.has_clay(cell.macro_state, position):
+		return
+	cell.renderer.set_clay_positions(cell.macro_state.clay_positions)
 
 
 # Pesca col clic destro (2026-10-31, FishCommandService): la microcella di ruscello sotto il mouse, se ha pesci.
@@ -5724,6 +5931,12 @@ func _remembered_microcell_lines(macro_coords: Vector2i, lot: Vector2i) -> Array
 		types.append(tr(building.rules.building_name))
 	if RockStoneService.is_standing_rock(cell.macro_state, lot):
 		types.append(tr("stone_selection_title"))
+	# Giacimento di argilla (2026-11-03): si vede sulla mappa anche da lontano, come una roccia; il nome solo dopo l'idea.
+	if ClayDepositService.has_clay(cell.macro_state, lot):
+		if TerrainScatteredResourceService.is_resource_locked(ClayDepositService.RESOURCE_NAME):
+			types.append(tr("microcell_inspection_unknown_resource_remembered"))
+		else:
+			types.append(IconRegistry.get_resource_display_name(ClayDepositService.RESOURCE_NAME))
 	if not _build_vegetation_lot_breakdown(cell, GameTypes.WorldObjectType.TREE, lot).is_empty():
 		types.append(tr("microcell_inspection_tree"))
 	if not _build_vegetation_lot_breakdown(cell, GameTypes.WorldObjectType.SHRUB, lot).is_empty():
@@ -5816,6 +6029,15 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 			water_lines.append(tr("microcell_inspection_stream_no_fish"))
 	elif cell != null and cell.river_positions.has(lot):
 		water_lines.append(tr("microcell_inspection_river"))
+	# Giacimento di argilla (2026-11-03): prima dell'idea non ha nome né quantità, come le erbe medicinali.
+	if cell != null and ClayDepositService.has_clay(cell.macro_state, lot):
+		if TerrainScatteredResourceService.is_resource_locked(ClayDepositService.RESOURCE_NAME):
+			water_lines.append(tr("microcell_inspection_unknown_resource"))
+		else:
+			water_lines.append(tr("microcell_inspection_resource_line").format({
+				"resource": IconRegistry.get_resource_display_name(ClayDepositService.RESOURCE_NAME),
+				"quantity": ClayDepositService.get_remaining(cell.macro_state, lot),
+			}))
 	lines.append_array(water_lines)
 	if lot_candidates.is_empty() and not rock_present and not tree_present and not shrub_present and grass_present:
 		# Solo erba, nessuna risorsa raccoglibile (richiesta esplicita utente) — messaggio unico,
@@ -8070,6 +8292,8 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 	# Essiccatoio del magazzino (2026-10-11): manca l'ingrediente, essiccatoio pieno o assente.
 	entries.append_array(WarehouseManagerService.collect_dry_entries(game_data))
 	entries.append_array(WarehouseManagerService.collect_toolkit_entries(game_data))
+	# Giare che mancano per le tettoie dell'acqua (2026-11-07).
+	entries.append_array(WarehouseManagerService.collect_water_entries(game_data))
 	# Inventario del magazzino scaduto da più di un'ora e nessuno che lo fa (2026-10-11).
 	entries.append_array(WarehouseManagerService.collect_inventory_entries(_game_context(), _job_board_now()))
 	# Ordini di caccia del cassetto senza prede (2026-10-09).
@@ -8756,6 +8980,13 @@ func _emit_domestic_animal_slaughtered(animal: DomesticAnimal) -> void:
 	var global_pos := DomesticAnimalBodyService.get_global_position(animal, _domestic_animal_renderers)
 	if global_pos != Vector2.ZERO:
 		domestic_animal_slaughtered.emit(global_pos, animal.species)
+
+
+# Guardia (passo 8.1): abbaio d'allarme nel punto dell'animale.
+func _emit_domestic_animal_alarmed(animal: DomesticAnimal) -> void:
+	var global_pos := DomesticAnimalBodyService.get_global_position(animal, _domestic_animal_renderers)
+	if global_pos != Vector2.ZERO:
+		domestic_animal_alarmed.emit(global_pos, animal.species)
 
 
 # Richiamo della guida della Veglia delle stelle alla sua posizione (solo se la sua macrocella è attiva).
@@ -9674,8 +9905,12 @@ func _on_drawer_zone_order_requested(kind: String) -> void:
 			HaulZoneService.list_work_area_resources(game_data, macro_world), UserOptions.get_pickup_default_choice()
 		)
 	elif kind == DrawerOrderService.TYPE_QUARRY:
+		# Pietra o Argilla (2026-11-04): come il comando Estrai, solo con più di una fonte conosciuta.
+		var source_choices := ExtractionSourceService.list_source_choices()
+		var many_sources := source_choices.size() >= 2
+		_task_assignment_panel.set_quarry_source_choices(source_choices, UserOptions.work_area_quarry_source, _quarry_count_tooltip(many_sources))
 		_task_assignment_panel.open_zone_order_overlay(
-			kind, tr("drawer_quarry_title"), tr("quarry_order_dialog_count"), QuarryZoneService.COUNT_MIN,
+			kind, tr("drawer_quarry_title"), tr("quarry_order_dialog_count_sources") if many_sources else tr("quarry_order_dialog_count"), QuarryZoneService.COUNT_MIN,
 			QuarryZoneService.COUNT_MAX, UserOptions.work_area_quarry_count, UserOptions.work_area_auto_zone
 		)
 	else:
@@ -9694,7 +9929,10 @@ func _on_drawer_zone_pick_requested() -> void:
 	var kind := _drawer_zone_order_kind
 	var reserved := DrawerOrderService.zone_reserved(human_individuals, kind)
 	# Raccolta: le zone con qualcosa per la scelta fatta nello strato (o per "Tutto", se non ancora scelta).
+	# Estrazione: le zone con la risorsa scelta.
 	var gather_order := DrawerOrderService.gather_order_fields(_task_assignment_panel.get_gather_choice()) if kind == DrawerOrderService.TYPE_GATHER else {}
+	if kind == DrawerOrderService.TYPE_QUARRY:
+		gather_order = {"source": _task_assignment_panel.get_quarry_source()}
 	var valid_ids: Array[int] = []
 	for area in DrawerOrderService.zone_areas(game_data, kind):
 		if DrawerOrderService.area_has_targets(_game_context(), kind, area, null, reserved, gather_order):
@@ -9740,6 +9978,9 @@ func _on_drawer_zone_order_submitted(kind: String, count: int, zone_id: int) -> 
 	elif kind == DrawerOrderService.TYPE_QUARRY:
 		clamped = clampi(count, QuarryZoneService.COUNT_MIN, QuarryZoneService.COUNT_MAX)
 		UserOptions.work_area_quarry_count = clamped
+		var quarry_source := _task_assignment_panel.get_quarry_source() if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel) else ExtractionSourceService.SOURCE_ROCK
+		UserOptions.work_area_quarry_source = quarry_source
+		extra = {"source": quarry_source}
 	else:
 		clamped = clampi(count, CutZoneService.COUNT_MIN, CutZoneService.COUNT_MAX)
 		UserOptions.work_area_cut_count = clamped
@@ -11796,6 +12037,15 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 			stone_service.generate_if_needed(cell.macro_state, cell.macro_cell, cell.stream_positions)
 			cell.renderer.set_depleted_stone_positions(RockStoneService.get_depleted_positions(cell.macro_state))
 			cell.renderer.set_stone_positions(cell.macro_state.stone_positions)
+			# Argilla (2026-11-03): dopo le rocce e le rive, che la chiazza usa. La cella del player alla PRIMA attivazione è
+			# quella di partenza (i vicini si attivano prima che ci si entri): lì l'argilla è garantita. Generata adesso in una
+			# cella già visitata (salvataggio vecchio): le piante già disposte devono farle posto.
+			if not cell.macro_state.clay_positions_generated:
+				var clay_excluded: Array = [cell.river_positions, cell.stream_positions, cell.macro_state.stone_positions, _building_positions_for_cell(cell)]
+				var clay_guaranteed := mx == game_data.player_macro_cell_x and my == game_data.player_macro_cell_y
+				if ClayDepositService.generate_if_needed(cell.macro_state, cell.macro_cell, macro_world, cell.water_access, clay_excluded, clay_guaranteed):
+					cell.needs_vegetation_layout_rebuild = true
+			cell.renderer.set_clay_positions(cell.macro_state.clay_positions)
 			# Pebble (2026-09-08, richiesta utente) — NON più sincronizzato qui a parte (2026-09-09,
 			# richiesta utente, bugfix "pebble/stick restano disegnati dopo la raccolta"): la prima
 			# sincronizzazione avviene già dentro _refresh_resource_visuals sotto (chiamata poche righe
@@ -12510,6 +12760,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 	for pos in cell.river_positions:
 		occupied[pos] = true
 	for pos in cell.stream_positions:
+		occupied[pos] = true
+	for pos in cell.macro_state.clay_positions:
 		occupied[pos] = true
 	# Le microcelle edificate vanno escluse esattamente come stone/river — GRASS si affida solo a
 	# `occupied` (nessuna memoria persistita, vedi VegetationPositionService), mentre per TREE/SHRUB
@@ -13801,7 +14053,7 @@ func _on_primary_action_pressed(action_id: StringName) -> void:
 			_toggle_warehouse_drawer()
 		# 🐾 (2026-10-26): apre il pannello delle Addomesticazioni.
 		&"domestication":
-			if human_folk != null and human_folk.completed_ideas.has(DOMESTICATION_IDEA_ID):
+			if DomesticationPanel.is_available(human_folk, game_data):
 				domestication_panel.open_dialog(human_folk, game_data)
 
 
@@ -13984,6 +14236,11 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Guado di pietre (2026-10-31) — azione cablata in BuildBar._ready.
 		&"build_stone_ford":
 			return "stone_ford"
+		&"build_potter_hut":
+			return "potter_hut"
+		# Tettoia dell'acqua (2026-11-06) — azione cablata in BuildBar._ready.
+		&"build_water_shelter":
+			return "water_shelter"
 		_:
 			return ""
 
@@ -14344,6 +14601,14 @@ func _on_village_naming_requested(building: Building) -> void:
 
 
 # "Chiudi/Riapri ai rifiuti" (2026-10-18): una Fossa chiusa non riceve più nulla. Durante lo svuotamento resta chiusa.
+# Livello d'acqua della singola tettoia (2026-11-07, WaterShelterStockService.target_for): -1 = regola generale.
+func _on_water_target_changed(building: Building, level: int) -> void:
+	if building == null or not WaterJarService.is_shelter(building):
+		return
+	building.water_target_override = level
+	_refresh_selected_building_panel()
+
+
 func _on_waste_closed_toggle_requested(building: Building) -> void:
 	if building == null or building.waste_emptying or not WasteDisposalService.is_pit(building):
 		return
@@ -14435,14 +14700,13 @@ func _refresh_tech_tree_button() -> void:
 	_refresh_domestication_button()
 
 
-# Bottone 🐾 delle Addomesticazioni (2026-10-26, richiesta utente): NASCOSTO finché l'idea «Addomesticazione» (solo da
-# scoperta, regalata dal lupo) non è completata — non spento come Scorte/Assegnazione, il tooltip la rivelerebbe.
-# Ricalcolato insieme al bottone delle idee (caricamento, idee completate o regalate).
-const DOMESTICATION_IDEA_ID := "domestication"
+# Bottone 🐾 delle Addomesticazioni (2026-10-26, richiesta utente): NASCOSTO, non spento come Scorte/Assegnazione (il
+# tooltip rivelerebbe l'idea). Dal 2026-11-07 visibile anche prima dell'idea «Addomesticazione», dalla prima visita del
+# branco (DomesticationPanel.is_available). Ricalcolato col bottone delle idee e ogni giorno.
 
 
 func _refresh_domestication_button() -> void:
-	var available := human_folk != null and human_folk.completed_ideas.has(DOMESTICATION_IDEA_ID)
+	var available := DomesticationPanel.is_available(human_folk, game_data)
 	game_info_panel.primary_actions_bar.set_slot_visible(GameInfoPanel.DOMESTICATION_SLOT_INDEX, available)
 	game_info_panel.refresh_governance_bar()
 	if not available and domestication_panel != null and domestication_panel.visible:
@@ -14550,6 +14814,9 @@ func _toggle_warehouse_drawer() -> void:
 		_warehouse_panel.set_fuel_rule(game_data.stock_fuel_rule_enabled, FuelStockService.get_rule_rows(game_data, human_folk.completed_ideas))
 		_warehouse_panel.fuel_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_fuel_rule_enabled = enabled)
 		_warehouse_panel.fuel_min_changed.connect(func(type_name: String, level: int) -> void: game_data.stock_fuel_min_by_type[type_name] = level)
+		# Regola "Acqua per tettoia" (2026-11-07, giare passo 3): dato della partita, ordini da WaterShelterStockService.
+		_warehouse_panel.set_water_rule(game_data.stock_water_per_shelter, WaterShelterStockService.max_water_per_shelter(), game_data.stock_runtime.water_jars_missing)
+		_warehouse_panel.water_per_shelter_changed.connect(func(level: int) -> void: game_data.stock_water_per_shelter = level)
 		# Regola "Rifornisci le Attrezzerie" (2026-10-18): dati della partita, per tipo di edificio e attrezzo.
 		_warehouse_panel.set_toolkit_rule(game_data.stock_toolkit_rule_enabled, ToolkitStockService.get_rule_rows(game_data, human_folk.completed_ideas))
 		_warehouse_panel.toolkit_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_toolkit_rule_enabled = enabled)
@@ -14787,6 +15054,8 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.set_produce_available(_has_drawer_produce_building())
 		_task_assignment_panel.produce_order_requested.connect(_on_drawer_produce_requested)
 		_task_assignment_panel.produce_orders_submitted.connect(_on_drawer_produce_submitted)
+		# "Trasporta" (2026-11-06): ordine di trasporto da un edificio a un altro, scelti sulla mappa.
+		_task_assignment_panel.transport_order_requested.connect(_on_drawer_transport_order_requested)
 		# "Taglia" (2026-10-09): stato subito, poi a ogni ricalcolo dell'elenco.
 		_sync_drawer_cut_available()
 		_task_assignment_panel.zone_order_requested.connect(_on_drawer_zone_order_requested)
@@ -15030,10 +15299,7 @@ func _start_work_area_drag() -> void:
 		return
 	_work_area_drag_cell = placement["cell"]
 	_work_area_drag_start = placement["micro_pos"]
-	_work_area_drag_preview = WorkAreaDragPreview.new()
-	_work_area_drag_preview.z_index = 21
-	_work_area_drag_cell.container.add_child(_work_area_drag_preview)
-	_update_work_area_drag()
+	# L'anteprima nasce solo in _update_work_area_drag, quando il trascinamento diventa un disegno (2026-11-07).
 
 
 # Rettangolo corrente: dalla microcella di partenza a quella sotto il mouse, calcolata sempre rispetto alla macrocella
@@ -15044,10 +15310,20 @@ func _current_work_area_drag_rect() -> Rect2i:
 	return WorkAreaService.rect_from_drag(_work_area_drag_start, current)
 
 
+# Anteprima ritardata (2026-11-07, richiesta utente): compare solo quando il rettangolo raggiunge
+# WORK_AREA_MIN_DRAG_SIDE su un lato, cioè quando il rilascio creerebbe una zona; prima è ancora un clic (selezione),
+# e un quadrato 1×1 sarebbe solo un lampo fuorviante. Una volta comparsa resta fino al rilascio.
 func _update_work_area_drag() -> void:
-	if _work_area_drag_cell == null or not is_instance_valid(_work_area_drag_preview):
+	if _work_area_drag_cell == null:
 		return
-	_work_area_drag_preview.set_rect(_current_work_area_drag_rect())
+	var rect := _current_work_area_drag_rect()
+	if not is_instance_valid(_work_area_drag_preview):
+		if rect.size.x < WORK_AREA_MIN_DRAG_SIDE and rect.size.y < WORK_AREA_MIN_DRAG_SIDE:
+			return
+		_work_area_drag_preview = WorkAreaDragPreview.new()
+		_work_area_drag_preview.z_index = 21
+		_work_area_drag_cell.container.add_child(_work_area_drag_preview)
+	_work_area_drag_preview.set_rect(rect)
 
 
 func _finish_work_area_drag() -> void:
@@ -15777,6 +16053,7 @@ func _reconnect_build_task_signals(step: Action) -> void:
 		# Task Quarry (2026-10-05): l'estrazione vera avviene in QuarryAction.on_complete, qui solo il ridisegno dei sassi e
 		# del pannello della roccia (_on_rock_quarried).
 		(step as QuarryAction).rock_quarried.connect(_on_rock_quarried)
+		(step as QuarryAction).clay_extracted.connect(_on_clay_extracted)
 	elif step is FishAction:
 		# Task Fish (2026-10-31): la presa vera avviene in FishAction, qui solo il ridisegno dei pesciolini.
 		(step as FishAction).stream_fish_caught.connect(_on_stream_fish_caught)
@@ -16207,6 +16484,17 @@ func _connect_storage_refresh_signals(step: Action) -> void:
 		var restock := step as RestockPouchAction
 		if not restock.pouch_restocked.is_connected(_on_pouch_restocked):
 			restock.pouch_restocked.connect(_on_pouch_restocked)
+	elif step is TakeJarAction:
+		# Giare (2026-11-06): presa e riposta cambiano la griglia e il disegno della tettoia.
+		if not (step as TakeJarAction).jar_moved.is_connected(_on_resource_deposited):
+			(step as TakeJarAction).jar_moved.connect(_on_resource_deposited)
+	elif step is PutJarAction:
+		if not (step as PutJarAction).jar_moved.is_connected(_on_resource_deposited):
+			(step as PutJarAction).jar_moved.connect(_on_resource_deposited)
+	elif step is DrinkAction:
+		# Bevuta alla Tettoia dell'acqua (2026-11-07): le giare cambiano.
+		if not (step as DrinkAction).shelter_used.is_connected(_on_resource_deposited):
+			(step as DrinkAction).shelter_used.connect(_on_resource_deposited)
 	elif step is UnloadAction:
 		# Un'UnloadAction creata fuori da GameScene non passa da _reconnect_unload_action_signals:
 		# qui si aggiunge il solo refresh, senza gli altri segnali di quella funzione.
@@ -16363,6 +16651,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"gate_open": building.gate_open,
 				# Appoggio per travois (2026-10-23): quanti travois disegnare appoggiati.
 				"travois_count": int((building.stored_resources.get("travois", {}) as Dictionary).get("quantity", 0)),
+				# Tettoia dell'acqua (2026-11-06): le giare sotto il tetto, ognuna con la sua acqua.
+				"jar_waters": WaterJarService.shelter_jar_waters(building),
 				# Casa riscaldata oggi (2026-10-22, HouseHeatingService): fumo fermo sul tetto.
 				"heated": building.heated_today and building.is_complete,
 				# Affumicatoio e capanna del guaritore al lavoro (2026-10-23/25, ProductionService.refresh_smoking): fumo dal foro.
@@ -16560,6 +16850,8 @@ func _sync_footprint_ghost(mouse_position: Vector2) -> void:
 	var placement := _live_cell_and_micro_position_at(mouse_position)
 	if not placement.is_empty():
 		_building_ghost.sync_footprint_preview((placement["cell"] as LiveMacroCell).container, placement["micro_pos"], rules)
+		if rules.requires_narrow_stream:
+			_building_ghost.set_stream_crossing_angle(StreamMicrocellService.ford_angle((placement["cell"] as LiveMacroCell).stream_positions, placement["micro_pos"]))
 
 
 # Insieme delle microcelle occupate da un edificio COMPLETO del mondo (2026-09-19, esteso a ogni tipo
@@ -17146,6 +17438,8 @@ func _on_day_advanced(checkpoint_ran: bool) -> void:
 	_pending_saved_animal_individuals.clear()
 	# Specie selvatiche incontrate (addomesticazione, 2026-10-26): anche nei giorni "vuoti".
 	_check_encountered_wild_species()
+	# Pulsante 🐾 visibile dalla prima visita del branco (2026-11-07, DomesticationPanel.is_available).
+	_refresh_domestication_button()
 	# Refresh giornaliero del pannello individuo selezionato (2026-09-06, richiesta utente) — PRIMA
 	# dell'early-return sotto, stesso motivo di _maybe_prune_fog_of_war_memories sopra: deve girare
 	# anche nei giorni "vuoti" (nessun checkpoint/animali cambiati), non solo quando il resto della

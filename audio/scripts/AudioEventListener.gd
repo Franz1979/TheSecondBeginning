@@ -38,6 +38,8 @@ func _ready() -> void:
 		game_scene.domestic_animal_called.connect(_on_domestic_animal_called)
 	if game_scene.has_signal(&"domestic_animal_slaughtered"):
 		game_scene.domestic_animal_slaughtered.connect(_on_domestic_animal_slaughtered)
+	if game_scene.has_signal(&"domestic_animal_alarmed"):
+		game_scene.domestic_animal_alarmed.connect(_on_domestic_animal_alarmed)
 	if game_scene.has_signal(&"talk_sound_requested"):
 		game_scene.talk_sound_requested.connect(_on_talk_sound_requested)
 	if game_scene.has_signal(&"world_object_selected"):
@@ -98,6 +100,13 @@ func _on_domestic_animal_called(global_pos: Vector2, species: String) -> void:
 # Uccisione ordinata con Macella (2026-11-04): il verso della specie, se ne ha uno in SoundEventMap.
 func _on_domestic_animal_slaughtered(global_pos: Vector2, species: String) -> void:
 	var cry := StringName("domestic_animal_slaughtered:" + species)
+	if SoundEventMap.get_sound_id(cry) != &"":
+		AudioManager.play_event(cry, global_pos)
+
+
+# Abbaio d'allarme di un animale di guardia (2026-11-06, cane passo 8.1), se la specie ne ha uno in SoundEventMap.
+func _on_domestic_animal_alarmed(global_pos: Vector2, species: String) -> void:
+	var cry := StringName("domestic_animal_alarm:" + species)
 	if SoundEventMap.get_sound_id(cry) != &"":
 		AudioManager.play_event(cry, global_pos)
 

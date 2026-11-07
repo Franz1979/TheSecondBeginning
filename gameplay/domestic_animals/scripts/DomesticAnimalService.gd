@@ -37,10 +37,26 @@ static func missing_for_arrival(game_data: GameData, rules: DomesticAnimalRules,
 	return maxi(target - present, 0)
 
 
-# Specie attiva con tutti gli animali voluti: la selvatica non dà più punti (cane: le 2 coppie).
-static func has_all_arrivals(game_data: GameData, rules: DomesticAnimalRules) -> bool:
-	return rules.individuals_enabled and missing_for_arrival(game_data, rules, true) == 0 \
-		and missing_for_arrival(game_data, rules, false) == 0
+# Primo arrivo dal branco già avvenuto (2026-11-06): da qui la selvatica non dà più punti né animali, i rimpiazzi arrivano
+# da fuori (DomesticAnimalLifeService) e le visite oltre una soglia di abitanti si diradano.
+static func is_domesticated(game_data: GameData, species: String) -> bool:
+	return game_data.domestic_first_arrival_day.has(species)
+
+
+# Regola dei rimpiazzi (2026-11-06, richiesta utente): il branco manda animali solo se sono meno della somma di
+# arrival_target_* (cane: 4), oppure se sono tutti dello stesso sesso. Arrivano quelli che mancano (missing_for_arrival).
+static func needs_arrivals(game_data: GameData, rules: DomesticAnimalRules) -> bool:
+	var males := 0
+	var females := 0
+	for animal in get_animals(game_data, rules.species_name):
+		if animal.is_male:
+			males += 1
+		else:
+			females += 1
+	if males + females < rules.arrival_target_males + rules.arrival_target_females:
+		return true
+	return (males == 0 and rules.arrival_target_males > 0) or (females == 0 and rules.arrival_target_females > 0)
+
 
 
 static func get_animals(game_data: GameData, species: String) -> Array[DomesticAnimal]:

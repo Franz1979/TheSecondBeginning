@@ -30,6 +30,48 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 		_give_birth_if_season(game_data, rules, wild_rules, today)
 		if is_departure_day:
 			_leave_over_cap(ctx, rules, wild_rules, today, effects)
+	# Rimpiazzi da fuori (2026-11-06): per ogni specie attiva, anche senza più nessun animale.
+	for species in DomesticAnimalCalculator.list_species():
+		var rules := DomesticAnimalCalculator.get_rules(species)
+		if rules != null and rules.individuals_enabled:
+			_tick_stray_arrival(ctx, rules, today, effects)
+
+
+# Rimpiazzi da fuori (2026-11-06, richiesta utente): solo dopo il primo arrivo dal branco. Quando la regola
+# DomesticAnimalService.needs_arrivals chiede animali parte l'attesa (stray_arrival_wait_years); alla fine, se servono ancora,
+# arriva un giovane adulto del sesso che manca di più, vicino al magazzino, con un messaggio. Se ne servono altri, la volta
+# dopo riparte l'attesa. Salvataggi di prima: con animali presenti la specie conta come già addomesticata da oggi.
+static func _tick_stray_arrival(ctx: GameContext, rules: DomesticAnimalRules, today: int, effects: GameEffects) -> void:
+	var game_data := ctx.game_data
+	var species := rules.species_name
+	if not DomesticAnimalService.is_domesticated(game_data, species):
+		if DomesticAnimalService.get_animals(game_data, species).is_empty():
+			return
+		game_data.domestic_first_arrival_day[species] = today
+	if rules.stray_arrival_wait_years <= 0 or not DomesticAnimalService.needs_arrivals(game_data, rules):
+		game_data.domestic_stray_due_day.erase(species)
+		return
+	if not game_data.domestic_stray_due_day.has(species):
+		game_data.domestic_stray_due_day[species] = today + rules.stray_arrival_wait_years * GameData.DAYS_PER_YEAR
+		print("[DOMESTIC] %s: sotto la soglia, un rimpiazzo arriverà il giorno %d" % [species, game_data.domestic_stray_due_day[species]])
+		return
+	if today < int(game_data.domestic_stray_due_day[species]):
+		return
+	var storage := WildAnimalGroupService.find_anchor_storage(ctx.world)
+	var wild_rules := DomesticAnimalCalculator.get_wild_rules(species)
+	if storage == null or wild_rules == null:
+		return
+	game_data.domestic_stray_due_day.erase(species)
+	var missing_males := DomesticAnimalService.missing_for_arrival(game_data, rules, true)
+	var missing_females := DomesticAnimalService.missing_for_arrival(game_data, rules, false)
+	var is_male := missing_males > missing_females or (missing_males == missing_females and randf() < 0.5)
+	var birth_day := today - wild_rules.youth_duration_years * GameData.DAYS_PER_YEAR
+	if DomesticAnimalService.add_animal(game_data, species, is_male, birth_day, storage.village_id) == null:
+		return
+	print("[DOMESTIC] %s: arrivato da fuori un %s" % [species, "maschio" if is_male else "femmina"])
+	if effects != null:
+		effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS,
+			GameContext.tr_text("notification_domestic_stray_%s" % species))
 
 
 # Toglie una parte della salute piena (0..1): a zero l'animale muore.

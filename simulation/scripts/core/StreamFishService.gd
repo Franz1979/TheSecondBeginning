@@ -10,11 +10,11 @@ extends RefCounted
 #   - da MIN_FISH a MAX_FISH pesci per microcella;
 #   - un pesce pescato torna dopo RETURN_DAYS giorni (arriva da monte o da valle), uno alla volta fino al massimo.
 
-const MIN_FISH := 8
-const MAX_FISH := 10
+const MIN_FISH := 12
+const MAX_FISH := 15
 # Quota di microcelle con pesce nei tratti larghi 1 (su 1000).
 const NARROW_FISH_PER_MILLE := 500
-const RETURN_DAYS := 25
+const RETURN_DAYS := 20
 const _SEED_PRESENCE := 300
 const _SEED_AMOUNT := 301
 

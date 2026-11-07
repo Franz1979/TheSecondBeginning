@@ -10,3 +10,4 @@ summary = "idea_work_areas_summary"
 description = "idea_work_areas_description"
 era = "paleolithic"
 discovery_only = true
+tree_order = 50

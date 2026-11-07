@@ -28,6 +28,13 @@ var show_auto_zone_toggle: bool = false
 var _auto_zone_row: HBoxContainer = null
 var _box: VBoxContainer = null
 var _separator: HSeparator = null
+# Scelta facoltativa sopra il numero (2026-11-04, Pietra/Argilla del comando Estrai): righe con le icone, come la raccolta.
+# Impostata con set_choices prima di open_dialog, vale per quell'apertura sola (anche il tooltip sul numero); letta alla
+# conferma con get_selected_choice.
+var _choice_rows: ResourceChoiceRows = null
+var _pending_choices: Array[Dictionary] = []
+var _pending_choice_id: String = ""
+var _pending_count_tooltip: String = ""
 
 
 func _ready() -> void:
@@ -46,6 +53,7 @@ func _ready() -> void:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_count_label = Label.new()
+	_count_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	row.add_child(_count_label)
 	_spin_box = SpinBox.new()
 	_spin_box.step = 1
@@ -71,8 +79,42 @@ func _ready() -> void:
 	window_input.connect(_on_window_input)
 
 
+# `choices`: vedi ResourceChoiceRows, `selected_id` quella proposta. Meno di due voci = nessuna scelta da mostrare.
+# `count_tooltip`: spiegazione al passaggio sul numero.
+func set_choices(choices: Array[Dictionary], selected_id: String, count_tooltip: String = "") -> void:
+	_pending_choices = choices
+	_pending_choice_id = selected_id
+	_pending_count_tooltip = count_tooltip
+
+
+# Voce scelta nell'ultima apertura ("" se il dialogo non mostrava una scelta).
+func get_selected_choice() -> String:
+	if _choice_rows == null or not _choice_rows.visible:
+		return ""
+	return _choice_rows.get_selected()
+
+
+func _apply_choices() -> void:
+	var has_choices := _pending_choices.size() >= 2
+	if has_choices and _choice_rows == null:
+		_choice_rows = ResourceChoiceRows.new()
+		_box.add_child(_choice_rows)
+		_box.move_child(_choice_rows, _count_label.get_parent().get_index())
+	if _choice_rows != null:
+		_choice_rows.visible = has_choices
+	if has_choices:
+		_choice_rows.set_choices(_pending_choices, _pending_choice_id)
+	var count_tooltip := TooltipText.wrap(_pending_count_tooltip) if _pending_count_tooltip != "" else ""
+	_count_label.tooltip_text = count_tooltip
+	_spin_box.tooltip_text = count_tooltip
+	_spin_box.get_line_edit().tooltip_text = count_tooltip
+	_pending_choices = []
+	_pending_count_tooltip = ""
+
+
 func open_dialog(dialog_title: String, message: String, count_label: String, min_value: int, max_value: int, default_value: int) -> void:
 	title = dialog_title
+	_apply_choices()
 	_message_label.text = message
 	_count_label.text = count_label
 	_spin_box.min_value = min_value

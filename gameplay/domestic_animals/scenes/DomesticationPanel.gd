@@ -19,6 +19,8 @@ enum CardState { DOMESTICATED, IN_PROGRESS }
 
 const ANIMALS_TAB := 0
 const PLANTS_TAB := 1
+# Idea «Addomesticazione» (solo da scoperta, al primo lupo addomesticato): sblocca il pannello intero.
+const DOMESTICATION_IDEA_ID := "domestication"
 const CARD_SIZE := Vector2(260, 150)
 const DEBUG_POINTS := 100
 # Stessi colori degli stati di TechTreePanel (completata/disponibile/bloccata).
@@ -63,6 +65,34 @@ func refresh_content() -> void:
 	_clear(plants_box)
 	_fill_animals()
 	_fill_plants()
+	# Prima dell'idea solo la carta del primo animale (vedi is_available): niente piante.
+	tab_container.set_tab_hidden(PLANTS_TAB, not _has_full_access())
+	if not _has_full_access():
+		tab_container.current_tab = ANIMALS_TAB
+
+
+# Pulsante 🐾 (2026-11-07, decisione utente, strada A): con l'idea «Addomesticazione» il pannello intero; prima, solo la
+# carta della prima addomesticazione (specie senza idea richiesta, il cane), dalla prima visita del suo branco selvatico
+# o dal primo punto: così il giocatore vede a che punto è. Letta da GameScene._refresh_domestication_button.
+static func is_available(human_folk: Folk, game_data: GameData) -> bool:
+	if human_folk == null or game_data == null:
+		return false
+	if human_folk.completed_ideas.has(DOMESTICATION_IDEA_ID):
+		return true
+	for species in DomesticAnimalCalculator.list_species_for_display():
+		var rules := DomesticAnimalCalculator.get_rules(species)
+		if rules == null or rules.required_idea_id != "":
+			continue
+		if DomesticationPointsService.get_points(game_data, species) > 0:
+			return true
+		var group := WildAnimalGroupService.find_group(game_data, rules.wild_species_name)
+		if group != null and group.notified_first_visit:
+			return true
+	return false
+
+
+func _has_full_access() -> bool:
+	return _human_folk.completed_ideas.has(DOMESTICATION_IDEA_ID)
 
 
 func _clear(box: Container) -> void:
@@ -73,7 +103,7 @@ func _clear(box: Container) -> void:
 
 
 func _fill_animals() -> void:
-	if not _human_folk.completed_ideas.has("animal_domestication"):
+	if _has_full_access() and not _human_folk.completed_ideas.has("animal_domestication"):
 		animals_box.add_child(_notice_label(tr("domestication_animals_locked_notice").format({
 			"idea": _idea_name("animal_domestication")
 		})))
@@ -124,37 +154,12 @@ func _build_card(rules: DomesticAnimalRules) -> PanelContainer:
 	var box := VBoxContainer.new()
 	card.add_child(box)
 
-	var name_label := Label.new()
-	name_label.text = tr(rules.display_name)
-	name_label.add_theme_font_size_override("font_size", 18)
-	box.add_child(name_label)
-
-	var origin_label := Label.new()
-	origin_label.text = tr("domestication_from").format({"species": tr("animal_species_" + rules.wild_species_name)})
-	origin_label.add_theme_color_override("font_color", Color(0.7, 0.72, 0.78))
-	box.add_child(origin_label)
-
-	var points := DomesticationPointsService.get_points(_game_data, rules.species_name)
-	var bar := ProgressBar.new()
-	bar.max_value = maxi(rules.domestication_points_required, 1)
-	bar.value = mini(points, rules.domestication_points_required)
-	bar.show_percentage = false
-	bar.custom_minimum_size = Vector2(0, 10)
-	box.add_child(bar)
-
-	var points_label := Label.new()
-	points_label.text = "%d / %d" % [points, rules.domestication_points_required]
-	box.add_child(points_label)
-
-	var state_label := Label.new()
-	state_label.add_theme_color_override("font_color", STATE_BORDER_COLORS[state])
-	match state:
-		CardState.DOMESTICATED:
-			state_label.text = tr("domestication_state_domesticated")
-		CardState.IN_PROGRESS:
-			state_label.text = tr("domestication_state_in_progress")
-	state_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	box.add_child(state_label)
+	# Carta in due tempi (2026-11-07, richiesta utente, uguale per tutte le specie): finché è in corso racconta la specie
+	# selvatica (branco, aggressività, punti, cosa ne deriverà); addomesticata, solo la specie domestica e l'anno.
+	if state == CardState.DOMESTICATED:
+		_add_domesticated_rows(box, rules)
+	else:
+		_add_in_progress_rows(box, rules)
 
 	# Debug, come il "+pensieri" di TechTreePanel: mai visibile in una build pulita.
 	if DebugLogging.ENABLED:
@@ -170,6 +175,79 @@ func _build_card(rules: DomesticAnimalRules) -> PanelContainer:
 			add_animal_button.pressed.connect(func() -> void: debug_add_animal_requested.emit(rules.species_name))
 			box.add_child(add_animal_button)
 	return card
+
+
+func _add_domesticated_rows(box: VBoxContainer, rules: DomesticAnimalRules) -> void:
+	box.add_child(_title_label(tr(rules.display_name)))
+	var wild_name := tr("animal_species_" + rules.wild_species_name)
+	var done_label := Label.new()
+	if _game_data.domestication_years.has(rules.species_name):
+		done_label.text = _species_text("domestication_done", rules).format({
+			"species": wild_name, "year": int(_game_data.domestication_years[rules.species_name])})
+	else:
+		done_label.text = _species_text("domestication_done_no_year", rules).format({"species": wild_name})
+	done_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	done_label.add_theme_color_override("font_color", STATE_BORDER_COLORS[CardState.DOMESTICATED])
+	box.add_child(done_label)
+
+
+# In corso: titolo del branco selvatico, quanti animali e aggressività media come barra senza numero (stessa regola del
+# pannello del singolo animale; branco assente o vuoto: una riga sola), punti verso la soglia, cosa ne deriverà e una
+# riga che spiega cosa fa salire e scendere l'aggressività.
+func _add_in_progress_rows(box: VBoxContainer, rules: DomesticAnimalRules) -> void:
+	box.add_child(_title_label(_species_text("domestication_wild_group", rules).format({
+		"species": tr("animal_species_" + rules.wild_species_name)})))
+	var group := WildAnimalGroupService.find_group(_game_data, rules.wild_species_name)
+	if group == null or group.animals.is_empty():
+		box.add_child(_plain_label(tr("domestication_pack_none")))
+	else:
+		var total := 0.0
+		for animal in group.animals:
+			total += animal.aggression
+		box.add_child(_plain_label(tr("domestication_pack_count").format({"count": group.animals.size()})))
+		box.add_child(_plain_label(tr("domestication_pack_aggression")))
+		box.add_child(_bar(100, total / float(group.animals.size())))
+
+	var points := DomesticationPointsService.get_points(_game_data, rules.species_name)
+	var progress_label := _plain_label(tr("domestication_state_in_progress"))
+	progress_label.add_theme_color_override("font_color", STATE_BORDER_COLORS[CardState.IN_PROGRESS])
+	box.add_child(progress_label)
+	box.add_child(_bar(rules.domestication_points_required, points))
+	box.add_child(_plain_label("%d / %d" % [points, rules.domestication_points_required]))
+	box.add_child(_plain_label(tr("domestication_will_become").format({"species": tr(rules.display_name)})))
+
+	var hint_label := _plain_label(tr("domestication_pack_hint"))
+	hint_label.add_theme_color_override("font_color", Color(0.7, 0.72, 0.78))
+	box.add_child(hint_label)
+
+
+# Testo per specie se c'è (es. domestication_done_dog, per il genere e il plurale giusti), altrimenti quello generico.
+func _species_text(key: String, rules: DomesticAnimalRules) -> String:
+	var specific_key := "%s_%s" % [key, rules.species_name]
+	var specific := tr(specific_key)
+	return specific if specific != specific_key else tr(key)
+
+
+func _title_label(text: String) -> Label:
+	var label := _plain_label(text)
+	label.add_theme_font_size_override("font_size", 18)
+	return label
+
+
+func _plain_label(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return label
+
+
+func _bar(max_value: float, value: float) -> ProgressBar:
+	var bar := ProgressBar.new()
+	bar.max_value = maxf(max_value, 1.0)
+	bar.value = clampf(value, 0.0, bar.max_value)
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(0, 10)
+	return bar
 
 
 func _notice_label(text: String) -> Label:

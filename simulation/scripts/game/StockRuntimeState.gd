@@ -20,3 +20,6 @@ var dry_warnings: Dictionary = {}
 # Regola "Rifornisci le Attrezzerie" (2026-10-18): attrezzo -> pezzi che mancano alle Attrezzerie e nessun magazzino ha,
 # ricalcolati a ogni Inventario (avviso in campanella).
 var toolkit_warnings: Dictionary = {}
+# Regola "Acqua per tettoia" (2026-11-07): giare che mancano nei magazzini per tenere le tettoie al loro livello, ricalcolate
+# a ogni Inventario (riga rossa del WM e avviso in campanella).
+var water_jars_missing: int = 0

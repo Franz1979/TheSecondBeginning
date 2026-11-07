@@ -30,11 +30,32 @@ const CONTEXT_SERIES := "quarry_zone_series"
 const SERIES_ZONE_KEY := "quarry_series"
 
 
-static func make_series(area_id: int, target: int) -> Dictionary:
+static func make_series(area_id: int, target: int, source: String = ExtractionSourceService.SOURCE_ROCK) -> Dictionary:
 	return {
 		"id": "%d-%d" % [Time.get_ticks_usec(), randi()], "work_area_id": area_id,
-		"done": 0, "target": clampi(target, COUNT_MIN, COUNT_MAX), "rock_x": -1, "rock_y": -1,
+		"done": 0, "target": clampi(target, COUNT_MIN, COUNT_MAX), "rock_x": -1, "rock_y": -1, "source": source,
 	}
+
+
+# Fonte della serie (2026-11-04); senza, una serie di un salvataggio precedente: la roccia.
+static func get_series_source(series: Dictionary) -> String:
+	return String(series.get("source", ExtractionSourceService.SOURCE_ROCK))
+
+
+# Motivo tradotto quando nella zona manca il bersaglio della fonte.
+static func no_target_text(source: String) -> String:
+	return GameContext.tr_text("work_area_clay_no_target" if source == ExtractionSourceService.SOURCE_CLAY else "work_area_quarry_no_rock")
+
+
+# true se sulla microcella c'è una costruzione: sull'argilla può passare una strada, e va tolta prima di scavare.
+static func is_under_building(macro_coords: Vector2i, position: Vector2i) -> bool:
+	var world: World = GameSettings.active_world
+	if world == null:
+		return false
+	for building in world.buildings:
+		if BuildingFootprint.covers(building, macro_coords, position):
+			return true
+	return false
 
 
 # Serie del context di un'estrazione ({} se non ne fa parte).
@@ -96,22 +117,36 @@ static func collect_reserved_rocks(individuals: Array) -> Dictionary:
 	return reserved
 
 
-# Rocce della zona estraibili da `individual`: con pietra rimasta (RockStoneService, cache per macrocella),
-# raggiungibili e non prenotate. Array[Vector2i] di microcelle locali alla macrocella della zona.
-# `first_only` (2026-10-22, come CutZoneService.list_available_plants): si ferma alla prima roccia trovata.
+# true se il filtro della zona (WorkArea.filters["quarry"], {"all": bool, "sources": [String]}, 2026-11-04) ammette la fonte.
+static func area_accepts_source(area: WorkArea, source: String) -> bool:
+	var filters: Variant = area.filters.get(QUARRY_JOB, null)
+	if not (filters is Dictionary):
+		filters = WorkAreaTypes.get_default_filters(QUARRY_JOB)
+	return bool(filters.get("all", true)) or (filters.get("sources", []) as Array).has(source)
+
+
+# Bersagli della zona estraibili da `individual`: fonte ammessa dal filtro, con qualcosa di rimasto, raggiungibili e non
+# prenotati. Array[Vector2i] di microcelle locali alla macrocella della zona.
+# `first_only` (2026-10-22, come CutZoneService.list_available_plants): si ferma al primo bersaglio trovato.
 static func list_available_rocks(
-	area: WorkArea, macro_state: MacroCellState, individual: HumanIndividual, reserved: Dictionary, first_only: bool = false
+	area: WorkArea, macro_state: MacroCellState, individual: HumanIndividual, reserved: Dictionary, first_only: bool = false,
+	source: String = ExtractionSourceService.SOURCE_ROCK
 ) -> Array[Vector2i]:
 	var rocks: Array[Vector2i] = []
-	if area == null or macro_state == null or not macro_state.stone_positions_generated:
+	if area == null or macro_state == null or not area_accepts_source(area, source):
 		return rocks
-	for position in macro_state.stone_positions:
+	var is_clay := source == ExtractionSourceService.SOURCE_CLAY
+	if not (macro_state.clay_positions_generated if is_clay else macro_state.stone_positions_generated):
+		return rocks
+	for position in macro_state.clay_positions if is_clay else macro_state.stone_positions:
 		var rock: Vector2i = position
 		if not area.rect.has_point(rock):
 			continue
 		if reserved.has(_rock_key(area.macro_coords, rock)):
 			continue
-		if RockStoneService.get_remaining_stone(macro_state, rock) <= 0:
+		if ExtractionSourceService.get_remaining(source, macro_state, rock) <= 0:
+			continue
+		if is_clay and is_under_building(area.macro_coords, rock):
 			continue
 		if individual != null and not HaulZoneService.is_cell_reachable(individual, area.macro_coords, rock):
 			continue
@@ -123,20 +158,24 @@ static func list_available_rocks(
 
 # Roccia per `individual` nella zona: tra quelle disponibili, la più vicina con la penalità di affollamento; null se
 # nessuna.
-static func choose_rock(area: WorkArea, macro_state: MacroCellState, individual: HumanIndividual, reserved: Dictionary) -> Variant:
-	return choose_rock_from(area, macro_state, individual.home_macro_coords, individual.position, individual, reserved)
+static func choose_rock(
+	area: WorkArea, macro_state: MacroCellState, individual: HumanIndividual, reserved: Dictionary,
+	source: String = ExtractionSourceService.SOURCE_ROCK
+) -> Variant:
+	return choose_rock_from(area, macro_state, individual.home_macro_coords, individual.position, individual, reserved, source)
 
 
 # Come choose_rock, ma la distanza si misura da `origin_pos` (locale a `origin_macro`) invece che dal pipottino
 # (2026-10-23, bersaglio scelto dall'ordine: DrawerOrderTargetService). `individual` solo per la raggiungibilità (null =
 # nessun controllo).
 static func choose_rock_from(
-	area: WorkArea, macro_state: MacroCellState, origin_macro: Vector2i, origin_pos: Vector2, individual: HumanIndividual, reserved: Dictionary
+	area: WorkArea, macro_state: MacroCellState, origin_macro: Vector2i, origin_pos: Vector2, individual: HumanIndividual, reserved: Dictionary,
+	source: String = ExtractionSourceService.SOURCE_ROCK
 ) -> Variant:
 	var best: Variant = null
 	var best_score := INF
 	var offset := Vector2(area.macro_coords - origin_macro) * World.WIDTH
-	for rock in list_available_rocks(area, macro_state, individual, reserved):
+	for rock in list_available_rocks(area, macro_state, individual, reserved, false, source):
 		var score := origin_pos.distance_to(Vector2(rock) + Vector2(0.5, 0.5) + offset)
 		for dy in range(-1, 2):
 			for dx in range(-1, 2):
@@ -156,17 +195,20 @@ static var _chosen_area_cache: Dictionary = {}
 static var _chosen_area_frame: int = -1
 
 
-static func choose_work_area(game_data: GameData, world: World, individual: HumanIndividual, reserved: Dictionary) -> WorkArea:
+static func choose_work_area(
+	game_data: GameData, world: World, individual: HumanIndividual, reserved: Dictionary,
+	source: String = ExtractionSourceService.SOURCE_ROCK
+) -> WorkArea:
 	if game_data == null or world == null or individual == null:
 		return null
 	var frame := Engine.get_process_frames()
 	if frame != _chosen_area_frame:
 		_chosen_area_cache.clear()
 		_chosen_area_frame = frame
-	var cache_key := [individual.get_instance_id(), reserved.hash()]
+	var cache_key := [individual.get_instance_id(), reserved.hash(), source]
 	if not _chosen_area_cache.has(cache_key):
 		_chosen_area_cache[cache_key] = choose_work_area_from(
-			game_data, world, individual.home_macro_coords, individual.position, individual, reserved
+			game_data, world, individual.home_macro_coords, individual.position, individual, reserved, source
 		)
 	return _chosen_area_cache[cache_key]
 
@@ -174,13 +216,14 @@ static func choose_work_area(game_data: GameData, world: World, individual: Huma
 # Come choose_work_area, ma la distanza si misura da `origin_pos` (locale a `origin_macro`) e senza memoria (2026-10-23,
 # bersaglio scelto dall'ordine). `individual` solo per raggiungibilità e affollamento (null = nessun controllo).
 static func choose_work_area_from(
-	game_data: GameData, world: World, origin_macro: Vector2i, origin_pos: Vector2, individual: HumanIndividual, reserved: Dictionary
+	game_data: GameData, world: World, origin_macro: Vector2i, origin_pos: Vector2, individual: HumanIndividual, reserved: Dictionary,
+	source: String = ExtractionSourceService.SOURCE_ROCK
 ) -> WorkArea:
 	var best: WorkArea = null
 	var best_score := -1.0
 	for area in list_quarry_work_areas(game_data):
 		var macro_state := world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		var available := list_available_rocks(area, macro_state, individual, reserved).size()
+		var available := list_available_rocks(area, macro_state, individual, reserved, false, source).size()
 		if available <= 0:
 			continue
 		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - origin_macro) * World.WIDTH

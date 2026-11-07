@@ -10,3 +10,4 @@ summary = "idea_drying_summary"
 description = "idea_drying_description"
 thoughts_cost = 20
 era = "paleolithic"
+tree_order = 30

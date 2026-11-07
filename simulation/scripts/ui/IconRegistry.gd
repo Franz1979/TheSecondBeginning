@@ -47,6 +47,8 @@ const RESOURCE_ICONS := {
 	"fiber_rope": "🪢",
 	# Ciotola di pietra (2026-10-24, richiesta utente): emoji provvisoria.
 	"stone_bowl": "🥣",
+	# Vasellame (2026-11-03, richiesta utente): emoji provvisorie.
+	"clay_bowl": "🥣",
 	# Infuso di erbe (2026-10-25, richiesta utente — capanna del guaritore): emoji provvisoria.
 	"herbal_infusion": "🍵",
 	# Unguento di erbe e steccatura (2026-10-25, richiesta utente — rimedi delle ferite): emoji provvisorie.
@@ -144,6 +146,8 @@ const RESOURCE_ICON_NODES := {
 	"smoked_hide": preload("res://simulation/scripts/ui/SmokedHideIcon.gd"),
 	"sinew": preload("res://simulation/scripts/ui/SinewIcon.gd"),
 	"bone": preload("res://simulation/scripts/ui/BoneIcon.gd"),
+	"clay": preload("res://simulation/scripts/ui/ClayIcon.gd"),
+	"clay_jar": preload("res://simulation/scripts/ui/ClayJarIcon.gd"),
 }
 
 
@@ -185,6 +189,10 @@ const BUILDING_ICONS := {
 	"toolmaker_hut": "🛠️",
 	# Capanna del guaritore (2026-10-25, richiesta utente) — emoji di riserva, la barra usa HealerHutIcon.
 	"healer_hut": "🌿",
+	# Capanna del vasellaio (2026-11-03, richiesta utente) — emoji di riserva, la barra usa PotterHutIcon.
+	"potter_hut": "🏺",
+	# Tettoia dell'acqua (2026-11-06) — emoji di riserva, la barra usa WaterShelterIcon.
+	"water_shelter": "💧",
 }
 
 
@@ -240,6 +248,10 @@ const BUILDING_ICON_NODES := {
 	"clothing_hut": preload("res://simulation/scripts/ui/ClothingHutIcon.gd"),
 	# Capanna del guaritore (2026-10-25): vista di fronte con i mazzetti di erbe appesi.
 	"healer_hut": preload("res://simulation/scripts/ui/HealerHutIcon.gd"),
+	# Capanna del vasellaio (2026-11-03): lo stesso disegno della mappa (PotterHutShape).
+	"potter_hut": preload("res://simulation/scripts/ui/PotterHutIcon.gd"),
+	# Tettoia dell'acqua (2026-11-06): lo stesso disegno della mappa (WaterShelterShape), con le giare.
+	"water_shelter": preload("res://simulation/scripts/ui/WaterShelterIcon.gd"),
 	# Macerie (2026-10-10, richiesta utente — crollo): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rubble": preload("res://simulation/scripts/ui/RubbleIcon.gd"),
 	# Ceppo dell'insegnamento (2026-10-16, richiesta utente): stesso disegno della mappa (PlaceholderBuildingShapes).
@@ -357,6 +369,26 @@ static func get_resource_icon_node(resource_name: String) -> Control:
 # get_resource_icon) — il chiamante decide il fallback, questa funzione non lo impone.
 static func get_building_icon(building_type_name: String) -> String:
 	return BUILDING_ICONS.get(building_type_name, "")
+
+
+# Icone FISSE delle categorie della barra Costruzioni (2026-11-07, richiesta utente — prima l'icona era l'ultimo edificio
+# costruibile della categoria e cambiava a ogni scoperta). Diverse dalle icone degli edifici. Chiave: BuildingTypes.Category.
+const BUILDING_CATEGORY_ICONS := {
+	BuildingTypes.Category.RESIDENTIAL: "🏠",
+	BuildingTypes.Category.STORAGE: "🫙",
+	BuildingTypes.Category.PRODUCTION: "⚙️",
+	BuildingTypes.Category.CULTURAL: "🎓",
+	BuildingTypes.Category.RECREATIONAL: "🥁",
+	BuildingTypes.Category.RELIGIOUS: "✨",
+	BuildingTypes.Category.POLITICAL: "👑",
+	BuildingTypes.Category.MILITARY: "⚔️",
+	BuildingTypes.Category.MOVEMENT: "🛤️",
+	BuildingTypes.Category.OTHER: "➕",
+}
+
+
+static func get_building_category_icon(category: int) -> String:
+	return BUILDING_CATEGORY_ICONS.get(category, "")
 
 
 # null se building_type_name non ha un'icona disegnata registrata — stesso identico comportamento/

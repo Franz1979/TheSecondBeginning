@@ -13,3 +13,4 @@ initial_aggression = 100.0
 litter_min = 1
 litter_max = 3
 max_group_size = 12
+visit_thinning_population = 60

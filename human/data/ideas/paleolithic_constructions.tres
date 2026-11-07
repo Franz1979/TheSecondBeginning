@@ -10,3 +10,4 @@ summary = "idea_paleolithic_constructions_summary"
 description = "idea_paleolithic_constructions_description"
 thoughts_cost = 20
 era = "paleolithic"
+tree_order = 40

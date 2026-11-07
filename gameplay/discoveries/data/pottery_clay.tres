@@ -1,0 +1,11 @@
+[gd_resource type="Resource" script_class="DiscoveryHintRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/discoveries/scripts/DiscoveryHintRules.gd" id="1_rules"]
+
+[resource]
+script = ExtResource("1_rules")
+id = "pottery_clay"
+title_key = "discovery_pottery_clay_title"
+paragraph_keys = Array[String](["discovery_pottery_clay_p1", "discovery_pottery_clay_p2"])
+trigger_type = 0
+idea_id = "pottery"

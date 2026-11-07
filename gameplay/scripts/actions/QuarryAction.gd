@@ -11,34 +11,43 @@ extends Action
 # completamento: un uso dell'attrezzo, l'estrazione (RockStoneService.extract: roccia tolta, resource_quantity[ROCK]
 # più basso, sassi di scarto sulla roccia), la pietra in un mucchio a terra accanto alla roccia e la consegna al
 # magazzino accodata allo stesso pipottino "fino a mucchio vuoto" (Action.drop_yield_and_queue_haul). Se la roccia si
-# esaurisce durante il lavoro la task si chiude.
+# esaurisce durante il lavoro la task si chiude. L'argilla (2026-11-04, ExtractionSourceService) fa lo stesso identico
+# lavoro: cambiano solo la resa e il segnale di fine.
 
 const BASE_DURATION_DAYS: float = 1.0
 const STAMINA_DRAIN_PER_DAY: float = 300.0
 
 # Emesso a estrazione avvenuta: GameScene ridisegna i sassi della roccia e aggiorna il pannello (_on_rock_quarried).
 signal rock_quarried(macro_coords: Vector2i, rock_position: Vector2i)
+# Emesso a estrazione di argilla avvenuta: GameScene toglie dal disegno il giacimento esaurito (_on_clay_extracted).
+signal clay_extracted(macro_coords: Vector2i, position: Vector2i)
 
 var macro_coords: Vector2i = Vector2i.ZERO
 var rock_position: Vector2i = Vector2i.ZERO
+# Cosa si scava (2026-11-04, ExtractionSourceService): quantità, resa e chiave del lavoro dipendono solo da questa.
+var source: String = ExtractionSourceService.SOURCE_ROCK
 var _aborted: bool = false
 
 
-func _init(p_macro_coords: Vector2i = Vector2i.ZERO, p_rock_position: Vector2i = Vector2i.ZERO) -> void:
+func _init(
+	p_macro_coords: Vector2i = Vector2i.ZERO, p_rock_position: Vector2i = Vector2i.ZERO,
+	p_source: String = ExtractionSourceService.SOURCE_ROCK
+) -> void:
 	target = null
 	macro_coords = p_macro_coords
 	rock_position = p_rock_position
+	source = p_source
 	required_tool_categories = [TaskTypes.ToolCategory.DIGGING]
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 	skill_effect_key = "quarry"
 
 
 func _progress_key() -> String:
-	return CutAction.progress_key(GameTypes.WorldObjectType.ROCK, Vector3i(rock_position.x, rock_position.y, 0))
+	return ExtractionSourceService.progress_key(source, rock_position)
 
 
-func is_same_rock(p_macro_coords: Vector2i, p_rock_position: Vector2i) -> bool:
-	return macro_coords == p_macro_coords and rock_position == p_rock_position
+func is_same_rock(p_macro_coords: Vector2i, p_rock_position: Vector2i, p_source: String = ExtractionSourceService.SOURCE_ROCK) -> bool:
+	return macro_coords == p_macro_coords and rock_position == p_rock_position and source == p_source
 
 
 func _get_macro_state() -> MacroCellState:
@@ -48,9 +57,9 @@ func _get_macro_state() -> MacroCellState:
 	return world.get_cell_state_at(macro_coords.x, macro_coords.y)
 
 
-# Valida finché la roccia ha ancora pietra (0 anche se in quella posizione non c'è una roccia).
+# Valida finché il bersaglio ha ancora qualcosa da estrarre (0 anche se in quella posizione non c'è nulla).
 func is_target_valid() -> bool:
-	return RockStoneService.get_remaining_stone(_get_macro_state(), rock_position) > 0
+	return ExtractionSourceService.get_remaining(source, _get_macro_state(), rock_position) > 0
 
 
 func _get_work_done() -> float:
@@ -97,7 +106,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var broken := ToolGateService.consume_tool_uses(individual, required_tool_categories, game_data)
 	if not broken.is_empty():
 		report_broken_tools(individual, broken)
-	var yield_data := RockStoneService.extract(macro_state, rock_position)
+	var yield_data := ExtractionSourceService.extract(source, macro_state, rock_position)
 	macro_state.cut_work_progress.erase(_progress_key())
 	drop_yield_and_queue_haul(context, game_data, macro_coords, Vector2(rock_position) + Vector2(0.5, 0.5), yield_data, "task_quarry_name")
 	# Serie in zona (2026-10-05): un'estrazione in più, ultima roccia; passa al mucchio e da lì alla consegna, alla cui
@@ -116,7 +125,10 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			individual.id, individual.name, str(rock_position), str(macro_coords),
 			str(yield_data), "" if broken.is_empty() else ", attrezzi rotti: %s" % str(broken)
 		])
-	rock_quarried.emit(macro_coords, rock_position)
+	if source == ExtractionSourceService.SOURCE_CLAY:
+		clay_extracted.emit(macro_coords, rock_position)
+	else:
+		rock_quarried.emit(macro_coords, rock_position)
 
 
 # Identità della roccia: il lavoro già fatto è su MacroCellState, nessun progresso da salvare qui.
@@ -126,4 +138,5 @@ func get_save_data() -> Dictionary:
 		"quarry_macro_y": macro_coords.y,
 		"quarry_x": rock_position.x,
 		"quarry_y": rock_position.y,
+		"quarry_source": source,
 	}

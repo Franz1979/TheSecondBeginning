@@ -357,6 +357,17 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 	_handle_pending_hunt_butcher(individual, task)
 	_handle_pending_hunt_zone_prey(individual, task)
 	_handle_pending_ground_pile_haul(individual, task)
+	# Riempimento delle giare (2026-11-06): giara riposta e altre da riempire -> il viaggio successivo in coda allo stesso
+	# compito, prima che l'indice avanzi.
+	if task.context.has(WaterJarService.CONTEXT_PENDING_NEXT_TRIP):
+		task.context.erase(WaterJarService.CONTEXT_PENDING_NEXT_TRIP)
+		WaterJarService.append_next_trip(individual, task, world)
+	# Avviso del riempimento senza chiusura del compito (serie finita o giara riportata vuota): mostrato subito.
+	if WaterJarService.is_fill_task(task) and task.context.has(CONTEXT_PENDING_PLAYER_MESSAGE) \
+			and not task.context.has(CONTEXT_PENDING_TASK_ABORT):
+		var fill_message := String(task.context[CONTEXT_PENDING_PLAYER_MESSAGE])
+		task.context.erase(CONTEXT_PENDING_PLAYER_MESSAGE)
+		task_message_requested.emit(individual, fill_message)
 	if task.context.has(CONTEXT_PENDING_TASK_ABORT):
 		var abort_reason := String(task.context[CONTEXT_PENDING_TASK_ABORT])
 		task.context.erase(CONTEXT_PENDING_TASK_ABORT)
@@ -1999,10 +2010,12 @@ func _continue_quarry_zone_series(individual: HumanIndividual, task: Task, game_
 		if other_series.is_empty():
 			other_series = QuarryZoneService.get_series(other.context)
 		if String(other_series.get("id", "")) == series_id:
+			WorkFollowUpService.temp_series_log(individual, "cava: consegna chiusa, aspetto un'altra task della stessa serie ('%s')." % other.task_name)
 			return
 	var zone := HaulZoneService.get_zone(task.context)
 	var data: GameData = game_data if game_data != null else GameSettings.active_game_data
 	var pile := GroundPileService.find_at(data, HaulZoneService.get_macro_coords(zone), HaulZoneService.get_rect(zone).position) if data != null else null
+	WorkFollowUpService.temp_series_log(individual, "cava: consegna '%s' chiusa (finita %s), mucchio %s, serie %s." % [task.task_name, str(task.is_finished()), "pieno" if pile != null and not pile.resources.is_empty() else "vuoto", str(series)])
 	if pile != null and not pile.resources.is_empty():
 		# Consegna non riuscita: la serie si chiude, col motivo scritto dalla consegna (deposito, spazio) se c'è.
 		if task.context.has(CONTEXT_SERIES_STOP_REASON) and not QuarryZoneService.is_series_complete(series):
@@ -2035,10 +2048,12 @@ func _continue_cut_zone_series(individual: HumanIndividual, task: Task, game_dat
 		if other_series.is_empty():
 			other_series = CutZoneService.get_series(other.context)
 		if String(other_series.get("id", "")) == series_id:
+			WorkFollowUpService.temp_series_log(individual, "taglio: consegna chiusa, aspetto un'altra task della stessa serie ('%s')." % other.task_name)
 			return
 	var zone := HaulZoneService.get_zone(task.context)
 	var data: GameData = game_data if game_data != null else GameSettings.active_game_data
 	var pile := GroundPileService.find_at(data, HaulZoneService.get_macro_coords(zone), HaulZoneService.get_rect(zone).position) if data != null else null
+	WorkFollowUpService.temp_series_log(individual, "taglio: consegna '%s' chiusa (finita %s), mucchio %s, serie %s." % [task.task_name, str(task.is_finished()), "pieno" if pile != null and not pile.resources.is_empty() else "vuoto", str(series)])
 	if pile != null and not pile.resources.is_empty():
 		if task.context.has(CONTEXT_SERIES_STOP_REASON) and not CutZoneService.is_series_complete(series):
 			task_message_requested.emit(individual, series_stopped_message(

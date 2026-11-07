@@ -89,6 +89,8 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"smoked_hide": "_draw_deposit_storage_smoked_hide_icon",
 	"sinew": "_draw_deposit_storage_sinew_icon",
 	"bone": "_draw_deposit_storage_bone_icon",
+	"clay": "_draw_deposit_storage_clay_icon",
+	"clay_jar": "_draw_deposit_storage_clay_jar_icon",
 }
 
 
@@ -664,6 +666,14 @@ static func _draw_deposit_storage_sinew_icon(canvas: CanvasItem, top_left: Vecto
 
 static func _draw_deposit_storage_bone_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	BoneIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_clay_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	ClayIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+static func _draw_deposit_storage_clay_jar_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	ClayJarIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 static func _draw_deposit_storage_fiber_rope_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:

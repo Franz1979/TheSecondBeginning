@@ -174,7 +174,10 @@ static func _is_target_valid(ctx: GameContext, order: Dictionary, order_type: St
 	if macro_state == null:
 		return false
 	if order_type == DrawerOrderService.TYPE_QUARRY:
-		return RockStoneService.get_remaining_stone(macro_state, cell) > 0
+		var source := DrawerOrderService.order_source(order)
+		if source == ExtractionSourceService.SOURCE_CLAY and QuarryZoneService.is_under_building(macro, cell):
+			return false
+		return QuarryZoneService.area_accepts_source(area, source) and ExtractionSourceService.get_remaining(source, macro_state, cell) > 0
 	if order_type == DrawerOrderService.TYPE_FISH:
 		var live_cell: LiveMacroCell = ctx.live_cells.get(macro)
 		return live_cell != null and live_cell.stream_positions.has(cell) and not FishZoneService.bank_cells(live_cell, cell).is_empty() \
@@ -232,7 +235,7 @@ static func _choose_target(ctx: GameContext, order: Dictionary, order_type: Stri
 		elif order_type == DrawerOrderService.TYPE_FISH:
 			area = FishZoneService.choose_work_area_from(ctx.game_data, origin["macro"], origin["position"], null, reserved)
 		elif order_type == DrawerOrderService.TYPE_QUARRY:
-			area = QuarryZoneService.choose_work_area_from(ctx.game_data, ctx.world, origin["macro"], origin["position"], null, reserved)
+			area = QuarryZoneService.choose_work_area_from(ctx.game_data, ctx.world, origin["macro"], origin["position"], null, reserved, DrawerOrderService.order_source(order))
 		else:
 			area = CutZoneService.choose_work_area_from(
 				ctx.game_data, ctx.live_cells, origin["macro"], origin["position"], null, reserved, DrawerOrderService.order_cut_yield(order)
@@ -258,7 +261,7 @@ static func _choose_target(ctx: GameContext, order: Dictionary, order_type: Stri
 		return true
 	if order_type == DrawerOrderService.TYPE_QUARRY:
 		var macro_state: MacroCellState = ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		var rock: Variant = QuarryZoneService.choose_rock_from(area, macro_state, origin["macro"], origin["position"], null, reserved)
+		var rock: Variant = QuarryZoneService.choose_rock_from(area, macro_state, origin["macro"], origin["position"], null, reserved, DrawerOrderService.order_source(order))
 		if rock == null:
 			return false
 		_store(order, area, area.macro_coords, rock, 0, 0)

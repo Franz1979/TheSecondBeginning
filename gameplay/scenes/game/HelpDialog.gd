@@ -29,6 +29,9 @@ const PAGE_ERA_ADVANCEMENT := "era_advancement"
 const PAGE_BUILDING_MATERIALS := "building_materials"
 # Pagina "Dove vanno carne, pelli e pesce" (2026-10-31, richiesta utente): bisogni prima, poi la destinazione.
 const PAGE_HUNT_PRODUCTS := "hunt_products"
+# Pagina "Gestore scorte: cosa procura da solo" (2026-11-06): ogni minimo procura solo sé stesso, gli ingredienti no
+# (eccezione: carne e pesce crudi). Regola di WarehouseManagerService, decisa così: qui solo la spiegazione.
+const PAGE_STOCK_SUPPLY := "stock_supply"
 # Pagina "Edifici" (2026-10-07): elenco dei tipi costruibili, e scheda di un tipo con la pagina
 # BUILDING_PAGE_PREFIX + <tipo> (es. "building:hut").
 const PAGE_BUILDINGS := "buildings"
@@ -148,6 +151,8 @@ func _show_page(page: String) -> void:
 			content_label.text = _build_building_materials_text()
 		PAGE_HUNT_PRODUCTS:
 			content_label.text = _build_hunt_products_text()
+		PAGE_STOCK_SUPPLY:
+			content_label.text = _build_stock_supply_text()
 		PAGE_BUILDINGS:
 			content_label.text = _build_buildings_list_text()
 		PAGE_RESOURCES:
@@ -261,6 +266,7 @@ func _build_main_menu_text() -> String:
 		"[url=%s]%s[/url]" % [PAGE_ERA_ADVANCEMENT, tr("help_era_advancement_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_BUILDING_MATERIALS, tr("help_building_materials_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_HUNT_PRODUCTS, tr("help_hunt_products_menu_link")],
+		"[url=%s]%s[/url]" % [PAGE_STOCK_SUPPLY, tr("help_stock_supply_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_BUILDINGS, tr("help_buildings_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_TOOLS, tr("help_tools_menu_link")],
 		"[url=%s]%s[/url]" % [PAGE_RESOURCES, tr("help_resources_menu_link")],
@@ -362,6 +368,43 @@ func _build_hunt_products_text() -> String:
 		"",
 		"[b]%s[/b]" % tr("help_hunt_products_example_title"),
 		tr("help_hunt_products_example"),
+	]
+	return "\n".join(lines)
+
+
+# Pagina "Gestore scorte: cosa procura da solo" (2026-11-06, richiesta utente): spiega che ogni minimo procura solo la
+# sua risorsa (WarehouseManagerService.request_stock, StockRequestService.source_kind_for) e che le catene si impostano
+# anello per anello. Solo documentazione.
+func _build_stock_supply_text() -> String:
+	var lines: Array[String] = [
+		"[b]%s[/b]" % tr("help_stock_supply_title"),
+		"",
+		tr("help_stock_supply_intro"),
+		"",
+		"[b]%s[/b]" % tr("help_stock_supply_sources_title"),
+		tr("help_stock_supply_sources_intro"),
+		"[ul]%s[/ul]" % "\n".join([
+			tr("help_stock_supply_source_zone"),
+			tr("help_stock_supply_source_hunt"),
+			tr("help_stock_supply_source_produce"),
+			tr("help_stock_supply_source_dry"),
+		]),
+		"",
+		"[b]%s[/b]" % tr("help_stock_supply_ingredients_title"),
+		tr("help_stock_supply_ingredients"),
+		"",
+		"[b]%s[/b]" % tr("help_stock_supply_meat_title"),
+		tr("help_stock_supply_meat"),
+		"",
+		"[b]%s[/b]" % tr("help_stock_supply_rules_title"),
+		"[ul]%s[/ul]" % "\n".join([
+			tr("help_stock_supply_rule_inventory"),
+			tr("help_stock_supply_rule_workstation"),
+			tr("help_stock_supply_rule_bell"),
+		]),
+		"",
+		"[b]%s[/b]" % tr("help_stock_supply_example_title"),
+		tr("help_stock_supply_example"),
 	]
 	return "\n".join(lines)
 

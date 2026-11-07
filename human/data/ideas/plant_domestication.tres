@@ -9,5 +9,5 @@ display_name = "idea_plant_domestication"
 summary = "idea_plant_domestication_summary"
 description = "idea_plant_domestication_description"
 thoughts_cost = 80
-prerequisites = Array[String](["domestication"])
+prerequisites = Array[String](["domestication", "plant_lore"])
 era = "paleolithic"

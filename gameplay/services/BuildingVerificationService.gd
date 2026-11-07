@@ -76,7 +76,7 @@ extends RefCounted
 
 #
 # Criterio 13 (2026-10-31, Guado di pietre): un tipo con rules.requires_narrow_stream si piazza solo su un tratto del
-# ruscello largo 1 (StreamMicrocellService.is_narrow); per lui, e solo per lui, il ruscello non è un ostacolo (Criteri 3-6).
+# ruscello largo 1, insenature escluse (StreamMicrocellService.is_ford_site); per lui, e solo per lui, il ruscello non è un ostacolo (Criteri 3-6).
 #
 # Criterio 10 (2026-09-28, richiesta utente; dal 2026-10-04 sempre attivo nel piazzamento della Build Task — le piante
 # vive si abbattono solo con la task Cut): alberi e cespugli VIVI sulla microcella dell'edificio
@@ -105,8 +105,8 @@ static func is_position_buildable(
 		if not can_cut and BuildingSiteClearingService.has_woody_vegetation(cell.macro_state, microcell):
 			return false
 
-		# Criterio 13 (2026-10-31, Guado di pietre): solo su un tratto del ruscello largo 1.
-		if rules.requires_narrow_stream and not StreamMicrocellService.is_narrow(cell.stream_positions, microcell):
+		# Criterio 13 (2026-10-31, Guado di pietre): solo su un tratto del ruscello largo 1, mai su un'insenatura.
+		if rules.requires_narrow_stream and not StreamMicrocellService.is_ford_site(cell.stream_positions, microcell):
 			return false
 
 		# Criterio 11 (2026-10-16, Ceppo dell'insegnamento): serve almeno un ceppo d'albero sulla microcella.
@@ -188,6 +188,12 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 	if not cell.fog_of_war_renderer.fog_of_war_memory.is_terrain_fresh(
 		microcell, current_absolute_day, cell.fog_of_war_renderer.terrain_memory_days
 	):
+		return false
+
+	# Criterio 14 (2026-11-03, Vasellame): non si costruisce su un giacimento di argilla, per non coprirlo. Solo sulla
+	# microcella dell'edificio: la porta può dare sull'argilla, che si calpesta, e i mucchi a terra ci possono stare. Le
+	# strade (rules.walkable) sì: una chiazza lungo un ruscello non deve spezzare un sentiero.
+	if not ignore_movement_buildings and not rules.walkable and ClayDepositService.has_clay(cell.macro_state, microcell):
 		return false
 
 	# Criteri 3-6: regola condivisa con la posa dei mucchi a terra (is_microcell_free). Strada sotto il cancello

@@ -40,6 +40,11 @@ const TYPE_HUNT := "hunt"
 # Ordine "transport" (2026-10-16, rinominato da "dry"): il gestore delle scorte chiede di portare una risorsa dal magazzino
 # a un edificio (essiccatoio, combustibile).
 const TYPE_TRANSPORT := "transport"
+# Ordine "transport" del giocatore (2026-11-06, bottone "Trasporta" del cassetto): da un edificio a un altro scelti sulla
+# mappa, {"resource", "quantity", TRANSPORT_SOURCE_KEY: id partenza, TRANSPORT_TARGET_KEY: id destinazione}. Si esegue come
+# quelli del magazzino (transport_order_pick / transport_order_task) e si toglie alla presa.
+const TRANSPORT_SOURCE_KEY := "transport_source_id"
+const TRANSPORT_TARGET_KEY := "transport_target_id"
 # Pesca nelle zone (2026-10-31, richiesta utente — pesca dal cassetto, passo 4): pesci da portare a casa ("count"), con la
 # destinazione del pescato ("butcher_destination"); serie FishZoneService.CONTEXT_SERIES.
 const TYPE_FISH := "fish"
@@ -113,6 +118,42 @@ static func add_produce_order(game_data: GameData, recipe: String, quantity: int
 	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
 		print("[JOB BOARD] Ordine del cassetto #%d: produci '%s' x%d (porta al deposito: %s)." % [order_id, recipe, quantity, str(deliver_to_warehouse)])
 	return new_order
+
+
+# Nuovo ordine "Trasporta" del giocatore (vedi TRANSPORT_SOURCE_KEY); ritorna la voce (già in elenco).
+static func add_transport_order(game_data: GameData, source: Building, target: Building, resource_name: String, quantity: int) -> Dictionary:
+	var order_id := game_data.next_drawer_order_id
+	game_data.next_drawer_order_id += 1
+	var new_order := {
+		"id": order_id, "type": TYPE_TRANSPORT, "resource": resource_name, "quantity": maxi(quantity, 1),
+		TRANSPORT_SOURCE_KEY: source.id, TRANSPORT_TARGET_KEY: target.id,
+	}
+	game_data.drawer_orders.append(new_order)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+		print("[JOB BOARD] Ordine del cassetto #%d: trasporta %d %s da %s #%d a %s #%d." % [
+			order_id, quantity, resource_name, source.building_type_name, source.id, target.building_type_name, target.id
+		])
+	return new_order
+
+
+static func is_player_transport_order(order: Dictionary) -> bool:
+	return order.has(TRANSPORT_SOURCE_KEY)
+
+
+# Partenza e destinazione di un ordine "Trasporta" del giocatore, se si può fare adesso: {"target", "source", "resource",
+# "quantity"} come le altre scelte di WarehouseManagerService.transport_order_pick; {} se un edificio non c'è più o non
+# funziona, se nella partenza non c'è niente da prendere o se la destinazione non ha posto. Quantità = quella chiesta,
+# tagliata a ciò che c'è nella partenza.
+static func player_transport_pick(world: World, order: Dictionary) -> Dictionary:
+	var source := WarehouseManagerService.find_building(world, int(order.get(TRANSPORT_SOURCE_KEY, -1)))
+	var target := WarehouseManagerService.find_building(world, int(order.get(TRANSPORT_TARGET_KEY, -1)))
+	if source == null or target == null or source.is_demolished or source.is_out_of_service() or not source.is_complete:
+		return {}
+	var resource_name := String(order.get("resource", ""))
+	var quantity := mini(int(order.get("quantity", 1)), BuildingStorageService.get_available_quantity(source, resource_name))
+	if quantity <= 0 or TaskBuilderService.transport_trip_target(target, resource_name, quantity) <= 0:
+		return {}
+	return {"target": target, "source": source, "resource": resource_name, "quantity": quantity}
 
 
 # Nuovo ordine di zona in coda (dal cassetto o dal magazzino); `extra` = campi del tipo. Ritorna la voce (già in elenco).
@@ -315,8 +356,13 @@ static func area_has_targets(
 		if not ctx.live_cells.has(area.macro_coords):
 			return false
 		var macro_state := ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-		return not QuarryZoneService.list_available_rocks(area, macro_state, individual, reserved, true).is_empty()
+		return not QuarryZoneService.list_available_rocks(area, macro_state, individual, reserved, true, order_source(order)).is_empty()
 	return not CutZoneService.list_available_plants(area, ctx.live_cells, individual, reserved, order_cut_yield(order), true).is_empty()
+
+
+# Cosa estrae un ordine di estrazione (2026-11-04): senza il campo, la pietra (ordini vecchi e del magazzino).
+static func order_source(order: Dictionary) -> String:
+	return String(order.get("source", ExtractionSourceService.SOURCE_ROCK))
 
 
 # Risorsa voluta da un ordine di taglio del magazzino (solo le piante che la danno, CutZoneService.SERIES_YIELD_KEY); ""

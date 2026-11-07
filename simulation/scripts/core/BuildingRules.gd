@@ -365,6 +365,7 @@ func can_be_village_center() -> bool:
 # (né pasti, né rifornimenti, né trasporti, né a mano: BuildingStorageService.get_available_quantity/withdraw danno 0).
 # Entra solo ciò che chiede il rito in preparazione (quota del rito, dentro accepted_categories) e lo consuma solo il rito
 # (BuildingStorageService.withdraw_stored). Non conta nelle scorte del villaggio (VillageStockService).
+# Usato anche dalla Tettoia dell'acqua (2026-11-06): deposito chiuso che gestisce solo WaterJarService (giare con l'acqua).
 @export var storage_event_only: bool = false
 # Quanti ordini di produzione possono essere ATTIVI INSIEME su questo edificio (2026-09-24, richiesta utente; rinominato
 # da production_queue_slots il 2026-10-03: non è una coda) — ogni ordine è una Produce Task assegnata, anche con

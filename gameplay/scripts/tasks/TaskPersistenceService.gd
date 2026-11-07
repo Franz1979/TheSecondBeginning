@@ -278,6 +278,14 @@ static func _action_type_for_step(step: Action) -> int:
 	# FISH (2026-10-31, FishAction, fish.tres), aggiunta insieme al proprio case in _build_step.
 	if step is SlaughterAction:
 		return TaskTypes.ActionType.SLAUGHTER
+	# FILL_JAR (2026-11-06, FillJarAction, fill_jar.tres), aggiunta insieme al proprio case in _build_step.
+	if step is FillJarAction:
+		return TaskTypes.ActionType.FILL_JAR
+	# TAKE_JAR / PUT_JAR (2026-11-06, giare), aggiunte insieme ai propri case in _build_step.
+	if step is TakeJarAction:
+		return TaskTypes.ActionType.TAKE_JAR
+	if step is PutJarAction:
+		return TaskTypes.ActionType.PUT_JAR
 	if step is FishAction:
 		return TaskTypes.ActionType.FISH
 	# REPAIR (2026-10-10, RepairAction, repair.tres), aggiunta insieme al proprio case in _build_step.
@@ -545,10 +553,12 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 				Vector3i(int(step_data.get("cut_x", 0)), int(step_data.get("cut_y", 0)), int(step_data.get("cut_i", 0)))
 			)
 		TaskTypes.ActionType.QUARRY:
-			# Solo la roccia (2026-10-05): il lavoro già fatto vive su MacroCellState.cut_work_progress (vedi QuarryAction).
+			# Solo il bersaglio (2026-10-05): il lavoro già fatto vive su MacroCellState.cut_work_progress (vedi QuarryAction).
+			# Senza fonte (salvataggi precedenti al 2026-11-04) è una roccia.
 			step = QuarryAction.new(
 				Vector2i(int(step_data.get("quarry_macro_x", 0)), int(step_data.get("quarry_macro_y", 0))),
-				Vector2i(int(step_data.get("quarry_x", 0)), int(step_data.get("quarry_y", 0)))
+				Vector2i(int(step_data.get("quarry_x", 0)), int(step_data.get("quarry_y", 0))),
+				String(step_data.get("quarry_source", ExtractionSourceService.SOURCE_ROCK))
 			)
 		TaskTypes.ActionType.REPAIR:
 			# Solo l'edificio: il progresso è Building.current_durability (vedi RepairAction).
@@ -570,6 +580,14 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			step = DrinkAction.new()
 		TaskTypes.ActionType.SLAUGHTER:
 			step = SlaughterAction.new(int(step_data.get("animal_id", -1)))
+		TaskTypes.ActionType.FILL_JAR:
+			# Nessun argomento; il tempo trascorso da load_save_data.
+			step = FillJarAction.new()
+		TaskTypes.ActionType.TAKE_JAR:
+			# L'edificio per id; il tempo trascorso da load_save_data.
+			step = TakeJarAction.new(_find_building_by_id(world, int(step_data.get("jar_building_id", -1))))
+		TaskTypes.ActionType.PUT_JAR:
+			step = PutJarAction.new(_find_building_by_id(world, int(step_data.get("jar_building_id", -1))))
 		TaskTypes.ActionType.FISH:
 			# La microcella del ruscello; il tempo del tentativo in corso da load_save_data.
 			step = FishAction.new(

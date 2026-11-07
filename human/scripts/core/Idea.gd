@@ -53,3 +53,8 @@ extends Resource
 # (DiscoveryHintRules.grant_idea_id). Finché non è completata è coperta ("?") e mai disponibile — vedi
 # IdeaProgressService.is_hidden/is_available.
 @export var discovery_only: bool = false
+
+# Ordine dall'alto delle idee radice (senza prerequisiti) nella loro colonna dell'albero (2026-11-07, richiesta utente —
+# Conoscenza delle piante accanto ad Addomesticazione). Solo le radici lo leggono (TechTreePanel._compute_layout); a
+# parità di valore conta l'id. Default alto: una radice nuova senza valore va in fondo.
+@export var tree_order: int = 1000

@@ -419,6 +419,7 @@ microcell_inspection_building_occupied,Cella occupata da un edificio — click s
 microcell_inspection_resources_header,Risorse raccoglibili:
 microcell_inspection_resource_line,- {resource}: {quantity}
 microcell_inspection_unknown_resource,- Risorsa sconosciuta
+microcell_inspection_unknown_resource_remembered,Risorsa sconosciuta
 storage_slot_auto_progress_tooltip,Pronto tra {days} giorni
 building_upgrade_button,Migliora in {building}
 building_upgrade_materials,Materiali da portare: {items}
@@ -994,10 +995,56 @@ cut_reject_queue_full,{name} ha già troppi lavori in coda.
 pickup_no_storage_for_resource,{name}: nessun deposito ha posto per {resource}
 stone_rock_label,Pietra estraibile: {quantity}
 carried_resource_tooltip_stone,Pietra
+carried_resource_tooltip_clay,Argilla
+carried_resource_tooltip_clay_bowl,Ciotola di terracotta
+carried_resource_tooltip_clay_jar,Giara
+task_fill_jar_name,Riempimento giare
+task_fill_jar_step_walk_source,A prendere la giara
+task_fill_jar_step_take,Prende la giara
+task_fill_jar_step_walk_water,Verso la riva
+task_fill_jar_step_walk_shelter,Verso la tettoia
+task_fill_jar_step_put,Ripone la giara
+jar_water_tooltip,Acqua: {water} / {capacity}
+building_info_shelter_water,"Acqua: {water} / {capacity} ({jars} giare su {places} posti)"
+fill_jar_stop_no_jar,"{name} ha smesso di riempire: non ci sono altre giare vuote nei magazzini."
+fill_jar_fail_shelter,"{name} non può riporre la giara: la tettoia non c'è più o è piena."
+task_fill_jar_step_fill,Riempiendo la giara
+task_activity_fill_jar,riempire le giare
+fill_jar_dialog_title,Riempi giare
+fill_jar_dialog_message,"Quante giare riempire alla riva? Prima quelle vuote della tettoia, poi quelle dal magazzino per i posti liberi. Serve un travois."
+fill_jar_dialog_count,Giare da riempire
+fill_jar_reject_shelter_full,"{building} non ha giare vuote né posti liberi."
+fill_jar_reject_no_empty_jar,"{name} non trova giare nei magazzini per i posti liberi della tettoia."
+fill_jar_reject_no_travois,"{name} non trova un travois libero: la giara piena non si porta a mano."
+fill_jar_reject_no_water,"{name} non trova una riva raggiungibile dove riempire la giara."
+fill_jar_fail_no_jar,"{name} non ha più la giara vuota da riempire."
+fill_jar_fail_broken,"La giara di {name} si è rotta mentre la riempiva."
+fill_jar_fail_no_room,"{name} non ha posto per la giara piena: la riporta vuota alla tettoia."
+fill_jar_fail_no_travois,"{name} non ha un travois per la giara piena: niente riempimento."
+building_potter_hut,Capanna del vasellaio
+build_bar_potter_hut_tooltip,Capanna del vasellaio
+build_bar_potter_hut_description,"Qui l'argilla si modella e si cuoce nella fossa di cottura: ciotole e giare."
+building_water_shelter,Tettoia dell'acqua
+build_bar_water_shelter_tooltip,Tettoia dell'acqua
+build_bar_water_shelter_description,"Tettoia leggera dove si tengono le giare, dieci posti. Potrà tenere l'acqua da bere lontano dal fiume."
 carried_resource_tooltip_bone_pick,Piccone d'osso
 task_quarry_name,Estrazione
 task_quarry_step_quarry,Estraendo la pietra
 task_activity_quarry,estrarre la pietra
+task_quarry_step_clay,Estraendo l'argilla
+task_activity_clay,estrarre l'argilla
+work_area_filter_all_quarry,Tutte le risorse
+work_area_clay_no_target,Nessuna argilla disponibile nella zona
+series_stop_no_clay,nessuna argilla nella zona
+quarry_order_dialog_count_sources,Estrazioni
+quarry_order_dialog_message_sources,Cosa vuoi estrarre e quante volte?
+quarry_order_dialog_count_tooltip,Ogni estrazione dà 1 pietra o {clay} argilla
+clay_choice_dialog_title,Argilla
+clay_choice_dialog_message,Cosa vuoi fare qui?
+clay_choice_gather,Raccogli
+clay_choice_dig,Estrai argilla
+clay_reject_reserved,Questa argilla è già nel lavoro di {name}.
+clay_reject_building,Qui c'è una costruzione: va tolta prima di scavare.
 quarry_choice_dialog_title,Roccia
 quarry_choice_dialog_message,Cosa vuoi fare con questa roccia?
 quarry_choice_gather,Raccogli sassi
@@ -1116,7 +1163,7 @@ task_assignment_kind_body,Sepolture
 task_assignment_kind_build,Cantieri
 task_assignment_kind_upgrade,Miglioramenti
 task_assignment_kind_demolish,Demolizioni e sgomberi
-task_assignment_kind_pile,Trasporti e mucchi
+task_assignment_kind_transport,Trasporti
 task_assignment_kind_move_up,Sposta su
 task_assignment_kind_move_down,Sposta giù
 task_assignment_kind_order_edit,Modifica ordine…
@@ -1124,7 +1171,6 @@ task_assignment_kind_order_title,Ordine dei lavori
 produce_output_full_warning,Uscita piena: si fermerà dopo {count}
 toolkit_reject_not_used,{tool} non serve alle ricette di questo edificio: non entra nell'Attrezzeria.
 pending_output_delivery,Svuota uscita · {building} ({used}/{capacity})
-task_assignment_kind_output,Consegna finiti a magazzino
 task_assignment_setting_empty_outputs,Consegna finiti a magazzino quando l'uscita è piena o l'essiccatoio si ferma
 task_assignment_setting_empty_outputs_tooltip,"Quando i Prodotti finiti sono pieni (un ordine si ferma, o non se ne può avviare uno nuovo), o un essiccatoio è pieno con prodotti pronti, un individuo libero ne porta un carico al magazzino."
 task_assignment_output_cannot_cancel,Niente da annullare: si svuotano solo i Prodotti finiti.
@@ -1203,6 +1249,9 @@ drawer_quarry_nobody_has_pickaxe,Nessuno ha il piccone
 drawer_quarry_title,Estrai
 drawer_order_quarry_row,Estrai {count} pietre
 drawer_order_quarry_row_one,Estrai 1 pietra
+drawer_order_clay_row,Estrai argilla: {count} estrazioni
+drawer_order_clay_row_one,Estrai argilla: 1 estrazione
+drawer_order_clay_started_row,Estrai argilla
 task_assignment_kind_gather,Raccolta
 drawer_gather_button_tooltip,Raccolta nelle zone di lavoro: la prende in coda un individuo libero
 drawer_gather_no_zone,Nessuna zona di raccolta
@@ -1303,7 +1352,7 @@ drawer_order_stock_cancel_tooltip,"Annulla l'ordine. Se la risorsa resta sotto i
 warehouse_min_level_auto_tooltip,"Livello minimo: sotto questo valore il magazzino crea ordini di raccolta, taglio o estrazione nelle zone di lavoro."
 warehouse_rules,⚙ Regole di stoccaggio
 warehouse_rule_excess_meat,Destinazione di carne e pelli che non servono ai minimi
-warehouse_rule_excess_meat_tooltip,"Cacce del magazzino: carne e pelli vanno prima dove mancano ai minimi (carne essiccata all'essiccatoio, carne cotta al focolare, ordini dell'affumicatoio, riserva di carne cruda e pelli al magazzino), divise in proporzione. Quello che avanza va qui. Ossa e tendini sempre al magazzino; ciò che non trova posto va al magazzino."
+warehouse_rule_excess_meat_tooltip,"Cacce del magazzino: carne e pelli vanno prima dove mancano ai minimi (carne essiccata all'essiccatoio, carne cotta al focolare, ordini dell'affumicatoio, pelli al magazzino), divise in proporzione. Quello che avanza va qui. Ossa e tendini sempre al magazzino; ciò che non trova posto va al magazzino."
 warehouse_rule_excess_meat_button_tooltip,Ciò che non serve ai minimi: {name}
 warehouse_food_ingredients_title,Da cucinare o lavorare
 warehouse_food_ingredients_note,"Non contano nelle calorie: vanno prima cucinate o lavorate."
@@ -1327,7 +1376,7 @@ pending_stock_dry_rack_full,Essiccatoio pieno
 pending_stock_dry_missing,Manca: {resource}
 pending_stock_dry_blocked,Nessun essiccatoio con posto o niente da portare
 warehouse_food_days_name,Cibo
-warehouse_food_days_auto_tooltip,"Giorni di autonomia minimi: sotto questo valore il magazzino fa cuocere la carne cruda libera (oltre la riserva di carne cruda e oltre quella per le lavorazioni) e poi raccogliere qualsiasi cibo nelle zone di lavoro. Il cibo già in lavorazione conta come in arrivo."
+warehouse_food_days_auto_tooltip,"Giorni di autonomia minimi: sotto questo valore il magazzino fa cuocere la carne cruda libera (oltre quella per le lavorazioni) e poi raccogliere qualsiasi cibo nelle zone di lavoro. Il cibo già in lavorazione conta come in arrivo."
 warehouse_meat_level_tooltip,"Carne cruda da tenere in più, oltre a quella che serve per carne cotta, affumicata ed essiccata. Prima si lavora, poi si riempie questa riserva."
 pending_output_delivery_rack,{building} pieno: porta i prodotti pronti al deposito
 task_inventory_name,Inventario
@@ -1469,6 +1518,18 @@ warehouse_rule_fuel_tooltip,"Tieni del combustibile nel deposito di ogni edifici
 warehouse_rule_fuel_type_tooltip,"Scorta di combustibile per ogni edificio di questo tipo. Il rifornimento parte quando scende sotto la metà. 0 = questo tipo non viene rifornito."
 drawer_order_fuel_row,{building}: porta {quantity} {resource}
 pending_stock_fuel_blocked,Edificio non disponibile o niente combustibile da portare
+warehouse_rule_water,Acqua per tettoia
+warehouse_rule_water_missing,mancano {count} giare
+pending_stock_water,Tettoie dell'acqua
+pending_stock_water_missing,"Mancano {count} giare nei magazzini per tenere le tettoie al loro livello d'acqua"
+building_info_shelter_target_general,Livello voluto: regola generale
+building_info_shelter_target_own,Livello voluto:
+building_info_shelter_target_excluded,"Livello voluto: esclusa dal WM"
+building_info_shelter_target_tooltip,"Acqua da tenere in questa tettoia. Se scende sotto, all'inventario il WM ordina di riempire le giare che servono. Toccando il valore la tettoia ne prende uno suo al posto della regola generale; 0 = il WM non la riempie mai. La tacchetta sulla barra segna il livello."
+building_info_shelter_target_reset,Torna alla regola generale del WM
+warehouse_rule_water_tooltip,"Acqua da tenere in ogni Tettoia dell'acqua. Quando una tettoia scende sotto questo livello, all'inventario parte un ordine che riempie le giare che servono (serve un travois). 0 = regola spenta."
+drawer_order_water_row,{building}: riempi {quantity} giare
+pending_stock_water_blocked,Tettoia non disponibile o nessuna giara da riempire
 building_teaching_stump,Ceppo dell'insegnamento
 build_bar_teaching_stump_tooltip,"Ceppo dell'insegnamento: si costruisce dove è stato tagliato un albero, il ceppo diventa il posto dell'anziano"
 building_category_cultural,Culturale
@@ -1614,6 +1675,8 @@ domestic_animal_male,maschio
 domestic_animal_female,femmina
 notification_domestic_arrival_dog,"Alcuni lupi non se ne vanno più: ora vivono al villaggio. Nuovi cani: {count}."
 notification_domestic_left_dog,"Il villaggio non basta per tutti i cani: {count} se ne sono andati."
+notification_domestic_stray_dog,Un cane randagio si è unito al villaggio.
+notification_domestic_guard_died_dog,Un cane è morto difendendo il villaggio dai lupi.
 notification_domestic_starved_dog,"Il villaggio ha fame: è morto anche un cane."
 discovery_first_domesticated_wolf_title,Un lupo che non fugge più
 discovery_first_domesticated_wolf_p1,"Per lungo tempo un branco di lupi è tornato a frugare nella fossa dei rifiuti. Ogni volta si avvicinava un po' di più, ogni volta fuggiva un po' più tardi."
@@ -1649,11 +1712,22 @@ domestication_tab_animals,Animali
 domestication_tab_plants,Piante
 domestication_from,da: {species}
 domestication_state_domesticated,Addomesticata
-domestication_state_in_progress,In corso
 domestication_state_locked,Serve l'idea «{idea}»
 domestication_animals_locked_notice,"Studia «{idea}» per iniziare ad addomesticare altre specie animali, oltre al lupo."
 domestication_plants_locked_notice,Studia «{idea}» per iniziare ad addomesticare le piante.
 domestication_plants_empty,Nessuna specie vegetale ancora conosciuta.
+domestication_pack_aggression,Aggressività media del branco
+domestication_pack_hint,"Ogni visita tranquilla lo calma e porta punti; gli attacchi no, e cacciarlo lo innervosisce."
+domestication_pack_none,Nessun branco nei dintorni
+domestication_state_in_progress,Addomesticazione in corso
+domestication_wild_group,{species} selvatico
+domestication_wild_group_dog,Branco selvatico di lupi
+domestication_will_become,Ne deriverà: {species}
+domestication_done,"Da: {species}, addomesticazione nell'anno {year}"
+domestication_done_no_year,Da: {species}
+domestication_done_dog,Addomesticato dal lupo nell'anno {year}
+domestication_done_no_year_dog,Addomesticato dal lupo
+domestication_pack_count,{count} animali
 rite_council_of_elders_name,Consiglio degli anziani
 task_council_of_elders_name,Consiglio degli anziani
 political_rite_reject_not_center,Solo quando il Cerchio del consiglio è il centro del villaggio
@@ -1677,6 +1751,12 @@ build_bar_star_circle_description,"Grandi pietre in cerchio, dove si osserva il 
 discovery_tribal_organization_sacred_circle_title,Il Cerchio sacro del consiglio
 discovery_tribal_organization_sacred_circle_p1,"Il Cerchio delle stelle si può ora migliorare in Cerchio sacro del consiglio: selezionalo e premi «Migliora». Servono le pietre per le sedute degli anziani."
 discovery_tribal_organization_sacred_circle_p2,"Il Cerchio sacro del consiglio ospita i consigli e può diventare il centro del villaggio. Se non hai ancora un Cerchio delle stelle, costruiscilo prima: è tra gli edifici religiosi."
+idea_pottery,Vasellame
+idea_pottery_summary,Permette di estrarre l'argilla e di costruire la capanna del vasellaio.
+idea_pottery_description,"La terra sotto il focolare, indurita dal fuoco, non torna più fango. L'argilla modellata e cotta diventa un recipiente che dura."
+discovery_pottery_clay_title,L'argilla delle sponde
+discovery_pottery_clay_p1,"L'argilla si trova a chiazze lungo fiumi, ruscelli e laghi. Si scava con il piccone, come la pietra, e un giacimento alla fine si esaurisce."
+discovery_pottery_clay_p2,"Portata al villaggio, diventa ciotole e giare nella capanna del vasellaio."
 building_upgrade_additive_line,"Aggiungendo i materiali indicati, {building} diventa {target}: niente va demolito, niente torna a terra."
 rite_star_vigil_name,Veglia delle stelle
 task_star_vigil_name,Veglia delle stelle
@@ -1701,6 +1781,7 @@ danger_predator,Predatore
 wound_bite,morso
 illness_wound_infection,infezione
 notification_wild_animal_driven_off,"{species}: scacciati da {names}"
+wild_animal_driven_off_dogs,i cani ({count})
 notification_wild_first_visit_wolf,"Dei lupi si aggirano attorno al villaggio."
 notification_wild_first_quiet_pit_wolf,"I lupi hanno frugato nella Fossa e se ne sono andati senza far danni."
 notification_wild_calmer_wolf,"I lupi sembrano meno diffidenti: si stanno abituando a noi."
@@ -1727,7 +1808,7 @@ help_hunt_products_intro,"Quando un cacciatore macella una preda, o un pescatore
 help_hunt_products_needs_title,"1. Cacce del gestore scorte: prima i minimi"
 help_hunt_products_needs_intro,"Le cacce che il gestore scorte ordina da solo (con la Gestione magazzino attiva: idea scoperta e lista dei lavori accesa) portano carne e pelli prima dove servono adesso:"
 help_hunt_products_needs_without_manager,"Gli ordini già aperti: gli ordini di affumicatura sull'Affumicatoio che aspettano carne, e gli ordini ""Produci"" del cassetto che aspettano carne o pelli (questi le ricevono al magazzino, da dove l'ordine le va a prendere)."
-help_hunt_products_needs_with_manager,"I livelli che hai impostato nel cassetto Scorte: la carne cotta che manca al Focolare, la carne e le pelli essiccate all'Essiccatoio, la riserva di carne cruda e di pelli al magazzino. Ogni livello sotto il minimo è un bisogno."
+help_hunt_products_needs_with_manager,"I livelli che hai impostato nel cassetto Scorte: la carne cotta che manca al Focolare, la carne e le pelli essiccate all'Essiccatoio, le pelli e gli altri prodotti della caccia con un minimo al magazzino. Ogni livello sotto il minimo è un bisogno. La carne cruda non ha un minimo suo: si caccia quella che serve ai minimi dei prodotti di carne."
 help_hunt_products_needs_split,"Se più posti hanno bisogno della stessa risorsa, quello che arriva si divide in proporzione a quanto manca a ciascuno. Quello che avanza va dove dice la regola ""Destinazione di carne e pelli che non servono ai minimi"" del cassetto Scorte."
 help_hunt_products_destination_title,"2. Cacce che ordini tu: la destinazione scelta"
 help_hunt_products_destination_intro,"Le cacce e le pesche che ordini tu non guardano minimi né ordini aperti: tutto va alla destinazione scelta, separata per la carne (Focolare, Essiccatoio, Affumicatoio o Magazzino) e per le pelli (Essiccatoio, Affumicatoio o Magazzino):"
@@ -1741,6 +1822,25 @@ help_hunt_products_rule_fish,"Il pesce si comporta in tutto come la carne: stess
 help_hunt_products_rule_no_room,"Se la destinazione non ha posto, il prodotto va al magazzino più vicino che lo accetta."
 help_hunt_products_example_title,"Esempio"
 help_hunt_products_example,"Il pulsante dice: carne all'Essiccatoio, e l'Affumicatoio ha un ordine che aspetta 2 di carne. Un cacciatore mandato da te porta 5 di carne: vanno tutte e 5 all'Essiccatoio. Se invece la caccia l'ha ordinata il gestore scorte, 2 vanno all'Affumicatoio per l'ordine e le altre 3 dove dice la regola del cassetto Scorte."
+help_stock_supply_menu_link,"Gestore scorte: cosa procura da solo"
+help_stock_supply_title,"Gestore scorte: cosa procura da solo"
+help_stock_supply_intro,"Con la Gestione magazzino attiva, il gestore scorte guarda i minimi che hai impostato nel cassetto Scorte e ordina il lavoro per riportarli in pari. La regola è una sola: ogni minimo procura solo la sua risorsa, mai quello che serve per farla. Se un prodotto ha bisogno di altri materiali, anche quelli devono avere un loro minimo."
+help_stock_supply_sources_title,"Come si procura ogni risorsa"
+help_stock_supply_sources_intro,"Per ogni risorsa sotto il minimo, il gestore sceglie il lavoro in base a come la si ottiene:"
+help_stock_supply_source_zone,"Raccolta, taglio ed estrazione (bacche, fibre, legna, pietra, argilla...): ordini nelle zone di lavoro."
+help_stock_supply_source_hunt,"Prodotti degli animali (pelli, tendini, ossa) e pesce: cacce e pesche."
+help_stock_supply_source_produce,"Prodotti da lavorare a una postazione (corde, attrezzi, sacche, cibi cotti...): ordini ""Produci"" alla postazione, solo con i materiali che ci sono già."
+help_stock_supply_source_dry,"Prodotti che si fanno da soli all'Essiccatoio (carne essiccata, pelle essiccata): il trasporto dell'ingrediente crudo dal magazzino all'Essiccatoio."
+help_stock_supply_ingredients_title,"Gli ingredienti non si procurano da soli"
+help_stock_supply_ingredients,"Un ordine ""Produci"" o un trasporto all'Essiccatoio usa solo quello che è già in magazzino. Se manca qualcosa il gestore non manda nessuno a cercarlo: l'ordine resta fermo con scritto ""Mancano: ..."" (per l'Essiccatoio ""Manca: ..."") e compare un avviso nella campanella. Per far partire la catena, metti un minimo anche sull'ingrediente: così il gestore lo procura con il suo lavoro, e l'ordine fermo riparte appena arriva."
+help_stock_supply_meat_title,"L'eccezione: carne e pesce crudi"
+help_stock_supply_meat,"Carne cruda e pesce crudo non hanno un minimo loro, perché una scorta marcirebbe. Il gestore ne procura quanta ne serve ai prodotti che li usano: per ogni prodotto con un minimo (carne essiccata, carne cotta, pesce affumicato...) conta quanto ne manca, tolto quello già in lavorazione o in viaggio, e aggiunge l'ingrediente che manca agli ordini già aperti sulle postazioni. Se quel totale supera la carne in casa, ordina una caccia (o una pesca)."
+help_stock_supply_rules_title,"Da sapere"
+help_stock_supply_rule_inventory,"Il gestore ordina lavoro nuovo solo quando qualcuno fa l'Inventario: senza Inventario i minimi restano fermi."
+help_stock_supply_rule_workstation,"Il minimo di un prodotto conta solo se hai la postazione per farlo, finita e in funzione. Senza, il minimo resta salvato ma è spento."
+help_stock_supply_rule_bell,"Un avviso ""Manca"" o ""Mancano"" nella campanella vuol dire quasi sempre un ingrediente senza minimo."
+help_stock_supply_example_title,"Esempio"
+help_stock_supply_example,"Vuoi sempre 2 Sacche di pelle essiccata. Ogni sacca vuole Pelle essiccata, Corda di fibre e Tendini. Con il solo minimo sulla sacca, e niente in magazzino, l'ordine resta fermo su ""Mancano: ..."". Metti un minimo anche su Pelle essiccata, Corda di fibre e Tendini: le corde si producono (e le fibre vanno a loro volta raccolte, con un minimo su Fibra vegetale), i tendini si cacciano. La Pelle essiccata invece si fa all'Essiccatoio con la Pelle: senza un minimo su Pelle il gestore scrive ""Manca: Pelle"" e non caccia. Con tutti i minimi a posto, ogni anello si riempie da solo e la sacca parte."
 carried_resource_tooltip_cooked_fish,Pesce cotto
 carried_resource_tooltip_dried_fish,Pesce essiccato
 carried_resource_tooltip_smoked_fish,Pesce affumicato
@@ -1779,3 +1879,10 @@ warehouse_raw_derived_tooltip,"Si procura da sola: quanto serve lo decidono i li
 warehouse_rule_excess_fish,Destinazione del pesce che non serve ai minimi
 warehouse_rule_excess_fish_tooltip,"Pesche del magazzino: il pesce va prima dove manca ai minimi (pesce essiccato all'essiccatoio, pesce cotto al focolare, ordini dell'affumicatoio), diviso in proporzione. Quello che avanza va qui; ciò che non trova posto va al magazzino."
 warehouse_rule_excess_fish_button_tooltip,Pesce che non serve ai minimi: {name}
+drawer_transport_button,Trasporta
+drawer_transport_button_tooltip,"Ordine di trasporto da un edificio a un altro: scegli la partenza, la risorsa e la destinazione; lo prende chi è libero."
+drawer_transport_banner_source,🚚 Trasporta: clicca l'edificio di partenza (Esc per annullare)
+drawer_transport_banner_target,🚚 Trasporta: clicca l'edificio di destinazione (Esc per annullare)
+drawer_transport_reject_not_needed,Trasporto non ordinato: {building} non ha posto per {resource}.
+drawer_order_player_transport_row,Trasporta {quantity} {resource} · {source} → {target}
+drawer_order_player_transport_blocked,Niente da prendere nella partenza o nessun posto nella destinazione

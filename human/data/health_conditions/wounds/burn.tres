@@ -16,6 +16,6 @@ daily_health_loss = 60.0
 daily_happiness_loss = 80.0
 bed_rest = true
 recovery_health_ratio = 0.6
-convalescence_daily_health_loss = 20.0
+convalescence_daily_health_loss = 10.0
 convalescence_daily_happiness_loss = 30.0
 convalescence_bed_rest = false

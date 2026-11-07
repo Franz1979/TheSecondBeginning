@@ -79,6 +79,10 @@ var repair_auto_excluded: bool = false
 # (RiteRules.id), "" = nessuno. Resta finché il rito non è celebrato davvero (RiteAction.on_complete) o annullato con la X;
 # se chi lo celebra lo abbandona torna "mancante" (e in coda con l'idea dell'assegnazione). Salvato con l'edificio.
 var requested_rite_id: String = ""
+# Tettoia dell'acqua (2026-11-07, richiesta utente — giare passo 3, valore della singola tettoia): acqua voluta qui al posto
+# della regola generale del WM (GameData.stock_water_per_shelter). -1 = regola generale, 0 = esclusa dal WM, >0 = livello
+# suo (WaterShelterStockService.target_for). Salvato con l'edificio.
+var water_target_override: int = -1
 # Giorno assoluto di fine dell'ultimo rito di ciascun tipo qui (2026-10-26, riunioni politiche — attesa
 # PoliticalRiteRules.min_days_between): RiteRules.id -> int. Salvato con l'edificio.
 var last_rite_end_day: Dictionary = {}

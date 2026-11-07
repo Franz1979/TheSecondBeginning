@@ -181,6 +181,7 @@ building_layer_awaiting_material,awaiting material
 building_shared_microcell_tooltip,Switch to this building (it is on the same microcell)
 microcell_inspection_ground_pile_header,Pile on the ground:
 microcell_inspection_unknown_resource,- Unknown resource
+microcell_inspection_unknown_resource_remembered,Unknown resource
 storage_slot_auto_progress_tooltip,Ready in {days} days
 building_upgrade_button,Upgrade to {building}
 building_upgrade_materials,Materials to bring: {items}
@@ -936,11 +937,57 @@ cut_reject_queue_full,{name} already has too many jobs queued.
 pickup_no_storage_for_resource,{name}: no storage has room for {resource}
 stone_rock_label,Extractable stone: {quantity}
 carried_resource_tooltip_stone,Stone
+carried_resource_tooltip_clay,Clay
+carried_resource_tooltip_clay_bowl,Clay bowl
+carried_resource_tooltip_clay_jar,Jar
+task_fill_jar_name,Filling jars
+task_fill_jar_step_walk_source,Fetching the jar
+task_fill_jar_step_take,Taking the jar
+task_fill_jar_step_walk_water,To the shore
+task_fill_jar_step_walk_shelter,To the shelter
+task_fill_jar_step_put,Putting the jar back
+jar_water_tooltip,Water: {water} / {capacity}
+building_info_shelter_water,"Water: {water} / {capacity} ({jars} jars in {places} places)"
+fill_jar_stop_no_jar,"{name} stopped filling: there are no more empty jars in the warehouses."
+fill_jar_fail_shelter,"{name} cannot put the jar back: the shelter is gone or full."
+task_fill_jar_step_fill,Filling the jar
+task_activity_fill_jar,fill jars
+fill_jar_dialog_title,Fill jars
+fill_jar_dialog_message,"How many jars to fill at the shore? First the shelter's empty jars, then jars from the warehouse for the free places. A travois is needed."
+fill_jar_dialog_count,Jars to fill
+fill_jar_reject_shelter_full,"{building} has no empty jars and no free places."
+fill_jar_reject_no_empty_jar,"{name} finds no jars in the warehouses for the shelter's free places."
+fill_jar_reject_no_travois,"{name} finds no free travois: a full jar cannot be carried by hand."
+fill_jar_reject_no_water,"{name} finds no reachable shore to fill the jar."
+fill_jar_fail_no_jar,"{name} reached the shore without the empty jar."
+fill_jar_fail_broken,"{name}'s jar broke while being filled."
+fill_jar_fail_no_room,"{name} has no room for the full jar: bringing it back empty to the shelter."
+fill_jar_fail_no_travois,"{name} has no travois for the full jar: no filling."
+building_potter_hut,Potter's hut
+build_bar_potter_hut_tooltip,Potter's hut
+build_bar_potter_hut_description,"Clay is shaped here and fired in the pit: bowls and jars."
+building_water_shelter,Water shelter
+build_bar_water_shelter_tooltip,Water shelter
+build_bar_water_shelter_description,"Light shelter where jars are kept, ten places. It will be able to hold drinking water far from the river."
 stone_selection_title,Rock
 carried_resource_tooltip_bone_pick,Bone pick
 task_quarry_name,Quarry
 task_quarry_step_quarry,Quarrying stone
 task_activity_quarry,quarry stone
+task_quarry_step_clay,Digging clay
+task_activity_clay,dig clay
+work_area_filter_all_quarry,All resources
+work_area_clay_no_target,No clay available in the zone
+series_stop_no_clay,no clay in the zone
+quarry_order_dialog_count_sources,Extractions
+quarry_order_dialog_message_sources,What do you want to extract and how many times?
+quarry_order_dialog_count_tooltip,Each extraction gives 1 stone or {clay} clay
+clay_choice_dialog_title,Clay
+clay_choice_dialog_message,What do you want to do here?
+clay_choice_gather,Gather
+clay_choice_dig,Dig clay
+clay_reject_reserved,This clay is already in {name}'s work.
+clay_reject_building,There is a structure here: remove it before digging.
 quarry_choice_dialog_title,Rock
 quarry_choice_dialog_message,What do you want to do with this rock?
 quarry_choice_gather,Gather pebbles
@@ -1062,7 +1109,7 @@ task_assignment_kind_body,Burials
 task_assignment_kind_build,Construction sites
 task_assignment_kind_upgrade,Upgrades
 task_assignment_kind_demolish,Demolitions and clearing
-task_assignment_kind_pile,Transports and piles
+task_assignment_kind_transport,Transports
 task_assignment_kind_move_up,Move up
 task_assignment_kind_move_down,Move down
 task_assignment_kind_order_edit,Edit order…
@@ -1070,7 +1117,6 @@ task_assignment_kind_order_title,Job order
 produce_output_full_warning,Output full: will stop after {count}
 toolkit_reject_not_used,{tool} is not used by this building's recipes: it does not go in the toolkit.
 pending_output_delivery,Empty output · {building} ({used}/{capacity})
-task_assignment_kind_output,Deliver finished goods to storage
 task_assignment_setting_empty_outputs,Deliver finished goods to storage when the output is full or a drying rack stops
 task_assignment_setting_empty_outputs_tooltip,"When the finished products are full (an order stops, or no new one can start), or a drying rack is full with ready products, a free individual carries a load of them to storage."
 task_assignment_output_cannot_cancel,Nothing to cancel: only the finished products are emptied.
@@ -1149,6 +1195,9 @@ drawer_quarry_nobody_has_pickaxe,Nobody has a pickaxe
 drawer_quarry_title,Quarry
 drawer_order_quarry_row,Quarry {count} stones
 drawer_order_quarry_row_one,Quarry 1 stone
+drawer_order_clay_row,Dig clay: {count} extractions
+drawer_order_clay_row_one,Dig clay: 1 extraction
+drawer_order_clay_started_row,Dig clay
 task_assignment_kind_gather,Gathering
 drawer_gather_button_tooltip,Gathering in the work areas: a free individual takes it from the queue
 drawer_gather_no_zone,No gathering area
@@ -1249,7 +1298,7 @@ drawer_order_stock_cancel_tooltip,"Cancel the order. If the resource stays below
 warehouse_min_level_auto_tooltip,"Minimum level: below this value the warehouse creates gather, cut or quarry orders in the work areas."
 warehouse_rules,⚙ Storage rules
 warehouse_rule_excess_meat,Destination of meat and hides not needed by minimums
-warehouse_rule_excess_meat_tooltip,"Warehouse hunts: meat and hides first go where minimums are short (dried meat to the drying rack, cooked meat to the campfire, smokehouse orders, raw meat reserve and hides to storage), split proportionally. What is left goes here. Bones and sinew always go to storage; whatever finds no room goes to storage."
+warehouse_rule_excess_meat_tooltip,"Warehouse hunts: meat and hides first go where minimums are short (dried meat to the drying rack, cooked meat to the campfire, smokehouse orders, hides to storage), split proportionally. What is left goes here. Bones and sinew always go to storage; whatever finds no room goes to storage."
 warehouse_rule_excess_meat_button_tooltip,Not needed by minimums: {name}
 warehouse_food_ingredients_title,To cook or process
 warehouse_food_ingredients_note,"Not counted in calories: they must be cooked or processed first."
@@ -1273,7 +1322,7 @@ pending_stock_dry_rack_full,Drying rack full
 pending_stock_dry_missing,Missing: {resource}
 pending_stock_dry_blocked,No drying rack with room or nothing to bring
 warehouse_food_days_name,Food
-warehouse_food_days_auto_tooltip,"Minimum days of autonomy: below this value the warehouse has free raw meat cooked (beyond the raw meat reserve and what processing needs), then any food gathered in the work areas. Food already being processed counts as arriving."
+warehouse_food_days_auto_tooltip,"Minimum days of autonomy: below this value the warehouse has free raw meat cooked (beyond what processing needs), then any food gathered in the work areas. Food already being processed counts as arriving."
 warehouse_meat_level_tooltip,"Raw meat to keep in addition to what is needed for cooked, smoked and dried meat. Processing comes first, then this reserve is filled."
 pending_output_delivery_rack,{building} full: bring the ready products to storage
 task_inventory_name,Inventory
@@ -1415,6 +1464,18 @@ warehouse_rule_fuel_tooltip,"Keep fuel in the storage of every building that bur
 warehouse_rule_fuel_type_tooltip,"Fuel stock for each building of this type. Supply starts when it drops below half. 0 = this type is not supplied."
 drawer_order_fuel_row,{building}: bring {quantity} {resource}
 pending_stock_fuel_blocked,Building not available or no fuel to bring
+warehouse_rule_water,Water per shelter
+warehouse_rule_water_missing,{count} jars missing
+pending_stock_water,Water shelters
+pending_stock_water_missing,"{count} jars missing in the warehouses to keep the shelters at their water level"
+building_info_shelter_target_general,Wanted level: general rule
+building_info_shelter_target_own,Wanted level:
+building_info_shelter_target_excluded,"Wanted level: excluded from the WM"
+building_info_shelter_target_tooltip,"Water to keep in this shelter. When it drops below, at the inventory the WM orders to fill the jars needed. Changing the value gives this shelter its own instead of the general rule; 0 = the WM never fills it. The tick on the bar marks the level."
+building_info_shelter_target_reset,Back to the WM general rule
+warehouse_rule_water_tooltip,"Water to keep in every Water shelter. When a shelter drops below this level, the inventory starts an order that fills the jars needed (a travois is required). 0 = rule off."
+drawer_order_water_row,{building}: fill {quantity} jars
+pending_stock_water_blocked,Shelter not available or no jar to fill
 building_teaching_stump,Teaching stump
 build_bar_teaching_stump_tooltip,"Teaching stump: built where a tree has been cut down, the stump becomes the elder's seat"
 building_category_cultural,Cultural
@@ -1560,6 +1621,8 @@ domestic_animal_male,male
 domestic_animal_female,female
 notification_domestic_arrival_dog,"Some wolves no longer leave: they now live in the village. New dogs: {count}."
 notification_domestic_left_dog,"The village cannot support all the dogs: {count} have left."
+notification_domestic_stray_dog,A stray dog has joined the village.
+notification_domestic_guard_died_dog,A dog died defending the village from the wolves.
 notification_domestic_starved_dog,"The village is starving: a dog has died too."
 discovery_first_domesticated_wolf_title,A wolf that no longer runs
 discovery_first_domesticated_wolf_p1,"For a long time a wolf pack kept coming back to scavenge in the waste pit. Each time it came a little closer, each time it fled a little later."
@@ -1595,11 +1658,22 @@ domestication_tab_animals,Animals
 domestication_tab_plants,Plants
 domestication_from,from: {species}
 domestication_state_domesticated,Domesticated
-domestication_state_in_progress,In progress
 domestication_state_locked,Requires the idea «{idea}»
 domestication_animals_locked_notice,"Study «{idea}» to start domesticating other animal species besides the wolf."
 domestication_plants_locked_notice,Study «{idea}» to start domesticating plants.
 domestication_plants_empty,No plant species known yet.
+domestication_pack_aggression,Pack's average aggression
+domestication_pack_hint,"Every quiet visit calms it and brings points; attacks don't, and hunting it makes it nervous."
+domestication_pack_none,No pack nearby
+domestication_state_in_progress,Domestication in progress
+domestication_wild_group,Wild {species}
+domestication_wild_group_dog,Wild wolf pack
+domestication_will_become,It will become: {species}
+domestication_done,"From: {species}, domesticated in year {year}"
+domestication_done_no_year,From: {species}
+domestication_done_dog,Domesticated from the wolf in year {year}
+domestication_done_no_year_dog,Domesticated from the wolf
+domestication_pack_count,{count} animals
 rite_council_of_elders_name,Council of elders
 task_council_of_elders_name,Council of elders
 political_rite_reject_not_center,Only when the Council circle is the village center
@@ -1623,6 +1697,12 @@ build_bar_star_circle_description,"Large stones in a ring, where the sky is watc
 discovery_tribal_organization_sacred_circle_title,The Sacred council circle
 discovery_tribal_organization_sacred_circle_p1,"The Star circle can now be upgraded into a Sacred council circle: select it and press «Upgrade». It needs stones for the elders' seats."
 discovery_tribal_organization_sacred_circle_p2,"The Sacred council circle hosts councils and can become the village center. If you have no Star circle yet, build it first: it is among the religious buildings."
+idea_pottery,Pottery
+idea_pottery_summary,Allows digging clay and building the potter's hut.
+idea_pottery_description,"The earth under the hearth, hardened by fire, never turns back to mud. Shaped and fired clay becomes a vessel that lasts."
+discovery_pottery_clay_title,The clay of the banks
+discovery_pottery_clay_p1,"Clay is found in patches along rivers, streams and lakes. It is dug with a pick, like stone, and a deposit eventually runs out."
+discovery_pottery_clay_p2,"Brought to the village, it becomes bowls and jars in the potter's hut."
 building_upgrade_additive_line,"By adding the listed materials, {building} becomes {target}: nothing is torn down, nothing goes back to the ground."
 rite_star_vigil_name,Star vigil
 task_star_vigil_name,Star vigil
@@ -1647,6 +1727,7 @@ danger_predator,Predator
 wound_bite,bite
 illness_wound_infection,infection
 notification_wild_animal_driven_off,"{species}: driven off by {names}"
+wild_animal_driven_off_dogs,the dogs ({count})
 notification_wild_first_visit_wolf,"Wolves are prowling around the village."
 notification_wild_first_quiet_pit_wolf,"The wolves rummaged through the Pit and left without causing harm."
 notification_wild_calmer_wolf,"The wolves seem less wary: they are getting used to us."
@@ -1673,7 +1754,7 @@ help_hunt_products_intro,"When a hunter butchers prey, or a fisher catches a fis
 help_hunt_products_needs_title,"1. Stock manager hunts: minimums first"
 help_hunt_products_needs_intro,"Hunts the stock manager orders on its own (with Warehouse Management active: idea discovered and job board on) first bring meat and hides where they are needed right now:"
 help_hunt_products_needs_without_manager,"Orders already open: smoking orders at the Smokehouse waiting for meat, and drawer ""Produce"" orders waiting for meat or hides (these get them at the storehouse, where the order picks them up)."
-help_hunt_products_needs_with_manager,"The levels you set in the Stock drawer: cooked meat missing at the Campfire, dried meat and hides at the Drying Rack, the reserve of raw meat and hides at the storehouse. Every level below its minimum is a need."
+help_hunt_products_needs_with_manager,"The levels you set in the Stock drawer: cooked meat missing at the Campfire, dried meat and hides at the Drying Rack, hides and other hunt products with a minimum at the storehouse. Every level below its minimum is a need. Raw meat has no minimum of its own: the hunt brings what the minimums of meat products need."
 help_hunt_products_needs_split,"If several places need the same resource, what arrives is split in proportion to how much each one is missing. Whatever is left goes where the rule ""Destination of meat and hides not needed for minimums"" in the Stock drawer says."
 help_hunt_products_destination_title,"2. Hunts you order: the chosen destination"
 help_hunt_products_destination_intro,"Hunts and fishing trips you order ignore minimums and open orders: everything goes to the chosen destination, chosen separately for meat (Campfire, Drying Rack, Smokehouse or Storehouse) and for hides (Drying Rack, Smokehouse or Storehouse):"
@@ -1687,6 +1768,25 @@ help_hunt_products_rule_fish,"Fish behaves exactly like meat: same needs and sam
 help_hunt_products_rule_no_room,"If the destination has no room, the product goes to the nearest storehouse that accepts it."
 help_hunt_products_example_title,"Example"
 help_hunt_products_example,"The button says: meat to the Drying Rack, and the Smokehouse has an order waiting for 2 meat. A hunter you sent brings 5 meat: all 5 go to the Drying Rack. If instead the stock manager ordered the hunt, 2 go to the Smokehouse for the order and the other 3 where the Stock drawer rule says."
+help_stock_supply_menu_link,"Stock manager: what it supplies on its own"
+help_stock_supply_title,"Stock manager: what it supplies on its own"
+help_stock_supply_intro,"With Warehouse Management active, the stock manager looks at the minimums you set in the Stock drawer and orders the work to bring them back up. There is just one rule: each minimum only supplies its own resource, never what is needed to make it. If a product needs other materials, those must have a minimum of their own too."
+help_stock_supply_sources_title,"How each resource is supplied"
+help_stock_supply_sources_intro,"For each resource below its minimum, the manager picks the work based on how it is obtained:"
+help_stock_supply_source_zone,"Gathering, cutting and quarrying (berries, fibers, wood, stone, clay...): orders in the work areas."
+help_stock_supply_source_hunt,"Animal products (hides, sinew, bones) and fish: hunting and fishing trips."
+help_stock_supply_source_produce,"Products made at a workstation (ropes, tools, bags, cooked food...): ""Produce"" orders at the workstation, only with materials already on hand."
+help_stock_supply_source_dry,"Products that make themselves at the Drying Rack (dried meat, dried hide): carrying the raw ingredient from the storehouse to the Drying Rack."
+help_stock_supply_ingredients_title,"Ingredients are not supplied on their own"
+help_stock_supply_ingredients,"A ""Produce"" order or a trip to the Drying Rack only uses what is already in storage. If something is missing, the manager sends no one to get it: the order stays stuck with ""Missing: ..."" and a notice appears in the bell. To get the chain going, set a minimum on the ingredient too: the manager then supplies it with its own work, and the stuck order resumes as soon as it arrives."
+help_stock_supply_meat_title,"The exception: raw meat and raw fish"
+help_stock_supply_meat,"Raw meat and raw fish have no minimum of their own, because a stockpile would rot. The manager supplies as much as the products that use them need: for each product with a minimum (dried meat, cooked meat, smoked fish...) it counts how much is missing, minus what is already being processed or on its way, and adds the ingredient still missing from orders already open at workstations. If that total is more than the meat on hand, it orders a hunt (or a fishing trip)."
+help_stock_supply_rules_title,"Good to know"
+help_stock_supply_rule_inventory,"The manager only orders new work when someone does the Inventory: without an Inventory the minimums stand still."
+help_stock_supply_rule_workstation,"A product's minimum only counts if you have the workstation to make it, finished and working. Without it, the minimum stays saved but is switched off."
+help_stock_supply_rule_bell,"A ""Missing"" notice in the bell almost always means an ingredient without a minimum."
+help_stock_supply_example_title,"Example"
+help_stock_supply_example,"You always want 2 Dried hide bags. Each bag needs Dried hide, Fiber rope and Sinew. With a minimum on the bag alone, and nothing in storage, the order stays stuck on ""Missing: ..."". Set a minimum on Dried hide, Fiber rope and Sinew as well: ropes get produced (and their fibers must in turn be gathered, with a minimum on Plant fiber), sinew gets hunted. Dried hide, though, is made at the Drying Rack from Hide: without a minimum on Hide the manager writes ""Missing: Hide"" and does not hunt. With every minimum in place, each link fills up on its own and the bag gets made."
 carried_resource_tooltip_cooked_fish,Cooked fish
 carried_resource_tooltip_dried_fish,Dried fish
 carried_resource_tooltip_smoked_fish,Smoked fish
@@ -1725,3 +1825,10 @@ warehouse_raw_derived_tooltip,"Procured automatically: the amount needed is set 
 warehouse_rule_excess_fish,Destination of fish not needed by minimums
 warehouse_rule_excess_fish_tooltip,"Warehouse fishing: fish first goes where minimums are short (dried fish to the drying rack, cooked fish to the campfire, smokehouse orders), split proportionally. What is left goes here; whatever finds no room goes to storage."
 warehouse_rule_excess_fish_button_tooltip,Fish not needed by minimums: {name}
+drawer_transport_button,Transport
+drawer_transport_button_tooltip,"Transport order from one building to another: choose the source, the resource and the destination; whoever is free takes it."
+drawer_transport_banner_source,🚚 Transport: click the source building (Esc to cancel)
+drawer_transport_banner_target,🚚 Transport: click the destination building (Esc to cancel)
+drawer_transport_reject_not_needed,Transport not ordered: {building} has no room for {resource}.
+drawer_order_player_transport_row,Transport {quantity} {resource} · {source} → {target}
+drawer_order_player_transport_blocked,Nothing to take at the source or no room at the destination

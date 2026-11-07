@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="TaskStepDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://d3sri3tos2u4f" path="res://gameplay/scripts/tasks/task_step_definition.gd" id="1_step_take_jar"]
+
+[resource]
+script = ExtResource("1_step_take_jar")
+action_type = 41
+context_keys = Array[String](["fill_jar_source_building"])
+step_description = "task_fill_jar_step_take"

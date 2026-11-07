@@ -65,9 +65,13 @@ static func assign_drawer_zone_job(ctx: GameContext, worker: HumanIndividual, jo
 		series[DrawerOrderService.SERIES_KEY] = order_id
 		FishCommandService.assign_fish(ctx, worker, pick["spot"], effects, area.id, series, true, not fetch_plan.is_empty())
 	elif order_type == DrawerOrderService.TYPE_QUARRY:
-		series = QuarryZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
+		var source := DrawerOrderService.order_source(order)
+		series = QuarryZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1), source)
 		series[DrawerOrderService.SERIES_KEY] = order_id
-		ExtractionCommandService.assign_quarry(ctx, worker, pick["rock"], area.id, series, true, effects)
+		if source == ExtractionSourceService.SOURCE_CLAY:
+			ExtractionCommandService.assign_dig_clay(ctx, worker, pick["rock"], effects, area.id, series, true)
+		else:
+			ExtractionCommandService.assign_quarry(ctx, worker, pick["rock"], area.id, series, true, effects)
 	else:
 		series = CutZoneService.make_series(area.id, maxi(int(order.get("count", 1)), 1))
 		series[DrawerOrderService.SERIES_KEY] = order_id

@@ -119,6 +119,9 @@ var domestication_points: Dictionary = {}
 # Specie domestiche che hanno già superato la soglia almeno una volta: la prima addomesticazione (e la sua scoperta)
 # scatta una sola volta, anche se i punti poi scendono e risalgono.
 var domesticated_species: Array[String] = []
+# Anno (GameData.year) della prima addomesticazione per specie (2026-11-07, richiesta utente: la carta del pannello lo
+# mostra). Salvataggi più vecchi: chiave assente, la carta non dice l'anno. Scritto solo da DomesticationPointsService.
+var domestication_years: Dictionary = {}
 # Specie selvatiche (AnimalRules.species_name) già viste nel mondo: un'addomesticazione con idea richiesta parte solo
 # per queste. Scritte solo da DomesticationEncounterService.
 var encountered_wild_species: Array[String] = []
@@ -129,6 +132,10 @@ var next_domestic_animal_id: int = 1
 # Giorni assoluti delle persone morte di fame non ancora "contate" da un animale morto, per specie domestica (cane, passo 6,
 # DomesticAnimalLifeService.on_person_starved). Salvati.
 var domestic_starvation_days: Dictionary = {}
+# Per specie domestica (2026-11-06): giorno assoluto del primo arrivo dal branco (assente = non ancora addomesticata) e giorno
+# in cui arriva da fuori il prossimo rimpiazzo (assente = nessuno in arrivo). Salvati.
+var domestic_first_arrival_day: Dictionary = {}
+var domestic_stray_due_day: Dictionary = {}
 
 func allocate_domestic_animal_id() -> int:
 	var id := next_domestic_animal_id
@@ -335,6 +342,9 @@ var stock_excess_fish_destination: String = "warehouse"
 # edificio (nome tipo -> combustibile in fuel_value) cambiato nel cassetto; un tipo assente usa BuildingRules.fuel_stock_min.
 # Salvati da GameSaveService ("stock_fuel_rule_enabled", "stock_fuel_min_by_type"); partita nuova: spenta, nessun cambio.
 var stock_fuel_rule_enabled: bool = false
+# Regola "Acqua per tettoia" (2026-11-07, richiesta utente — giare, passo 3: WaterShelterStockService): acqua voluta in ogni
+# Tettoia dell'acqua (0 = regola spenta). Salvata ("stock_water_per_shelter"); partita nuova e salvataggi vecchi: 0.
+var stock_water_per_shelter: int = 0
 var stock_fuel_min_by_type: Dictionary = {}
 # Regola "Rifornisci le Attrezzerie" (2026-10-18, richiesta utente — ToolkitStockService): accesa/spenta e pezzi voluti
 # per tipo di edificio e attrezzo (tipo -> {attrezzo -> int}). Salvati ("stock_toolkit_rule_enabled",

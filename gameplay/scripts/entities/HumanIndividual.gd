@@ -1545,6 +1545,9 @@ func get_carried_space() -> float:
 		if resource_rules == null:
 			continue
 		total += float(quantity) * resource_rules.space_per_unit
+		# Acqua nelle giare (2026-11-06, richiesta utente): una giara pesa il suo ingombro più un decimo dell'acqua che ha.
+		if resource_rules.water_capacity > 0.0:
+			total += float(ToolInstance.get_entry_water(carried_resources[resource_name])) * ToolInstance.WATER_SPACE_PER_UNIT
 	return total
 
 

@@ -108,6 +108,7 @@ static func ground_pile_haul(ctx: GameContext, carrier: HumanIndividual, pile_re
 			continue_cut_series(ctx, carrier, (emptied_series as Dictionary).duplicate(), effects)
 		return
 	if pile == null or pile.resources.is_empty() or cell == null or cell.macro_state == null:
+		temp_series_log(carrier, "consegna del mucchio %s non accodata: %s." % [str(pile_ref), "mucchio sparito o vuoto" if pile == null or pile.resources.is_empty() else "cella non caricata"])
 		return
 	if carrier.task_queue.size() >= TaskQueueService.MAX_QUEUE_SIZE:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
@@ -173,6 +174,7 @@ static func ground_pile_haul(ctx: GameContext, carrier: HumanIndividual, pile_re
 	var carrier_age_band := ctx.age_band_of(carrier)
 	for step in task.steps:
 		if step.disallowed_age_bands.has(carrier_age_band):
+			temp_series_log(carrier, "consegna del mucchio non accodata: età non ammessa.")
 			return
 	TaskQueueService.push_suspended_task(carrier, task)
 	effects.wire_task(GameEffects.WireKind.PICKUP, task, carrier)
@@ -187,6 +189,12 @@ static func ground_pile_haul(ctx: GameContext, carrier: HumanIndividual, pile_re
 
 
 # --- serie di zona ---
+
+# LOG TEMPORANEO (2026-11-07, prova serie di cava/taglio fermate dopo un'estrazione): da togliere dopo la prova.
+static func temp_series_log(worker: HumanIndividual, text: String) -> void:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
+		print("[SERIE TEMP] #%d %s: %s" % [worker.id if worker != null else -1, worker.name if worker != null else "?", text])
+
 
 # Coltello per la caccia di zona (la preda si macella subito): try_satisfy sulla lama; avviso se manca, salvo `silent`.
 static func prepare_hunt_knife(ctx: GameContext, hunter: HumanIndividual, silent: bool, effects: GameEffects) -> bool:
@@ -241,9 +249,12 @@ static func continue_quarry_series(ctx: GameContext, worker: HumanIndividual, se
 		DrawerOrderService.note_progress(game_data, series)
 		var drawer_order := DrawerOrderService.find(game_data, int(series[DrawerOrderService.SERIES_KEY]))
 		if drawer_order.is_empty() or not bool(drawer_order.get("taken", false)):
+			temp_series_log(worker, "cava: serie %s ferma, ordine #%d %s." % [str(series), int(series[DrawerOrderService.SERIES_KEY]), "sparito" if drawer_order.is_empty() else "non più preso"])
 			return
 	if worker == null or not ctx.individuals.has(worker) or QuarryZoneService.is_series_complete(series):
+		temp_series_log(worker, "cava: serie %s finita o pipottino assente." % str(series))
 		return
+	temp_series_log(worker, "cava: prosegue la serie %s." % str(series))
 	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
 	if area == null or not QuarryZoneService.list_quarry_work_areas(game_data).has(area):
 		series_stopped(game_data, worker, QuarryZoneService.SERIES_STOPPED_KEY, series, GameContext.tr_text("series_stop_zone_gone"), effects)
@@ -255,13 +266,15 @@ static func continue_quarry_series(ctx: GameContext, worker: HumanIndividual, se
 		return
 	var macro_state := ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
 	var reserved := QuarryZoneService.collect_reserved_rocks(ctx.individuals)
-	var available := QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved)
+	var source := QuarryZoneService.get_series_source(series)
+	var available := QuarryZoneService.list_available_rocks(area, macro_state, worker, reserved, false, source)
 	var last_rock := Vector2i(int(series.get("rock_x", -1)), int(series.get("rock_y", -1)))
-	var rock: Variant = last_rock if available.has(last_rock) else QuarryZoneService.choose_rock(area, macro_state, worker, reserved)
+	var rock: Variant = last_rock if available.has(last_rock) else QuarryZoneService.choose_rock(area, macro_state, worker, reserved, source)
 	if rock == null:
-		series_stopped(game_data, worker, QuarryZoneService.SERIES_STOPPED_KEY, series, GameContext.tr_text("series_stop_no_rock"), effects)
+		var stop_key := "series_stop_no_clay" if source == ExtractionSourceService.SOURCE_CLAY else "series_stop_no_rock"
+		series_stopped(game_data, worker, QuarryZoneService.SERIES_STOPPED_KEY, series, GameContext.tr_text(stop_key), effects)
 		return
-	var task := TaskBuilderService.build_quarry_task(worker, area.macro_coords, rock, area.id, series)
+	var task := TaskBuilderService.build_quarry_task(worker, area.macro_coords, rock, area.id, series, source)
 	if task == null:
 		return
 	TaskQueueService.push_suspended_task(worker, task)
@@ -278,9 +291,12 @@ static func continue_cut_series(ctx: GameContext, worker: HumanIndividual, serie
 		DrawerOrderService.note_progress(game_data, series)
 		var drawer_order := DrawerOrderService.find(game_data, int(series[DrawerOrderService.SERIES_KEY]))
 		if drawer_order.is_empty() or not bool(drawer_order.get("taken", false)):
+			temp_series_log(worker, "taglio: serie %s ferma, ordine #%d %s." % [str(series), int(series[DrawerOrderService.SERIES_KEY]), "sparito" if drawer_order.is_empty() else "non più preso"])
 			return
 	if worker == null or not ctx.individuals.has(worker) or CutZoneService.is_series_complete(series):
+		temp_series_log(worker, "taglio: serie %s finita o pipottino assente." % str(series))
 		return
+	temp_series_log(worker, "taglio: prosegue la serie %s." % str(series))
 	if CutZoneService.is_cell_series(series):
 		continue_cut_cell_series(ctx, worker, series, effects)
 		return
@@ -393,6 +409,7 @@ static func _fish_series_stopped(worker: HumanIndividual, series: Dictionary, re
 static func series_stopped(
 	game_data: GameData, worker: HumanIndividual, stopped_key: String, series: Dictionary, reason: String, effects: GameEffects
 ) -> void:
+	temp_series_log(worker, "serie interrotta (%s): %s — %s." % [stopped_key, reason, str(series)])
 	DrawerOrderService.note_progress(game_data, series)
 	CommandFeedback.reject(worker, HumanIndividualActionService.series_stopped_message(worker, stopped_key, series, reason), effects)
 

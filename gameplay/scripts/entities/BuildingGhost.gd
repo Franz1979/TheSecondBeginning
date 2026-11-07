@@ -203,9 +203,24 @@ func set_footprint_preview(offset: Vector2, rect_px: Vector2, door_px: Vector2) 
 	queue_redraw()
 
 
+# Angolo del guado di pietre sotto il mouse (2026-11-04, StreamMicrocellService.ford_angle), scritto da
+# GameScene._sync_footprint_ghost a ogni fotogramma; ridisegno solo quando cambia.
+var _stream_crossing_angle: float = 0.0
+
+
+func set_stream_crossing_angle(angle: float) -> void:
+	if is_equal_approx(angle, _stream_crossing_angle):
+		return
+	_stream_crossing_angle = angle
+	queue_redraw()
+
+
 # Palizzata e cancello (2026-10-25, richiesta utente — servivano due R per ribaltarli): salta le direzioni che sul pezzo
 # corrente si disegnano uguali a quella attuale (sui pezzi dritti ne restano due, sugli angoli tutte e quattro).
 func rotate_clockwise() -> void:
+	# Guado di pietre (2026-11-04, richiesta utente): si orienta da solo sul ruscello, la R non ha effetto.
+	if building_type_name == PlaceholderBuildingShapes.STONE_FORD_TYPE:
+		return
 	var next: int = (rotation_dir + 1) % 4
 	if LinearShapes.has_side(building_type_name):
 		var current := LinearShapes.side_signature(building_type_name, _linear_mask, PalisadeShape.side_vector(rotation_dir))
@@ -320,6 +335,9 @@ func _draw_shape() -> void:
 		# Il cancello si mostra sempre aperto, così si vede da che parte si aprono le ante.
 		LinearShapes.draw(self, building_type_name, _linear_offset, _linear_mask, not is_buildable, COLOR.a, 1.0, _linear_clip, true, outward, true)
 		return
+	if building_type_name == PlaceholderBuildingShapes.STONE_FORD_TYPE:
+		PlaceholderBuildingShapes.draw(self, building_type_name, Vector2.ZERO, not is_buildable, 1.0, GameTypes.Direction.SOUTH, _stream_crossing_angle)
+		return
 	if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 		PlaceholderBuildingShapes.draw(self, building_type_name, Vector2.ZERO, not is_buildable, 1.0, rotation_dir)
 		return
@@ -330,6 +348,10 @@ func _draw_shape() -> void:
 	# Capanna del guaritore (2026-10-25): lo stesso disegno della mappa, semitrasparente.
 	if building_type_name == HealerHutShape.TYPE:
 		HealerHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
+		return
+	# Capanna del vasellaio (2026-11-03): lo stesso disegno della mappa, semitrasparente.
+	if building_type_name == PotterHutShape.TYPE:
+		PotterHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
 		return
 	# Essiccatoio (2026-10-31): lo stesso disegno della mappa, semitrasparente.
 	if building_type_name == DryingRackShape.TYPE:
@@ -346,6 +368,10 @@ func _draw_shape() -> void:
 	# Appoggio per travois (2026-10-23): la staccionata vuota.
 	if building_type_name == TravoisRackShape.TYPE:
 		TravoisRackShape.draw(self, _footprint_offset, rotation_dir, 0, not is_buildable, COLOR.a)
+		return
+	# Tettoia dell'acqua (2026-11-06): pali e tetto, senza giare.
+	if building_type_name == WaterShelterShape.TYPE:
+		WaterShelterShape.draw(self, _footprint_offset, rotation_dir, [], not is_buildable, COLOR.a)
 		return
 	# Cerchio del consiglio (2026-10-26): lo stesso disegno della mappa sul rettangolo, semitrasparente.
 	if building_type_name == CouncilCircleShape.TYPE or building_type_name == CouncilCircleShape.STAR_TYPE:

@@ -64,6 +64,8 @@ signal single_builder_changed(enabled: bool)
 # `deliver_to_warehouse` = la spunta "Porta al deposito" al momento dell'invio.
 signal produce_order_requested
 signal produce_orders_submitted(orders: Array[Dictionary], deliver_to_warehouse: bool)
+# Bottone "Trasporta" (2026-11-06): GameScene apre la scelta di partenza e destinazione sulla mappa (un secondo clic la chiude).
+signal transport_order_requested
 # Bottoni "Taglia" ed "Estrai" (2026-10-09, ordini del cassetto di zona — `kind` "cut" / "quarry"): GameScene risponde con
 # open_zone_order_overlay. Nello strato, "Scegli zona" = zone_pick_requested (scelta sulla mappa, poi set_order_zone);
 # "Invia in coda" = zone_order_submitted
@@ -197,6 +199,8 @@ var _gather_section: VBoxContainer = null
 var _gather_list: VBoxContainer = null
 var _gather_menu: PickupChoiceMenu = null
 var _gather_chosen: bool = false
+var _quarry_source_rows: ResourceChoiceRows = null
+var _quarry_count_tooltip: String = ""
 var _zone_available: Dictionary = {}  # tipo -> bool
 var _zone_unavailable_reason: Dictionary = {}  # tipo -> motivo
 var _cut_title_label: Label = null
@@ -286,6 +290,11 @@ func _build_new_task_section() -> void:
 	)
 	row.add_child(_produce_button)
 	_apply_produce_available()
+	# Settimo bottone "Trasporta" (2026-11-06): ordine da un edificio a un altro, scelti sulla mappa.
+	var transport_button := _build_command_button({"icon": "transport", "tooltip_key": "drawer_transport_button"})
+	transport_button.tooltip_text = TooltipText.wrap(tr("drawer_transport_button_tooltip"))
+	transport_button.pressed.connect(func() -> void: transport_order_requested.emit())
+	row.add_child(transport_button)
 
 
 # Stato del bottone "Taglia" / "Estrai" (2026-10-09, `kind` ZONE_KIND_*): acceso con almeno una zona del lavoro e un
@@ -1683,10 +1692,20 @@ func _build_cut_overlay(area: Control) -> void:
 		_gather_chosen = true
 		_refresh_cut_zone(_cut_zone_name)
 	)
+	# Cosa estrarre (solo "Estrai", con più di una fonte conosciuta). Cambiando risorsa la zona scelta si rifà: poteva non averla.
+	_quarry_source_rows = ResourceChoiceRows.new()
+	_quarry_source_rows.visible = false
+	_quarry_source_rows.selection_changed.connect(func(_id: String) -> void:
+		_cut_zone_id = -1
+		_cut_zone_name = ""
+		_refresh_cut_zone("")
+	)
+	_cut_box.add_child(_quarry_source_rows)
 	var count_row := HBoxContainer.new()
 	count_row.add_theme_constant_override("separation", 6)
 	var count_label := Label.new()
 	_cut_count_label = count_label
+	count_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	count_label.text = tr("cut_order_dialog_count")
 	count_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	count_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1800,6 +1819,11 @@ func open_zone_order_overlay(kind: String, title: String, count_label: String, m
 		_gather_menu.build(_gather_list, gather_resources, gather_default)
 		_gather_chosen = not _gather_menu.get_selected().is_empty()
 		_compact_gather_rows(_gather_list)
+	_quarry_source_rows.visible = kind == ZONE_KIND_QUARRY and _quarry_source_rows.has_choices()
+	var count_tooltip := TooltipText.wrap(_quarry_count_tooltip) if kind == ZONE_KIND_QUARRY and _quarry_count_tooltip != "" else ""
+	_cut_count_label.tooltip_text = count_tooltip
+	_cut_count_spin.tooltip_text = count_tooltip
+	_cut_count_spin.get_line_edit().tooltip_text = count_tooltip
 	_cut_title_label.text = title
 	_cut_count_label.text = count_label
 	_cut_count_spin.step = maxi(count_step, 1)
@@ -1883,6 +1907,20 @@ func _compact_gather_rows(node: Node) -> void:
 
 # Cosa raccogliere scelto nello strato ({"kind", "category", "resource_name", ...} di PickupChoiceMenu.get_selected();
 # {} se nessuna voce).
+# Da chiamare prima di open_zone_order_overlay per "Estrai" (voci: ResourceChoiceRows; meno di due = nessuna scelta).
+func set_quarry_source_choices(choices: Array[Dictionary], selected_id: String, count_tooltip: String) -> void:
+	_quarry_source_rows.set_choices(choices, selected_id)
+	_compact_gather_rows(_quarry_source_rows)
+	_quarry_count_tooltip = count_tooltip
+
+
+# Risorsa scelta nello strato; la pietra se non c'era niente da scegliere.
+func get_quarry_source() -> String:
+	if _quarry_source_rows == null or not _quarry_source_rows.visible:
+		return ExtractionSourceService.SOURCE_ROCK
+	return _quarry_source_rows.get_selected()
+
+
 func get_gather_choice() -> Dictionary:
 	if _gather_menu == null or not _gather_chosen:
 		return {}

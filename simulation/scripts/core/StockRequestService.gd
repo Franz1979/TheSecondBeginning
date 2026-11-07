@@ -66,7 +66,7 @@ const DERIVED_LEVEL_RESOURCES: Array[String] = ["meat", FISH_GROUP_KEY]
 
 
 # Come si procura la risorsa: SOURCE_GATHER (raccoglibile a terra, lot_source), SOURCE_CUT (resa del taglio di un
-# sottotipo di albero o arbusto), SOURCE_QUARRY (resa dell'estrazione della roccia); "" = nessun ordine automatico
+# sottotipo di albero o arbusto), SOURCE_QUARRY (resa dell'estrazione: pietra, argilla); "" = nessun ordine automatico
 # (cibo, prodotti animali, semilavorati, risorse sconosciute). La raccolta vince sul taglio (stick: si raccoglie).
 static func source_kind_for(resource_name: String) -> String:
 	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
@@ -90,8 +90,7 @@ static func source_kind_for(resource_name: String) -> String:
 		return SOURCE_GATHER
 	if get_cut_yield_per_plant(resource_name) > 0:
 		return SOURCE_CUT
-	var rock_rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
-	if rock_rules != null and rock_rules.extraction_yield_resource_name == resource_name:
+	if ExtractionSourceService.source_for_resource(resource_name) != "":
 		return SOURCE_QUARRY
 	return ""
 
@@ -112,12 +111,9 @@ static func get_cut_yield_per_plant(resource_name: String) -> int:
 	return best
 
 
-# Pietre di un'estrazione piena (ResourceDensityRules di ROCK); 0 se la roccia non si estrae.
-static func get_quarry_yield_per_extraction() -> int:
-	var rock_rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
-	if rock_rules == null or rock_rules.extraction_yield_resource_name == "":
-		return 0
-	return maxi(rock_rules.extraction_units_per_extraction, 0)
+# Unità di `resource_name` in un'estrazione piena; 0 se non si estrae.
+static func get_quarry_yield_per_extraction(resource_name: String) -> int:
+	return ExtractionSourceService.units_per_extraction(ExtractionSourceService.source_for_resource(resource_name))
 
 
 # Unità di `resource_name` in un viaggio con `carry_capacity` di spazio nello zaino; almeno 1.

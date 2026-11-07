@@ -29,6 +29,7 @@ static func add_points(game_data: GameData, folk: Folk, species: String, amount:
 	print("[DOMESTICATION] %s %d/%d (%+d)" % [species, points, rules.domestication_points_required, amount])
 	if points >= rules.domestication_points_required and not game_data.domesticated_species.has(species):
 		game_data.domesticated_species.append(species)
+		game_data.domestication_years[species] = game_data.year
 		print("[DOMESTICATION] %s addomesticato per la prima volta" % species)
 		if effects != null:
 			effects.animal_domesticated(species)

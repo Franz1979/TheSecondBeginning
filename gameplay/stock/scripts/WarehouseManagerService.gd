@@ -238,6 +238,8 @@ static func request_stock(ctx: GameContext, now: float, effects: GameEffects) ->
 			extra["criterion_kind"] = PickUpAction.CriterionKind.NAME
 			extra["criterion_category"] = -1
 			extra["resource_name"] = String(resource_name)
+		elif source_kind == StockRequestService.SOURCE_QUARRY:
+			extra["source"] = ExtractionSourceService.source_for_resource(String(resource_name))
 		# Cibo raccolto (2026-10-11): se adesso non si trova in nessuna zona, nessun ordine né avviso (lo coprono i giorni di
 		# autonomia, _request_food_days); gli ordini non presi rimasti fermi si tolgono.
 		if is_food(String(resource_name)) and order_blocked_reason(ctx, source_kind, extra) != "":
@@ -261,6 +263,8 @@ static func request_stock(ctx: GameContext, now: float, effects: GameEffects) ->
 	if _request_fuel(ctx, now):
 		changed = true
 	if _request_toolkits(ctx, now):
+		changed = true
+	if _request_water(ctx, now, stock):
 		changed = true
 	if _cancel_stuck_auto_cook_orders(ctx, stock):
 		changed = true
@@ -584,7 +588,7 @@ static func _derived_meat_breakdown(ctx: GameContext, stock: Dictionary, ingredi
 	var free := int(_production_available(ctx, stock).get(meat, 0))
 	for order in game_data.drawer_orders:
 		if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and not order.has(FuelStockService.FUEL_TARGET_KEY) \
-				and String(order.get("resource", "")) == meat:
+				and not DrawerOrderService.is_player_transport_order(order) and String(order.get("resource", "")) == meat:
 			free -= int(order.get("quantity", 0))
 	free = maxi(free, 0)
 	_log_hunt("  %s per le lavorazioni: %d mancanti + in deposito già impegnata %d (in deposito %d − libera %d) = %d." % [
@@ -994,6 +998,35 @@ static func _request_fuel(ctx: GameContext, now: float) -> bool:
 	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
 
 
+# Regola "Acqua per tettoia" (2026-11-07, WaterShelterStockService): ordini "transport" con WATER_TARGET_KEY (la tettoia) e
+# "quantity" (giare da riempire); senza ORDER_KEY. Un ordine aperto per tettoia, aggiornato a ogni inventario. true se ha
+# cambiato ordini.
+static func _request_water(ctx: GameContext, now: float, stock: Dictionary) -> bool:
+	var game_data := ctx.game_data
+	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool: return order.has(WaterShelterStockService.WATER_TARGET_KEY))
+	var plan := WaterShelterStockService.plan_orders(ctx.world, game_data, open_orders, int(stock.get(WaterJarService.JAR, 0)))
+	game_data.stock_runtime.water_jars_missing = int(plan["missing"])
+	for order_id in plan["remove"]:
+		DrawerOrderService.remove(game_data, int(order_id))
+	for update in plan["update"]:
+		(update["order"] as Dictionary)["quantity"] = int(update["quantity"])
+	for need in plan["create"]:
+		var order_id := game_data.next_drawer_order_id
+		game_data.next_drawer_order_id += 1
+		var water_order := {
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT,
+			WaterShelterStockService.WATER_TARGET_KEY: int(need[WaterShelterStockService.WATER_TARGET_KEY]),
+			"resource": WaterJarService.JAR, "quantity": int(need["quantity"]), StockRequestService.CREATED_AT_KEY: now,
+		}
+		mark_inventory_pending(game_data, water_order)
+		game_data.drawer_orders.append(water_order)
+		if DebugLogging.ENABLED and DebugLogging.SHOW_JOB_BOARD_LOGS:
+			print("[JOB BOARD] Ordine del cassetto #%d: riempi %d giare per la tettoia #%d." % [
+				order_id, int(need["quantity"]), int(need[WaterShelterStockService.WATER_TARGET_KEY]),
+			])
+	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty() or not (plan["update"] as Array).is_empty()
+
+
 # Massimo per risorsa (2026-10-18, richiesta utente — Fossa dei rifiuti): per ogni risorsa con GameData.stock_max_levels,
 # eccedenza = scorta − massimo − in viaggio verso la Fossa (Task con STOCK_WASTE_KEY) − ordini aperti; se > 0, un ordine
 # "transport" (STOCK_WASTE_KEY = risorsa, senza ORDER_KEY: non è un livello minimo) magazzino → Fossa. Un solo ordine aperto
@@ -1209,6 +1242,23 @@ static func collect_toolkit_entries(game_data: GameData) -> Array[Dictionary]:
 	return entries
 
 
+# Avviso in campanella della regola "Acqua per tettoia" (2026-11-07): giare che mancano nei magazzini per tenere le tettoie
+# al loro livello (StockRuntimeState.water_jars_missing, ricalcolato a ogni Inventario).
+static func collect_water_entries(game_data: GameData) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var missing := game_data.stock_runtime.water_jars_missing
+	if missing <= 0:
+		return entries
+	var row_name := GameContext.tr_text("pending_stock_water")
+	var reason := GameContext.tr_text("pending_stock_water_missing").format({"count": missing})
+	var entry := PendingEntryService.make_entry("stock_water", "%s\n%s" % [row_name, reason], {
+		"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": 0.0, "name": row_name, "detail": reason,
+	}, false)
+	entry["disabled_reason"] = GameContext.tr_text("pending_stock_blocked_detail")
+	entries.append(entry)
+	return entries
+
+
 # Ingrediente della ricetta ad avanzamento automatico (il primo; oggi ce n'è uno solo per ricetta), "" se nessuno.
 static func dry_ingredient(recipe: String) -> String:
 	var rules := CaloricCalculator.get_caloric_source_rules(recipe)
@@ -1260,6 +1310,19 @@ static func dry_traveling(individuals: Array[HumanIndividual], recipe: String) -
 # - combustibile (FuelStockService.FUEL_TARGET_KEY, 2026-10-16): l'edificio dell'ordine; quale combustibile, quanti pezzi
 #   e da dove li sceglie FuelStockService.pick_fuel adesso, non alla creazione dell'ordine.
 static func transport_order_pick(world: World, worker: HumanIndividual, order: Dictionary) -> Dictionary:
+	# Ordine "Trasporta" del giocatore (2026-11-06): partenza e destinazione scelte da lui.
+	if DrawerOrderService.is_player_transport_order(order):
+		return DrawerOrderService.player_transport_pick(world, order)
+	# Acqua per tettoia (2026-11-07): la tettoia dell'ordine; sorgente del primo viaggio come il comando Riempi giare.
+	if order.has(WaterShelterStockService.WATER_TARGET_KEY):
+		var shelter := find_building(world, int(order[WaterShelterStockService.WATER_TARGET_KEY]))
+		var fillable := WaterJarService.fillable_count(shelter)
+		if fillable <= 0:
+			return {}
+		var jar_pick := WaterJarService.pick_source(world, worker, shelter)
+		if jar_pick.has("error"):
+			return {}
+		return {"target": shelter, "source": jar_pick["source"], "resource": WaterJarService.JAR, "quantity": mini(int(order.get("quantity", 1)), fillable)}
 	# Eccedenza da buttare (2026-10-18): magazzino più vicino che ha la risorsa → Fossa aperta con posto più vicina a lui.
 	if order.has(STOCK_WASTE_KEY):
 		var waste_resource := String(order[STOCK_WASTE_KEY])
@@ -1314,6 +1377,9 @@ static func transport_order_pick(world: World, worker: HumanIndividual, order: D
 # Transport Task di un ordine "transport" (deposito → destinazione, con la ripetizione dei viaggi fino alla quantità); null
 # se la destinazione non ha bisogno di niente adesso.
 static func transport_order_task(worker: HumanIndividual, order: Dictionary, pick: Dictionary) -> Task:
+	# Acqua per tettoia (2026-11-07): il compito del riempimento (un viaggio alla volta), null se nessuna riva.
+	if order.has(WaterShelterStockService.WATER_TARGET_KEY):
+		return WaterJarService.build_fill_task(worker, pick["source"], pick["target"], int(pick["quantity"]))
 	var resource_name := String(pick["resource"])
 	var quantity := int(pick["quantity"])
 	var target: Building = pick["target"]
@@ -1328,7 +1394,7 @@ static func transport_order_task(worker: HumanIndividual, order: Dictionary, pic
 		task.context[ToolkitStockService.TOOLKIT_TOOL_KEY] = String(order.get(ToolkitStockService.TOOLKIT_TOOL_KEY, ""))
 	elif task != null and order.has(STOCK_WASTE_KEY):
 		task.context[STOCK_WASTE_KEY] = String(order[STOCK_WASTE_KEY])
-	elif task != null:
+	elif task != null and not DrawerOrderService.is_player_transport_order(order):
 		task.context[STOCK_DRY_KEY] = String(order.get("recipe", ""))
 	return task
 
@@ -1453,7 +1519,7 @@ static func _food_days_free_meat_cut(game_data: GameData, available: Dictionary)
 		var kept := 0
 		for order in game_data.drawer_orders:
 			if String(order.get("type", "")) == DrawerOrderService.TYPE_TRANSPORT and not order.has(FuelStockService.FUEL_TARGET_KEY) \
-					and String(order.get("resource", "")) == meat:
+					and not DrawerOrderService.is_player_transport_order(order) and String(order.get("resource", "")) == meat:
 				kept += int(order.get("quantity", 0))
 		available[meat] = maxi(int(available.get(meat, 0)) - kept, 0)
 
@@ -1639,7 +1705,7 @@ static func _unit_yield(resource_name: String, source_kind: String, carry_capaci
 		StockRequestService.SOURCE_CUT:
 			return StockRequestService.get_cut_yield_per_plant(resource_name)
 		StockRequestService.SOURCE_QUARRY:
-			return StockRequestService.get_quarry_yield_per_extraction()
+			return StockRequestService.get_quarry_yield_per_extraction(resource_name)
 	return 0
 
 

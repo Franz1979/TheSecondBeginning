@@ -134,6 +134,12 @@ static func assign_produce(
 		# Lavoro assegnato (2026-10-09): esce dalla lista; se ci tornerà, l'attesa per l'assegnazione a mano riparte.
 		var job_keys: Array[String] = ["produce:%d:%s" % [building.id, order_key]]
 		CommandFeedback.forget_job_board_waits(ctx.game_data, job_keys, effects)
+		# Prodotto che non entra nel suo zaino (2026-11-06, richiesta utente — giare): come l'estrazione
+		# (ExtractionCommandService), il lavoro parte lo stesso con l'avviso; i pezzi restano nei Prodotti finiti
+		# finché li porta via chi può (OutputJobProvider).
+		if not silent and deliver_to_warehouse and not worker.can_carry_one_unit_when_empty(resource_name):
+			CommandFeedback.reject(worker, HumanIndividualActionService.no_room_message(worker, [resource_name]), effects)
+			worker.bind_panel_message_to_task(task)
 	JobWorkScanService.reconcile_production_units(ctx.individuals, building)
 	# Pulsanti ricetta spenti subito (edificio ora impegnato), senza aspettare il refresh giornaliero.
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)

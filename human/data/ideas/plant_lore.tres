@@ -10,3 +10,4 @@ summary = "idea_plant_lore_summary"
 description = "idea_plant_lore_description"
 thoughts_cost = 20
 era = "paleolithic"
+tree_order = 20

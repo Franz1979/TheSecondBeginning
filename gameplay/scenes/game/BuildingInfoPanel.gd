@@ -112,6 +112,8 @@ signal clear_rubble_requested(building: Building)
 signal empty_pit_requested(building: Building)
 signal cancel_empty_pit_requested(building: Building)
 signal waste_closed_toggle_requested(building: Building)
+# Tettoia dell'acqua (2026-11-07): livello d'acqua voluto della singola tettoia (-1 = regola generale, 0 = esclusa).
+signal water_target_changed(building: Building, level: int)
 # Cancello (2026-10-23): Apri/Chiudi.
 signal gate_toggle_requested(building: Building)
 # Sposta qui il centro del villaggio (2026-10-26, cerchio del consiglio): GameScene apre la conferma (irreversibile, nome).
@@ -396,6 +398,10 @@ var _waste_label: Label = null
 var _waste_bar_margin: MarginContainer = null
 var _waste_bar: ProgressBar = null
 var _waste_fill_style: StyleBoxFlat = null
+# Tettoia dell'acqua (2026-11-07): riga "Livello voluto" sotto la barra dell'acqua e tacchetta del livello sulla barra.
+var _shelter_target_row: HBoxContainer = null
+var _shelter_target_key: String = ""
+var _shelter_target_tick: ColorRect = null
 
 
 func _ready() -> void:
@@ -1398,10 +1404,31 @@ func _build_waste_rows() -> void:
 	_waste_bar_margin.add_child(_waste_bar)
 	add_child(_waste_bar_margin)
 	move_child(_waste_bar_margin, _waste_label.get_index() + 1)
+	_shelter_target_tick = ColorRect.new()
+	_shelter_target_tick.color = SHELTER_TARGET_TICK_COLOR
+	_shelter_target_tick.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_shelter_target_tick.anchor_top = 0.0
+	_shelter_target_tick.anchor_bottom = 1.0
+	_shelter_target_tick.offset_left = -1.0
+	_shelter_target_tick.offset_right = 1.0
+	_shelter_target_tick.visible = false
+	_waste_bar.add_child(_shelter_target_tick)
+	_shelter_target_row = HBoxContainer.new()
+	_shelter_target_row.add_theme_constant_override("separation", 4)
+	_shelter_target_row.visible = false
+	add_child(_shelter_target_row)
+	move_child(_shelter_target_row, _waste_bar_margin.get_index() + 1)
 
 
 # Riempimento della fossa completa (cantieri: nascosto). Tooltip con lo spazio prenotato dai trasporti in viaggio.
 func _refresh_waste(building: Building) -> void:
+	# Tettoia dell'acqua (2026-11-06, giare): stessa riga e stessa barra, con l'acqua delle sue giare.
+	if WaterJarService.is_shelter(building) and building.is_complete:
+		_refresh_shelter_water(building)
+		return
+	_shelter_target_row.visible = false
+	_shelter_target_tick.visible = false
+	_shelter_target_key = ""
 	var capacity: int = building.rules.waste_capacity if building.rules != null else 0
 	var show := building.is_complete and capacity > 0
 	_waste_label.visible = show
@@ -1421,6 +1448,83 @@ func _refresh_waste(building: Building) -> void:
 	_waste_bar.value = float(WasteDisposalService.get_pit_fill(building))
 	if _waste_fill_style != null:
 		_waste_fill_style.bg_color = WASTE_FILL_COLOR_FULL if building.get_waste_free_space() <= 0 else WASTE_FILL_COLOR
+
+
+# Acqua della Tettoia dell'acqua (2026-11-06): totale delle giare su quello che conterrebbero tutti i posti pieni.
+func _refresh_shelter_water(building: Building) -> void:
+	_waste_label.visible = true
+	_waste_bar_margin.visible = true
+	var waters := WaterJarService.shelter_jar_waters(building)
+	var water := WaterJarService.shelter_water(building)
+	var capacity := WaterJarService.shelter_capacity(building) * WaterJarService.jar_water_capacity()
+	_waste_label.text = tr("building_info_shelter_water").format({
+		"water": water, "capacity": capacity, "jars": waters.size(), "places": WaterJarService.shelter_capacity(building),
+	})
+	_waste_label.tooltip_text = ""
+	_waste_bar.tooltip_text = ""
+	_waste_bar.max_value = float(maxi(capacity, 1))
+	_waste_bar.value = float(water)
+	if _waste_fill_style != null:
+		_waste_fill_style.bg_color = SHELTER_WATER_COLOR
+	_refresh_shelter_target(building, capacity)
+
+
+const SHELTER_WATER_COLOR := Color(0.30, 0.55, 0.80, 1.0)
+const SHELTER_TARGET_TICK_COLOR := Color(1.0, 0.85, 0.35, 1.0)
+
+
+# Livello voluto della tettoia (2026-11-07, richiesta utente — solo col WM sbloccato): "Livello voluto: regola generale"
+# con il campo compatto del WM che mostra il valore generale; toccandolo la tettoia prende un valore suo (0 = esclusa dal
+# WM) e compare ↺ per tornare alla regola generale. Sulla barra, la tacchetta del livello. La riga si ricostruisce solo
+# quando cambia qualcosa, per non perdere il fuoco del campo.
+func _refresh_shelter_target(building: Building, capacity: int) -> void:
+	var available := WaterShelterStockService.is_rule_available()
+	var general := GameSettings.active_game_data.stock_water_per_shelter if GameSettings.active_game_data != null else 0
+	var override := building.water_target_override
+	var target := WaterShelterStockService.target_for(building, GameSettings.active_game_data)
+	_shelter_target_row.visible = available
+	_shelter_target_tick.visible = available and target > 0 and capacity > 0
+	if _shelter_target_tick.visible:
+		var fraction := clampf(float(target) / float(capacity), 0.0, 1.0)
+		_shelter_target_tick.anchor_left = fraction
+		_shelter_target_tick.anchor_right = fraction
+	if not available:
+		_shelter_target_key = ""
+		return
+	var key := "%d:%d:%d:%d" % [building.id, override, general, capacity]
+	if key == _shelter_target_key:
+		return
+	_shelter_target_key = key
+	for child in _shelter_target_row.get_children():
+		_shelter_target_row.remove_child(child)
+		child.queue_free()
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", 10)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	if override < 0:
+		label.text = tr("building_info_shelter_target_general")
+	elif override == 0:
+		label.text = tr("building_info_shelter_target_excluded")
+	else:
+		label.text = tr("building_info_shelter_target_own")
+	label.tooltip_text = TooltipText.wrap(tr("building_info_shelter_target_tooltip"))
+	_shelter_target_row.add_child(label)
+	var shown := override if override >= 0 else general
+	_shelter_target_row.add_child(WarehousePanel.build_level_field(shown, func(level: int) -> void:
+		water_target_changed.emit(building, level)
+	, "building_info_shelter_target_tooltip", 100, 0, true, WarehousePanel.LEVEL_NONE_TEXT, capacity))
+	if override >= 0:
+		var reset := Button.new()
+		reset.text = "↺"
+		reset.flat = true
+		reset.focus_mode = Control.FOCUS_NONE
+		reset.add_theme_font_size_override("font_size", 12)
+		reset.tooltip_text = TooltipText.wrap(tr("building_info_shelter_target_reset"))
+		reset.pressed.connect(func() -> void: water_target_changed.emit(building, -1))
+		_shelter_target_row.add_child(reset)
 
 
 # Materiali per la riparazione (2026-10-10, Building.repair_materials): didascalia e chip delle risorse presenti con la
@@ -2410,9 +2514,16 @@ func _refresh_storage_grid(building: Building) -> void:
 	# cambia forma né si allarga.
 	var effective_slots: int = BuildingStorageService.get_slot_count(building)
 	var breakdown: Array = BuildingStorageService.get_slot_breakdown(building)
+	# Tettoia dell'acqua (2026-11-06): una giara per posto, ognuna con la sua acqua (stesso ordine della griglia).
+	var shelter_waters: Array[int] = []
+	if WaterJarService.is_shelter(building):
+		shelter_waters = WaterJarService.shelter_jar_waters(building)
 	for i in range(maxi(effective_slots, mini(breakdown.size(), slot_count))):
 		var slot_data: Dictionary = breakdown[i] if i < breakdown.size() else {}
 		var slot := _build_storage_slot(slot_data)
+		if i < shelter_waters.size() and String(slot_data.get("resource_name", "")) == WaterJarService.JAR:
+			var slot_water: Array[int] = [shelter_waters[i]]
+			WaterJarService.decorate_jar_box(slot, slot_water)
 		if i >= effective_slots:
 			_mark_slot_over_capacity(slot)
 		storage_grid.add_child(slot)

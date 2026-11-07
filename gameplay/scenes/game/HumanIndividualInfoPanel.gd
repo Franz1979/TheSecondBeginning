@@ -920,6 +920,9 @@ func _update_carried_resource_boxes(carried_resources: Dictionary) -> void:
 			var carried_name := String(carried_names[slot])
 			var carried_entry: Dictionary = carried_resources[carried_name]
 			_update_carried_resource_box(slot, carried_name, int(carried_entry.get("quantity", 0)))
+			# Giare (2026-11-06): piena o vuota, con l'acqua di ciascuna nel tooltip.
+			if carried_name == WaterJarService.JAR:
+				WaterJarService.decorate_jar_box(_carried_boxes[slot], WaterJarService.entry_jar_waters(carried_entry))
 			_carried_slot_names.append(carried_name)
 			# Manina solo sugli attrezzi: sono gli unici riquadri che un click sposta nella cintura.
 			_carried_boxes[slot].mouse_default_cursor_shape = (
