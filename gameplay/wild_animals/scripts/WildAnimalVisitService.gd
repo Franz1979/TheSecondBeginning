@@ -137,7 +137,7 @@ static func tick_day(ctx: GameContext) -> void:
 			continue
 		var faces := visit_dice_faces(ctx.world, ctx.individuals.size(), ctx.game_data, group)
 		if faces > 0.0 and randf() * faces < 1.0:
-			print("[WILD ANIMAL VISITS] %s: visita spontanea, giorno %d (dado da %.1f facce, %d abitanti)" % [
+			DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: visita spontanea, giorno %d (dado da %.1f facce, %d abitanti)" % [
 				group.species, today, faces, ctx.individuals.size()])
 			start_visit(ctx.game_data, ctx.world, group)
 
@@ -175,7 +175,7 @@ static func _note_visit_ended(visit: WildAnimalVisit, game_data: GameData) -> vo
 		wait_days = WAIT_DAYS_AFTER_DRIVEN_OFF
 	group.last_visit_end_day = game_data.get_absolute_day()
 	group.next_visit_day = group.last_visit_end_day + wait_days
-	print("[WILD ANIMAL VISITS] %s: visita finita il giorno %d, prossimo tiro dal giorno %d" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: visita finita il giorno %d, prossimo tiro dal giorno %d" % [
 		group.species, group.last_visit_end_day, group.next_visit_day])
 
 
@@ -183,12 +183,12 @@ static func start_visit(game_data: GameData, world: World, group: WildAnimalGrou
 	if group == null or group.animals.is_empty():
 		return null
 	if find_visit(game_data, group.id) != null:
-		print("[WILD ANIMAL VISITS] %s: già in visita" % group.species)
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: già in visita" % group.species)
 		return null
 	# Basta un magazzino (2026-10-28, richiesta utente): la visita si orienta su di lui, non sul centro del villaggio.
 	var center := WildAnimalGroupService.find_anchor_storage(world)
 	if center == null:
-		print("[WILD ANIMAL VISITS] %s: nessun magazzino" % group.species)
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: nessun magazzino" % group.species)
 		return null
 	var visit := WildAnimalVisit.new()
 	visit.group_id = group.id
@@ -205,7 +205,7 @@ static func start_visit(game_data: GameData, world: World, group: WildAnimalGrou
 	visit.look_point = visit.target_point
 	var entry: Variant = _pick_quiet_border_point(world, visit.macro_coords, visit.target_point, target_building.id)
 	if entry == null:
-		print("[WILD ANIMAL VISITS] %s: nessun ingresso dal bordo di %s" % [group.species, visit.macro_coords])
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: nessun ingresso dal bordo di %s" % [group.species, visit.macro_coords])
 		return null
 	visit.entry_point = entry
 	visit.position = entry
@@ -229,7 +229,7 @@ static func start_visit(game_data: GameData, world: World, group: WildAnimalGrou
 	# Ripari e zone del fuoco servono già in arrivo (tiro d'attacco anche per strada).
 	_collect_reaction_sources(visit, world, wild_rules)
 	game_data.wild_animal_visits.append(visit)
-	print("[WILD ANIMAL VISITS] %s: arrivano %d animali %s, meta %s" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: arrivano %d animali %s, meta %s" % [
 		group.species, visit.animal_ids.size(), visit.animal_ids,
 		"fossa #%d" % pit.id if pit != null else "magazzino #%d" % center.id])
 	return visit
@@ -261,7 +261,7 @@ static func _pick_quiet_border_point(world: World, macro_coords: Vector2i, point
 			best = candidate
 			best_count = count
 	if best != null:
-		print("[WILD ANIMAL VISITS]   bordo scelto %s: %d edifici sul tragitto (migliore di %d punti a caso)" % [
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS]   bordo scelto %s: %d edifici sul tragitto (migliore di %d punti a caso)" % [
 			best, best_count, tried])
 	return best
 
@@ -354,7 +354,7 @@ static func _restore_after_load(visit: WildAnimalVisit, game_data: GameData, wor
 		return false
 	visit.blocked_test = PathfindingService.blocked_test_for(visit.macro_coords)
 	_collect_reaction_sources(visit, world, _wild_rules(visit.species))
-	print("[WILD ANIMAL VISITS] %s: visita ripresa dal salvataggio (fase %d, %d animali)" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: visita ripresa dal salvataggio (fase %d, %d animali)" % [
 		visit.species, visit.phase, visit.animal_ids.size()])
 	return true
 
@@ -427,7 +427,7 @@ static func advance(visit: WildAnimalVisit, world: World, game_delta: float, gam
 				if visit.body_ids[i] == 0:
 					continue
 				var body := AnimalGroupRenderer.find_live_individual(visit.body_ids[i])
-				print("[WILD ANIMAL VISITS] %s #%d rimasto indietro in %s, esce lo stesso." % [
+				DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s #%d rimasto indietro in %s, esce lo stesso." % [
 					visit.species, visit.animal_ids[i] if i < visit.animal_ids.size() else -1,
 					Vector2i(body.position.floor()) if body != null else Vector2i(-1, -1)])
 				AnimalGroupRenderer.remove_live_individual(visit.body_ids[i])
@@ -448,9 +448,9 @@ static func _debug_log_leaving(visit: WildAnimalVisit, game_data: GameData) -> v
 			continue
 		var body := AnimalGroupRenderer.find_live_individual(body_id)
 		if body == null:
-			print("[WILD ANIMAL VISITS] uscita g.%d: corpo %d NON TROVATO" % [today, body_id])
+			DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] uscita g.%d: corpo %d NON TROVATO" % [today, body_id])
 			continue
-		print("[WILD ANIMAL VISITS] uscita g.%d: corpo %d in %s, meta %s (dist %.1f), behavior %d, arrived %s, path %s, salute %.2f, macro %d, micro %d" % [
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] uscita g.%d: corpo %d in %s, meta %s (dist %.1f), behavior %d, arrived %s, path %s, salute %.2f, macro %d, micro %d" % [
 			today, body_id, Vector2i(body.position.floor()), Vector2i(body.behavior_point.floor()), body.position.distance_to(body.behavior_point),
 			body.behavior, body.behavior_arrived, body.behavior_path_planned, body.health, body.macro_phase, body.micro_phase])
 
@@ -498,7 +498,7 @@ static func on_member_shot_at(game_data: GameData, group_id: int) -> void:
 			animal.aggression = minf(animal.aggression + AGGRESSION_RISE_WHEN_HUNTED, AGGRESSION_MAX)
 	group.hunted_count += 1
 	group.last_hunted_day = game_data.get_absolute_day()
-	print("[WILD ANIMAL VISITS] %s: gli hanno tirato, se ne vanno di corsa; aggressività +%d a %d presenti (caccia in tutto: %d)" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: gli hanno tirato, se ne vanno di corsa; aggressività +%d a %d presenti (caccia in tutto: %d)" % [
 		visit.species, roundi(AGGRESSION_RISE_WHEN_HUNTED), visit.animal_ids.size(), group.hunted_count])
 
 
@@ -510,7 +510,7 @@ static func on_member_killed(game_data: GameData, body: AnimalVisualGroup, indiv
 		var animal := group.find_animal(body.wild_animal_id)
 		if animal != null:
 			group.animals.erase(animal)
-		print("[WILD ANIMAL VISITS] %s: ucciso #%d, nel branco ne restano %d" % [group.species, body.wild_animal_id, group.animals.size()])
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: ucciso #%d, nel branco ne restano %d" % [group.species, body.wild_animal_id, group.animals.size()])
 		_notify_group(effects, "notification_wild_killed_%s" % group.species, {"count": group.animals.size()})
 	var visit := find_visit(game_data, body.wild_group_id)
 	if visit != null:
@@ -617,7 +617,7 @@ static func _note_redirected_target(visit: WildAnimalVisit) -> void:
 	for body_id in visit.body_ids:
 		var body := AnimalGroupRenderer.find_live_individual(body_id)
 		if body != null and body.behavior_path_planned and body.behavior_point != visit.target_point:
-			print("[WILD ANIMAL VISITS] %s: meta %s irraggiungibile, si fermano a %s" % [
+			DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: meta %s irraggiungibile, si fermano a %s" % [
 				visit.species, Vector2i(visit.target_point.floor()), Vector2i(body.behavior_point.floor())])
 			visit.target_point = body.behavior_point
 			visit.target_redirected = true
@@ -644,9 +644,9 @@ static func _on_target_reached(visit: WildAnimalVisit) -> bool:
 	if visit.phase == WildAnimalVisit.Phase.ARRIVING:
 		visit.phase = WildAnimalVisit.Phase.STAYING
 		visit.stay_remaining = randf_range(STAY_DAYS_MIN, STAY_DAYS_MAX)
-		print("[WILD ANIMAL VISITS] %s: arrivati, restano %.2f giorni" % [visit.species, visit.stay_remaining])
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: arrivati, restano %.2f giorni" % [visit.species, visit.stay_remaining])
 		return false
-	print("[WILD ANIMAL VISITS] %s: usciti dalla macrocella %s" % [visit.species, visit.macro_coords])
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: usciti dalla macrocella %s" % [visit.species, visit.macro_coords])
 	return true
 
 
@@ -685,7 +685,7 @@ static func _collect_reaction_sources(visit: WildAnimalVisit, world: World, wild
 	visit.building_reaction_count = visit.reaction_points.size()
 	visit.building_safe_count = visit.safe_points.size()
 	if not visit.reaction_points.is_empty():
-		print("[WILD ANIMAL VISITS] %s: %d edifici a cui reagire" % [visit.species, visit.reaction_points.size()])
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: %d edifici a cui reagire" % [visit.species, visit.reaction_points.size()])
 
 
 # Tiro d'attacco della visita (vedi il commento delle costanti d'attacco): fatto una volta sola, appena il branco nota
@@ -739,11 +739,11 @@ static func _find_attack_target(visit: WildAnimalVisit, individuals: Array[Human
 			target_chance = chance
 			target_defense = defense
 	var roll := randf()
-	print("[WILD ANIMAL VISITS] %s: tiro d'attacco (%s) su #%d %s — aggressività media %d, %d lupi contro difesa %.1f -> %d%%, uscito %d -> %s" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: tiro d'attacco (%s) su #%d %s — aggressività media %d, %d lupi contro difesa %.1f -> %d%%, uscito %d -> %s" % [
 		visit.species, "in arrivo" if visit.phase == WildAnimalVisit.Phase.ARRIVING else "in sosta", target.id, target.name,
 		roundi(visit.attack_aggression), visit.attack_wolves, target_defense, roundi(target_chance * 100.0),
 		roundi(roll * 100.0), "caricano" if roll < target_chance else "non attaccano in questa visita"])
-	print("[WILD ANIMAL VISITS]   bersaglio: il notato con la probabilità più alta (il debole più isolato; difesa = lui e chi gli sta entro %.0f microcelle fuori dagli edifici); notati caricabili: %s" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS]   bersaglio: il notato con la probabilità più alta (il debole più isolato; difesa = lui e chi gli sta entro %.0f microcelle fuori dagli edifici); notati caricabili: %s" % [
 		defense_radius, ", ".join(candidate_texts)])
 	return target if roll < target_chance else null
 
@@ -817,7 +817,7 @@ static func _start_charge(visit: WildAnimalVisit, target: HumanIndividual, world
 	visit.attacked = true
 	var nearest_wolf := _nearest_wolf(visit, target.position)
 	visit.charge_start_distance = nearest_wolf.distance_to(target.position)
-	print("[WILD ANIMAL VISITS] %s: caricano #%d %s da %.1f microcelle" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: caricano #%d %s da %.1f microcelle" % [
 		visit.species, target.id, target.name, visit.charge_start_distance])
 	DangerFleeService.start_flee(target, DANGER_PROFILE, visit.group_id, nearest_wolf, visit.safe_points, world, game_data)
 	var wolf_positions: Array[Vector2] = []
@@ -875,7 +875,7 @@ static func _charge(visit: WildAnimalVisit, wild_rules: AnimalRules, delta: floa
 	elif wild_rules == null:
 		end_reason = "regole della specie mancanti"
 	if end_reason != "":
-		print("[WILD ANIMAL VISITS] %s: carica finita (%s) dopo %.1f ore, %d morsi, distanza minima %.1f microcelle" % [
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: carica finita (%s) dopo %.1f ore, %d morsi, distanza minima %.1f microcelle" % [
 			visit.species, end_reason, _charge_hours(visit), visit.bites, visit.charge_min_distance])
 		_end_charge(visit, individuals, game_data, world, folk, effects)
 		return
@@ -929,7 +929,7 @@ static func _on_attack_contact(visit: WildAnimalVisit, target: HumanIndividual, 
 		effects: GameEffects) -> void:
 	visit.bites += 1
 	var bitten := HealthConditionService.add_condition(target, BITE_CONDITION_ID, game_data)
-	print("[WILD ANIMAL VISITS] %s: morso %d a #%d %s dopo %.1f ore di carica (partiti da %.1f microcelle)%s, salute %d" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: morso %d a #%d %s dopo %.1f ore di carica (partiti da %.1f microcelle)%s, salute %d" % [
 		visit.species, visit.bites, target.id, target.name, _charge_hours(visit), visit.charge_start_distance,
 		"" if bitten else " (ferita rifiutata)", int(target.current_health)])
 	if effects == null:
@@ -997,7 +997,7 @@ static func _on_driven_off(visit: WildAnimalVisit, individuals: Array[HumanIndiv
 	if group != null:
 		group.driven_off_count += 1
 		group.last_driven_off_day = game_data.get_absolute_day()
-	print("[WILD ANIMAL VISITS] %s: scacciati da %s dopo %.1f ore, %d morsi (cacciate in tutto: %d)" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: scacciati da %s dopo %.1f ore, %d morsi (cacciate in tutto: %d)" % [
 		visit.species, ", ".join(names), _charge_hours(visit), visit.bites, group.driven_off_count if group != null else 0])
 	if effects == null:
 		return
@@ -1039,7 +1039,7 @@ static func _end_charge(visit: WildAnimalVisit, individuals: Array[HumanIndividu
 static func apply_visit_outcome(visit: WildAnimalVisit, game_data: GameData, world: World, folk: Folk,
 		effects: GameEffects) -> void:
 	if visit.attacked:
-		print("[WILD ANIMAL VISITS] %s: visita con attacco, niente punti né calma" % visit.species)
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: visita con attacco, niente punti né calma" % visit.species)
 		return
 	var group := _find_group(game_data, visit.group_id)
 	if group == null:
@@ -1068,7 +1068,7 @@ static func apply_visit_outcome(visit: WildAnimalVisit, game_data: GameData, wor
 		group.pending_domestication_points -= whole_points
 		if whole_points > 0:
 			DomesticationPointsService.add_points(game_data, folk, domestic_species, whole_points, effects)
-	print("[WILD ANIMAL VISITS] %s: visita tranquilla (%s), %d presenti, %.2f punti (adulto %.1f, giovane metà) -> +%d punti %s (resto %.2f), aggressività -%d a %s" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: visita tranquilla (%s), %d presenti, %.2f punti (adulto %.1f, giovane metà) -> +%d punti %s (resto %.2f), aggressività -%d a %s" % [
 		group.species,
 		"alla fossa" if at_pit else "al magazzino",
 		present.size(), visit_points, per_animal, whole_points, domestic_species, group.pending_domestication_points,
@@ -1116,7 +1116,7 @@ static func _release_domestic_arrivals(visit: WildAnimalVisit, group: WildAnimal
 			arrived += 1
 	if arrived > 0:
 		game_data.domestic_first_arrival_day[rules.species_name] = today
-		print("[WILD ANIMAL VISITS] %s: %d lasciano il branco per diventare %s, nel branco ne restano %d" % [
+		DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: %d lasciano il branco per diventare %s, nel branco ne restano %d" % [
 			group.species, arrived, rules.species_name, group.animals.size()])
 		_notify_group(effects, "notification_domestic_arrival_%s" % rules.species_name, {"count": arrived})
 
@@ -1190,7 +1190,7 @@ static func _start_leaving(visit: WildAnimalVisit, world: World) -> void:
 		else _pick_quiet_border_point(world, visit.macro_coords, visit.position, visit.pit_building_id)
 	visit.target_point = exit if exit != null else visit.entry_point
 	visit.phase = WildAnimalVisit.Phase.LEAVING
-	print("[WILD ANIMAL VISITS] %s: se ne vanno" % visit.species)
+	DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] %s: se ne vanno" % visit.species)
 
 
 # DEBUG — riga per il tooltip della DebugBar: giorni dall'ultima visita, attesa e dado delle visite spontanee.

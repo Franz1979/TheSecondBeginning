@@ -12240,7 +12240,7 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 
 		cell.macro_state = macro_world.get_cell_state_at(cell.macro_cell.x, cell.macro_cell.y)
 		if cell.macro_state != null:
-			# Disposizione ancora valida se da quando è stata fatta non è passato un controllo stagionale: niente generatore.
+			# Disposizione ancora valida se da quando è stata fatta nessun controllo stagionale ha cambiato la vegetazione: niente generatore.
 			cell.needs_vegetation_layout_rebuild = cell.macro_state.vegetation_layout_checkpoint != game_data.vegetation_checkpoint_count
 			if cell.macro_cell.water_type == GameTypes.WaterType.RIVER:
 				var thickness_ratio: float = float(cell.macro_state.get_river_space()) / float(MacroCellState.TOTAL_SPACE)
@@ -13146,7 +13146,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 	_step_start_usec = Time.get_ticks_usec()
 	if not skip_vegetation:
 		# Taglio per lotto: la presenza l'ha già aggiornata VegetationCutPatchService.
-		if (reason == "movimento/nebbia" or cut_patched) and not regenerated_now and cell.vegetation_presence_sent:
+		if (reason == "movimento/nebbia" or reason == "cambio stagione" or cut_patched) and not regenerated_now and cell.vegetation_presence_sent:
 			skipped.append("fog_vegetation_presence")
 		else:
 			cell.fog_of_war_renderer.set_vegetation_presence(vegetation_positions)
@@ -14312,7 +14312,7 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 		&"wolf_visit":
 			var wolf_group := WildAnimalGroupService.find_group(game_data, "wolf")
 			if wolf_group == null:
-				print("[WILD ANIMAL VISITS] nessun branco di lupi (serve un magazzino)")
+				DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] nessun branco di lupi (serve un magazzino)")
 			else:
 				WildAnimalVisitService.start_visit(game_data, macro_world, wolf_group)
 			_refresh_debug_domestication()
@@ -17758,36 +17758,46 @@ func _on_day_advanced(checkpoint_ran: bool) -> void:
 		return
 
 	if checkpoint_ran or flora_daily_updates_enabled:
-		if checkpoint_ran:
-			# Crescita/mortalità/encroachment (WorldTimeService) hanno appena potuto cambiare
-			# dedicated_space per QUALUNQUE macrocella del mondo, comprese le celle vive SOLO per
-			# via di un edificio lontano (mai realmente rinfrescate qui sotto, vedi _player_
-			# proximity_live_cells) — la loro cache posizioni va comunque invalidata ORA, anche se
-			# il ricalcolo vero verrà rimandato a quando il player ci arriverà davvero (trigger da
-			# movimento in _process, o riattivazione al cambio di centro). Senza questo, quelle
-			# celle mostrerebbero per sempre lo stato di dedicated_space del momento in cui sono
-			# diventate vive, anche dopo anni di crescita/mortalità mai riflessi.
-			for cell in live_cells.values():
-				cell.needs_full_vegetation_recompute = true
-				cell.needs_vegetation_layout_rebuild = true
-
 		# Proposta "prossimità" (2026-08-30, idea utente): il ridisegno vero (posizioni+MultiMesh,
 		# costoso) si limita alle celle che il player sta EFFETTIVAMENTE esplorando — il centro più
 		# gli eventuali vicini attivi di prossimità (max ~4, vedi _active_neighbor_coords_set) — mai
 		# le celle vive SOLO per un edificio lontano: nessuno le sta guardando, quindi un ridisegno
-		# lì sarebbe invisibile e sprecato. I dati restano comunque corretti (vedi sopra): quando il
+		# lì sarebbe invisibile e sprecato. I dati restano comunque corretti (vedi sotto): quando il
 		# player ci arriverà davvero, needs_full_vegetation_recompute è ancora true e quella cella
 		# verrà rinfrescata con lo stato vero e aggiornato, non quello del momento dell'attivazione.
 		var proximity_cells := _player_proximity_live_cells()
+		var season_started: bool = SeasonCalculator.is_season_start_day(game_data.current_day)
+		for cell in live_cells.values():
+			if cell.macro_state == null:
+				continue
+			if cell.macro_state.vegetation_layout_checkpoint != game_data.vegetation_checkpoint_count:
+				# Crescita/mortalità/migrazione/eventi (WorldTimeService) hanno cambiato dedicated_space: disposizione da
+				# rigenerare, anche per le celle vive SOLO per un edificio lontano (il ricalcolo vero aspetta che il player
+				# ci arrivi: trigger da movimento in _process, o riattivazione al cambio di centro).
+				cell.needs_full_vegetation_recompute = true
+				cell.needs_vegetation_layout_rebuild = true
+			elif season_started and not proximity_cells.has(cell):
+				# Piante uguali ma stagione nuova: all'arrivo del player la cella lontana rilegge la disposizione tenuta
+				# (niente generatore) e rifà colori e disponibilità.
+				cell.needs_full_vegetation_recompute = true
 		var vegetation_refresh_start_usec := Time.get_ticks_usec()
 		for cell in proximity_cells:
+			# Ridisegno completo se le piante sono cambiate, leggero se è cambiata solo la stagione (stesse piante e stessa
+			# memoria della geometria; colori, frutti e disponibilità nuovi). Altrimenti (fine inverno, fine estate) nulla.
+			var refresh_reason := ""
+			if cell.needs_full_vegetation_recompute:
+				refresh_reason = "giorno nuovo"
+			elif season_started:
+				refresh_reason = "cambio stagione"
+			else:
+				continue
 			# PRIMA del rebuild: se ResourceMortalityService ha appena registrato una perdita
 			# aggregata quest'anno (last_mortality_loss, scritto solo al rollover d'anno — vedi
 			# WorldTimeService._run_seasonal_checkpoints), la traduce in marker "morto" specifici
 			# così il rebuild qui sotto li disegna subito, nella stessa chiamata. No-op silenzioso
 			# nei giorni ordinari (il campo è vuoto).
 			_apply_natural_mortality_visuals(cell)
-			_refresh_resource_visuals(cell, "giorno nuovo")
+			_refresh_resource_visuals(cell, refresh_reason)
 		# Filtrato ai soli dintorni di un checkpoint stagionale, stesso motivo/helper dei due
 		# blocchi sopra/sotto (richiesta utente, 2026-09-05).
 		if DebugLogging.SHOW_DAILY_TIMING_LOGS and SeasonCalculator.is_near_seasonal_checkpoint(game_data.current_day):

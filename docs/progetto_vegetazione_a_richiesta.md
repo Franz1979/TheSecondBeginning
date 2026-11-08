@@ -1,6 +1,6 @@
 # Vegetazione a richiesta: togliere il motore annuale e calcolare le piante per lotto
 
-> Proposta del 2026-11-03, aggiornata il 2026-11-08 con le decisioni dell'utente. Non ancora iniziata: lavoro in una sessione nuova, a edifici finiti nell'altra sessione.
+> Proposta del 2026-11-03, aggiornata il 2026-11-08 con le decisioni dell'utente. Passo 1 fatto il 2026-11-08 (manca una prova, vedi sotto); dal passo 2 in poi non ancora iniziato.
 > **Da ricontrollare prima di partire:** il codice cambia in fretta. Il vecchio sistema della fauna è stato tolto il 2026-11-03: verificare `grow_fauna` e `_run_growth_checkpoint`. I numeri di riga e di occorrenze possono essere cambiati.
 
 ## Contesto
@@ -60,11 +60,27 @@ Una funzione del tipo `vegetation_at(macro_state, lot, anno)` risponde usando so
 
 ## Passi
 
-### 1. Ridisegno solo se la vegetazione è cambiata (piccolo, vale in ogni caso)
-- `vegetation_checkpoint_count` in `WorldTimeService._run_seasonal_checkpoints` sale solo dove la vegetazione cambia davvero; `GameScene._on_day_advanced` segna il rebuild solo in quei giorni.
-- Da verificare: reset dei lotti e capacità si aggiornano anche senza rebuild.
-- Atteso: giorno 272 da 374 ms a circa 30; giorno 273 da 546 a circa 200.
-- **Fermarsi qui e decidere se proseguire.**
+### 1. Ridisegno solo se la vegetazione è cambiata (fatto il 2026-11-08)
+- `vegetation_checkpoint_count` sale solo per migrazione, crescita, mortalità e quando scatta un evento naturale. `GameScene._on_day_advanced` confronta il contatore con `vegetation_layout_checkpoint` di ogni cella.
+- Tre casi: piante cambiate = ridisegno completo; solo inizio stagione (`SeasonCalculator.is_season_start_day`) = ridisegno leggero, motivo "cambio stagione", stesse piante e stessa memoria della geometria; altrimenti nessun ridisegno.
+- Una cella viva lontana, a inizio stagione senza piante cambiate, si segna da ricalcolare senza generatore: all'arrivo del player rilegge la disposizione tenuta.
+- Reset dei lotti e capacità: si aggiornano anche senza rigenerare. A vista è tutto a posto, bacche comprese.
+- Misurato in una partita all'anno 14, una sola cella viva, nessun evento in quei giorni (`[DAY TOTAL]`):
+
+| Giorno | Prima | Adesso | Note |
+|---|---|---|---|
+| 90 | non misurato | 80 ms | ridisegno 0 ms; il resto è probabilmente l'arrivo dei lupi (non misurato) |
+| 91 | non misurato | 669 ms | ridisegno completo 425 ms |
+| 181 | non misurato | 1097 ms | ridisegno completo 890 ms |
+| 182 | non misurato | 226 ms | ridisegno leggero 78 ms |
+| 272 | 374 ms | **29 ms** | atteso circa 30 |
+| 273 | 546 ms | **253 ms** | atteso circa 200; ridisegno leggero 104 ms, scorte di frutta 127 ms |
+| 0 | non misurato | 784 ms | ridisegno completo 582 ms |
+
+- Limite: nei giorni 182 e 273 con un evento ovunque sulla mappa il ridisegno resta completo (circa un anno su due al 182, uno su cinque al 273). Non si restringe perché gli eventi spariranno (decisione 2).
+- **Prova ancora da fare, prima del passo 4:** in una partita, tagliare qualche pianta, uscire dalla cella tra il giorno 183 e il 272, restare fuori al 273, tornare tra il 274 e il 364. Devono esserci le stesse piante, i ceppi al loro posto e i colori d'autunno. Se la riga `[LOD TIMING]` del 273 mostra una mareggiata, ripetere l'anno dopo. Per la riga serve `SHOW_DAILY_TIMING_LOGS` acceso. Non provato neanche il caso della cella lontana viva per un edificio.
+- Da correggere se si riaccende il log: `[GAMESCENE DAY]` scrive "celle vive rinfrescate" anche quando non ne ridisegna nessuna.
+- Il controllo headless di GameScene non mostra errori di script, ma Godot si chiude in crash (codice 139), causa non cercata; nella partita provata non si è visto.
 
 ### 2. Prova della funzione, senza toccare il gioco
 Nuovo servizio con la funzione, più una misura temporanea: tempo per lotto e per 100x100 lotti. Confronto a occhio con l'aspetto di oggi: macchie, densità per bioma, prato che diventa arbusteto e bosco nei decenni. **Se costo o aspetto non reggono, ci si ferma con poco lavoro perso.**

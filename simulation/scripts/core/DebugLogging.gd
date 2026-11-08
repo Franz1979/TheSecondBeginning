@@ -23,6 +23,13 @@ const SHOW_FAUNA_DIAGNOSTICS_LOGS := false
 # (utile quando si torna a misurare i checkpoint stagionali).
 const SHOW_DAILY_TIMING_LOGS := false
 
+# Righe [WILD ANIMAL VISITS]/[WILD ANIMAL GROUPS] (visite e gruppi degli animali selvatici): passano da log_wild_animal.
+const SHOW_WILD_ANIMAL_LOGS := false
+
+static func log_wild_animal(text: String) -> void:
+	if SHOW_WILD_ANIMAL_LOGS:
+		print(text)
+
 # Filtro dedicato per [VEG REFRESH TIMING]/[VEG REFRESH TRIGGER]/[DEBUG INDIVIDUI]/[DEBUG SPAZIO]/
 # [DEBUG CELLE VIVE] (GameScene._refresh_resource_visuals e affini) — diagnostica per la Proposta 2
 # (evitare di costruire MultiMesh per individui coperti da FoW pieno): serve a capire se il costo

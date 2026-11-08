@@ -112,6 +112,7 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 
 	if day == SeasonCalculator.get_season_day_range(GameTypes.Season.SPRING).x:
 		_run_timed("migration_checkpoint", func(): _run_migration_checkpoint(world, game_data))
+		game_data.vegetation_checkpoint_count += 1
 		checkpoint_ran = true
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.WINTER):
@@ -120,6 +121,7 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SPRING):
 		_run_timed("growth_checkpoint", func(): _run_growth_checkpoint(world, game_data))
+		game_data.vegetation_checkpoint_count += 1
 		checkpoint_ran = true
 		season_ended = GameTypes.Season.SPRING
 
@@ -154,11 +156,9 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 		# tornato a 0 quando year_rolled_over è true, vedi GameData.advance_day) — year_rolled_over
 		# stesso è il segnale di fine autunno, stesso schema già usato da _run_mortality_checkpoint.
 		_run_timed("mortality_checkpoint", func(): _run_mortality_checkpoint(world))
+		game_data.vegetation_checkpoint_count += 1
 		checkpoint_ran = true
 		season_ended = GameTypes.Season.AUTUMN
-
-	if checkpoint_ran:
-		game_data.vegetation_checkpoint_count += 1
 
 	# Riepilogo diagnostico compatto (Richiesta: "aggiungi timing... senza toccare i log
 	# esistenti se possibile") — una sola riga a fine checkpoint, indipendente dal log per-passo
@@ -383,7 +383,10 @@ func _run_migration_checkpoint(world: World, game_data: GameData) -> void:
 
 func _run_natural_events_checkpoint(world: World, game_data: GameData, season: GameTypes.Season) -> void:
 	var natural_event_service := NaturalEventService.new()
-	natural_event_service.trigger_events(world, game_data, season)
+	# Un evento distrugge vegetazione: il contatore sale solo se ne è scattato almeno uno (vegetation_checkpoint_count
+	# segna solo i controlli che cambiano davvero la vegetazione, vedi migrazione, crescita e mortalità sopra).
+	if not natural_event_service.trigger_events(world, game_data, season).is_empty():
+		game_data.vegetation_checkpoint_count += 1
 
 
 func _run_secondary_resource_stock_checkpoint(

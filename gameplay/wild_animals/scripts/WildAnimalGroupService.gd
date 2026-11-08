@@ -60,7 +60,7 @@ static func ensure_groups(ctx: GameContext) -> void:
 			var group := create_group(ctx.game_data, species)
 			if group != null:
 				ctx.game_data.wild_animal_groups.append(group)
-				print("[WILD ANIMAL GROUPS] gruppo #%d di %s creato: %d animali" % [group.id, species, group.animals.size()])
+				DebugLogging.log_wild_animal("[WILD ANIMAL GROUPS] gruppo #%d di %s creato: %d animali" % [group.id, species, group.animals.size()])
 
 
 # Il magazzino che attira gli animali (2026-10-28, richiesta utente: basta un magazzino): il primo edificio di deposito
@@ -157,7 +157,7 @@ static func _remove_dead_of_old_age(group: WildAnimalGroup, wild_rules: AnimalRu
 	for animal in group.animals.duplicate():
 		if animal.get_age_years(today) >= max_age:
 			group.animals.erase(animal)
-			print("[WILD ANIMAL GROUPS] %s #%d morto di vecchiaia (%d anni)" % [
+			DebugLogging.log_wild_animal("[WILD ANIMAL GROUPS] %s #%d morto di vecchiaia (%d anni)" % [
 				group.species, animal.id, animal.get_age_years(today)])
 
 
@@ -169,11 +169,11 @@ static func _is_waiting_for_new_pack(group: WildAnimalGroup, today: int) -> bool
 		return false
 	if group.new_pack_day < 0:
 		group.new_pack_day = today + GameData.DAYS_PER_YEAR
-		print("[WILD ANIMAL GROUPS] %s: gruppo sterminato, nuovo gruppo il giorno %d" % [group.species, group.new_pack_day])
+		DebugLogging.log_wild_animal("[WILD ANIMAL GROUPS] %s: gruppo sterminato, nuovo gruppo il giorno %d" % [group.species, group.new_pack_day])
 	if today < group.new_pack_day:
 		return true
 	group.new_pack_day = -1
-	print("[WILD ANIMAL GROUPS] %s: arriva un nuovo gruppo, giorno %d" % [group.species, today])
+	DebugLogging.log_wild_animal("[WILD ANIMAL GROUPS] %s: arriva un nuovo gruppo, giorno %d" % [group.species, today])
 	return false
 
 
@@ -201,7 +201,7 @@ static func _ensure_breeding_pair(group: WildAnimalGroup, rules: WildAnimalGroup
 			group.breeding_male_id = replacement.id
 		else:
 			group.breeding_female_id = replacement.id
-		print("[WILD ANIMAL GROUPS] %s #%d nuovo riproduttore %s (%s)" % [
+		DebugLogging.log_wild_animal("[WILD ANIMAL GROUPS] %s #%d nuovo riproduttore %s (%s)" % [
 			group.species, replacement.id, "maschio" if is_male else "femmina", origin])
 
 
@@ -223,7 +223,7 @@ static func _give_birth_if_season(game_data: GameData, group: WildAnimalGroup, r
 	for i in range(litter):
 		var cub := _add_animal(group, randf() < 0.5, today, 0, aggression)
 		cub.birth_day = today
-	print("[WILD ANIMAL GROUPS] %s: nati %d cuccioli (aggressività %d), gruppo di %d" % [
+	DebugLogging.log_wild_animal("[WILD ANIMAL GROUPS] %s: nati %d cuccioli (aggressività %d), gruppo di %d" % [
 		group.species, litter, roundi(aggression), group.animals.size()])
 
 
@@ -245,7 +245,7 @@ static func _disperse_over_cap(group: WildAnimalGroup, rules: WildAnimalGroupRul
 		if leaving == null:
 			return
 		group.animals.erase(leaving)
-		print("[WILD ANIMAL GROUPS] %s #%d lascia il gruppo (%d anni), restano %d" % [
+		DebugLogging.log_wild_animal("[WILD ANIMAL GROUPS] %s #%d lascia il gruppo (%d anni), restano %d" % [
 			group.species, leaving.id, leaving.get_age_years(today), group.animals.size()])
 
 

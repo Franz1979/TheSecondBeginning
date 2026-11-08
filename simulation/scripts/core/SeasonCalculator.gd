@@ -69,6 +69,13 @@ static func is_seasonal_checkpoint_day(day: int) -> bool:
 		or day == get_season_end_day(GameTypes.Season.SUMMER)
 	)
 
+# True se `day` è il primo giorno di una stagione: cambiano colori, scorte di frutta e raccolti, anche se le piante no.
+static func is_season_start_day(day: int) -> bool:
+	for season in SEASON_ORDER:
+		if day == get_season_day_range(season).x:
+			return true
+	return false
+
 # True se `day`, il giorno precedente o il giorno successivo (con wraparound sul confine
 # dell'anno) è un giorno di checkpoint stagionale — usata per limitare i log diagnostici
 # giornalieri (troppo rumorosi ad ogni giorno) ai soli dintorni di un cambio stagione: 3 giorni
