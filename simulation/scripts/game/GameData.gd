@@ -422,6 +422,8 @@ var stock_snapshot: Dictionary = {}
 # Parte "in uso" della foto (2026-10-24): attrezzi del villaggio fuori dai depositi (in prestito, travois trainati), già
 # compresi in stock_snapshot; il cassetto la mostra nel tooltip della quantità (WarehouseManagerService.in_use_stock).
 var stock_snapshot_in_use: Dictionary = {}
+# Carne e pesce crudi sulle postazioni nella foto (2026-11-08): NON compresi in stock_snapshot, solo da mostrare nel cassetto.
+var stock_snapshot_processing: Dictionary = {}
 var stock_snapshot_fill: Array = []
 var stock_snapshot_time: float = -1.0
 # Ordini creati dal cassetto "Assegnazione compiti" (2026-10-09, richiesta utente): lavori in coda senza destinatario,

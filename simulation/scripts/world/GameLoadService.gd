@@ -47,12 +47,12 @@ func _rename_resources_in(value: Variant) -> Variant:
 
 
 func load_game_from_json(file_path: String) -> LoadedGame:
+	# Un salvataggio appena chiesto può essere ancora in scrittura sul suo thread.
+	SaveFileWriter.wait_for_completion()
 	if not FileAccess.file_exists(file_path):
 		print("File salvataggio non trovato: ", file_path)
 		return null
-	var file := FileAccess.open(file_path, FileAccess.READ)
-	var json_text := file.get_as_text()
-	file.close()
+	var json_text := SaveFileWriter.read_text(file_path)
 	var data = JSON.parse_string(json_text)
 	if data == null:
 		print("Errore nella lettura del JSON: ", file_path)
@@ -368,6 +368,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	if raw_in_use is Dictionary:
 		for in_use_name in (raw_in_use as Dictionary).keys():
 			game_data.stock_snapshot_in_use[String(in_use_name)] = int(raw_in_use[in_use_name])
+	# Crudo sulle postazioni (2026-11-08): salvataggi precedenti = nessuno.
+	game_data.stock_snapshot_processing.clear()
+	var raw_processing = data["game"].get("stock_snapshot_processing", {})
+	if raw_processing is Dictionary:
+		for processing_name in (raw_processing as Dictionary).keys():
+			game_data.stock_snapshot_processing[String(processing_name)] = int(raw_processing[processing_name])
 	game_data.stock_snapshot_fill = []
 	for fill_value in data["game"].get("stock_snapshot_fill", []):
 		game_data.stock_snapshot_fill.append(float(fill_value))

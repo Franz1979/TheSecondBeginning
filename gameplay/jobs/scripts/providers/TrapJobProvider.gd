@@ -17,6 +17,12 @@ const JOB_EMPTY := "empty"
 # svuotata; chi lo prende passa da tutte quelle della zona con prede (le più vicine prima, finché la resa sta nello zaino)
 # e consegna una volta sola. Le trappole fuori zona (piazzate a mano) restano col lavoro di una sola (JOB_EMPTY).
 const JOB_ROUND := "round"
+const ROUND_ZONE_JOBS: Array[String] = ["hunt", "fish"]
+# Nome e descrizione del giro per lavoro di zona.
+const ROUND_TEXT_KEYS := {
+	"hunt": ["task_empty_trap_round_job_name", "task_empty_trap_round_job_tooltip"],
+	"fish": ["task_empty_fish_trap_round_job_name", "task_empty_fish_trap_round_job_tooltip"],
+}
 
 
 static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
@@ -52,35 +58,38 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 			})
 	var busy := TrapService.trap_ids_being_emptied(ctx.individuals)
 	for area in ctx.game_data.work_areas:
-		var round_job := {"job_type": JOB_ROUND, "area_id": area.id}
-		var round_assigned := not workers(ctx, round_job).is_empty()
-		var due := 0
-		var with_catch := 0
-		var first_lot := TrapService.NO_SITE
-		var round_macro := area.macro_coords
-		for trap in ctx.game_data.placed_traps:
-			if trap.work_area_id != area.id or trap.get_caught() <= 0 or busy.has(trap.id):
+		# Un giro per lavoro di zona (2026-11-08): reti con la caccia, nasse con la pesca.
+		for zone_job in ROUND_ZONE_JOBS:
+			var round_job := {"job_type": JOB_ROUND, "area_id": area.id, "zone_job": zone_job}
+			var round_assigned := not workers(ctx, round_job).is_empty()
+			var due := 0
+			var with_catch := 0
+			var first_lot := TrapService.NO_SITE
+			var round_macro := area.macro_coords
+			for trap in ctx.game_data.placed_traps:
+				if trap.work_area_id != area.id or trap.get_caught() <= 0 or busy.has(trap.id) or _zone_job_of(trap) != zone_job:
+					continue
+				with_catch += 1
+				if TrapService.needs_emptying(ctx.game_data, trap):
+					due += 1
+					if first_lot == TrapService.NO_SITE:
+						first_lot = trap.lot
+						round_macro = trap.macro_coords
+			if not round_assigned and due == 0:
 				continue
-			with_catch += 1
-			if TrapService.needs_emptying(ctx.game_data, trap):
-				due += 1
-				if first_lot == TrapService.NO_SITE:
-					first_lot = trap.lot
-					round_macro = trap.macro_coords
-		if not round_assigned and due == 0:
-			continue
-		var microcell := first_lot if first_lot != TrapService.NO_SITE else area.rect.get_center()
-		jobs.append({
-			"key": "trap:round:%d" % area.id, "kind": "trap",
-			"name": GameContext.tr_text("task_empty_trap_round_job_name").format({"area": area.name, "count": with_catch}),
-			"text": GameContext.tr_text("task_empty_trap_round_job_tooltip").format({"area": area.name, "count": with_catch}),
-			"log_name": "giro delle trappole in zona #%d" % area.id,
-			"icon": {"text": IconRegistry.get_command_icon("trap")}, "macro": round_macro, "microcell": microcell,
-			"reach_target": {"macro_x": round_macro.x, "macro_y": round_macro.y, "micro_x": microcell.x, "micro_y": microcell.y},
-			"entry_kind": "work_area", "id": area.id, "sort": 0.0,
-			"assigned": round_assigned, "hidden": false, "blocked_reason": "",
-			"area_id": area.id, "provider": provider, "job_type": JOB_ROUND,
-		})
+			var microcell := first_lot if first_lot != TrapService.NO_SITE else area.rect.get_center()
+			var text_keys: Array = ROUND_TEXT_KEYS[zone_job]
+			jobs.append({
+				"key": "trap:round:%d:%s" % [area.id, zone_job], "kind": "trap",
+				"name": GameContext.tr_text(text_keys[0]).format({"area": area.name, "count": with_catch}),
+				"text": GameContext.tr_text(text_keys[1]).format({"area": area.name, "count": with_catch}),
+				"log_name": "giro delle trappole (%s) in zona #%d" % [zone_job, area.id],
+				"icon": {"text": IconRegistry.get_command_icon("trap")}, "macro": round_macro, "microcell": microcell,
+				"reach_target": {"macro_x": round_macro.x, "macro_y": round_macro.y, "micro_x": microcell.x, "micro_y": microcell.y},
+				"entry_kind": "work_area", "id": area.id, "sort": 0.0,
+				"assigned": round_assigned, "hidden": false, "blocked_reason": "",
+				"area_id": area.id, "zone_job": zone_job, "provider": provider, "job_type": JOB_ROUND,
+			})
 	for trap in ctx.game_data.placed_traps:
 		if WorkAreaService.find_by_id(ctx.game_data, trap.work_area_id) != null:
 			continue
@@ -122,7 +131,7 @@ static func build_task(ctx: GameContext, worker: HumanIndividual, job: Dictionar
 	if String(job.get("job_type", JOB_PLACE)) == JOB_EMPTY:
 		return _build_empty_task(ctx, worker, job)
 	if String(job.get("job_type", JOB_PLACE)) == JOB_ROUND:
-		return build_round_task(ctx, worker, int(job.get("area_id", 0)))
+		return build_round_task(ctx, worker, int(job.get("area_id", 0)), String(job.get("zone_job", "hunt")))
 	var area := WorkAreaService.find_by_id(ctx.game_data, int(job.get("area_id", 0)))
 	var site: Vector2i = job.get("site", TrapService.NO_SITE)
 	if area == null or site == TrapService.NO_SITE:
@@ -157,7 +166,11 @@ static func build_place_task(ctx: GameContext, worker: HumanIndividual, trap_nam
 	}
 	if manual:
 		context[TrapService.CONTEXT_MANUAL] = true
-	return TaskFactory.build_task(definition, context)
+	var task := TaskFactory.build_task(definition, context)
+	var rules := TrapService.get_rules(trap_name)
+	if task != null and rules != null and rules.trap_quarry == TrapService.QUARRY_FISH:
+		task.task_name = TrapService.FISH_TASK_NAME
+	return task
 
 
 # Svuotamento: cammino fino alla trappola e EmptyTrapAction; destinazione delle prede nel context. null se la trappola
@@ -169,11 +182,11 @@ static func _build_empty_task(ctx: GameContext, worker: HumanIndividual, job: Di
 # Giro delle trappole della zona `area_id` (2026-11-07): tutte quelle con prede e non già nella Task di un altro, in ordine
 # di vicinanza (dal pipottino, poi dalla tappa precedente), finché la resa prevista sta nello zaino (la prima sempre).
 # Task di svuotamento della prima più un cammino + EmptyTrapAction per ognuna delle altre. null se non ce n'è nessuna.
-static func build_round_task(ctx: GameContext, worker: HumanIndividual, area_id: int) -> Task:
+static func build_round_task(ctx: GameContext, worker: HumanIndividual, area_id: int, zone_job: String) -> Task:
 	var busy := TrapService.trap_ids_being_emptied(ctx.individuals, worker)
 	var left: Array[PlacedTrap] = []
 	for trap in ctx.game_data.placed_traps:
-		if trap.work_area_id == area_id and trap.get_caught() > 0 and not busy.has(trap.id):
+		if trap.work_area_id == area_id and trap.get_caught() > 0 and not busy.has(trap.id) and _zone_job_of(trap) == zone_job:
 			left.append(trap)
 	if left.is_empty():
 		return null
@@ -200,6 +213,7 @@ static func build_round_task(ctx: GameContext, worker: HumanIndividual, area_id:
 	if task == null:
 		return null
 	task.context[TrapService.CONTEXT_ROUND] = true
+	task.context[TrapService.CONTEXT_ROUND_JOB] = zone_job
 	task.context[TrapService.CONTEXT_AREA_ID] = area_id
 	for i in range(1, chosen.size()):
 		var steps: Array[Action] = [WalkAction.new(_site_point(worker, chosen[i])), EmptyTrapAction.new(chosen[i].id)]
@@ -207,6 +221,11 @@ static func build_round_task(ctx: GameContext, worker: HumanIndividual, area_id:
 		task.step_descriptions[task.steps.size() - 2] = "task_empty_trap_step_walk"
 		task.step_descriptions[task.steps.size() - 1] = "task_empty_trap_step_empty"
 	return task
+
+
+static func _zone_job_of(trap: PlacedTrap) -> String:
+	var rules := TrapService.get_rules(trap.trap_name)
+	return rules.trap_zone_job if rules != null else ""
 
 
 # Punto d'arrivo alla trappola, nelle coordinate di `worker`.
@@ -233,12 +252,16 @@ static func build_empty_task(ctx: GameContext, worker: HumanIndividual, trap_id:
 	if definition == null:
 		return null
 	var site_point := Vector2(trap.lot) + Vector2(0.5, 0.5)
-	return TaskFactory.build_task(definition, {
+	var task := TaskFactory.build_task(definition, {
 		TrapService.CONTEXT_TRAP_ID: trap.id,
 		TrapService.CONTEXT_TRAP_NAME: trap.trap_name,
 		"trap_site_position": site_point + TaskBuilderService.macro_offset(worker, trap.macro_coords),
 		ButcherDestinationService.CONTEXT_KEY: ButcherDestinationService.resolve_stock(ctx.game_data.stock_excess_meat_destination, ctx.world, ctx.folk),
 	})
+	var rules := TrapService.get_rules(trap.trap_name)
+	if task != null and rules != null and rules.trap_quarry == TrapService.QUARRY_FISH:
+		task.task_name = TrapService.EMPTY_FISH_TASK_NAME
+	return task
 
 
 # Lavoratore: chi ha (in corso o in coda) la Task di questa zona e trappola (o, per lo svuotamento, di questa trappola).
@@ -282,10 +305,12 @@ static func workers(ctx: GameContext, job: Dictionary) -> Array[HumanIndividual]
 		return result
 	if String(job.get("job_type", JOB_PLACE)) == JOB_ROUND:
 		var round_area_id := int(job.get("area_id", 0))
+		var round_zone_job := String(job.get("zone_job", "hunt"))
 		for member in ctx.individuals:
 			for task in JobWorkScanService.open_tasks(member):
 				if TrapService.is_empty_task(task) and task.context.get(TrapService.CONTEXT_ROUND, false) \
-						and int(task.context.get(TrapService.CONTEXT_AREA_ID, 0)) == round_area_id:
+						and int(task.context.get(TrapService.CONTEXT_AREA_ID, 0)) == round_area_id \
+						and String(task.context.get(TrapService.CONTEXT_ROUND_JOB, "hunt")) == round_zone_job:
 					result.append(member)
 					break
 		return result

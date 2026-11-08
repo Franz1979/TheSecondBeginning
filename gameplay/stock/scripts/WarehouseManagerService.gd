@@ -107,6 +107,7 @@ static func on_inventory_started(ctx: GameContext, now: float, worker: HumanIndi
 	for resource_name in in_use.keys():
 		game_data.stock_snapshot[resource_name] = int(game_data.stock_snapshot.get(resource_name, 0)) + int(in_use[resource_name])
 	game_data.stock_snapshot_in_use = in_use
+	game_data.stock_snapshot_processing = VillageStockService.get_workstation_stock(ctx.world, StockRequestService.DERIVED_LEVEL_RESOURCES)
 	game_data.stock_snapshot_fill = VillageStockService.get_storage_fill(ctx.world)
 	game_data.stock_snapshot_time = now
 	game_data.stock_runtime.inventory_pending = true

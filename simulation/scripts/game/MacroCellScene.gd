@@ -361,6 +361,7 @@ func _on_save_pressed() -> void:
 	save_game_file_dialog.popup_centered()
 
 func _on_save_game_file_selected(path: String) -> void:
+	await SaveIndicator.begin()
 	var save_service := GameSaveService.new()
 	save_service.save_game_to_json(macro_world, game_data, path)
 

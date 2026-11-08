@@ -44,6 +44,8 @@ extends Resource
 @export var required_idea_id: String = ""
 # Popolazione umana minima (0 = nessun minimo).
 @export var min_population: int = 0
+# Adulti minimi del villaggio, FERTILE_ADULT e oltre (2026-11-08, richiesta utente — malattie nei villaggi piccoli; 0 = nessun minimo).
+@export var min_adults: int = 0
 # Richiede un edificio completo con BuildingRules.is_village_center (2026-09-27 — es. arrivo di visitatori, che
 # camminano fino al centro del villaggio).
 @export var requires_village_center: bool = false

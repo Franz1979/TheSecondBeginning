@@ -20,6 +20,7 @@ func save_game_to_json(
 	human_folk: Folk = null,
 	human_individuals: Array[HumanIndividual] = []
 ) -> void:
+	var measure_start_msec := Time.get_ticks_msec() # MISURA TEMPORANEA (autosave)
 	var data := {
 		"file_type": "game_save",
 		# Registro dei pebble come RACCOLTO delle sole rocce toccate (2026-10-05): senza questo segnale il caricamento lo
@@ -187,6 +188,7 @@ func save_game_to_json(
 			"last_inventory_by": game_data.last_inventory_by,
 			"stock_snapshot": game_data.stock_snapshot,
 			"stock_snapshot_in_use": game_data.stock_snapshot_in_use,
+			"stock_snapshot_processing": game_data.stock_snapshot_processing,
 			"stock_snapshot_fill": game_data.stock_snapshot_fill,
 			"stock_snapshot_time": game_data.stock_snapshot_time,
 			# Ordini creati dal cassetto (2026-10-09): già JSON-nativi.
@@ -226,16 +228,16 @@ func save_game_to_json(
 		var state_data := {
 			"x": state.x,
 			"y": state.y,
-			"resource_quantity": state.resource_quantity,
-			"dedicated_space": state.dedicated_space,
-			"has_ever_grown": state.has_ever_grown,
-			"subtype_composition": state.subtype_composition,
-			"age_composition": state.age_composition,
+			"resource_quantity": state.resource_quantity.duplicate(true),
+			"dedicated_space": state.dedicated_space.duplicate(true),
+			"has_ever_grown": state.has_ever_grown.duplicate(true),
+			"subtype_composition": state.subtype_composition.duplicate(true),
+			"age_composition": state.age_composition.duplicate(true),
 			"river_space": state.river_space,
-			"water_dedicated_space": state.water_dedicated_space,
-			"active_growth_bonuses": state.active_growth_bonuses,
-			"pending_migration_surplus": state.pending_migration_surplus,
-			"secondary_resource_stock": state.secondary_resource_stock,
+			"water_dedicated_space": state.water_dedicated_space.duplicate(true),
+			"active_growth_bonuses": state.active_growth_bonuses.duplicate(true),
+			"pending_migration_surplus": state.pending_migration_surplus.duplicate(true),
+			"secondary_resource_stock": state.secondary_resource_stock.duplicate(true),
 			"pending_grass_space_debt": state.pending_grass_space_debt,
 			"pending_fish_space_debt": state.pending_fish_space_debt
 		}
@@ -751,11 +753,15 @@ func save_game_to_json(
 				"task_queue": task_queue_data,
 			})
 
-	var json_text := JSON.stringify(data, "\t")
-	var file := FileAccess.open(file_path, FileAccess.WRITE)
-	file.store_string(json_text)
-	file.close()
-	print("Game saved to JSON: ", file_path)
+	# Il testo e il file li fa SaveFileWriter su un altro thread, mentre il gioco va avanti: qui si copia tutto ciò che è
+	# ancora un riferimento ai dati vivi (lo stesso per i campi delle macrocelle, copiati sopra). Il resto è costruito qui.
+	data["game"] = data["game"].duplicate(true)
+	data["world"]["buildings"] = data["world"]["buildings"].duplicate(true)
+	if data.has("human"):
+		data["human"] = data["human"].duplicate(true)
+	SaveFileWriter.write_async(data, file_path)
+	# MISURA TEMPORANEA (autosave): da togliere dopo la prova.
+	print("[Save misura] thread principale: %d ms" % (Time.get_ticks_msec() - measure_start_msec))
 
 
 # Appiattisce ogni record di GameData.expired_objects in un Dictionary di soli tipi JSON-nativi —

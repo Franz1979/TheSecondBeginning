@@ -301,6 +301,13 @@ static func _get_ineligibility_reason(rules: RandomEventRules, context: RandomEv
 		return "anno < %d" % rules.min_year
 	if rules.min_population > 0 and context.human_individuals.size() < rules.min_population:
 		return "popolazione < %d" % rules.min_population
+	if rules.min_adults > 0:
+		var adults := 0
+		for member in context.human_individuals:
+			if GameContext.age_band_for(member, context.game_data) >= HumanTypes.AgeBand.FERTILE_ADULT:
+				adults += 1
+		if adults < rules.min_adults:
+			return "adulti < %d" % rules.min_adults
 	if rules.required_idea_id != "" and (context.human_folk == null or not context.human_folk.completed_ideas.has(rules.required_idea_id)):
 		return "idea '%s' non completata" % rules.required_idea_id
 	return ""

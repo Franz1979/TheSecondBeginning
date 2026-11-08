@@ -185,6 +185,8 @@ var _max_levels: Dictionary = {}
 var _last_stock: Dictionary = {}
 # Parte in uso delle quantità (2026-10-24, GameData.stock_snapshot_in_use): solo per il tooltip.
 var _last_in_use: Dictionary = {}
+# Carne e pesce crudi sulle postazioni (2026-11-08, GameData.stock_snapshot_processing): solo nel numero mostrato.
+var _last_processing: Dictionary = {}
 var _last_days: float = -1.0
 var _food_days_label: Label = null
 # Elenco delle risorse mostrate all'ultima ricostruzione (per accorgersi di una risorsa appena scoperta).
@@ -233,7 +235,7 @@ func _ready() -> void:
 # (VillageStockService.get_village_stock), `daily_calorie_need` = consumo giornaliero di tutti gli individui,
 # `storage_fill` = [spazio occupato, spazio totale] dei depositi (VillageStockService.get_storage_fill).
 # `in_use` (2026-10-24): la parte di `stock` fuori dai depositi (attrezzi in prestito, travois trainati).
-func refresh_stock(stock: Dictionary, daily_calorie_need: float, storage_fill: Array = [], in_use: Dictionary = {}) -> void:
+func refresh_stock(stock: Dictionary, daily_calorie_need: float, storage_fill: Array = [], in_use: Dictionary = {}, processing: Dictionary = {}) -> void:
 	if _list_box == null:
 		return
 	var names := _visible_resource_names()
@@ -245,6 +247,7 @@ func refresh_stock(stock: Dictionary, daily_calorie_need: float, storage_fill: A
 		_rebuild_rows(names)
 	_last_stock = stock
 	_last_in_use = in_use
+	_last_processing = processing
 	var calories := VillageStockService.get_food_calories(stock)
 	_last_days = -1.0 if daily_calorie_need <= 0.0 else calories / daily_calorie_need
 	if _food_summary_label != null:
@@ -830,6 +833,11 @@ func _apply_quantities() -> void:
 			var tooltip_key := "warehouse_quantity_in_use_towing_tooltip" if HumanIndividual.is_towing_resource(resource_name) \
 				else "warehouse_quantity_in_use_tooltip"
 			quantity_tooltip = TooltipText.wrap(tr(tooltip_key).format({"stored": quantity - in_use, "in_use": in_use}))
+		# Crudo sulle postazioni (2026-11-08, richiesta utente): si somma al numero mostrato, le calorie e il gestore non lo vedono.
+		var processing: int = int(_last_processing.get(resource_name, 0))
+		if processing > 0:
+			quantity_tooltip = TooltipText.wrap(tr("warehouse_quantity_processing_tooltip").format({"stored": quantity, "processing": processing}))
+			quantity += processing
 		for label in _quantity_labels[resource_name]:
 			label.text = str(quantity)
 			# Divisione deposito / in uso solo quando qualcosa è in uso (2026-10-24).

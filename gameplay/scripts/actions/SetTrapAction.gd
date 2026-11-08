@@ -18,6 +18,12 @@ func _init() -> void:
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 
 
+# Skill della trappola che si monta (2026-11-08: pesca per la nassa).
+func get_skill_effect_key(_individual: Variant, context: Dictionary) -> String:
+	var rules := TrapService.get_rules(String(context.get(TrapService.CONTEXT_TRAP_NAME, "")))
+	return rules.trap_skill_effect_key if rules != null else skill_effect_key
+
+
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	_elapsed += delta * SkillEffectService.get_factor_for_action(self, individual, context)
 	return -STAMINA_DRAIN_PER_DAY * delta

@@ -144,3 +144,9 @@ func _ready() -> void:
 	print("GameSettings ready")
 	DirAccess.make_dir_recursive_absolute(MAPS_DIR)
 	DirAccess.make_dir_recursive_absolute(SAVES_DIR)
+	add_child(SaveIndicator.new())
+
+
+# Il gioco si chiude da più punti (menu, X della finestra): un salvataggio in corso sul suo thread deve finire prima.
+func _exit_tree() -> void:
+	SaveFileWriter.wait_for_completion()

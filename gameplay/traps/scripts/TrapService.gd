@@ -13,6 +13,9 @@ const TASK_NAME := "task_place_trap_name"
 const TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/place_trap.tres"
 # Svuotamento (2026-11-07): lavoro "Svuota trappola" (TrapJobProvider, empty_trap.tres, EmptyTrapAction).
 const EMPTY_TASK_NAME := "task_empty_trap_name"
+# Stesse Task per la nassa (2026-11-08), con un nome loro: l'esperienza a fine Task va alla pesca (task_completion_effects.tres).
+const FISH_TASK_NAME := "task_place_fish_trap_name"
+const EMPTY_FISH_TASK_NAME := "task_empty_fish_trap_name"
 const EMPTY_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/empty_trap.tres"
 const CONTEXT_TRAP_ID := "trap_id"
 # Chiavi del context della Task (JSON-native, salvate con la Task).
@@ -28,9 +31,13 @@ const CONTEXT_MANUAL := "trap_manual"
 # una volta sola alla fine. CONTEXT_ROUND = true; CONTEXT_ROUND_CATCH = prede raccolte finora {risorsa: unità}.
 const CONTEXT_ROUND := "trap_round"
 const CONTEXT_ROUND_CATCH := "trap_round_catch"
+# Lavoro di zona del giro (SecondaryResourceRules.trap_zone_job): reti e nasse hanno giri separati, con skill diverse.
+const CONTEXT_ROUND_JOB := "trap_round_job"
 # Chiave della skill per il montaggio (SkillActionEffects): chi è più bravo monta prima.
 const SKILL_EFFECT_KEY := "trap"
 const QUARRY_BIRDS := "birds"
+# Nassa (2026-11-08): si monta solo sul ruscello e rende secondo i pesci a portata (StreamFishService.get_fish_in_reach).
+const QUARRY_FISH := "fish"
 const NO_SITE := Vector2i(-1, -1)
 
 static var _trap_names: Array[String] = []
@@ -71,11 +78,11 @@ static func target_for(game_data: GameData, area: WorkArea, trap_name: String) -
 
 
 static func is_place_task(task: Task) -> bool:
-	return task != null and task.task_name == TASK_NAME and task.context.has(CONTEXT_TRAP_NAME)
+	return task != null and task.task_name in [TASK_NAME, FISH_TASK_NAME] and task.context.has(CONTEXT_TRAP_NAME)
 
 
 static func is_empty_task(task: Task) -> bool:
-	return task != null and task.task_name == EMPTY_TASK_NAME and task.context.has(CONTEXT_TRAP_ID)
+	return task != null and task.task_name in [EMPTY_TASK_NAME, EMPTY_FISH_TASK_NAME] and task.context.has(CONTEXT_TRAP_ID)
 
 
 # Trappole che la Task di svuotamento visita, in ordine: una per EmptyTrapAction (la sua o, se 0, quella del context).
@@ -199,6 +206,15 @@ static func site_index(trap_name: String, world: World, macro_coords: Vector2i, 
 			if cell == null or state == null:
 				return 0.0
 			return BirdPresenceService.get_site_index(state, cell.biome, lot)
+		QUARRY_FISH:
+			var game_data: GameData = GameSettings.active_game_data
+			var cell := world.get_cell_at(macro_coords.x, macro_coords.y)
+			var state := world.get_cell_state_at(macro_coords.x, macro_coords.y)
+			if game_data == null or cell == null or state == null:
+				return 0.0
+			var fish := StreamFishService.get_fish_in_reach(state, StreamMicrocellService.get_positions(world, cell),
+				macro_coords.x, macro_coords.y, lot, game_data.get_absolute_day())
+			return clampf(float(fish) / float(StreamFishService.TRAP_FULL_FISH), 0.0, 1.0)
 	return 0.0
 
 
@@ -210,6 +226,8 @@ static func current_index(trap_name: String, p_site_index: float, season: GameTy
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.apply_season(p_site_index, season)
+		QUARRY_FISH:
+			return p_site_index
 	return 0.0
 
 
@@ -221,7 +239,18 @@ static func is_worth_setting(trap_name: String, index: float) -> bool:
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.level_for_index(index) != BirdPresenceService.Level.NONE
+		QUARRY_FISH:
+			return index > 0.0
 	return false
+
+
+# true se il tipo di trappola si può montare lì quanto a terreno: la nassa solo sul ruscello, le altre mai.
+static func _fits_ground(rules: SecondaryResourceRules, stream_positions: Dictionary, lot: Vector2i) -> bool:
+	return stream_positions.has(lot) == (rules.trap_quarry == QUARRY_FISH)
+
+
+static func _stream_positions_of(world: World, macro_coords: Vector2i) -> Dictionary:
+	return StreamMicrocellService.get_positions(world, world.get_cell_at(macro_coords.x, macro_coords.y))
 
 
 # Posto per una nuova trappola di tipo `trap_name` in `area`: la microcella della zona col miglior indice del momento,
@@ -253,10 +282,12 @@ static func choose_site(game_data: GameData, world: World, individuals: Array[Hu
 	var season := SeasonCalculator.get_season_for_day(game_data.current_day)
 	var best := NO_SITE
 	var best_index := 0.0
+	var stream_positions := _stream_positions_of(world, area.macro_coords)
 	for y in range(area.rect.position.y, area.rect.end.y):
 		for x in range(area.rect.position.x, area.rect.end.x):
 			var lot := Vector2i(x, y)
-			if occupied.has(lot) or resting.has(lot) or not _far_from(lot, taken, rules.trap_min_spacing):
+			if occupied.has(lot) or resting.has(lot) or not _fits_ground(rules, stream_positions, lot) \
+					or not _far_from(lot, taken, rules.trap_min_spacing):
 				continue
 			var index := current_index(trap_name, site_index(trap_name, world, area.macro_coords, lot), season)
 			if index > best_index and is_worth_setting(trap_name, index):
@@ -285,15 +316,25 @@ static func placeable_traps(game_data: GameData, world: World, individuals: Arra
 		if Vector2i(int(task.context.get(CONTEXT_MACRO_X, -1)), int(task.context.get(CONTEXT_MACRO_Y, -1))) == macro_coords 				and Vector2i(int(task.context.get(CONTEXT_LOT_X, -1)), int(task.context.get(CONTEXT_LOT_Y, -1))) == lot:
 			return result
 	var season := SeasonCalculator.get_season_for_day(game_data.current_day)
+	var stream_positions := _stream_positions_of(world, macro_coords)
 	for trap_name in list_trap_names():
-		if not WarehouseSelectionService.has_retrieval_source(world, trap_name):
+		var rules := get_rules(trap_name)
+		if not _fits_ground(rules, stream_positions, lot) or not WarehouseSelectionService.has_retrieval_source(world, trap_name):
 			continue
 		var index := current_index(trap_name, site_index(trap_name, world, macro_coords, lot), season)
-		if not is_worth_setting(trap_name, index):
-			continue
-		var rules := get_rules(trap_name)
-		var level: int = int(BirdPresenceService.level_for_index(index)) if rules.trap_quarry == QUARRY_BIRDS else -1
-		result.append({"trap_name": trap_name, "index": index, "level": level})
+		var level := -1
+		if rules.trap_quarry == QUARRY_FISH:
+			# A mano la nassa si monta anche senza pesci (2026-11-08, richiesta utente): la scelta è del giocatore.
+			var cell := world.get_cell_at(macro_coords.x, macro_coords.y)
+			var state := world.get_cell_state_at(macro_coords.x, macro_coords.y)
+			level = int(StreamFishService.level_for_count(StreamFishService.get_fish_in_reach(
+				state, stream_positions, macro_coords.x, macro_coords.y, lot, game_data.get_absolute_day()))) if state != null and cell != null else 0
+		else:
+			if not is_worth_setting(trap_name, index):
+				continue
+			if rules.trap_quarry == QUARRY_BIRDS:
+				level = int(BirdPresenceService.level_for_index(index))
+		result.append({"trap_name": trap_name, "index": index, "level": level, "quarry": rules.trap_quarry})
 	return result
 
 
@@ -333,7 +374,7 @@ static func place(game_data: GameData, world: World, trap_name: String, instance
 
 # Giro giornaliero delle trappole montate (2026-11-07, GameTimeService._on_day_advanced): le prede lasciate troppo a lungo
 # marciscono, poi un tiro per trappola non piena. Le trappole sono poche: costa niente.
-static func advance_daily(game_data: GameData) -> void:
+static func advance_daily(game_data: GameData, world: World) -> void:
 	if game_data == null or (game_data.placed_traps.is_empty() and game_data.broken_traps.is_empty()):
 		return
 	var day := game_data.get_absolute_day()
@@ -353,8 +394,12 @@ static func advance_daily(game_data: GameData) -> void:
 			log_line("%s #%d in %s %s: usura senza svuotamenti, usi rimasti %d" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, trap.get_remaining_uses()])
 		if trap.get_caught() >= rules.trap_capacity:
 			continue
-		var caught := roll_catch(rules, current_index(trap.trap_name, trap.site_index, season), randf())
+		# Nassa: i pesci a portata si contano ogni giorno, e il pescato esce davvero dal ruscello.
+		var index_now: float = site_index(trap.trap_name, world, trap.macro_coords, trap.lot) if rules.trap_quarry == QUARRY_FISH else trap.site_index
+		var caught := roll_catch(rules, current_index(trap.trap_name, index_now, season), randf())
 		caught = mini(caught, rules.trap_capacity - trap.get_caught())
+		if rules.trap_quarry == QUARRY_FISH and caught > 0:
+			caught = _take_stream_fish(world, trap, caught, day)
 		if caught <= 0:
 			continue
 		for i in range(caught):
@@ -399,6 +444,25 @@ static func _empty_step_reached(task: Task) -> bool:
 		if task.steps[i] is EmptyTrapAction:
 			return task.current_step_index >= i
 	return false
+
+
+# Toglie dal ruscello fino a `count` pesci a portata della nassa e ridisegna i pesciolini se la cella è sulla mappa.
+# Restituisce quanti ne ha tolti.
+static func _take_stream_fish(world: World, trap: PlacedTrap, count: int, day: int) -> int:
+	var cell := world.get_cell_at(trap.macro_coords.x, trap.macro_coords.y) if world != null else null
+	var state := world.get_cell_state_at(trap.macro_coords.x, trap.macro_coords.y) if world != null else null
+	if cell == null or state == null:
+		return 0
+	var positions := StreamMicrocellService.get_positions(world, cell)
+	var taken := 0
+	for i in range(count):
+		if not StreamFishService.take_fish_in_reach(state, positions, trap.macro_coords.x, trap.macro_coords.y, trap.lot, day):
+			break
+		taken += 1
+	var live_cell := PathfindingService.get_live_cell(trap.macro_coords)
+	if taken > 0 and live_cell != null and live_cell.renderer != null:
+		live_cell.renderer.set_stream_fish_counts(StreamFishService.get_fish_counts(state, positions, trap.macro_coords.x, trap.macro_coords.y, day))
+	return taken
 
 
 # Fine del riposo dei posti delle trappole rotte (trap_rest_days passati): la rete rotta sparisce, il posto torna libero.

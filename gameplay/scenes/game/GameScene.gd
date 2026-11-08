@@ -2451,10 +2451,12 @@ func _right_click_trap(targets: RightClickTargets) -> bool:
 		if int(candidate["available_quantity"]) > 0:
 			available_candidates.append(candidate)
 	var cut_possible := RightClickCommandService.can_cut(_game_context(), individual, targets)
-	if available_candidates.is_empty() and not cut_possible and options.size() == 1:
+	# Pesca con la lenza nel popup della nassa (2026-11-08): solo con la lenza, altrimenti la scelta non c'è.
+	var fish_possible := not targets.stream_fish.is_empty() and ToolGateService.has_tool_for(individual, TaskTypes.ToolCategory.FISHING)
+	if available_candidates.is_empty() and not cut_possible and not fish_possible and options.size() == 1:
 		_assign_manual_trap_place(individual, String(options[0]["trap_name"]), site)
 		return true
-	_extraction_pending = {"individual": individual, "candidates": targets.pickup_candidates, "trap_site": site}
+	_extraction_pending = {"individual": individual, "candidates": targets.pickup_candidates, "trap_site": site, "stream_fish": targets.stream_fish}
 	var rows := {}
 	var overrides := {}
 	var row_options := {}
@@ -2476,17 +2478,24 @@ func _right_click_trap(targets: RightClickTargets) -> bool:
 		rows[EXTRACTION_CHOICE_CUT] = 1
 		overrides[EXTRACTION_CHOICE_CUT] = {"text": tr("cut_choice_cut"), "icon": IconRegistry.get_command_icon("cut")}
 		row_options[EXTRACTION_CHOICE_CUT] = {"type": "list", "items": plant_choice["items"], "selected": plant_choice["selected"]}
-	var items: Array = []
-	for option in options:
-		var trap_name := String(option["trap_name"])
-		var text := IconRegistry.get_resource_display_name(trap_name)
-		var level := int(option["level"])
-		if level >= 0:
-			text = tr("trap_place_item_birds").format({"trap": text, "level": tr(BIRD_PRESENCE_LEVEL_KEYS[level])})
-		items.append({"key": trap_name, "text": text, "enabled": true, "icon": trap_name})
-	rows[EXTRACTION_CHOICE_TRAP] = 1
-	overrides[EXTRACTION_CHOICE_TRAP] = {"text": tr("trap_choice_place"), "confirm_text": tr("trap_choice_place_confirm"), "icon": IconRegistry.get_command_icon("trap")}
-	row_options[EXTRACTION_CHOICE_TRAP] = {"type": "list", "items": items, "selected": String(options[0]["trap_name"])}
+	if fish_possible:
+		rows[EXTRACTION_CHOICE_FISH] = 1
+		overrides[EXTRACTION_CHOICE_FISH] = {"text": tr("trap_choice_fish"), "icon": IconRegistry.get_command_icon("fish")}
+	# Nessuna trappola da piazzare = nassa già lì, con pesci: restano Raccogli e Pesca (2026-11-08).
+	if not options.is_empty():
+		var items: Array = []
+		for option in options:
+			var trap_name := String(option["trap_name"])
+			var text := IconRegistry.get_resource_display_name(trap_name)
+			var level := int(option["level"])
+			if level >= 0 and String(option.get("quarry", "")) == TrapService.QUARRY_FISH:
+				text = tr("trap_place_item_fish").format({"trap": text, "level": tr(STREAM_FISH_LEVEL_KEYS[level])})
+			elif level >= 0:
+				text = tr("trap_place_item_birds").format({"trap": text, "level": tr(BIRD_PRESENCE_LEVEL_KEYS[level])})
+			items.append({"key": trap_name, "text": text, "enabled": true, "icon": trap_name})
+		rows[EXTRACTION_CHOICE_TRAP] = 1
+		overrides[EXTRACTION_CHOICE_TRAP] = {"text": tr("trap_choice_place"), "confirm_text": tr("trap_choice_place_confirm"), "icon": IconRegistry.get_command_icon("trap")}
+		row_options[EXTRACTION_CHOICE_TRAP] = {"type": "list", "items": items, "selected": String(options[0]["trap_name"])}
 	extraction_choice_dialog.open_choice_only_dialog(
 		tr("trap_choice_dialog_title"), tr("trap_choice_dialog_message"), rows, overrides, row_options, true
 	)
@@ -5298,6 +5307,8 @@ const CUT_ALL_PLANTS_KEY := "all_plants"
 const EXTRACTION_CHOICE_QUARRY := "quarry"
 # Scheda "Trappole" (2026-11-07): elenco delle trappole piazzabili sulla microcella (_right_click_trap).
 const EXTRACTION_CHOICE_TRAP := "trap"
+# Pesca con la lenza nel popup delle trappole, sul ruscello (2026-11-08).
+const EXTRACTION_CHOICE_FISH := "fish"
 # Popup condiviso da taglio ed estrazione (solo scelta, niente quantità né ripetizione).
 var extraction_choice_dialog: OptionChoiceDialog
 # Popup aperto: {"individual", "candidates" (della raccolta, risolti al click)} più "plant" (risultato di
@@ -5534,6 +5545,10 @@ func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -
 			return
 		var plants: Dictionary = pending.get("plants", {})
 		_assign_cut_task(worker, plants.get(String(chosen_key) if chosen_key != null else "", pending["plant"]))
+	elif choice == EXTRACTION_CHOICE_FISH:
+		var fish_effects := GameEffects.new()
+		FishCommandService.assign_fish(_game_context(), worker, pending.get("stream_fish", {}), fish_effects)
+		_apply_effects(fish_effects)
 	elif choice == EXTRACTION_CHOICE_TRAP:
 		var chosen_trap: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_TRAP)
 		if chosen_trap != null and String(chosen_trap) != "":
@@ -6117,7 +6132,7 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 		# Solo la quantità, come le altre risorse dell'ispezione (2026-10-31, richiesta utente: il massimo non è scritto altrove).
 		var fish := StreamFishService.get_fish(cell.macro_state, cell.stream_positions, cell.macro_x, cell.macro_y, lot, current_absolute_day)
 		if fish > 0:
-			water_lines.append(tr("microcell_inspection_stream_fish").format({"count": fish}))
+			water_lines.append(tr("microcell_inspection_stream_fish").format({"count": tr(STREAM_FISH_LEVEL_KEYS[StreamFishService.level_for_count(fish)])}))
 		else:
 			water_lines.append(tr("microcell_inspection_stream_no_fish"))
 	elif cell != null and cell.river_positions.has(lot):
@@ -6207,6 +6222,12 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 	_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": lines})
 
 
+const STREAM_FISH_LEVEL_KEYS := {
+	StreamFishService.Level.NONE: "stream_fish_level_none",
+	StreamFishService.Level.FEW: "stream_fish_level_few",
+	StreamFishService.Level.SOME: "stream_fish_level_some",
+	StreamFishService.Level.MANY: "stream_fish_level_many",
+}
 const BIRD_PRESENCE_LEVEL_KEYS := {
 	BirdPresenceService.Level.NONE: "bird_presence_none",
 	BirdPresenceService.Level.FEW: "bird_presence_few",
@@ -7890,7 +7911,7 @@ func _resolve_trap_pickup_candidates(current_absolute_day: int) -> Array[Diction
 			continue
 		candidates.append({
 			"resource_name": rules.trap_catch_resource,
-			"display_name": tr("trap_pickup_catch_birds") if rules.trap_quarry == TrapService.QUARRY_BIRDS else IconRegistry.get_resource_display_name(rules.trap_catch_resource),
+			"display_name": tr("trap_pickup_catch_birds") if rules.trap_quarry == TrapService.QUARRY_BIRDS else (tr("trap_pickup_catch_fish") if rules.trap_quarry == TrapService.QUARRY_FISH else IconRegistry.get_resource_display_name(rules.trap_catch_resource)),
 			"macro_coords": trap.macro_coords,
 			"position": trap.lot,
 			"available_quantity": trap.get_caught(),
@@ -8928,7 +8949,7 @@ func _assign_trap_job(worker: HumanIndividual, job: Dictionary) -> void:
 # Rimetti in coda / Blocca: il lavoro si ferma (una trappola già nello zaino torna al magazzino come carico orfano).
 func _trap_job_release(job: Dictionary) -> void:
 	for member in TrapJobProvider.workers(_game_context(), job):
-		if member.current_task != null and member.current_task.task_name in [TrapService.TASK_NAME, TrapService.EMPTY_TASK_NAME]:
+		if TrapService.is_place_task(member.current_task) or TrapService.is_empty_task(member.current_task):
 			member.skip_job_board_once = true
 			_stop_member_task(member)
 
@@ -14192,13 +14213,17 @@ func _on_save_pressed() -> void:
 func _autosave() -> void:
 	if macro_world == null:
 		return
+	await SaveIndicator.begin()
 	var start_msec := Time.get_ticks_msec()
 	_sync_individual_state_to_game_data()
-	_write_save_file(AutosaveService.next_autosave_path(game_data))
+	var path := AutosaveService.next_autosave_path(game_data, human_folk)
+	AutosaveService.delete_old_autosaves(path, human_folk)
+	_write_save_file(path)
 	print("[Autosave] anno %d salvato in %d ms" % [game_data.year, Time.get_ticks_msec() - start_msec])
 
 
 func _on_save_game_file_selected(path: String) -> void:
+	await SaveIndicator.begin()
 	_write_save_file(path)
 	if _pending_leave_action != &"":
 		_execute_pending_leave_action()
@@ -15056,7 +15081,7 @@ func _refresh_warehouse_panel() -> void:
 	if _warehouse_panel == null or not is_instance_valid(_warehouse_panel) or macro_world == null:
 		return
 	# Numeri dell'ultimo inventario (2026-10-11, GameData.stock_snapshot), non in tempo reale.
-	_warehouse_panel.refresh_stock(game_data.stock_snapshot, WarehouseManagerService.village_daily_calorie_need(_game_context()), game_data.stock_snapshot_fill, game_data.stock_snapshot_in_use)
+	_warehouse_panel.refresh_stock(game_data.stock_snapshot, WarehouseManagerService.village_daily_calorie_need(_game_context()), game_data.stock_snapshot_fill, game_data.stock_snapshot_in_use, game_data.stock_snapshot_processing)
 	_warehouse_panel.set_inventory_info(_inventory_info_text(), _inventory_info_tooltip())
 
 

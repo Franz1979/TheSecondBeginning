@@ -49,6 +49,21 @@ static func get_village_stock(world: World) -> Dictionary:
 	return totals
 
 
+# Quantità di `resource_names` nel magazzino delle postazioni di lavoro complete (2026-11-08, richiesta utente — carne e pesce
+# crudi sul graticcio): solo da mostrare nel cassetto, fuori da get_village_stock e quindi dalle decisioni del gestore.
+static func get_workstation_stock(world: World, resource_names: Array[String]) -> Dictionary:
+	var totals: Dictionary = {}
+	if world == null:
+		return totals
+	for building in world.buildings:
+		if building.rules == null or building.is_demolished or not building.is_complete or not building.rules.is_workstation:
+			continue
+		for resource_name in resource_names:
+			if building.stored_resources.has(resource_name):
+				_add(totals, resource_name, int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0)))
+	return totals
+
+
 # Calorie totali del cibo in `stock` (quantità × SecondaryResourceRules.calories_per_unit, solo categoria FOOD).
 static func get_food_calories(stock: Dictionary) -> float:
 	var calories := 0.0

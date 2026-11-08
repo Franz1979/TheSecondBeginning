@@ -15,6 +15,9 @@ const NET_COLOR := Color(0.86, 0.80, 0.64, 0.95)
 const NET_SHADOW_COLOR := Color(0.0, 0.0, 0.0, 0.25)
 const SYMBOL_COLOR := Color(0.85, 0.75, 0.50, 0.95)
 const BROKEN_NET_COLOR := Color(0.62, 0.56, 0.44, 0.75)
+const FISH_TRAP_COLOR := Color(0.88, 0.76, 0.52, 1.0)
+const FISH_TRAP_DARK_COLOR := Color(0.55, 0.42, 0.24, 1.0)
+const FISH_TRAP_BROKEN_COLOR := Color(0.66, 0.58, 0.44, 0.8)
 
 var _macro_coords: Vector2i = Vector2i.ZERO
 var _drawn_revision: int = -1
@@ -42,6 +45,8 @@ func _draw() -> void:
 		var top_left := Vector2(trap.lot) * CELL_SIZE
 		if rules != null and rules.trap_quarry == TrapService.QUARRY_BIRDS:
 			_draw_bird_net(top_left, trap.id)
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_FISH:
+			_draw_fish_trap(trap.lot, top_left, false)
 		else:
 			_draw_symbol(top_left)
 	for broken in TrapService.broken_in_macro_cell(game_data, _macro_coords):
@@ -49,6 +54,8 @@ func _draw() -> void:
 		var rules := TrapService.get_rules(String(broken.get("trap_name", "")))
 		if rules != null and rules.trap_quarry == TrapService.QUARRY_BIRDS:
 			_draw_broken_bird_net(top_left, int(broken.get("id", 0)))
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_FISH:
+			_draw_fish_trap(Vector2i(int(broken.get("lot_x", 0)), int(broken.get("lot_y", 0))), top_left, true)
 
 
 # Rete rotta (posto a riposo, TrapService.broken_traps): stessi paletti, uno storto, e la rete strappata a metà che pende
@@ -82,6 +89,32 @@ func _draw_bird_net(top_left: Vector2, trap_id: int) -> void:
 	draw_polyline(PackedVector2Array([a, sag, b]), NET_COLOR, CELL_SIZE * 0.05, true)
 	draw_circle(a, CELL_SIZE * 0.05, POLE_COLOR)
 	draw_circle(b, CELL_SIZE * 0.05, POLE_COLOR)
+
+
+# Nassa vista dall'alto, sul punto d'acqua della microcella (MicroCellRenderer.get_stream_water_point) e lungo la corrente:
+# un cono di vimini con la bocca scura controcorrente e due cerchi dell'intreccio. Rotta: stessa sagoma spenta, senza bocca.
+func _draw_fish_trap(lot: Vector2i, top_left: Vector2, broken: bool) -> void:
+	var center := top_left + Vector2.ONE * CELL_SIZE * 0.5
+	var flow := Vector2.RIGHT
+	var live_cell := PathfindingService.get_live_cell(_macro_coords)
+	if live_cell != null and live_cell.renderer != null:
+		var water: Dictionary = live_cell.renderer.get_stream_water_point(lot)
+		center = water.get("point", center)
+		flow = water.get("flow", flow)
+	var across := flow.orthogonal()
+	var half_length := CELL_SIZE * 0.21
+	var half_width := CELL_SIZE * 0.12
+	var mouth := center - flow * half_length
+	var tip := center + flow * half_length
+	var body_color := FISH_TRAP_BROKEN_COLOR if broken else FISH_TRAP_COLOR
+	draw_colored_polygon(PackedVector2Array([mouth + across * half_width, tip, mouth - across * half_width]), body_color)
+	for t in [0.35, 0.65]:
+		var ring := mouth.lerp(tip, float(t))
+		var ring_half := half_width * (1.0 - float(t))
+		draw_line(ring + across * ring_half, ring - across * ring_half, FISH_TRAP_DARK_COLOR, CELL_SIZE * 0.03, true)
+	if not broken:
+		draw_circle(mouth, half_width * 0.75, FISH_TRAP_DARK_COLOR)
+	draw_line(mouth + across * half_width, mouth - across * half_width, body_color, CELL_SIZE * 0.05, true)
 
 
 # Simbolino generico: un piccolo cerchio chiaro con una croce.

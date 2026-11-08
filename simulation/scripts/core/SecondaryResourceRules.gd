@@ -334,6 +334,8 @@ extends Resource
 # senza svuotamenti (fibre e corde lasciate fuori marciscono); lo svuotamento consuma già il suo uso e fa ripartire il
 # conto. Così una trappola che non prende mai niente prima o poi si rompe e libera il posto. 0 = nessuna usura a riposo.
 @export var trap_idle_wear_days: int = 0
+# Chiave della skill (SkillActionEffects) per montarla e svuotarla, 2026-11-08: "trap" = caccia, "fish" = pesca (nassa).
+@export var trap_skill_effect_key: String = "trap"
 
 @export_group("Apparel")
 # Campi del vestiario (2026-10-11, richiesta utente — vestiti, scarpe, monili; category APPAREL). La durata di un capo

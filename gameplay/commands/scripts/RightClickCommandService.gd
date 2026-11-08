@@ -19,8 +19,9 @@ enum Command { BURY, HUNT, BUTCHER, CUT, QUARRY, PICKUP, BUILD, TRANSPORT, FISH,
 #   - pesca (2026-10-31) su un punto del ruscello con pesci visibile in dettaglio. Senza la lenza (FISHING, in cintura o
 #     nello zaino) resta il comando, come la caccia senza arma: lo rifiuta FishCommandService con l'avviso (2026-11-01,
 #     richiesta utente — prima diventava un "vai lì" muto), a meno che lì ci sia altro da fare (raccolta, edificio);
-#   - trappole (2026-11-07) prima del taglio, su una microcella senza edifici, rocce, argilla né pesci dove se ne può
-#     piazzare una (targets.trap_place_options): il popup ha anche Raccogli e Taglia se valgono;
+#   - trappole (2026-11-07) prima del taglio, su una microcella senza edifici, rocce né argilla dove se ne può piazzare una
+#     (targets.trap_place_options): il popup ha anche Raccogli, Taglia e Pesca se valgono; lo stesso popup se sul ruscello
+#     c'è una nassa con pesci e il lavoratore ha la lenza (2026-11-08): si sceglie tra pescare e svuotarla;
 #   - raccolta, poi costruzione (o riparazione) e trasporto sull'edificio; su una Tettoia dell'acqua completa, prima di
 #     costruzione e trasporto, il riempimento delle giare (2026-11-06, WaterJarCommandService).
 static func candidates(ctx: GameContext, worker: HumanIndividual, targets: RightClickTargets, transport_pending: bool) -> Array[Command]:
@@ -37,8 +38,8 @@ static func candidates(ctx: GameContext, worker: HumanIndividual, targets: Right
 		commands.append(Command.BUTCHER)
 	var on_resumable_building := has_resumable_work(ctx, targets.building)
 	var day := ctx.game_data.get_absolute_day()
-	if targets.building == null and not targets.trap_place_options.is_empty() and targets.rock.is_empty() \
-			and targets.clay.is_empty() and targets.stream_fish.is_empty():
+	if targets.building == null and targets.rock.is_empty() and targets.clay.is_empty() \
+			and (not targets.trap_place_options.is_empty() or _can_fish_or_empty_trap(worker, targets)):
 		commands.append(Command.TRAP)
 	if can_cut(ctx, worker, targets):
 		commands.append(Command.CUT)
@@ -61,6 +62,16 @@ static func candidates(ctx: GameContext, worker: HumanIndividual, targets: Right
 		commands.append(Command.BUILD)
 		commands.append(Command.TRANSPORT)
 	return commands
+
+
+# Nassa con pesci su un punto del ruscello con pesci, e il lavoratore ha la lenza: due lavori possibili, si sceglie.
+static func _can_fish_or_empty_trap(worker: HumanIndividual, targets: RightClickTargets) -> bool:
+	if targets.stream_fish.is_empty() or not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.FISHING):
+		return false
+	for candidate in targets.pickup_candidates:
+		if int(candidate.get("source_kind", PickUpAction.SourceKind.TERRAIN)) == PickUpAction.SourceKind.TRAP:
+			return true
+	return false
 
 
 # Taglio possibile: pianta visibile in dettaglio, attrezzo CHOPPING (in cintura o nello zaino), nessun edificio con un

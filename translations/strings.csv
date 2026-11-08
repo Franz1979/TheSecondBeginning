@@ -1946,3 +1946,16 @@ trap_empty_reject_nothing,La trappola è vuota
 trap_empty_reject_taken,La sta già svuotando {name}
 task_empty_trap_round_job_name,Giro delle trappole ({area}): {count}
 task_empty_trap_round_job_tooltip,"Passare da tutte le trappole della zona {area} con prede ({count}), le più vicine prima, e portare tutto dove va la carne delle cacce del WM."
+carried_resource_tooltip_fish_trap,Nassa
+stream_fish_level_none,nessuno
+stream_fish_level_few,pochi
+stream_fish_level_some,parecchi
+stream_fish_level_many,molti
+trap_choice_fish,Pesca
+trap_place_item_fish,{trap} (pesci: {level})
+trap_pickup_catch_fish,Pesci
+task_place_fish_trap_name,Piazzare una nassa
+task_empty_fish_trap_name,Svuotare una nassa
+task_empty_fish_trap_round_job_name,Giro delle nasse ({area}): {count}
+task_empty_fish_trap_round_job_tooltip,"Passare da tutte le nasse della zona {area} con pesci ({count}), le più vicine prima, e portare tutto dove va il pesce."
+warehouse_quantity_processing_tooltip,"In deposito: {stored} · Sulle postazioni: {processing}"

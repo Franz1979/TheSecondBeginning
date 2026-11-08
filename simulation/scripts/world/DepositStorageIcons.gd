@@ -72,6 +72,7 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"waterskin": "_draw_deposit_storage_waterskin_icon",
 	"fishing_line": "_draw_deposit_storage_fishing_line_icon",
 	"bird_net": "_draw_deposit_storage_bird_net_icon",
+	"fish_trap": "_draw_deposit_storage_fish_trap_icon",
 	"fish_meat": "_draw_deposit_storage_fish_meat_icon",
 	"cooked_fish": "_draw_deposit_storage_cooked_fish_icon",
 	"dried_fish": "_draw_deposit_storage_dried_fish_icon",
@@ -593,6 +594,11 @@ static func _draw_deposit_storage_waterskin_icon(canvas: CanvasItem, top_left: V
 # Pesca (2026-10-31): stessa geometria delle icone del pannello (FishingLineIcon/FishMeatIcon.draw_into).
 static func _draw_deposit_storage_fishing_line_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	FishingLineIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Nassa (2026-11-08): stessa geometria dell'icona del pannello (FishTrapIcon.draw_into).
+static func _draw_deposit_storage_fish_trap_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	FishTrapIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 # Rete per uccelli (2026-11-07): stessa geometria dell'icona del pannello (BirdNetIcon.draw_into).

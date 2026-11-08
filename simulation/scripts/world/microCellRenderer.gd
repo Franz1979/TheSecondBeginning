@@ -579,6 +579,9 @@ func set_streams(layout: Dictionary) -> void:
 	var water_vertices := PackedVector2Array()
 	var water_colors := PackedColorArray()
 	var paths: Array = layout.get("paths", [])
+	_build_stream_fish_anchors(layout)
+	if not stream_fish_counts.is_empty():
+		_rebuild_stream_fish_multimesh()
 	for path_index in range(paths.size()):
 		var points: PackedVector2Array = paths[path_index]
 		var left_widths := PackedFloat32Array()
@@ -4665,13 +4668,21 @@ const FISH_TAIL_WIDTH_RATIO: float = 1.3  # la coda è più larga della sezione 
 # pesce (non uno per pesce), sagoma unica corpo a lente + coda a forcella, ombra blu scura semitrasparente nell'acqua.
 # Guarda a destra o a sinistra (hash) con una piccola inclinazione. Mesh unitaria lunga 2 (da -1 a +1), scalata a
 # STREAM_FISH_SIZE px per semi-lunghezza.
-const COLOR_STREAM_FISH := Color(0.08, 0.20, 0.36, 0.8)
-const STREAM_FISH_SIZE: float = 2.0
-const STREAM_FISH_MAX_TILT: float = 0.3
+const COLOR_STREAM_FISH := Color(0.20, 0.34, 0.52, 0.85)
+const STREAM_FISH_SIZE: float = 1.4
+# Banchetto di pesciolini della microcella, uno per livello (pochi, parecchi, molti): pixel dal punto d'acqua, x lungo la
+# corrente e y di traverso (meno della mezza larghezza minima del ruscello, così restano in acqua).
+const STREAM_FISH_OFFSETS := [
+	[Vector2(0.0, 0.0)],
+	[Vector2(-1.0, -0.5), Vector2(1.0, 0.5)],
+	[Vector2(-1.7, -0.6), Vector2(0.0, 0.7), Vector2(1.7, -0.4)],
+]
 const STREAM_FISH_BODY_SEGMENTS := 8
 
 var _stream_fish_mesh: ArrayMesh
 var _stream_fish_multimesh: MultiMesh
+# Microcella del ruscello -> {"point": pixel in acqua, "flow": direzione della corrente} (_build_stream_fish_anchors).
+var _stream_fish_anchors: Dictionary = {}
 
 var _fish_body_mesh: ArrayMesh
 var _fish_tail_mesh: ArrayMesh
@@ -4738,20 +4749,68 @@ func _rebuild_fish_multimeshes() -> void:
 	_apply_transforms(_fish_tail_multimesh, tail_transforms)
 
 
+# Punto d'acqua della microcella del ruscello {"point", "flow"}, {} se non ce l'ha (usato anche per disegnare la nassa).
+func get_stream_water_point(lot: Vector2i) -> Dictionary:
+	return _stream_fish_anchors.get(lot, {})
+
+
+# Per ogni microcella del ruscello il punto d'acqua dove stanno i suoi pesciolini (pixel) e la direzione della corrente
+# (x sempre >= 0): il punto del tracciato più vicino al centro della microcella. Un'insenatura non ha tracciato: il centro
+# del suo ventaglio d'acqua, un po' verso la microcella. La pozza della sorgente: verso il suo centro. Una volta sola, da set_streams.
+func _build_stream_fish_anchors(layout: Dictionary) -> void:
+	var paths: Array = layout.get("paths", [])
+	_stream_fish_anchors.clear()
+	var best_distance := {}
+	for path in paths:
+		var points: PackedVector2Array = path
+		for i in range(points.size()):
+			var pos := Vector2i(points[i].floor())
+			var distance := points[i].distance_squared_to(Vector2(pos) + Vector2(0.5, 0.5))
+			if distance >= float(best_distance.get(pos, INF)):
+				continue
+			var flow := points[mini(i + 1, points.size() - 1)] - points[maxi(i - 1, 0)]
+			flow = flow.normalized() if flow != Vector2.ZERO else Vector2.RIGHT
+			best_distance[pos] = distance
+			_stream_fish_anchors[pos] = {"point": points[i] * CELL_SIZE, "flow": -flow if flow.x < 0.0 else flow}
+	# Insenatura: il centro del ventaglio sta sul bordo tra il tratto e la microcella dell'insenatura.
+	for widening in layout.get("widenings", []):
+		var fan_center: Vector2 = widening
+		var on_vertical_edge := absf(fan_center.x - round(fan_center.x)) < 0.01
+		for direction in ([Vector2.LEFT, Vector2.RIGHT] if on_vertical_edge else [Vector2.UP, Vector2.DOWN]):
+			var pos := Vector2i((fan_center + direction * 0.5).floor())
+			if _stream_positions.has(pos) and not _stream_fish_anchors.has(pos):
+				var origin: Dictionary = _stream_fish_anchors.get(Vector2i((fan_center - direction * 0.5).floor()), {})
+				_stream_fish_anchors[pos] = {"point": (fan_center + direction * 0.2) * CELL_SIZE, "flow": origin.get("flow", Vector2.RIGHT)}
+	var pond_center: Variant = layout.get("pond_center", null)
+	if pond_center != null:
+		for pos in _stream_positions:
+			if not _stream_fish_anchors.has(pos):
+				var cell_center := Vector2(pos) + Vector2(0.5, 0.5)
+				_stream_fish_anchors[pos] = {"point": (pond_center as Vector2).lerp(cell_center, 0.6) * CELL_SIZE, "flow": Vector2.RIGHT}
+
+
 func _rebuild_stream_fish_multimesh() -> void:
 	if _stream_fish_mesh == null:
 		_stream_fish_mesh = _build_stream_fish_mesh()
 		_stream_fish_multimesh = _make_multimesh(_stream_fish_mesh, false)
 	var transforms: Array = []
 	for pos in stream_fish_counts:
-		var center := Vector2(pos.x * CELL_SIZE, pos.y * CELL_SIZE) + Vector2(CELL_SIZE / 2.0, CELL_SIZE / 2.0)
+		# Un pesciolino per livello (2026-11-08, StreamFishService.Level: pochi 1, parecchi 2, molti 3), stretti tra loro sul
+		# punto d'acqua della microcella, lungo la corrente e tutti con lo stesso verso (uno per microcella, dalla posizione).
+		var shown: int = int(StreamFishService.level_for_count(int(stream_fish_counts[pos])))
+		if shown <= 0:
+			continue
+		var anchor: Dictionary = _stream_fish_anchors.get(pos, {})
+		var center: Vector2 = anchor.get("point", (Vector2(pos) + Vector2(0.5, 0.5)) * CELL_SIZE)
+		var flow: Vector2 = anchor.get("flow", Vector2.RIGHT)
+		var across := flow.orthogonal()
 		var facing_left: bool = hash(pos * 3 + Vector2i(17, 5)) % 2 == 0
-		var tilt: float = lerp(-STREAM_FISH_MAX_TILT, STREAM_FISH_MAX_TILT, float(hash(pos * 11 + Vector2i(2, 29)) % 1000) / 1000.0)
-		# Verso sinistra = specchio orizzontale (non una rotazione di PI, che lo capovolgerebbe).
-		var fish_transform := Transform2D(tilt, Vector2.ZERO).scaled_local(
-			Vector2(-STREAM_FISH_SIZE if facing_left else STREAM_FISH_SIZE, STREAM_FISH_SIZE))
-		fish_transform.origin = center
-		transforms.append(fish_transform)
+		for offset in STREAM_FISH_OFFSETS[shown - 1]:
+			# Verso sinistra = specchio orizzontale (non una rotazione di PI, che lo capovolgerebbe).
+			var fish_transform := Transform2D(flow.angle(), Vector2.ZERO).scaled_local(
+				Vector2(-STREAM_FISH_SIZE if facing_left else STREAM_FISH_SIZE, STREAM_FISH_SIZE))
+			fish_transform.origin = center + flow * (offset as Vector2).x + across * (offset as Vector2).y
+			transforms.append(fish_transform)
 	_apply_transforms(_stream_fish_multimesh, transforms)
 
 

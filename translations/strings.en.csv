@@ -1892,3 +1892,16 @@ trap_empty_reject_nothing,The trap is empty
 trap_empty_reject_taken,{name} is already emptying it
 task_empty_trap_round_job_name,Trap round ({area}): {count}
 task_empty_trap_round_job_tooltip,"Visit every trap with catch in zone {area} ({count}), nearest first, and bring everything where the WM hunt meat goes."
+carried_resource_tooltip_fish_trap,Fish trap
+stream_fish_level_none,none
+stream_fish_level_few,few
+stream_fish_level_some,some
+stream_fish_level_many,many
+trap_choice_fish,Fish
+trap_place_item_fish,{trap} (fish: {level})
+trap_pickup_catch_fish,Fish
+task_place_fish_trap_name,Setting a fish trap
+task_empty_fish_trap_name,Emptying a fish trap
+task_empty_fish_trap_round_job_name,Fish trap round ({area}): {count}
+task_empty_fish_trap_round_job_tooltip,"Visit every fish trap with catch in zone {area} ({count}), nearest first, and bring everything where fish goes."
+warehouse_quantity_processing_tooltip,"In storage: {stored} · At workstations: {processing}"
