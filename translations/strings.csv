@@ -1190,6 +1190,7 @@ task_deliver_output_name,Consegna finiti
 pending_material_fuel,combustibile
 options_pending_bell_sound,Suono degli avvisi (campanella)
 options_show_health_icons,Mostra icone di salute degli individui
+options_autosave,Salvataggio automatico a ogni nuovo anno
 task_assignment_kind_produce,Ordini di produzione
 task_assignment_produce_row,{recipe} ×{quantity} · {building}
 task_assignment_produce_building_busy,Edificio occupato

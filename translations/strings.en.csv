@@ -1136,6 +1136,7 @@ task_deliver_output_name,Deliver finished goods
 pending_material_fuel,fuel
 options_pending_bell_sound,Alert sound (bell)
 options_show_health_icons,Show individuals' health icons
+options_autosave,Autosave at every new year
 task_assignment_kind_produce,Production orders
 task_assignment_produce_row,{recipe} ×{quantity} · {building}
 task_assignment_produce_building_busy,Building busy

@@ -36,6 +36,9 @@ extends Window
 # Icone di salute sopra la testa (2026-10-25, UserOptions.show_health_icons), ultima riga prima di Chiudi.
 @onready var health_icons_label: Label = $MarginContainer/VBoxContainer/HealthIconsRow/Label
 @onready var health_icons_check_box: CheckBox = $MarginContainer/VBoxContainer/HealthIconsRow/CheckBox
+# Salvataggio automatico a fine anno (2026-11-08, UserOptions.autosave_enabled), dopo le icone di salute.
+@onready var autosave_label: Label = $MarginContainer/VBoxContainer/AutosaveRow/Label
+@onready var autosave_check_box: CheckBox = $MarginContainer/VBoxContainer/AutosaveRow/CheckBox
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
 
 # Righe volume audio (2026-09-21, richiesta utente): nome del nodo riga, chiave tr() dell'etichetta e campo di
@@ -92,6 +95,7 @@ func _ready() -> void:
 	delivery_check_box.toggled.connect(_on_delivery_toggled)
 	alert_sound_check_box.toggled.connect(_on_alert_sound_toggled)
 	health_icons_check_box.toggled.connect(_on_health_icons_toggled)
+	autosave_check_box.toggled.connect(_on_autosave_toggled)
 	close_button.pressed.connect(hide)
 	# I volumi si applicano in tempo reale (_on_volume_changed) ma si salvano su disco alla chiusura del
 	# menu: visibility_changed copre il CloseButton e qualunque altro hide(), anche per le modifiche da tastiera
@@ -124,11 +128,17 @@ func open_menu(show_language: bool = true) -> void:
 	delivery_check_box.set_pressed_no_signal(UserOptions.production_delivery_default)
 	alert_sound_check_box.set_pressed_no_signal(UserOptions.pending_bell_sound)
 	health_icons_check_box.set_pressed_no_signal(UserOptions.show_health_icons)
+	autosave_check_box.set_pressed_no_signal(UserOptions.autosave_enabled)
 	for field in _volume_sliders.keys():
 		(_volume_sliders[field] as HSlider).set_value_no_signal(float(UserOptions.get(field)))
 	exclusive = true
 	_resize_to_content()
 	popup_centered()
+
+
+func _on_autosave_toggled(pressed: bool) -> void:
+	UserOptions.autosave_enabled = pressed
+	UserOptions.save_to_disk()
 
 
 func _on_notification_popups_toggled(pressed: bool) -> void:
@@ -183,6 +193,7 @@ func _refresh_texts() -> void:
 	delivery_label.text = tr("options_production_delivery_default")
 	alert_sound_label.text = tr("options_pending_bell_sound")
 	health_icons_label.text = tr("options_show_health_icons")
+	autosave_label.text = tr("options_autosave")
 	_rebuild_pickup_default_options()
 	# "close_and_save" (non "close_menu", richiesta utente 2026-09-05): stesso identico
 	# comportamento (hide()), solo l'etichetta comunica che le modifiche sono già salvate — coerente

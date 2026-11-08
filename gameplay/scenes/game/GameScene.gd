@@ -8487,6 +8487,7 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 		in_progress_entries.append_array(_collect_direct_command_entries(board_jobs))
 	if _task_assignment_panel != null and is_instance_valid(_task_assignment_panel):
 		_task_assignment_panel.set_produce_available(_has_drawer_produce_building())
+		_task_assignment_panel.set_take_waterskin_available(_is_waterskin_idea_known())
 		_sync_drawer_cut_available()
 		_task_assignment_panel.set_listed_entries(listed_entries)
 		# Righe "Automatico" ("Cerca lavoro", 2026-10-09) sempre in fondo; le altre nell'ordine di sempre.
@@ -10311,6 +10312,15 @@ func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
 		return "attrezzo per un ordine della coda"
 	if task.task_name == WarehouseManagerService.INVENTORY_TASK_NAME:
 		return "inventario del magazzino"
+	# Taglio per il cantiere (2026-11-08, richiesta utente — Athok in "In corso" due volte): la serie di cella su un cantiere
+	# in attesa del taglio è già nella riga "site_cut:" della coda (stessi criteri di SiteCutService.cell_claimers).
+	var cut_series := CutZoneService.get_series(task.context)
+	if cut_series.is_empty():
+		cut_series = CutZoneService.get_delivery_series(task)
+	if CutZoneService.is_cell_series(cut_series) and SiteCutService.find_awaiting_site_at(
+		macro_world, CutZoneService.get_cell_series_macro_coords(cut_series), CutZoneService.get_cell_series_lot(cut_series)
+	) != null:
+		return "taglio per il cantiere"
 	# Organizzatore di un rito sociale ordinato dal pannello (2026-10-17): è già nella riga "rite:" della coda.
 	if task.task_name == SocialRiteService.TASK_NAME:
 		var rite_building := _find_building_by_id(int(task.context.get(SocialRiteService.CONTEXT_BUILDING_ID, -1)))
@@ -11555,6 +11565,10 @@ func _on_year_rolled_over() -> void:
 	var effects := GameEffects.new()
 	GameSimulation.tick_year(_game_context(), effects)
 	_apply_effects(effects)
+	# Salvataggio automatico (2026-11-08): differito a fine frame, dopo tutti gli altri gestori di year_rolled_over
+	# (GameTimeService registra le statistiche dell'anno DOPO questo gestore), così il file contiene l'anno chiuso.
+	if UserOptions.autosave_enabled:
+		_autosave.call_deferred()
 
 
 # Sposta il bersaglio di movimento/streaming (il campo "individual", vedi il commento lì) su
@@ -14174,7 +14188,23 @@ func _on_save_pressed() -> void:
 	_sync_individual_state_to_game_data()
 	save_game_file_dialog.popup_centered()
 
+# Salvataggio automatico di fine anno (2026-11-08): stessi passi del salvataggio a mano, sul file di AutosaveService.
+func _autosave() -> void:
+	if macro_world == null:
+		return
+	var start_msec := Time.get_ticks_msec()
+	_sync_individual_state_to_game_data()
+	_write_save_file(AutosaveService.next_autosave_path(game_data))
+	print("[Autosave] anno %d salvato in %d ms" % [game_data.year, Time.get_ticks_msec() - start_msec])
+
+
 func _on_save_game_file_selected(path: String) -> void:
+	_write_save_file(path)
+	if _pending_leave_action != &"":
+		_execute_pending_leave_action()
+
+
+func _write_save_file(path: String) -> void:
 	# Qui (non in _on_save_pressed) così lo snapshot è quello del momento esatto della scrittura.
 	_sync_animal_individuals_to_game_data()
 	var save_service := GameSaveService.new()
@@ -14185,9 +14215,6 @@ func _on_save_game_file_selected(path: String) -> void:
 	# nella stessa sessione (senza caricare) ricostruirebbe individui ormai vecchi. Il contatore
 	# resta (è comunque mai all'indietro, vedi AnimalGroupRenderer.set_next_individual_id).
 	game_data.animal_individuals_by_cell = []
-
-	if _pending_leave_action != &"":
-		_execute_pending_leave_action()
 
 # &"center_on_individual" (era l'unico case qui) rimosso insieme allo spostamento del bottone "🎯"
 # fuori da PrimaryActionsBar — vive ora nell'header di GameInfoTabs.SelectionTab (Step 3, richiesta
@@ -15225,6 +15252,7 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.requeue_requested.connect(_on_job_board_requeue_requested)
 		# Bottone "Produci" (2026-10-09): stato subito, poi a ogni ricalcolo dell'elenco.
 		_task_assignment_panel.set_produce_available(_has_drawer_produce_building())
+		_task_assignment_panel.set_take_waterskin_available(_is_waterskin_idea_known())
 		_task_assignment_panel.produce_order_requested.connect(_on_drawer_produce_requested)
 		_task_assignment_panel.produce_orders_submitted.connect(_on_drawer_produce_submitted)
 		# "Trasporta" (2026-11-06): ordine di trasporto da un edificio a un altro, scelti sulla mappa.
@@ -17839,3 +17867,10 @@ func _on_macro_cell_debug_pressed() -> void:
 		GameSettings.active_clock_is_playing = clock.is_playing
 		GameSettings.active_clock_speed = clock.speed
 	get_tree().change_scene_to_file("res://simulation/scenes/game/MacroCellScene.tscn")
+
+
+# La regola "Prendi l'otre se disponibile" compare solo dopo l'idea che sblocca l'otre (2026-11-08, richiesta utente).
+func _is_waterskin_idea_known() -> bool:
+	var rules = CaloricCalculator.get_caloric_source_rules("waterskin")
+	var idea_id: String = "" if rules == null else String(rules.required_idea_id)
+	return idea_id == "" or (human_folk != null and human_folk.completed_ideas.has(idea_id))

@@ -110,7 +110,7 @@ const SHOW_VITALS_RECALC_LOGS := false
 # due regole scatta comunque in un verso o nell'altro, quindi la riga è sempre stampata per ognuno,
 # non solo quando cambia qualcosa). A false: nessun comportamento di simulazione cambia, solo il
 # print viene soppresso.
-const SHOW_VITALS_INTERACTION_LOGS := true
+const SHOW_VITALS_INTERACTION_LOGS := false
 # Riga [VITALS INTERACTION] solo per chi ha una malattia in corso (2026-10-24, prova dell'evento malattia), compreso il
 # giorno in cui guarisce; false = tutti.
 const VITALS_INTERACTION_LOG_ONLY_ILL := true
@@ -253,7 +253,7 @@ const SHOW_REST_CHOICE_LOGS := false
 const SHOW_TRANSPORT_BUILD_LOGS := false
 # Zuppa di casa (2026-11-07, HomeSoupService): piano, tappe, prese, cottura e, col tasto M di debug, il motivo per cui
 # non si può cucinare.
-const SHOW_SOUP_LOGS := true
+const SHOW_SOUP_LOGS := false
 # FISH — [FISH] pesca (2026-10-31, prove della pesca nelle zone): tentativi, fine sessione o viaggio, cambio di punto
 # (FishAction), pesci consegnati (unload_action.gd), pesca successiva e fine della serie (WorkFollowUpService). Temporaneo:
 # da spegnere quando la pesca nelle zone funziona.
@@ -281,7 +281,7 @@ const SHOW_UNLOAD_PROGRESS_LOGS := false
 # RecoverWeaponAction), quale Task/step la consuma, la ricezione in GameScene (e il rifiuto se la carcassa ha già
 # una macellazione in corso o in coda), l'accodamento, e [BUTCHER] a macellazione compiuta. Ogni riga ha anno,
 # giorno e frame del motore (HuntService.describe_now).
-const SHOW_HUNT_LOGS := false
+const SHOW_HUNT_LOGS := true
 # Intervallo tra due righe di avvicinamento, in GIORNI DI GIOCO (1 giorno = 8 s reali a 1x): 0.125 =
 # circa una riga al secondo a velocità 1x.
 const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
@@ -289,7 +289,7 @@ const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
 # pressione di bottone/tasto, selezionati, esito di età/stamina/coltello, zone trovate, zona scelta o scelta manuale,
 # creazione e assegnazione della Task, primo passo della pattuglia. Indipendente da ENABLED. Spento (2026-10-03, riordino dei log).
 # Stampa tramite HuntZoneService.log_event.
-const SHOW_HUNT_ZONE_LOGS := false
+const SHOW_HUNT_ZONE_LOGS := true
 
 # AUTO_PROGRESS — [DRYING] (2026-10-03, richiesta utente — essiccatoio): una riga a ogni deposito in una voce ad
 # avanzamento automatico (BuildingStorageService.store: edificio, risorsa e quantità entrata, totale, avanzamento prima
@@ -383,7 +383,7 @@ const SHOW_CLEAR_LOGS := false
 
 # Lista dei lavori (2026-10-07, assegnazione compiti passo B — JobBoardService): una riga ogni volta che un pipottino
 # libero guarda la lista (lavori trovati, scelto con il punteggio, o perché nessuno). Solo log.
-const SHOW_JOB_BOARD_LOGS := false
+const SHOW_JOB_BOARD_LOGS := true
 
 # Tempi della lista dei lavori (2026-10-24, fase 0 dell'assegnatore, docs/progetto_assegnatore_unico_lavori.md —
 # JobBoardTimingService): [JOB BOARD TIMING] per ogni domanda "c'è un lavoro per lui?" calcolata sopra 2 ms (voce per
@@ -421,7 +421,7 @@ const SHOW_APPAREL_CHOICE_LOGS := false
 
 # Guardaroba (2026-10-22, Hut — ToolFetchService/UnloadAction): una riga [WARDROBE] al cambio di stagione (capo preso e
 # capo riposto, o tenuto perché il nuovo non è nello zaino). Solo log; spento su richiesta il 2026-10-25.
-const SHOW_WARDROBE_LOGS := true
+const SHOW_WARDROBE_LOGS := false
 
 # Talk (2026-10-13, socialità — TalkService/TalkAction): una riga [TALK] per chiamata (partner, raggio, punti
 # d'incontro), nessun partner, inizio e fine della conversazione, chiusura senza effetti con il motivo. Acceso su
@@ -438,4 +438,4 @@ const SHOW_SOCIAL_RITE_LOGS := false
 
 # Trappole (2026-11-07, TrapService — rete per uccelli): una riga [TRAP] quando cambia il posto scelto in una zona (o non
 # ce n'è), alla presa della trappola all'edificio e al montaggio (dove, usi, indice). Acceso per le prime prove.
-const SHOW_TRAP_LOGS := true
+const SHOW_TRAP_LOGS := false

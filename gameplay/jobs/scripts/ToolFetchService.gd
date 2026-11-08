@@ -603,8 +603,12 @@ static func _belt_ammo(worker: HumanIndividual, ammo_category: int) -> Vector2i:
 # riparte lo stesso e aspetta l'attrezzo come ogni altro passo senza attrezzo. Ogni attrezzo preso è "in prestito" se la
 # regola "Riponi gli attrezzi presi per un lavoro" è accesa.
 # `work_label` = cosa fa dopo, per il log. Ritorna le task assegnate (chi chiama ne collega i segnali).
+# Solo il primo prelievo è un ordine (assign_task, il lavoro va in coda); gli altri entrano come seguiti (2026-11-08,
+# richiesta utente — Nessa: arco + 3 mazzi erano 4 ordini, e il quarto espelleva dalla coda piena la caccia stessa,
+# QUEUE OVERFLOW): senza tetto né espulsioni, al contrario così escono nell'ordine del piano, tutti prima del lavoro.
 static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[Dictionary], work_label: Variant) -> Array[Task]:
 	var assigned: Array[Task] = []
+	var follow_ups: Array[Task] = []
 	for fetch in plan:
 		var building: Building = fetch["building"]
 		var tool_name := String(fetch["tool_name"])
@@ -616,8 +620,11 @@ static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[D
 		# Munizioni (2026-10-24): esce il mazzo più pieno, quello contato dalla scelta (_ammo_shots_in).
 		if bool(fetch.get("fullest", false)):
 			task.context[RetrieveAction.CONTEXT_EQUIP_FULLEST] = true
-		if not worker.assign_task(task, ctx.age_band_of(worker)):
-			continue
+		if assigned.is_empty():
+			if not worker.assign_task(task, ctx.age_band_of(worker)):
+				continue
+		else:
+			follow_ups.append(task)
 		assigned.append(task)
 		# Prenotazione nuova: le ricerche tenute per il fotogramma non la vedono, si rifanno.
 		_storage_tool_frame = -1
@@ -631,6 +638,9 @@ static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[D
 				worker.id, worker.name, tool_name, building.building_type_name, building.id,
 				("ordine del cassetto #%d" % int(work_label)) if work_label is int else str(work_label)
 			])
+	# La coda riprende dall'ultima (pop_back): i seguiti entrano al contrario.
+	for index in range(follow_ups.size() - 1, -1, -1):
+		TaskQueueService.push_follow_up_task(worker, follow_ups[index])
 	return assigned
 
 

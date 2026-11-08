@@ -128,6 +128,10 @@ var _auto_clear_rubble: bool = false
 var _return_borrowed_tools: bool = true
 var _take_bag: bool = false
 var _take_waterskin: bool = false
+# Voce dell'otre nascosta finché non è scoperta l'idea che lo sblocca (2026-11-08, richiesta utente): riga e tratteggio sopra.
+var _take_waterskin_available: bool = false
+var _take_waterskin_row: Control = null
+var _take_waterskin_separator: Control = null
 var _wear_apparel: bool = false
 var _single_builder: bool = false
 # Priorità (2026-10-08): valori passati da GameScene prima di _ready (set_priority_settings), elenco dei tipi visibile solo
@@ -893,7 +897,11 @@ func _build_settings_section() -> void:
 	DashedSeparator.add_item(_settings_box, _build_auto_clear_rubble_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_return_borrowed_tools_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_take_bag_setting_row())
-	DashedSeparator.add_item(_settings_box, _build_take_waterskin_setting_row())
+	_take_waterskin_row = _build_take_waterskin_setting_row()
+	DashedSeparator.add_item(_settings_box, _take_waterskin_row)
+	if _take_waterskin_row.get_index() > 0:
+		_take_waterskin_separator = _settings_box.get_child(_take_waterskin_row.get_index() - 1)
+	_apply_take_waterskin_available()
 	DashedSeparator.add_item(_settings_box, _build_wear_apparel_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_single_builder_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_collect_piles_setting_row())
@@ -1119,6 +1127,18 @@ func _build_take_bag_setting_row() -> Control:
 # cambio esce con take_waterskin_changed; ToolFetchService.try_take_waterskin).
 func set_take_waterskin(enabled: bool) -> void:
 	_take_waterskin = enabled
+
+
+func set_take_waterskin_available(available: bool) -> void:
+	_take_waterskin_available = available
+	_apply_take_waterskin_available()
+
+
+func _apply_take_waterskin_available() -> void:
+	if _take_waterskin_row != null:
+		_take_waterskin_row.visible = _take_waterskin_available
+	if _take_waterskin_separator != null:
+		_take_waterskin_separator.visible = _take_waterskin_available
 
 
 func _build_take_waterskin_setting_row() -> Control:
