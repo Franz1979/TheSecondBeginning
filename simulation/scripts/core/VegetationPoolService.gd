@@ -8,7 +8,7 @@ extends RefCounted
 # refresh_macrocell prende direttamente `resource_name` e scrive nel registro UNIFICATO di
 # MacroCellState, lot_capacity_cache[resource_name]/lot_capacity_checkpoint_day[resource_name],
 # invece del vecchio Dictionary combinato {"checkpoint_day","capacity","harvested"} passato dal
-# chiamante) — chiamata SOLO da LotCapacityService.refresh_vegetation_lot_capacity, il dispatch
+# chiamante) — chiamata SOLO da LotCapacityService.refresh_all_vegetation_lot_capacities, il dispatch
 # lot_source non vive qui (questa classe non sa cosa sia un lot_source, resta parametrizzata
 # esplicitamente su `object_type`, come da Step 1).
 #
@@ -49,9 +49,9 @@ static func most_recent_growth_checkpoint_absolute_day(game_data: GameData) -> i
 	return (game_data.year - 1) * GameData.DAYS_PER_YEAR + growth_day
 
 
-# Aggiorna macro_state.lot_capacity_cache[resource_name] per ogni lotto di `object_type` la cui
-# capacità è scaduta rispetto all'ultimo checkpoint growth (2026-09-19, RISCRITTA per il registro
-# unificato — vedi commento in testa al file):
+# Aggiorna macro_state.lot_capacity_cache per ogni risorsa di `resource_names` (tutte derivate da
+# `object_type`) e per ogni lotto la cui capacità è scaduta rispetto all'ultimo checkpoint growth
+# (2026-09-19, RISCRITTA per il registro unificato — vedi commento in testa al file):
 #   - checkpoint cambiato rispetto a lot_capacity_checkpoint_day[resource_name] -> l'INTERA cache
 #     di questa risorsa è stale (il checkpoint è per costruzione lo stesso per ogni lotto), si
 #     ricalcolano TUTTI i lotti attualmente rivendicati;
@@ -61,43 +61,44 @@ static func most_recent_growth_checkpoint_absolute_day(game_data: GameData) -> i
 #     ogni entry.
 # Nessun lotto da (ri)calcolare -> no-op immediato (anche il solo confronto scalare), stesso
 # principio "trascurabile anche ripetuto ad ogni refresh" di prima di questo passo.
+# Un solo conteggio degli individui maturi per tutte le risorse del tipo (2026-11-08, ridisegno del giorno 181: stick e
+# mushroom rifacevano lo stesso conto sugli alberi), e solo se almeno una risorsa ha lotti da ricalcolare.
 static func refresh_macrocell(
 	macro_state: MacroCellState,
 	game_data: GameData,
 	object_type: GameTypes.WorldObjectType,
-	resource_name: String,
-	allowed_subtypes: Array = []
+	resource_names: Array[String]
 ) -> void:
-	var units_per_mature_individual := resolve_units_per_mature_individual(resource_name)
 	var checkpoint_absolute_day := most_recent_growth_checkpoint_absolute_day(game_data)
 	var claimed_lots := _claimed_lots_store(macro_state, object_type)
+	var mature_counts: Dictionary = {}
+	var mature_counted := false
 
-	var cache: Dictionary = macro_state.lot_capacity_cache.get(resource_name, {})
-	var cached_checkpoint_day: int = int(macro_state.lot_capacity_checkpoint_day.get(resource_name, -1))
-	if cached_checkpoint_day != checkpoint_absolute_day:
-		cache = {}
+	for resource_name in resource_names:
+		var units_per_mature_individual := resolve_units_per_mature_individual(resource_name)
+		var cache: Dictionary = macro_state.lot_capacity_cache.get(resource_name, {})
+		var cached_checkpoint_day: int = int(macro_state.lot_capacity_checkpoint_day.get(resource_name, -1))
+		if cached_checkpoint_day != checkpoint_absolute_day:
+			cache = {}
 
-	var stale_lots: Array = []
-	for lot in claimed_lots.keys():
-		if not cache.has(lot):
-			stale_lots.append(lot)
-	if stale_lots.is_empty() and cached_checkpoint_day == checkpoint_absolute_day:
+		var stale_lots: Array = []
+		for lot in claimed_lots.keys():
+			if not cache.has(lot):
+				stale_lots.append(lot)
+		if stale_lots.is_empty() and cached_checkpoint_day == checkpoint_absolute_day:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_POOL_LOGS:
+				_debug_print_pool(macro_state, resource_name, cache)
+			continue
+
+		if not mature_counted:
+			mature_counts = _count_mature_individuals_by_lot(macro_state, object_type, game_data.year)
+			mature_counted = true
+		for lot in stale_lots:
+			cache[lot] = units_per_mature_individual * int(mature_counts.get(lot, 0))
+		macro_state.lot_capacity_cache[resource_name] = cache
+		macro_state.lot_capacity_checkpoint_day[resource_name] = checkpoint_absolute_day
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_POOL_LOGS:
 			_debug_print_pool(macro_state, resource_name, cache)
-		return
-
-	# Raggruppamento in UNA sola passata (stesso principio già in uso nell'originale) invece di
-	# riscansionare l'intera macrocella per ogni lotto stale.
-	var individuals_by_lot := _group_individuals_by_lot(macro_state, object_type, stale_lots)
-	for lot in stale_lots:
-		cache[lot] = _compute_capacity_for_lot(
-			macro_state, object_type, individuals_by_lot.get(lot, []), game_data.year,
-			units_per_mature_individual, allowed_subtypes
-		)
-	macro_state.lot_capacity_cache[resource_name] = cache
-	macro_state.lot_capacity_checkpoint_day[resource_name] = checkpoint_absolute_day
-	if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_POOL_LOGS:
-		_debug_print_pool(macro_state, resource_name, cache)
 
 
 # [DBG_POOL] (vedi DebugLogging.SHOW_RESOURCE_POOL_LOGS) — RISCRITTA per il registro unificato:
@@ -145,44 +146,22 @@ static func _birth_year_store(macro_state: MacroCellState, object_type: GameType
 	return macro_state.tree_virtual_birth_year if object_type == GameTypes.WorldObjectType.TREE else macro_state.shrub_virtual_birth_year
 
 
-static func _group_individuals_by_lot(macro_state: MacroCellState, object_type: GameTypes.WorldObjectType, lots: Array) -> Dictionary:
-	var lot_set: Dictionary = {}
-	for lot in lots:
-		lot_set[lot] = true
-
-	var birth_year_store := _birth_year_store(macro_state, object_type)
-	var grouped: Dictionary = {}
-	for key in birth_year_store.keys():
-		var lot := Vector2i(key.x, key.y)
-		if not lot_set.has(lot):
-			continue
-		var list: Array = grouped.get(lot, [])
-		list.append(key)
-		grouped[lot] = list
-	return grouped
-
-
-# Conta gli individui ADULT/OLD (non YOUNG) tra `individual_keys` (già filtrati a UN solo lotto) —
-# STESSA combinazione subtype_rule+band_for_age dell'originale StickPoolService, ora generica su
-# object_type. `allowed_subtypes` vuoto = qualunque subtype VALIDO conta (subtype_rule risolvibile),
-# STESSO comportamento esatto di prima per stick — non vuoto = filtro aggiuntivo per un subtype
-# specifico (bacche/frutti futuri, non usato da alcun chiamante in questo passo).
-static func _compute_capacity_for_lot(
+# Individui ADULT/OLD (non YOUNG) per lotto, in un solo giro sul registro: conta solo i sottotipi con una regola
+# risolvibile, come prima. Un lotto senza individui maturi non compare.
+static func _count_mature_individuals_by_lot(
 	macro_state: MacroCellState,
 	object_type: GameTypes.WorldObjectType,
-	individual_keys: Array,
-	current_year: int,
-	units_per_mature_individual: int,
-	allowed_subtypes: Array
-) -> int:
+	current_year: int
+) -> Dictionary:
 	var subtype_store := _subtype_store(macro_state, object_type)
 	var birth_year_store := _birth_year_store(macro_state, object_type)
-	var mature_count := 0
-	for key in individual_keys:
+	var rules_by_subtype: Dictionary = {}
+	var counts: Dictionary = {}
+	for key: Vector3i in birth_year_store:
 		var subtype_name: String = subtype_store.get(key, "")
-		if not allowed_subtypes.is_empty() and not allowed_subtypes.has(subtype_name):
-			continue
-		var subtype_rule := ResourceCalculator.get_subtype_rule(object_type, subtype_name)
+		if not rules_by_subtype.has(subtype_name):
+			rules_by_subtype[subtype_name] = ResourceCalculator.get_subtype_rule(object_type, subtype_name)
+		var subtype_rule: SubtypeRules = rules_by_subtype[subtype_name]
 		if subtype_rule == null:
 			continue
 		var years_lived: int = current_year - int(birth_year_store[key])
@@ -190,5 +169,6 @@ static func _compute_capacity_for_lot(
 			years_lived, subtype_rule.youth_duration_years, subtype_rule.adult_duration_years
 		)
 		if age_band != GameTypes.AgeBand.YOUNG:
-			mature_count += 1
-	return units_per_mature_individual * mature_count
+			var lot := Vector2i(key.x, key.y)
+			counts[lot] = int(counts.get(lot, 0)) + 1
+	return counts

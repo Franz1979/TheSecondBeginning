@@ -763,7 +763,7 @@ func set_pebble_availability(availability: Dictionary) -> void:
 
 
 # Bastoni/stick (2026-09-08, richiesta utente) — chiamato da GameScene/MacroCellScene subito dopo
-# LotCapacityService.refresh_vegetation_lot_capacity, stessa disponibilità già risolta (vedi
+# LotCapacityService.refresh_all_vegetation_lot_capacities, stessa disponibilità già risolta (vedi
 # stick_availability sopra per il perché). A differenza di stone/pebble non dipende da un
 # "set_positions" separato: i lotti sono già le chiavi del Dictionary stesso (MacroCellState.
 # tree_claimed_lots concettualmente, qui letto indirettamente dalle chiavi di stick_availability).
@@ -3880,8 +3880,8 @@ static func _check_buffer_layout(with_color: bool, transform: Transform2D, color
 #     (_check_geometry_cache_globals): se cambia, memoria svuotata;
 #   - costanti del file (CELL_SIZE, intervalli, sali degli hash).
 # NON ne dipendono (applicati a ogni ricostruzione): colore stagionale della chioma, test dei frutti per rapporto.
-# GameScene svuota tutto (clear_vegetation_geometry_cache) a ogni rigenerazione delle posizioni
-# (needs_full_vegetation_recompute: checkpoint stagionale, taglio, edificio, attivazione cella) — nel dubbio.
+# GameScene svuota tutto (clear_vegetation_geometry_cache) quando rigenera le posizioni, tranne per taglio, cantiere
+# ripulito, edificio e giorno nuovo: lì bastano le firme sopra.
 var _tree_geometry_cache: Dictionary = {}
 var _shrub_geometry_cache: Dictionary = {}
 var _tree_geometry_globals: Array = []

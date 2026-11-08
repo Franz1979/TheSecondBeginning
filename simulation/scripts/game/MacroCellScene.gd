@@ -112,6 +112,7 @@ func _ready() -> void:
 		var focus_live_cells: Dictionary = {Vector2i(macro_cell.x, macro_cell.y): true}
 		LODOrchestrator.set_focus_region(macro_world, focus_live_cells, SeasonCalculator.get_season_for_day(game_data.current_day))
 		macro_world.lod_focus_active = true
+		macro_world.live_cell_coords = focus_live_cells
 
 	world = World.new()
 	if macro_cell != null:

@@ -118,7 +118,7 @@ static func ensure_cell(world: World, game_data: GameData, coords: Vector2i, for
 		game_data.wild_fauna[key] = entry
 		created += 1
 		_log_region(entry)
-	if DebugLogging.ENABLED:
+	if DebugLogging.SHOW_WILD_FAUNA_LOGS:
 		print("[WILD FAUNA] cella (%d, %d): %d riquadri nuovi, %d già noti" % [coords.x, coords.y, created, known])
 
 
@@ -234,7 +234,7 @@ static func remove_one(game_data: GameData, species: String, age_band: int, coor
 	var total := entry.get_total()
 	if total <= 0:
 		_empty_region(entry, game_data.get_absolute_day())
-	if DebugLogging.ENABLED:
+	if DebugLogging.SHOW_WILD_FAUNA_LOGS:
 		print("[WILD FAUNA] %s (%d,%d): preda uccisa in (%d, %d), restano %d%s" % [species, entry.region.x, entry.region.y,
 			coords.x, coords.y, total, " — mandria sterminata" if total <= 0 else ""])
 
@@ -249,7 +249,7 @@ static func exterminate_in_cell(game_data: GameData, coords: Vector2i) -> void:
 			entry.age_counts[age_band] = 0
 		_empty_region(entry, game_data.get_absolute_day())
 		game_data.wild_fauna_moved = true
-		if DebugLogging.ENABLED:
+		if DebugLogging.SHOW_WILD_FAUNA_LOGS:
 			print("[WILD FAUNA] %s (%d,%d): sterminata in (%d, %d) dal debug, %d capi" % [species, entry.region.x,
 				entry.region.y, coords.x, coords.y, total])
 
@@ -315,7 +315,7 @@ static func _catch_up(world: World, game_data: GameData, rules: AnimalRules, ent
 	# riquadro non si ritira).
 	if today - from_day > RECREATE_AFTER_YEARS * GameData.DAYS_PER_YEAR:
 		_roll_herd(game_data, rules, entry)
-		if DebugLogging.ENABLED:
+		if DebugLogging.SHOW_WILD_FAUNA_LOGS:
 			print("[WILD FAUNA] giorno %d %s (%d,%d): nessuno la guardava da %d anni, mandria rifatta %d/%d/%d (giovani/adulti/vecchi)" % [
 				today, entry.species, entry.region.x, entry.region.y, (today - from_day) / GameData.DAYS_PER_YEAR,
 				_count(entry, GameTypes.AgeBand.YOUNG), _count(entry, GameTypes.AgeBand.ADULT), _count(entry, GameTypes.AgeBand.OLD)])
@@ -340,7 +340,7 @@ static func _catch_up(world: World, game_data: GameData, rules: AnimalRules, ent
 			if note == "":
 				continue
 			changed = true
-			if DebugLogging.ENABLED:
+			if DebugLogging.SHOW_WILD_FAUNA_LOGS:
 				print("[WILD FAUNA] giorno %d %s%s (%d,%d): %s -> %d/%d/%d (giovani/adulti/vecchi)" % [day,
 					"recupero " if recovering else "", entry.species, entry.region.x, entry.region.y, note,
 					_count(entry, GameTypes.AgeBand.YOUNG), _count(entry, GameTypes.AgeBand.ADULT),
@@ -371,7 +371,7 @@ static func _recolonize(world: World, game_data: GameData, rules: AnimalRules, e
 	entry.current_cell = suitable.pick_random()
 	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
 	entry.last_move_day = today
-	if DebugLogging.ENABLED:
+	if DebugLogging.SHOW_WILD_FAUNA_LOGS:
 		print("[WILD FAUNA] giorno %d %s (%d,%d): ricolonizzato, arrivati %d/%d/%d (giovani/adulti/vecchi) in (%d, %d)" % [
 			arrival_day, entry.species, entry.region.x, entry.region.y, _count(entry, GameTypes.AgeBand.YOUNG),
 			_count(entry, GameTypes.AgeBand.ADULT), _count(entry, GameTypes.AgeBand.OLD), entry.current_cell.x,
@@ -460,7 +460,7 @@ static func _place(world: World, rules: AnimalRules, entry: WildFaunaRegion, tod
 	entry.current_cell = suitable.pick_random()
 	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
 	entry.last_move_day = today
-	if DebugLogging.ENABLED:
+	if DebugLogging.SHOW_WILD_FAUNA_LOGS:
 		print("[WILD FAUNA] giorno %d %s (%d,%d): %sda (%d, %d) a (%d, %d), resta %d giorni" % [today, entry.species,
 			entry.region.x, entry.region.y, log_prefix, from.x, from.y, entry.current_cell.x, entry.current_cell.y, entry.stay_remaining])
 
@@ -480,7 +480,7 @@ static func _suitable_cells(world: World, rules: AnimalRules, region: Vector2i, 
 
 
 static func _log_region(entry: WildFaunaRegion) -> void:
-	if not DebugLogging.ENABLED:
+	if not DebugLogging.SHOW_WILD_FAUNA_LOGS:
 		return
 	var origin := entry.region * entry.side
 	var head := "[WILD FAUNA]   riquadro %s (%d,%d) %dx%d [celle %d-%d, %d-%d]:" % [entry.species, entry.region.x,

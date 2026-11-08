@@ -19,13 +19,9 @@ const MULTIPLIER_HIGH := 0.075
 func apply_mortality(world: World) -> void:
 	var ordered_types := ResourceCalculator.get_types_ordered_by_succession(MORTAL_TYPES)
 
-	for cell in world.cells:
-		var state := world.get_cell_state_at(cell.x, cell.y)
-		if state == null:
-			continue
-		# LOD0: macrocella mai scoperta dentro una sessione con focus attivo — congelata, nessuna
-		# mortalità finché il player non ci arriva (vedi LODOrchestrator.is_vegetation_frozen).
-		if LODOrchestrator.is_vegetation_frozen(world, state):
+	for state: MacroCellState in LODOrchestrator.engine_states(world):
+		var cell := world.get_cell_at(state.x, state.y)
+		if cell == null:
 			continue
 
 		for resource_type in ordered_types:

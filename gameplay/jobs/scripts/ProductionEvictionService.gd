@@ -49,13 +49,28 @@ static func find_evictable(world: World, individuals: Array[HumanIndividual], re
 			continue
 		if not ProductionService.has_output_room(building, recipe):
 			continue
-		for order_key in ProductionService.get_order_keys(building):
-			if not _is_evictable_kind(building, order_key) or not is_order_waiting(individuals, building, order_key):
-				continue
-			var index := _order_index(order_key)
-			if best_index == -1 or index < best_index:
-				best_index = index
-				best = {"building": building, "order_key": order_key}
+		var order_key := oldest_waiting_order(individuals, building)
+		if order_key == "":
+			continue
+		var index := _order_index(order_key)
+		if best_index == -1 or index < best_index:
+			best_index = index
+			best = {"building": building, "order_key": order_key}
+	return best
+
+
+# L'ordine scalzabile più vecchio di `building` tra quelli in attesa di materiali, "" se nessuno. Usata anche dagli ordini
+# già sulla postazione senza lavoratore (2026-11-08, ProduceJobProvider): trovano l'edificio pieno e prendono questo posto.
+static func oldest_waiting_order(individuals: Array[HumanIndividual], building: Building) -> String:
+	var best := ""
+	var best_index := -1
+	for order_key in ProductionService.get_order_keys(building):
+		if not _is_evictable_kind(building, order_key) or not is_order_waiting(individuals, building, order_key):
+			continue
+		var index := _order_index(order_key)
+		if best_index == -1 or index < best_index:
+			best_index = index
+			best = order_key
 	return best
 
 

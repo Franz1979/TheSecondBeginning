@@ -283,7 +283,18 @@ static func get_slot_breakdown(building: Building) -> Array:
 			continue
 		var space_per_unit: float = resource_rules.space_per_unit
 		var units_per_slot := _units_per_slot(building, space_per_unit)
-		var auto_days_left := ProductionService.get_auto_progress_days_left(building, String(resource_name))
+		# Ingrediente in essiccazione (2026-11-08, richiesta utente): uno slot vero per ogni voce di get_auto_slots, coi suoi giorni.
+		if ProductionService.is_auto_progress_input(building, String(resource_name)):
+			for auto_slot in get_auto_slots(building, String(resource_name)):
+				var auto_quantity: int = int(auto_slot["quantity"])
+				slots.append({
+					"resource_name": String(resource_name),
+					"quantity": auto_quantity,
+					"space_used": int(round(float(auto_quantity) * space_per_unit)),
+					"space_capacity": slot_capacity_space,
+					"auto_days_left": ProductionService.get_auto_progress_slot_days(building, String(resource_name), float(auto_slot["progress"])),
+				})
+			continue
 		var remaining: int = quantity
 		while remaining > 0:
 			var quantity_in_slot: int = min(remaining, units_per_slot) if units_per_slot > 0 else remaining
@@ -293,9 +304,6 @@ static func get_slot_breakdown(building: Building) -> Array:
 				"space_used": int(round(float(quantity_in_slot) * space_per_unit)),
 				"space_capacity": slot_capacity_space,
 			}
-			# Giorni mancanti all'avanzamento automatico (2026-10-03, essiccazione passo 2), per il pannello.
-			if auto_days_left >= 0:
-				slot["auto_days_left"] = auto_days_left
 			slots.append(slot)
 			remaining -= quantity_in_slot
 	return slots
@@ -340,23 +348,91 @@ static func store(building: Building, resource_name: String, quantity: int, deca
 	# deperimento (ToolInstance.merged_lot_decay); senza istanze è la media sulla quantità di sempre.
 	var new_decay_fraction: float = ToolInstance.merged_lot_decay(existing_entry, deposit_amount, decay_fraction)
 
-	# Avanzamento automatico (2026-10-03, essiccazione passo 2): un ingrediente di una ricetta ad avanzamento
-	# automatico di questo edificio porta la propria frazione, media pesata con le unità nuove a 0 (stesso principio
-	# di decay_fraction sopra). Per ogni altra risorsa la chiave resta assente.
-	var new_auto_progress: float = -1.0
-	var current_auto_progress: float = 0.0
+	# Avanzamento automatico (2026-11-08, richiesta utente — per slot): i pezzi nuovi riempiono l'ultimo slot, con la media
+	# solo lì, e quello che avanza apre uno slot nuovo da zero. Per ogni altra risorsa la chiave resta assente.
+	var auto_slots: Array = []
 	if ProductionService.is_auto_progress_input(building, resource_name):
-		current_auto_progress = float(existing_entry.get(ProductionService.AUTO_PROGRESS_KEY, 0.0))
-		new_auto_progress = float(current_quantity) * current_auto_progress / float(new_quantity)
+		auto_slots = get_auto_slots(building, resource_name)
+		_add_auto_units(auto_slots, deposit_amount, _units_per_slot_of(building, resource_name), 0.0)
 
 	# Pezzi NUOVI: si sommano a quantity, le eventuali istanze usate già presenti restano (attrezzi).
-	_write_entry(building, resource_name, new_quantity, new_decay_fraction, ToolInstance.get_used_instances(existing_entry), new_auto_progress)
-	if new_auto_progress >= 0.0 and DebugLogging.ENABLED and DebugLogging.SHOW_AUTO_PROGRESS_LOGS:
-		print("[DRYING] %s #%d: +%d %s (totale %d), avanzamento %.2f -> %.2f, pronto tra %d giorni." % [
-			building.building_type_name, building.id, deposit_amount, resource_name, new_quantity,
-			current_auto_progress, new_auto_progress, ProductionService.get_auto_progress_days_left(building, resource_name)
+	_write_entry(building, resource_name, new_quantity, new_decay_fraction, ToolInstance.get_used_instances(existing_entry), auto_slots)
+	if not auto_slots.is_empty() and DebugLogging.ENABLED and DebugLogging.SHOW_AUTO_PROGRESS_LOGS:
+		print("[DRYING] %s #%d: +%d %s (totale %d), slot: %s." % [
+			building.building_type_name, building.id, deposit_amount, resource_name, new_quantity, str(auto_slots)
 		])
 	return deposit_amount
+
+
+# --- ESSICCAZIONE PER SLOT (2026-11-08, richiesta utente) ---
+# La voce di un ingrediente ad avanzamento automatico tiene in ProductionService.AUTO_SLOTS_KEY un elenco di slot veri,
+# {"quantity", "progress"}, dal più vecchio al più nuovo. Regola fissa: tutti pieni tranne l'ultimo, quindi quanti sono resta
+# uguale a _slots_for_quantity e i conti degli slot del magazzino non cambiano. La somma delle quantità è la "quantity" della
+# voce. Le voci vecchie (solo AUTO_PROGRESS_KEY, un avanzamento unico) si dividono qui con quell'avanzamento.
+
+
+# Copia degli slot di `resource_name`, allineata alla quantità della voce. [] se la voce è vuota.
+static func get_auto_slots(building: Building, resource_name: String) -> Array:
+	var entry: Dictionary = building.stored_resources.get(resource_name, {})
+	var quantity: int = int(entry.get("quantity", 0))
+	if quantity <= 0:
+		return []
+	var slots: Array = []
+	var known := 0
+	for raw_slot in entry.get(ProductionService.AUTO_SLOTS_KEY, []):
+		var slot_quantity: int = int(raw_slot["quantity"])
+		if slot_quantity > 0:
+			slots.append({"quantity": slot_quantity, "progress": float(raw_slot["progress"])})
+			known += slot_quantity
+	if known > quantity:
+		_remove_auto_units(slots, known - quantity)
+	elif known < quantity:
+		_add_auto_units(slots, quantity - known, _units_per_slot_of(building, resource_name), float(entry.get(ProductionService.AUTO_PROGRESS_KEY, 0.0)))
+	return slots
+
+
+# Riscrive gli slot della voce (avanzamento giornaliero, ProductionService.advance_auto_progress).
+static func set_auto_slots(building: Building, resource_name: String, slots: Array) -> void:
+	var entry: Dictionary = building.stored_resources.get(resource_name, {})
+	if entry.is_empty():
+		return
+	entry[ProductionService.AUTO_SLOTS_KEY] = slots
+	entry.erase(ProductionService.AUTO_PROGRESS_KEY)
+
+
+static func _units_per_slot_of(building: Building, resource_name: String) -> int:
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return _units_per_slot(building, rules.space_per_unit) if rules != null else 0
+
+
+# `amount` pezzi con avanzamento `progress`: prima nell'ultimo slot non pieno (media pesata solo lì), il resto in slot nuovi.
+static func _add_auto_units(slots: Array, amount: int, units_per_slot: int, progress: float) -> void:
+	var slot_size: int = units_per_slot if units_per_slot > 0 else amount
+	var remaining := amount
+	if not slots.is_empty():
+		var last: Dictionary = slots[slots.size() - 1]
+		var moved: int = mini(remaining, maxi(slot_size - int(last["quantity"]), 0))
+		if moved > 0:
+			var total: int = int(last["quantity"]) + moved
+			last["progress"] = (float(last["quantity"]) * float(last["progress"]) + float(moved) * progress) / float(total)
+			last["quantity"] = total
+			remaining -= moved
+	while remaining > 0:
+		var new_units: int = mini(remaining, slot_size)
+		slots.append({"quantity": new_units, "progress": progress})
+		remaining -= new_units
+
+
+# Toglie `amount` pezzi dagli slot più nuovi, i meno avanzati: si perde meno lavoro fatto e la regola degli slot resta.
+static func _remove_auto_units(slots: Array, amount: int) -> void:
+	var remaining := amount
+	while remaining > 0 and not slots.is_empty():
+		var last: Dictionary = slots[slots.size() - 1]
+		var taken: int = mini(remaining, int(last["quantity"]))
+		last["quantity"] = int(last["quantity"]) - taken
+		remaining -= taken
+		if int(last["quantity"]) <= 0:
+			slots.pop_back()
 
 
 # Deposita UN attrezzo usato (2026-09-26 — attrezzi come istanze, vedi testa del file). Stessi controlli
@@ -436,26 +512,26 @@ static func withdraw_tool_units(building: Building, resource_name: String, quant
 
 # Unico punto che (ri)scrive una voce di stored_resources con quantità e decay: quantità 0 = voce
 # rimossa; "used_instances" scritta solo se non vuota, così una voce senza istanze resta nel formato di sempre.
-# `auto_progress` (2026-10-03, essiccazione passo 2): frazione di avanzamento automatico (ProductionService.
-# AUTO_PROGRESS_KEY), scritta solo se >= 0; -1 = chiave assente, il formato di sempre.
-static func _write_entry(building: Building, resource_name: String, quantity: int, decay_fraction: float, used_instances: Array, auto_progress: float = -1.0) -> void:
+# `auto_slots` (2026-11-08, essiccazione per slot): gli slot in avanzamento automatico (ProductionService.AUTO_SLOTS_KEY),
+# scritti solo se non vuoti; vuoto = chiave assente, il formato di sempre.
+static func _write_entry(building: Building, resource_name: String, quantity: int, decay_fraction: float, used_instances: Array, auto_slots: Array = []) -> void:
 	if quantity <= 0:
 		building.stored_resources.erase(resource_name)
 		return
 	var entry: Dictionary = {"quantity": quantity, "decay_fraction": decay_fraction}
 	ToolInstance.set_used_instances(entry, used_instances)
-	if auto_progress >= 0.0:
-		entry[ProductionService.AUTO_PROGRESS_KEY] = auto_progress
+	if not auto_slots.is_empty():
+		entry[ProductionService.AUTO_SLOTS_KEY] = auto_slots
 	building.stored_resources[resource_name] = entry
 
 
 # Trasformazione di un avanzamento automatico concluso (2026-10-03, essiccazione passo 2 — ProductionService.
-# advance_auto_progress): la voce `input_name` scende a `input_left` unità (frazione ripartita da 0) e
+# advance_auto_progress): la voce `input_name` scende a `input_left` unità, con gli slot rimasti `input_slots`, e
 # `product_quantity` unità di `product_name` entrano nello STESSO storage, a deperimento 0, unite all'eventuale voce
 # già presente con la media pesata di store(). Scrittura diretta, senza can_accept: il prodotto non è accettato
 # dall'esterno (storage riservato agli ingredienti), ma nasce qui. Controlla solo gli slot: false (nulla cambia) se
 # dopo la trasformazione le risorse occuperebbero più di storage_slot_count slot.
-static func transform_entry(building: Building, input_name: String, input_left: int, product_name: String, product_quantity: int) -> bool:
+static func transform_entry(building: Building, input_name: String, input_left: int, input_slots: Array, product_name: String, product_quantity: int) -> bool:
 	if building == null or building.rules == null or product_quantity <= 0:
 		return false
 	var input_rules := CaloricCalculator.get_caloric_source_rules(input_name)
@@ -474,7 +550,7 @@ static func transform_entry(building: Building, input_name: String, input_left: 
 		+ _slots_for_quantity(product_current + product_quantity, product_units_per_slot)
 	if slots_after > get_slot_count(building):
 		return false
-	_write_entry(building, input_name, maxi(input_left, 0), float(input_entry.get("decay_fraction", 0.0)), [], 0.0)
+	_write_entry(building, input_name, maxi(input_left, 0), float(input_entry.get("decay_fraction", 0.0)), [], input_slots)
 	var product_total: int = product_current + product_quantity
 	var product_decay: float = float(product_current) * float(product_entry.get("decay_fraction", 0.0)) / float(product_total)
 	_write_entry(building, product_name, product_total, product_decay, ToolInstance.get_used_instances(product_entry))
@@ -794,10 +870,10 @@ static func withdraw_stored(building: Building, resource_name: String, quantity_
 		return 0
 
 	var withdrawn: int = min(quantity_requested, current_quantity)
-	# La frazione di avanzamento automatico, se c'è, resta alle unità rimaste (2026-10-03).
-	_write_entry(
-		building, resource_name, current_quantity - withdrawn,
-		float(existing_entry.get("decay_fraction", 0.0)), [],
-		float(existing_entry.get(ProductionService.AUTO_PROGRESS_KEY, -1.0))
-	)
+	# In essiccazione (2026-11-08): si toglie dagli slot meno avanzati, gli altri restano com'erano.
+	var auto_slots: Array = []
+	if ProductionService.is_auto_progress_input(building, resource_name):
+		auto_slots = get_auto_slots(building, resource_name)
+		_remove_auto_units(auto_slots, withdrawn)
+	_write_entry(building, resource_name, current_quantity - withdrawn, float(existing_entry.get("decay_fraction", 0.0)), [], auto_slots)
 	return withdrawn

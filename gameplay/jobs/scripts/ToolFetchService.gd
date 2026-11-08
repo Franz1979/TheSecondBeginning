@@ -214,6 +214,10 @@ static func _compute_blocked_reason(ctx: GameContext, categories: Array, age_kin
 		if not someone_has and category_fetch_option(ctx.world, null, int(category)).is_empty():
 			nowhere.append(int(category))
 	if not nowhere.is_empty():
+		if nowhere.size() == 1:
+			var no_ammo_text := _weapon_without_ammo_text(ctx.world, nowhere[0])
+			if no_ammo_text != "":
+				return no_ammo_text
 		if nowhere.size() == 1 and ZONE_ORDER_TOOL_BLOCK_KEYS.has(nowhere[0]):
 			return GameContext.tr_text(String(ZONE_ORDER_TOOL_BLOCK_KEYS[nowhere[0]]))
 		return GameContext.tr_text("task_assignment_nobody_has_tool").format({"tools": describe_missing_categories(nowhere)})
@@ -228,6 +232,28 @@ static func _compute_blocked_reason(ctx: GameContext, categories: Array, age_kin
 			if not needed.has(category):
 				needed.append(category)
 	return GameContext.tr_text("drawer_order_nobody_has_belt_room").format({"tools": describe_missing_categories(needed)})
+
+
+# Arma in deposito ma senza abbastanza munizioni per essere presa (2026-11-08, richiesta utente — "nessuno ha un'arma da
+# caccia" con 8 archi e un mazzo da 4 colpi): il testo che lo dice; "" se la categoria non è in questo caso. Solo le armi fuori
+# da _weapon_ranking: quelle dentro hanno le munizioni, e se mancano è per altri motivi (già prenotate).
+static func _weapon_without_ammo_text(world: World, category: int) -> String:
+	var with_ammo: Dictionary = {}
+	for entry in _weapon_ranking(world, category):
+		with_ammo[String(entry["tool_name"])] = true
+	for tool_name in ToolGateService.get_tools_covering(category):
+		var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+		if rules == null or rules.required_ammo_category < 0 or with_ammo.has(tool_name) or not _any_building_has(world, tool_name):
+			continue
+		var ammo_names := ToolGateService.get_tools_covering(rules.required_ammo_category)
+		if ammo_names.is_empty():
+			continue
+		return GameContext.tr_text("drawer_weapon_without_ammo").format({
+			"weapon": IconRegistry.get_resource_display_name(tool_name),
+			"ammo": IconRegistry.get_resource_display_name(ammo_names[0]),
+			"shots": MIN_AMMO_SHOTS,
+		})
+	return ""
 
 
 # true se per ogni categoria di `missing` c'è un prelievo possibile (category_fetch_option) e tutti insieme stanno nei
@@ -848,14 +874,20 @@ static func prune_borrowed_tools(ctx: GameContext) -> void:
 
 static func _prune_borrowed_tools(member: HumanIndividual) -> void:
 	var fetching: Dictionary = {}
+	# Arma scagliata in attesa di recupero (2026-11-08, richiesta utente — nessuno prendeva più l'arco): fuori dalla cintura ma
+	# ancora in prestito; prima la voce si perdeva e la lancia, raccolta, restava per sempre a chi l'aveva tirata.
+	var on_ground: Dictionary = {}
 	for task in JobWorkScanService.open_tasks(member):
 		var key: Variant = task.context.get(TOOL_FETCH_SOURCE_KEY, null)
 		if key != null:
 			fetching[String(key)] = true
+		for step_index in range(task.current_step_index, task.steps.size()):
+			if task.steps[step_index] is RecoverWeaponAction:
+				on_ground[(task.steps[step_index] as RecoverWeaponAction).weapon_name] = true
 	var still_equipped: Array = []
 	for entry in member.borrowed_tools:
 		var tool_name := String(entry.get("tool_name", ""))
-		if find_belt_slot_by_name(member, tool_name) != -1 \
+		if find_belt_slot_by_name(member, tool_name) != -1 or on_ground.has(tool_name) \
 				or fetching.has("%d:%s" % [int(entry.get("building_id", -1)), tool_name]):
 			still_equipped.append(entry)
 	member.borrowed_tools = still_equipped
@@ -1395,7 +1427,10 @@ static func _borrowed_tool_destination(world: World, member: HumanIndividual, to
 			if building.id == building_id:
 				origin = building
 				break
-	if origin != null and not origin.is_demolished and origin.is_complete and BuildingStorageService.can_accept(origin, tool_name):
+	# Serve anche il posto (2026-11-08, richiesta utente — Mira in loop col riponi): can_accept guarda solo il tipo, e con tutti
+	# gli slot occupati lo scarico falliva senza dire nulla e il pipottino ripartiva per lo stesso deposito.
+	if origin != null and not origin.is_demolished and origin.is_complete and BuildingStorageService.can_accept(origin, tool_name) \
+			and BuildingStorageService.get_max_depositable(origin, tool_name) >= 1:
 		return origin
 	return WarehouseSelectionService.find_best(
 		world, member.position, member.home_macro_coords, tool_name, 1, [], PathfindingService.reachability_for(member)

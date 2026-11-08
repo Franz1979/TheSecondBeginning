@@ -479,8 +479,6 @@ build_bar_hide_superseded,Nascondi superati
 build_bar_hide_superseded_tooltip,Nasconde gli edifici di cui si può già costruire il miglioramento (es. la tenda di bastoni quando si può costruire la tenda di pelli). Togli la spunta per vederli e costruirli.
 build_bar_category_none_available,Nessun edificio disponibile in questa categoria
 build_bar_title_work_areas,Aree di lavoro
-building_auto_progress_line,"In essiccazione: {resource} ×{quantity}, pronta tra {days} giorni"
-building_auto_progress_line_ready,"In essiccazione: {resource} ×{quantity}, pronta (in attesa di spazio)"
 building_auto_progress_none,In essiccazione: nulla
 microcell_inspection_vegetation_header,Vegetazione presente:
 microcell_inspection_tree,Alberi
@@ -874,6 +872,7 @@ individual_relative_alive,{name} (#{id})
 individual_relative_dead,{name} † (#{id})
 individual_children_label,Figli: {children}
 individual_children_none,nessuno
+individual_partner_none,nessuno
 individual_child_entry,"{person}, {age} anni"
 individual_house_tooltip,Casa: {name} (#{id})
 individual_no_house,Senza casa
@@ -1959,3 +1958,6 @@ task_empty_fish_trap_name,Svuotare una nassa
 task_empty_fish_trap_round_job_name,Giro delle nasse ({area}): {count}
 task_empty_fish_trap_round_job_tooltip,"Passare da tutte le nasse della zona {area} con pesci ({count}), le più vicine prima, e portare tutto dove va il pesce."
 warehouse_quantity_processing_tooltip,"In deposito: {stored} · Sulle postazioni: {processing}"
+storage_slot_auto_days_short,{days}g
+storage_slot_auto_progress_ready_tooltip,"Pronto, in attesa di spazio"
+drawer_weapon_without_ammo,"{weapon} in deposito, ma mancano le munizioni: {ammo}, almeno {shots} colpi"

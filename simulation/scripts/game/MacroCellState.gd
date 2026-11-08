@@ -63,6 +63,9 @@ var ford_positions: Array = []
 # (LODOrchestrator.set_focus_region) — MAI più rimesso a false, stesso principio "fatto storico
 # permanente" di has_ever_grown sopra. Una cella mai scoperta ha la vegetazione congelata.
 var has_ever_been_discovered: bool = false
+# Giorno assoluto in cui la cella si è spenta (-1: accesa, o mai accesa): alla riaccensione si rifanno i cambi di stagione
+# saltati da quel giorno (SeasonalResourceService.catch_up_frozen_cell).
+var frozen_since_absolute_day: int = -1
 # Vector3i (x, y lotto + indice individuo locale) -> {"origin_type": GameTypes.WorldObjectType,
 # "cut_year": int}. Fatto storico reale (non ricalcolabile), stesso principio di stone_positions:
 # a differenza di GRASS/SHRUB/TREE aggregati (mai persistiti, rigenerati da zero ad ogni apertura/

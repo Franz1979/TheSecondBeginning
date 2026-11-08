@@ -11,6 +11,9 @@ var cell_states: Array[MacroCellState] = []
 # Focus del LOD (vedi LODOrchestrator), solo di sessione e mai salvato: true mentre è aperta una scena con celle vive
 # (GameScene/MacroCellScene), che lo azzerano uscendo. A false (vista mondo) nulla è congelato.
 var lod_focus_active: bool = false
+# Celle accese, con le coordinate (Vector2i) come chiavi: lo stesso Dictionary della scena, quindi sempre aggiornato. Solo
+# di sessione, mai salvato. I controlli stagionali della vegetazione girano solo su queste (LODOrchestrator.engine_states).
+var live_cell_coords: Dictionary = {}
 
 # Edifici piazzati — world-level (Array + contatore id
 # dedicato). Persistito nei save (GameSaveService/GameLoadService, sezione "buildings") — oggi

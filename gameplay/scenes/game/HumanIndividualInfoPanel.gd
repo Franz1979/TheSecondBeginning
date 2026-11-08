@@ -485,7 +485,6 @@ func set_type_info(rows: Array[Dictionary]) -> void:
 # conosce gli altri individui, i defunti né gli edifici). `details`:
 #   "id": int; "folk", "village": String — nomi mostrati ("" = nessun villaggio);
 #   "mother", "father", "partner": {"id": int, "name": String, "dead": bool} ("id" -1 = non noto);
-#   "partner_unknown_female": bool — quale forma di "sconosciuto" usare per il partner;
 #   "children": Array di {"id", "name", "dead", "age": int} già ordinato dal più grande ("age" -1 = non nota);
 #   "house": {"id": int, "name": String} o {} senza casa.
 # Stesse righe nel blocco Info e nel tooltip dell'icona ℹ; la casa solo nell'icona 🏠.
@@ -498,8 +497,10 @@ func set_identity_details(details: Dictionary) -> void:
 	})
 	var mother_text: String = tr("individual_mother_label").format({"person": _format_relative(details.get("mother", {}), true)})
 	var father_text: String = tr("individual_father_label").format({"person": _format_relative(details.get("father", {}), false)})
+	# Senza partner "nessuno" (2026-11-08, richiesta utente): "sconosciuto" farebbe pensare a un partner che non si conosce.
+	var partner: Dictionary = details.get("partner", {})
 	var partner_text: String = tr("individual_partner_label").format({
-		"person": _format_relative(details.get("partner", {}), bool(details.get("partner_unknown_female", false)))
+		"person": tr("individual_partner_none") if int(partner.get("id", -1)) < 0 else _format_relative(partner, false)
 	})
 	id_label.text = id_text
 	mother_label.text = mother_text

@@ -89,3 +89,17 @@ static func is_vegetation_frozen(world: World, state: MacroCellState) -> bool:
 	if not world.lod_focus_active:
 		return false
 	return not state.has_ever_been_discovered
+
+
+# Le celle su cui girano i controlli stagionali della vegetazione: solo quelle accese, senza scorrere il mondo. Una cella
+# spenta resta com'è e alla riaccensione non recupera gli anni (SeasonalResourceService allinea solo frutti e raccolti alla
+# stagione). In vista mondo (lod_focus_active a false) tutte.
+static func engine_states(world: World) -> Array:
+	if not world.lod_focus_active:
+		return world.cell_states
+	var states: Array = []
+	for coords in world.live_cell_coords:
+		var state := world.get_cell_state_at(coords.x, coords.y)
+		if state != null:
+			states.append(state)
+	return states

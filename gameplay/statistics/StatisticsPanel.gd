@@ -363,7 +363,9 @@ func _refresh_mortality_tab(death_events: Array[Dictionary]) -> void:
 
 	for child in death_list_container.get_children():
 		child.queue_free()
-	for event in death_events:
+	# Dal più recente al più vecchio (2026-11-08, richiesta utente): death_events è in ordine di morte.
+	for event_index in range(death_events.size() - 1, -1, -1):
+		var event: Dictionary = death_events[event_index]
 		var label := Label.new()
 		label.add_theme_font_size_override("font_size", 10)
 		label.text = tr("statistics_death_row").format({

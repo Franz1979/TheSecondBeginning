@@ -160,7 +160,10 @@ static func has_built_workstation_for(world: World, resource_name: String) -> bo
 # (ResourceDecayService.advance_building_decay). Lo storage riservato agli ingredienti (BuildingRules.
 # storage_accepts_recipe_materials_only) accetta questi ingredienti (BuildingStorageService._free_storage_allows);
 # is_recipe_material/is_recipe_input_of non li contano, quindi la carne macellata va ancora al focolare.
+# Per slot dal 2026-11-08 (BuildingStorageService.get_auto_slots, AUTO_SLOTS_KEY): AUTO_PROGRESS_KEY è il formato vecchio
+# (un avanzamento per tutta la voce), letto solo per dividerlo negli slot.
 const AUTO_PROGRESS_KEY := "auto_progress"
+const AUTO_SLOTS_KEY := "auto_slots"
 # Tolleranza sulla somma dei passi giornalieri (10 × 0.1 può dare 0.9999999).
 const AUTO_PROGRESS_EPSILON: float = 0.0001
 
@@ -198,21 +201,20 @@ static func get_auto_progress_days(building: Building, recipe_rules: SecondaryRe
 	return days
 
 
-# Giorni mancanti alla trasformazione della voce `resource_name` di `building` (per eccesso), -1 se la voce non è in
-# avanzamento automatico.
-static func get_auto_progress_days_left(building: Building, resource_name: String) -> int:
+# Giorni mancanti alla trasformazione di uno slot di `resource_name` con avanzamento `progress` (per eccesso), -1 se la
+# risorsa non è in avanzamento automatico in `building`.
+static func get_auto_progress_slot_days(building: Building, resource_name: String, progress: float) -> int:
 	var recipe_name := get_auto_progress_recipe_for_input(building, resource_name)
-	if recipe_name == "" or not building.stored_resources.has(resource_name):
+	if recipe_name == "":
 		return -1
 	var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
-	var progress: float = float((building.stored_resources[resource_name] as Dictionary).get(AUTO_PROGRESS_KEY, 0.0))
 	return maxi(int(ceil((1.0 - progress) * float(get_auto_progress_days(building, recipe_rules)) - AUTO_PROGRESS_EPSILON)), 0)
 
 
-# Avanzamento giornaliero di ogni voce in avanzamento automatico di `building`; a frazione 1 la trasforma nel prodotto
-# della ricetta: cicli = quantità / unità dell'ingrediente per ciclo, prodotto = cicli × recipe_output_quantity, le
-# unità che non fanno un ciclo intero restano e ripartono da 0. Senza slot per il prodotto la voce resta a 1 e ritenta
-# il giorno dopo (push_warning).
+# Avanzamento giornaliero di ogni slot in avanzamento automatico di `building` (per slot dal 2026-11-08); uno slot a frazione
+# 1 si trasforma da solo nel prodotto della ricetta: cicli = quantità / unità dell'ingrediente per ciclo, prodotto = cicli ×
+# recipe_output_quantity, le unità che non fanno un ciclo intero tornano nell'ultimo slot da 0. Senza posto per il prodotto
+# lo slot resta a 1 e ritenta il giorno dopo (push_warning).
 static func advance_auto_progress(building: Building) -> void:
 	if building == null or building.stored_resources.is_empty():
 		return
@@ -221,22 +223,32 @@ static func advance_auto_progress(building: Building) -> void:
 		if recipe_name == "":
 			continue
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
-		var entry: Dictionary = building.stored_resources[input_name]
-		var progress: float = minf(float(entry.get(AUTO_PROGRESS_KEY, 0.0)) + 1.0 / float(get_auto_progress_days(building, recipe_rules)), 1.0)
-		entry[AUTO_PROGRESS_KEY] = progress
-		if progress < 1.0 - AUTO_PROGRESS_EPSILON:
-			continue
-		var quantity: int = int(entry.get("quantity", 0))
+		var slots: Array = BuildingStorageService.get_auto_slots(building, String(input_name))
+		var step: float = 1.0 / float(get_auto_progress_days(building, recipe_rules))
+		for slot in slots:
+			slot["progress"] = minf(float(slot["progress"]) + step, 1.0)
+		BuildingStorageService.set_auto_slots(building, String(input_name), slots)
 		var per_cycle: int = maxi(int(recipe_rules.recipe_inputs[input_name]), 1)
-		var cycles: int = quantity / per_cycle
-		if cycles <= 0:
-			continue
-		var produced: int = cycles * maxi(recipe_rules.recipe_output_quantity, 0)
-		if not BuildingStorageService.transform_entry(building, String(input_name), quantity - cycles * per_cycle, recipe_name, produced):
-			push_warning("ProductionService: %s #%d — %d %s pronti ma nessuno slot per %d %s, trasformazione rimandata." % [
-				building.building_type_name, building.id, quantity, input_name, produced, recipe_name
-			])
-		else:
+		var index := 0
+		while index < slots.size():
+			var ready_slot: Dictionary = slots[index]
+			var slot_quantity: int = int(ready_slot["quantity"])
+			var cycles: int = slot_quantity / per_cycle
+			if float(ready_slot["progress"]) < 1.0 - AUTO_PROGRESS_EPSILON or cycles <= 0:
+				index += 1
+				continue
+			var produced: int = cycles * maxi(recipe_rules.recipe_output_quantity, 0)
+			var slots_after: Array = slots.duplicate(true)
+			slots_after.remove_at(index)
+			BuildingStorageService._add_auto_units(slots_after, slot_quantity - cycles * per_cycle, BuildingStorageService._units_per_slot_of(building, String(input_name)), 0.0)
+			var total_left: int = int((building.stored_resources[input_name] as Dictionary).get("quantity", 0)) - cycles * per_cycle
+			if not BuildingStorageService.transform_entry(building, String(input_name), total_left, slots_after, recipe_name, produced):
+				push_warning("ProductionService: %s #%d — %d %s pronti ma nessuno slot per %d %s, trasformazione rimandata." % [
+					building.building_type_name, building.id, slot_quantity, input_name, produced, recipe_name
+				])
+				index += 1
+				continue
+			slots = slots_after
 			if DebugLogging.ENABLED and DebugLogging.SHOW_AUTO_PROGRESS_LOGS:
 				print("[DRYING] %s #%d: %d %s -> %d %s." % [
 					building.building_type_name, building.id, cycles * per_cycle, input_name, produced, recipe_name

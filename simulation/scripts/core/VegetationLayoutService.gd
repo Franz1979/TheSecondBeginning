@@ -18,6 +18,9 @@ extends RefCounted
 # Lotto nel salvataggio: y * LOT_CODE_WIDTH + x (microcelle 0..99).
 const LOT_CODE_WIDTH := 100
 const LAYOUT_TYPES: Array[GameTypes.WorldObjectType] = [GameTypes.WorldObjectType.TREE, GameTypes.WorldObjectType.SHRUB]
+# Vegetazione a richiesta, passo 4 (docs/progetto_vegetazione_a_richiesta.md): true = la disposizione nasce da
+# VegetationAtLotService e non dipende più dai numeri di cella; false = dal generatore di sempre.
+const USE_LOT_FUNCTION := false
 
 
 # Generatore di sempre + disposizione tenuta. `occupied` e `building_positions` come VegetationPositionService.
@@ -46,6 +49,66 @@ static func rebuild(macro_state: MacroCellState, occupied: Dictionary, current_y
 	return positions
 
 
+# Disposizione calcolata da VegetationAtLotService: riempie gli stessi dati del generatore (lotti, posti, sottotipi, anni
+# di nascita, erba), così chi li legge non cambia, poi costruisce l'elenco con read. Un lotto in `occupied` resta vuoto.
+# Ceppi e piante morte restano al loro posto e il loro posto non riceve una pianta.
+static func rebuild_from_function(
+	macro_state: MacroCellState, macro_cell: MacroCellData, occupied: Dictionary, current_year: int,
+	world_age: GameTypes.WorldAge, building_positions: Dictionary
+) -> Dictionary:
+	var profile := VegetationAtLotService.get_profile(macro_cell.terrain_base, macro_cell.biome, macro_cell.coast_type, world_age)
+	var lot_codes := PackedInt32Array()
+	for y in range(VegetationAtLotService.LOTS_PER_CELL):
+		for x in range(VegetationAtLotService.LOTS_PER_CELL):
+			if not occupied.has(Vector2i(x, y)):
+				lot_codes.append(y * LOT_CODE_WIDTH + x)
+	var lots: Dictionary = VegetationAtLotService.vegetation_for_lots(profile, macro_cell.x, macro_cell.y, current_year, lot_codes)
+	for object_type in LAYOUT_TYPES:
+		IndividualVegetationService._prune_expired_cut_exceptions(macro_state.vegetation_cut_exceptions, object_type, current_year)
+	_store_plants(macro_state, GameTypes.WorldObjectType.TREE, lots["trees"], current_year)
+	_store_plants(macro_state, GameTypes.WorldObjectType.SHRUB, lots["shrubs"], current_year)
+	macro_state.grass_lots.clear()
+	for code in lots["grass"]:
+		macro_state.grass_lots[_decode(code)] = true
+	macro_state.vegetation_revision += 1
+	macro_state.vegetation_layout_ready = true
+	return read(macro_state, occupied, current_year, building_positions)
+
+
+# `plants`: [codice lotto, indice posto, età, indice sottotipo, ...] (VegetationAtLotService.vegetation_for_lots).
+static func _store_plants(macro_state: MacroCellState, object_type: GameTypes.WorldObjectType, plants: PackedInt32Array, current_year: int) -> void:
+	var rules: Array = ResourceCalculator.get_subtype_rules(object_type)
+	var claimed := _claimed_lots_store(macro_state, object_type)
+	var slots := _lot_slots_store(macro_state, object_type)
+	var subtype_store := _subtype_store(macro_state, object_type)
+	var birth_year_store := IndividualVegetationService._birth_year_store(macro_state, object_type)
+	var cut_exceptions: Dictionary = macro_state.vegetation_cut_exceptions
+	var death_exceptions: Dictionary = macro_state.vegetation_death_exceptions
+	claimed.clear()
+	slots.clear()
+	subtype_store.clear()
+	birth_year_store.clear()
+	for i in range(0, plants.size(), 4):
+		var lot := _decode(plants[i])
+		var index: int = plants[i + 1]
+		claimed[lot] = true
+		slots[lot] = maxi(int(slots.get(lot, 0)), index + 1)
+		var key := Vector3i(lot.x, lot.y, index)
+		if cut_exceptions.has(key) or death_exceptions.has(key):
+			continue
+		var rule = rules[plants[i + 3]]
+		subtype_store[key] = rule.subtype_name
+		if rule.track_age_bands:
+			birth_year_store[key] = current_year - plants[i + 2]
+	for exceptions in [cut_exceptions, death_exceptions]:
+		for key in exceptions.keys():
+			if int(exceptions[key]["origin_type"]) != object_type:
+				continue
+			var lot := Vector2i(key.x, key.y)
+			claimed[lot] = true
+			slots[lot] = maxi(int(slots.get(lot, 0)), key.z + 1)
+
+
 # Elenco dalla disposizione tenuta. Richiede vegetation_layout_ready (altrimenti rebuild).
 static func read(macro_state: MacroCellState, occupied: Dictionary, current_year: int, building_positions: Dictionary) -> Dictionary:
 	var cut_exceptions: Dictionary = macro_state.vegetation_cut_exceptions
@@ -54,7 +117,7 @@ static func read(macro_state: MacroCellState, occupied: Dictionary, current_year
 	for object_type in LAYOUT_TYPES:
 		var subtype_store := _subtype_store(macro_state, object_type)
 		var individuals: Array = []
-		if macro_state.get_dedicated_space(object_type) > 0:
+		if USE_LOT_FUNCTION or macro_state.get_dedicated_space(object_type) > 0:
 			var slots := _lot_slots_store(macro_state, object_type)
 			for lot in slots.keys():
 				if building_positions.has(lot):

@@ -101,31 +101,18 @@ static func get_all_lot_capacity_resource_names() -> Array[String]:
 
 # TREE_INDIVIDUAL/SHRUB_INDIVIDUAL (stick/mushroom su TREE, plant_fiber su SHRUB) — chiamata ad
 # ogni refresh vegetazione (GameScene/MacroCellScene._refresh_resource_visuals), no-op se già
-# fresca (vedi VegetationPoolService.refresh_macrocell). object_type risolto dal lot_source stesso,
-# nessun parametro aggiuntivo da parte del chiamante.
-static func refresh_vegetation_lot_capacity(macro_state: MacroCellState, game_data: GameData, resource_name: String) -> void:
-	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
-	if rules == null:
-		return
-	var object_type: GameTypes.WorldObjectType
-	match rules.lot_source:
-		SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL:
-			object_type = GameTypes.WorldObjectType.TREE
-		SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL:
-			object_type = GameTypes.WorldObjectType.SHRUB
-		_:
-			return
-	VegetationPoolService.refresh_macrocell(macro_state, game_data, object_type, resource_name)
-
-
-# Comodità per i due chiamanti (GameScene/MacroCellScene): un'unica riga invece di un ciclo per
-# ciascuno dei due lot_source — sostituisce le tre chiamate hardcoded StickPoolService/
+# fresca (vedi VegetationPoolService.refresh_macrocell). Un'unica riga per i due chiamanti
+# (GameScene/MacroCellScene) — sostituisce le tre chiamate hardcoded StickPoolService/
 # PlantFiberPoolService/MushroomPoolService.refresh_macrocell di prima di questo refactor.
 static func refresh_all_vegetation_lot_capacities(macro_state: MacroCellState, game_data: GameData) -> void:
-	for resource_name in get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL):
-		refresh_vegetation_lot_capacity(macro_state, game_data, resource_name)
-	for resource_name in get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL):
-		refresh_vegetation_lot_capacity(macro_state, game_data, resource_name)
+	VegetationPoolService.refresh_macrocell(
+		macro_state, game_data, GameTypes.WorldObjectType.TREE,
+		get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL)
+	)
+	VegetationPoolService.refresh_macrocell(
+		macro_state, game_data, GameTypes.WorldObjectType.SHRUB,
+		get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL)
+	)
 
 
 # GRASS_PATCH (wild_vegetables) — GENERALIZZATA da TerrainScatteredResourceService.
@@ -366,13 +353,14 @@ static func _apply_seasonal_availability_to_capacity(rules: SecondaryResourceRul
 # Chiamata una volta per checkpoint stagionale (WorldTimeService, inizio di OGNI stagione) — per
 # ciascuna risorsa nei tre lot_source rigenerabili, decide UNA SOLA VOLTA (non per cella) se il
 # moltiplicatore stagionale sale rispetto alla stagione precedente; se nessuna risorsa sale, esce
-# subito senza toccare world.cell_states. Azzeramento per intero del registro di quella risorsa
+# subito senza toccare `states`. `states`: le celle da aggiornare (LODOrchestrator.engine_states, o una sola che si
+# riaccende, vedi SeasonalResourceService). Azzeramento per intero del registro di quella risorsa
 # (mai un "harvested" separato da preservare — a differenza del vecchio formato combinato di
 # stick/plant_fiber/mushroom, il registro unificato contiene ORA SOLO "harvested" per questi tre
 # lot_source, azzerarlo per intero è quindi sempre corretto, nessun sotto-campo da spegnare a
 # parte).
 static func reset_all_lot_harvests_on_season_rise(
-	world: World, previous_season: GameTypes.Season, new_season: GameTypes.Season
+	states: Array, previous_season: GameTypes.Season, new_season: GameTypes.Season
 ) -> void:
 	var resources_to_reset: Array[String] = []
 	for lot_source in [
@@ -390,7 +378,7 @@ static func reset_all_lot_harvests_on_season_rise(
 				resources_to_reset.append(resource_name)
 	if resources_to_reset.is_empty():
 		return
-	for state in world.cell_states:
+	for state in states:
 		for resource_name in resources_to_reset:
 			if not state.lot_registry.get(resource_name, {}).is_empty():
 				state.lot_registry[resource_name] = {}
@@ -408,7 +396,7 @@ static func reset_all_lot_harvests_on_season_rise(
 # Generica: scansiona i lot_source rigenerabili (TREE_INDIVIDUAL/SHRUB_INDIVIDUAL/GRASS_PATCH), mai un
 # nome di risorsa scritto a mano; MAI STONE_POSITION (un sasso estratto non ricresce). Non tocca il
 # seasonal_availability_multiplier.
-static func reset_harvests_for_resources_without_seasonal_rise(world: World) -> void:
+static func reset_harvests_for_resources_without_seasonal_rise(states: Array) -> void:
 	var resources_to_reset: Array[String] = []
 	for lot_source in [
 		SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL,
@@ -423,7 +411,7 @@ static func reset_harvests_for_resources_without_seasonal_rise(world: World) -> 
 				resources_to_reset.append(resource_name)
 	if resources_to_reset.is_empty():
 		return
-	for state in world.cell_states:
+	for state in states:
 		for resource_name in resources_to_reset:
 			if not state.lot_registry.get(resource_name, {}).is_empty():
 				state.lot_registry[resource_name] = {}

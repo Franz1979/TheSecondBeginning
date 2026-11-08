@@ -248,6 +248,8 @@ func save_game_to_json(
 		# vera).
 		if state.has_ever_been_discovered:
 			state_data["has_ever_been_discovered"] = true
+		if state.frozen_since_absolute_day >= 0:
+			state_data["frozen_since_absolute_day"] = state.frozen_since_absolute_day
 		# Solo le macrocelle già aperte in MacroCellScene hanno posizioni stone generate:
 		# la chiave resta assente per tutte le altre, per non appesantire il salvataggio.
 		# Guadi (2026-09-27, pathfinding): stesso formato {x,y} di stone_positions, chiave assente se vuoto.

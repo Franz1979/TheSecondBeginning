@@ -9799,6 +9799,10 @@ func _output_job_release(job: Dictionary) -> void:
 func _assign_produce_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var building: Building = job["target"]
 	var order_key := String(job["order_key"])
+	# Posto di un ordine in attesa di materiali (2026-11-08): quello torna in coda, se aspetta ancora.
+	var evict_key := String(job.get("evict_order_key", ""))
+	if evict_key != "" and ProductionEvictionService.is_order_waiting(human_individuals, building, evict_key):
+		ProductionEvictionService.evict(_game_context(), building, evict_key)
 	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, BuildingToolkitService.filter_uncovered(building, ToolFetchService.recipe_tool_categories(String(job["recipe"]))))
 	_assign_produce_task(worker, building, String(job["recipe"]), maxi(ProductionService.get_order_units(building, order_key), 1), true, order_key, false, true)
 	if JobWorkScanService.production_order_workers(human_individuals, building).get(order_key) == worker:
@@ -10837,7 +10841,7 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 
 # Identità, parentela e casa per il pannello individuo (2026-10-04, richiesta utente): nomi di madre, padre e partner
 # cercati tra i vivi (human_individuals) e poi tra i defunti (game_data.death_events, "dead" = true); casa con il nome
-# mostrato altrove (_building_display_name). Forma femminile di "sconosciuto" per la madre, e per il partner di un uomo.
+# mostrato altrove (_building_display_name).
 func _resolve_individual_identity_details(target: HumanIndividual) -> Dictionary:
 	var house: Dictionary = {}
 	if target.house_id != -1:
@@ -10850,7 +10854,6 @@ func _resolve_individual_identity_details(target: HumanIndividual) -> Dictionary
 		"mother": _resolve_relative(target.mother_id),
 		"father": _resolve_relative(target.father_id),
 		"partner": _resolve_relative(target.partner_id),
-		"partner_unknown_female": target.sex == HumanTypes.Sex.MALE,
 		"children": _resolve_children(target.id),
 		"house": house,
 	}
@@ -12240,6 +12243,8 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 
 		cell.macro_state = macro_world.get_cell_state_at(cell.macro_cell.x, cell.macro_cell.y)
 		if cell.macro_state != null:
+			# Frutti e raccolti della stagione in corso, prima del primo disegno.
+			SeasonalResourceService.catch_up_frozen_cell(cell.macro_cell, cell.macro_state, game_data)
 			# Disposizione ancora valida se da quando è stata fatta nessun controllo stagionale ha cambiato la vegetazione: niente generatore.
 			cell.needs_vegetation_layout_rebuild = cell.macro_state.vegetation_layout_checkpoint != game_data.vegetation_checkpoint_count
 			if cell.macro_cell.water_type == GameTypes.WaterType.RIVER:
@@ -12447,6 +12452,8 @@ func _deactivate_live_cell(coords: Vector2i) -> void:
 	# renderer che sta per essere distrutto è quello che possiede il contorno quadrato del lotto.
 	if not selected_stick_lot.is_empty() and selected_stick_lot["macro_coords"] == coords:
 		_clear_stick_lot_selection()
+	if cell.macro_state != null:
+		cell.macro_state.frozen_since_absolute_day = game_data.get_absolute_day()
 	cell.container.queue_free()
 	live_cells.erase(coords)
 
@@ -12473,6 +12480,7 @@ func _refresh_lod_focus_region() -> void:
 
 	LODOrchestrator.set_focus_region(macro_world, focus_live_cells, SeasonCalculator.get_season_for_day(game_data.current_day))
 	macro_world.lod_focus_active = true
+	macro_world.live_cell_coords = live_cells
 	minimap_panel.update_visibility(focus_live_cells, center_macro_coords)
 
 
@@ -13012,12 +13020,18 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 		# (2026-10-23, stesso motivo): la geometria è per individuo e validata dalla firma (sottotipo, anno di nascita,
 		# lotto) e da anno/parametri d'età; le piante tolte spariscono, le altre restano uguali.
 		# Né a un edificio nuovo (2026-10-28, maceria dei ceppi: ~600 ms), stesso motivo.
-		if cell.renderer != null and reason != "taglio" and reason != "cantiere ripulito" and reason != "edificio":
+		# Né a un giorno nuovo (2026-11-08, ridisegno del giorno 181: ~9.500 piante ricalcolate, quasi tutte identiche); se
+		# cambia l'anno il renderer svuota da sé (_check_geometry_cache_globals).
+		if cell.renderer != null and reason != "taglio" and reason != "cantiere ripulito" and reason != "edificio" and reason != "giorno nuovo":
 			cell.renderer.clear_vegetation_geometry_cache()
 		# Progetto B fase 1 (2026-10-24): il generatore solo quando i numeri della vegetazione possono essere cambiati
 		# (prima attivazione, checkpoint) o la disposizione non c'è ancora; altrimenti la disposizione tenuta.
 		if cell.needs_vegetation_layout_rebuild or not cell.macro_state.vegetation_layout_ready:
-			cell.cached_vegetation_positions = VegetationLayoutService.rebuild(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
+			if VegetationLayoutService.USE_LOT_FUNCTION:
+				var world_age := VegetationAtLotService.world_age_from_mode(game_data.starting_world_age_mode)
+				cell.cached_vegetation_positions = VegetationLayoutService.rebuild_from_function(cell.macro_state, cell.macro_cell, occupied, game_data.year, world_age, building_positions)
+			else:
+				cell.cached_vegetation_positions = VegetationLayoutService.rebuild(cell.macro_state, occupied, game_data.year, game_data.current_day, building_positions)
 			cell.needs_vegetation_layout_rebuild = false
 			cell.macro_state.vegetation_layout_checkpoint = game_data.vegetation_checkpoint_count
 		else:
@@ -16319,6 +16333,10 @@ func _reconnect_loaded_task_signals() -> void:
 			# ricerca, i suoi segnali passano da step_appended.
 			if _haul_zone_task_awaits_search(queued_task):
 				_connect_haul_zone_step_appended(queued_task, member)
+			# Pensiero in corso al salvataggio (2026-11-08, richiesta utente — idea completata senza messaggio né edificio nella
+			# barra): il deposito nasce dopo il caricamento, i suoi segnali passano da step_appended.
+			if _has_think_step(queued_task):
+				_connect_daydream_step_appended_listener(queued_task, member)
 			for queued_step in queued_task.steps:
 				# Build Task sospese in coda (2026-09-24, bugfix "cantiere bloccato in allestimento"):
 				# stessi segnali SetupSite/Clear/Build di current_task sotto — senza, i gestori visivi
@@ -16334,6 +16352,8 @@ func _reconnect_loaded_task_signals() -> void:
 			continue
 		if _haul_zone_task_awaits_search(member.current_task):
 			_connect_haul_zone_step_appended(member.current_task, member)
+		if _has_think_step(member.current_task):
+			_connect_daydream_step_appended_listener(member.current_task, member)
 		_connect_material_supply_step_appended(member.current_task, member)
 		if member.current_task.context.has(ButcherAction.CONTEXT_PILE_TRIPS):
 			_connect_butcher_step_appended(member.current_task, member)
@@ -16434,6 +16454,13 @@ func _connect_daydream_step_appended_listener(task: Task, individual_ref: HumanI
 		if action is UnloadAction:
 			_reconnect_unload_action_signals(action as UnloadAction, individual_ref)
 	)
+
+
+func _has_think_step(task: Task) -> bool:
+	for step in task.steps:
+		if step is ThinkAction:
+			return true
+	return false
 
 
 # Collega PickUpAction.resource_collected (2026-09-11, richiesta utente — gap gemello di

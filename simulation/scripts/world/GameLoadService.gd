@@ -535,6 +535,9 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			state.pending_fish_space_debt = float(state_data.get("pending_fish_space_debt", 0.0))
 			# LOD0: assente = false (mai scoperta), vedi GameSaveService per il perché è condizionale.
 			state.has_ever_been_discovered = bool(state_data.get("has_ever_been_discovered", false))
+			# Assente su una cella scoperta: era accesa al salvataggio, o il salvataggio è vecchio (motore su tutto il mondo,
+			# quindi allineata fino a quel giorno). In entrambi i casi è ferma da oggi.
+			state.frozen_since_absolute_day = int(state_data.get("frozen_since_absolute_day", game_data.get_absolute_day() if state.has_ever_been_discovered else -1))
 			# Guadi (2026-09-27, pathfinding): assente = nessun guado.
 			var ford_positions: Array = []
 			for pos_data in state_data.get("ford_positions", []):
@@ -1354,6 +1357,13 @@ func _parse_stored_resources(raw: Dictionary) -> Dictionary:
 			# Avanzamento automatico (2026-10-03, essiccazione passo 2): solo se salvato, assente nei salvataggi vecchi.
 			if value.has(ProductionService.AUTO_PROGRESS_KEY):
 				entry[ProductionService.AUTO_PROGRESS_KEY] = clampf(float(value[ProductionService.AUTO_PROGRESS_KEY]), 0.0, 1.0)
+			# Essiccazione per slot (2026-11-08): assente nei salvataggi vecchi, BuildingStorageService.get_auto_slots la ricava.
+			if value.get(ProductionService.AUTO_SLOTS_KEY) is Array:
+				var auto_slots: Array = []
+				for raw_slot in value[ProductionService.AUTO_SLOTS_KEY]:
+					if raw_slot is Dictionary:
+						auto_slots.append({"quantity": int(raw_slot.get("quantity", 0)), "progress": clampf(float(raw_slot.get("progress", 0.0)), 0.0, 1.0)})
+				entry[ProductionService.AUTO_SLOTS_KEY] = auto_slots
 			result[resource_name] = entry
 		else:
 			result[resource_name] = {"quantity": int(value), "decay_fraction": 0.0}

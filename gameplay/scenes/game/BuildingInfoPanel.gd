@@ -2442,26 +2442,17 @@ func _describe_recipe(building: Building, resource_name: String) -> String:
 # quando blocca la produzione in corso (ProductionService.is_output_blocking). Tutto nascosto per un
 # edificio senza buffer. Ricostruita da zero ad ogni show_building, come le altre griglie.
 # Una riga per ogni voce dello storage in avanzamento automatico, sempre visibile (2026-10-03, essiccatoio): risorsa,
-# quantità e giorni mancanti (ProductionService.get_auto_progress_days_left); "nulla" se non c'è niente.
+# Solo "nulla" quando non c'è niente in essiccazione: i giorni di ogni slot stanno sulla sua icona (2026-11-08, richiesta utente,
+# _add_auto_days_marker) e nel suo tooltip.
 func _refresh_auto_progress(building: Building, show_section: bool) -> void:
-	auto_progress_label.visible = show_section
-	if not show_section:
-		return
-	var lines: Array[String] = []
-	for resource_name in building.stored_resources.keys():
-		var days_left := ProductionService.get_auto_progress_days_left(building, String(resource_name))
-		if days_left < 0:
-			continue
-		var quantity: int = int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0))
-		if quantity <= 0:
-			continue
-		var key := "building_auto_progress_line_ready" if days_left <= 0 else "building_auto_progress_line"
-		lines.append(tr(key).format({
-			"resource": IconRegistry.get_resource_display_name(String(resource_name)),
-			"quantity": quantity,
-			"days": days_left,
-		}))
-	auto_progress_label.text = "\n".join(lines) if not lines.is_empty() else tr("building_auto_progress_none")
+	var drying := false
+	if show_section:
+		for resource_name in building.stored_resources.keys():
+			if ProductionService.is_auto_progress_input(building, String(resource_name)):
+				drying = true
+				break
+	auto_progress_label.visible = show_section and not drying
+	auto_progress_label.text = tr("building_auto_progress_none")
 
 
 func _refresh_output_buffer(building: Building) -> void:
@@ -2602,7 +2593,11 @@ func _build_storage_slot(slot_data: Dictionary) -> Control:
 	box.tooltip_text = TooltipText.wrap(IconRegistry.get_resource_display_name(resource_name))
 	# Avanzamento automatico (2026-10-03, essiccazione passo 2): giorni mancanti alla trasformazione.
 	if slot_data.has("auto_days_left"):
-		box.tooltip_text += "\n" + tr("storage_slot_auto_progress_tooltip").format({"days": int(slot_data["auto_days_left"])})
+		var auto_days: int = int(slot_data["auto_days_left"])
+		box.tooltip_text = TooltipText.wrap("%s ×%d\n%s" % [
+			IconRegistry.get_resource_display_name(resource_name), int(slot_data["quantity"]),
+			tr("storage_slot_auto_progress_tooltip").format({"days": auto_days}) if auto_days > 0 else tr("storage_slot_auto_progress_ready_tooltip"),
+		])
 
 	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:
@@ -2676,8 +2671,35 @@ func _build_storage_slot(slot_data: Dictionary) -> Control:
 	fill_bar_fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(fill_bar_fill)
 
+	if slot_data.has("auto_days_left"):
+		_add_auto_days_marker(box, int(slot_data["auto_days_left"]))
 	_make_toolkit_deposit_target(box, resource_name, false)
 	return box
+
+
+# Giorni di essiccazione sull'icona dello slot (2026-11-08, richiesta utente): numero in alto a sinistra, più grande di quello
+# della quantità; slot già pronto ma senza posto per il prodotto: una spunta disegnata.
+func _add_auto_days_marker(box: Control, days_left: int) -> void:
+	if days_left > 0:
+		var days_label := Label.new()
+		days_label.text = tr("storage_slot_auto_days_short").format({"days": days_left})
+		days_label.add_theme_font_size_override("font_size", 13)
+		days_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+		days_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+		days_label.add_theme_constant_override("outline_size", 4)
+		days_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		days_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		days_label.position = Vector2(1.0, -2.0)
+		days_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.add_child(days_label)
+		return
+	var check_points := PackedVector2Array([Vector2(7, 16), Vector2(12, 22), Vector2(22, 9)])
+	for pass_style in [[5.0, Color(0, 0, 0, 1)], [2.5, Color(0.55, 1.0, 0.55, 1)]]:
+		var check_line := Line2D.new()
+		check_line.points = check_points
+		check_line.width = float(pass_style[0])
+		check_line.default_color = pass_style[1]
+		box.add_child(check_line)
 
 
 # Attrezzeria (2026-10-04): un attrezzo nel magazzino o nei prodotti finiti di un edificio con l'Attrezzeria diventa

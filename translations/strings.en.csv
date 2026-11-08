@@ -242,8 +242,6 @@ build_bar_hide_superseded,Hide superseded
 build_bar_hide_superseded_tooltip,Hides buildings whose upgrade can already be built (e.g. the stick tent once the hide tent can be built). Untick to see and build them.
 build_bar_category_none_available,No building available in this category
 build_bar_title_work_areas,Work areas
-building_auto_progress_line,"Drying: {resource} ×{quantity}, ready in {days} days"
-building_auto_progress_line_ready,"Drying: {resource} ×{quantity}, ready (waiting for space)"
 building_auto_progress_none,Drying: nothing
 pickup_choice_source_ground_pile,From the pile on the ground
 pickup_choice_source_terrain,From the terrain
@@ -798,6 +796,7 @@ individual_relative_alive,{name} (#{id})
 individual_relative_dead,{name} † (#{id})
 individual_children_label,Children: {children}
 individual_children_none,none
+individual_partner_none,none
 individual_child_entry,"{person}, age {age}"
 individual_house_tooltip,House: {name} (#{id})
 individual_no_house,No house
@@ -1905,3 +1904,6 @@ task_empty_fish_trap_name,Emptying a fish trap
 task_empty_fish_trap_round_job_name,Fish trap round ({area}): {count}
 task_empty_fish_trap_round_job_tooltip,"Visit every fish trap with catch in zone {area} ({count}), nearest first, and bring everything where fish goes."
 warehouse_quantity_processing_tooltip,"In storage: {stored} · At workstations: {processing}"
+storage_slot_auto_days_short,{days}d
+storage_slot_auto_progress_ready_tooltip,"Ready, waiting for space"
+drawer_weapon_without_ammo,"{weapon} in storage, but ammunition is missing: {ammo}, at least {shots} shots"

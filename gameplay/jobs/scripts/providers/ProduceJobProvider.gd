@@ -5,7 +5,8 @@ extends RefCounted
 # GameScene blocco 2d): un lavoro per ogni ordine di una workstation (produce:<id edificio>:<chiave ordine>), "In coda"
 # se nessuno lo lavora, "In corso" altrimenti. Escluse le ricette ad avanzamento automatico (come la scheda "In sospeso").
 # Con l'edificio al completo (ordini con un lavoratore = production_concurrent_orders) gli ordini senza lavoratore restano
-# visibili ma non prendibili ("Edificio occupato"), finché un ordine dell'edificio non finisce. Attrezzi controllati
+# visibili ma non prendibili ("Edificio occupato"), finché un ordine dell'edificio non finisce o non ce n'è uno in attesa
+# di materiali da far tornare in coda (2026-11-08, ProductionEvictionService). Attrezzi controllati
 # prima e in sola lettura (rejection); il materiale mancante no (c'è già l'avviso nella campanella). Assegnazione (la
 # riassegnazione del bottone "Assegna" del pannello), X e Rimetti in coda restano alla scena.
 
@@ -27,6 +28,10 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 			continue
 		var building_name := GameContext.tr_text(building.rules.building_name)
 		var is_full := ProductionService.has_max_concurrent_orders(building, int(busy_counts.get(building.id, 0)))
+		# Edificio pieno con un ordine in attesa di materiali (2026-11-08): chi è senza lavoratore può prenderne il posto, alla
+		# presa (GameScene._assign_produce_job, ProductionEvictionService). Cercato solo se serve, alla prima riga senza lavoratore.
+		var evict_key := ""
+		var evict_checked := false
 		var order_index := 0
 		for order_key in ProductionService.get_order_keys(building):
 			order_index += 1
@@ -42,7 +47,10 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 			var recipe_name := IconRegistry.get_resource_display_name(recipe)
 			var blocked_reason := ""
 			if not is_assigned:
-				if is_full:
+				if is_full and not evict_checked:
+					evict_checked = true
+					evict_key = ProductionEvictionService.oldest_waiting_order(ctx.individuals, building)
+				if is_full and evict_key == "":
 					blocked_reason = GameContext.tr_text("task_assignment_produce_building_busy")
 				else:
 					# Attrezzo che l'Attrezzeria non copre (2026-10-11, stessa regola degli ordini di zona): addosso a qualcuno o
@@ -61,6 +69,7 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 				"assigned": is_assigned, "hidden": false,
 				"blocked_reason": blocked_reason,
 				"target": building, "provider": provider, "order_key": order_key, "recipe": recipe,
+				"evict_order_key": evict_key if not is_assigned else "",
 			})
 			# Rimandato per materiale (2026-10-17): resta assegnato, riga in "In coda" col motivo.
 			var produce_key := "%d:%s" % [building.id, order_key]

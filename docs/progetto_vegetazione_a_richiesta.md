@@ -1,6 +1,6 @@
 # Vegetazione a richiesta: togliere il motore annuale e calcolare le piante per lotto
 
-> Proposta del 2026-11-03, aggiornata il 2026-11-08 con le decisioni dell'utente. Passo 1 fatto il 2026-11-08 (manca una prova, vedi sotto); dal passo 2 in poi non ancora iniziato.
+> Proposta del 2026-11-03, aggiornata il 2026-11-08 con le decisioni dell'utente. Passo 1 fatto il 2026-11-08 (manca una prova, vedi sotto); passo 2 fatto lo stesso giorno, con l'aspetto approvato a occhio e i tempi sotto il limite solo alla prima visita; passo 3 fatto e provato lo stesso giorno. Scopo, chiarito dall'utente il 2026-11-08: togliere il calcolo mondiale della vegetazione; la velocità è un effetto collaterale, non il fine.
 > **Da ricontrollare prima di partire:** il codice cambia in fretta. Il vecchio sistema della fauna è stato tolto il 2026-11-03: verificare `grow_fauna` e `_run_growth_checkpoint`. I numeri di riga e di occorrenze possono essere cambiati.
 
 ## Contesto
@@ -85,11 +85,55 @@ Una funzione del tipo `vegetation_at(macro_state, lot, anno)` risponde usando so
 ### 2. Prova della funzione, senza toccare il gioco
 Nuovo servizio con la funzione, più una misura temporanea: tempo per lotto e per 100x100 lotti. Confronto a occhio con l'aspetto di oggi: macchie, densità per bioma, prato che diventa arbusteto e bosco nei decenni. **Se costo o aspetto non reggono, ci si ferma con poco lavoro perso.**
 
+Fatto il 2026-11-08: `VegetationAtLotService` (`vegetation_at` per un lotto, `vegetation_for_lots` per molti lotti di una cella) e lo strumento `tools/vegetation_at_lot_preview/`. Stessa risposta chiedendo uno o molti lotti, nessuna pianta persa, nessun salto da un anno all'altro.
+
+Tempi per una macrocella intera (10.000 lotti), in ms:
+
+| Bioma | Generatore, primo lancio | Generatore, secondo lancio | Funzione |
+|---|---|---|---|
+| Foresta | 1135 | 116 | 481 |
+| Prateria | 202 | 107 | 95 |
+| Fertile | 506 | 91 | 263 |
+| Palude | 696 | 102 | 311 |
+| Roccioso | 260 | 65 | 97 |
+| Deserto | 44 | 4 | 39 |
+
+- **Il secondo lancio non è il rientro in cella.** Rientrando il gioco rilegge la disposizione tenuta (`VegetationLayoutService.read`), senza generatore: il riferimento resta il ritorno a 66 ms misurato in gioco. La funzione deve finire nella stessa disposizione tenuta, non ricalcolare a ogni rientro.
+- Griglie vuote o pronte cambiano poco: il costo è nel calcolo per pianta, non nel rumore. Il limite fissato (circa 60 ms) è rispettato solo nel deserto.
+- Il calcolo dei soli lotti visibili (passo 4) e la memoria fino al cambio d'anno non sono ancora misurati. Se al passo 4 il cambio cella risulta più lento di oggi, si valuta il C++ per questo calcolo.
+- Quote da tarare più avanti: fertile e prateria hanno circa metà degli alberi di oggi all'anno 0; foresta e palude hanno più lotti con alberi; il roccioso ha troppo prato finché non esclude le rocce (passo 4).
+
 ### 3. Interruttore: motore spento
 Non girano `ResourceGrowthService`, `ResourceEncroachmentService`, `ResourceMigrationService`, `ResourceMortalityService`, `ResourceAgeBandService`, `NaturalEventService`. Resta il reset dei lotti (e `grow_fauna`, se esiste ancora).
 
+Fatto il 2026-11-08, provato in gioco per più di un anno su una partita in corso, con colori, raccolti, taglio e pesca a posto: `WorldTimeService.VEGETATION_ENGINE_ENABLED`. Su richiesta dell'utente sono spenti anche i pesci, con un interruttore a parte (`FISH_ENGINE_ENABLED`): crescita, migrazione e mortalità scorrono tutte le celle del mondo. Restano accesi scorte stagionali, reset dei raccolti, pulizia dei segni di pianta morta e `SpaceReconciliationService`. `vegetation_checkpoint_count` non sale più. Fino al passo 4 le piante restano ferme.
+
+Tempi misurati (`[DAY TOTAL]`, ms): giorno 0 da 784 a 451; 91: 461; 181 da 1097 a 93; 182: 236; 272: 13; 273: 262. Le scorte dei frutti (127-179 ms a ogni inizio stagione) spariscono al passo 7.
+
+Da capire, senza fretta: il ridisegno leggero costa 240-275 ms a inizio inverno e primavera e 86-110 ms a inizio estate e autunno, causa non cercata; al giorno 181 circa 58 ms non compaiono nelle voci del log. Il salvataggio automatico blocca altri 458 ms al cambio d'anno.
+
+Ancora mondiali dopo questo passo: scorte dei frutti (passo 7), reset dei raccolti (`LotCapacityService`: da limitare ai lotti che hanno raccolto, passo da aggiungere), segni di pianta morta e `SpaceReconciliationService` (via al passo 9).
+
 ### 4. Disegno a richiesta
 `GameScene._refresh_resource_visuals` chiede solo i lotti visibili, aggiungendo quelli entrati in vista. Età e sottotipo per il renderer arrivano dalla funzione. Taglio, ceppi e ricrescita secondo la decisione 3.
+
+Si fa a pezzi, con una prova dopo ognuno: 1) disposizione dalla funzione; 2) solo i lotti in vista; 3) taglio, ceppi e ricrescita; 4) aggiornamento di primavera.
+
+Pezzo 1 scritto il 2026-11-08, da provare: `VegetationLayoutService.rebuild_from_function` (interruttore `USE_LOT_FUNCTION`) calcola tutti i lotti della cella e riempie gli stessi dati del generatore (lotti, posti, sottotipi, anni di nascita, erba), quindi chi li legge non cambia: taglio, selezione e risorse dovrebbero funzionare già ora. Le piante restano ferme all'anno del primo calcolo. Niente segni di pianta morta alla prima vista. Seme fisso per tutte le partite (`DEFAULT_WORLD_SEED`), come oggi: il gioco non ha un seme per partita. Riga temporanea `[VEG FUNCTION]` (`SHOW_VEG_FUNCTION_TIMING_LOGS`), da confrontare con la disposizione misurata il 2026-11-01: 129-157 ms.
+
+Prima prova del pezzo 1 (2026-11-08): piante più grandi e nessun frutto. Dimensioni misurate rispetto al generatore: foresta da ×0,35 a ×0,41 (alberi), prateria da ×0,51 a ×0,75 (alberi). Cause: il generatore parte senza piante vecchie, la funzione ne aveva il 35-58%, e i lotti sono meno affollati. Vita del ciclo accorciata a gioventù + 1,2 volte l'età adulta (`LIFESPAN_ADULT_FACTOR`, prima 2): da riprovare. Affollamento non toccato. Frutti: misurando le stesse funzioni fuori partita, scorte e pesi per lotto sono giusti; in partita la causa non è ancora trovata. Riga temporanea `[FRUTTI]` per vedere dove si perdono (scorta, lotti con peso, lotti con rapporto > 0, piante in vista, puntini). Da verificare anche: `berry_weight_cache` non si azzera in `rebuild_from_function`.
+
+**Decisione del 2026-11-08: la funzione per lotto esce dal gioco (`USE_LOT_FUNCTION = false`, file tenuto finché l'utente non decide).** Confronto sulla partita sana, cella (40,51): lì ogni lotto ha 7-8 alberi o 6-7 arbusti, la funzione ne spargeva lo stesso numero su più lotti, mezzi vuoti (ogni posto decideva da solo alla nascita). In più la maturità che scende farebbe sparire un bosco senza una causa visibile, e l'utente non lo vuole. Il piano diventa:
+1. Semina iniziale statica: `ParametricResourceSetupService` una volta a inizio partita, numeri salvati e fermi. Misurata: 1,9 s (senza grafica), 0,2 ms per cella di terra; le 9.999 celle non visitate pesano 7 MB su 13,6 MB di salvataggio non compresso. Scartato per ora il calcolo all'attivazione: risparmia solo quello e richiede di rivedere chi legge le celle non visitate (mappa del mondo, pannello, scelta della partenza, celle vicine).
+2. Distribuzione nella microcella come oggi, da quei numeri.
+3. Calcoli di stagione solo sulle celle accese: il giro delle scorte passa ancora da tutto il mondo.
+4. ~~Da progettare un passo alla volta: come cambia il bosco negli anni.~~ Superato dalla regola qui sotto.
+
+**Regola finale dell'utente (2026-11-08):** tutto come prima, tranne catastrofi e migrazione tra celle. Crescita, avanzata tra specie, mortalità ed età girano con il vecchio motore, solo sulle celle accese (`LODOrchestrator.engine_states`, `World.live_cell_coords`). Anche scorte di frutti e azzeramento dei raccolti girano solo sulle celle accese; alla riaccensione `SeasonalResourceService.catch_up_frozen_cell` rifà i cambi di stagione saltati (ultimi 12 mesi al massimo), così frutti e raccolti sono quelli della stagione in corso, senza toccare le piante. Erbe, verdure e funghi leggono già il moltiplicatore della stagione corrente. Una cella spenta resta com'è e alla riaccensione non recupera gli anni passati. Età delle piante e blocco dei ceppi seguono comunque il calendario anche da spenta: accettato dall'utente (anni passati davvero), date da non spostare. Scritto il 2026-11-08, da provare in partita nuova.
+
+Da riprendere più avanti (nota dell'utente, 2026-11-08): pesci di fiume, laghi e mare, ancora fermi; come creare radure nei boschi; le catastrofi, oggi spente con `NATURAL_EVENTS_ENABLED`, da ripensare da capo e solo nelle celle accese.
+
+Nota a parte: nel salvataggio una sola cella con piante pesa 4,9 MB, circa 7.000 celle non visitate.
 
 ### 5. Gli altri lettori dell'elenco completo
 219 occorrenze in 27 file al 2026-11-08, salvataggi e renderer compresi. Passano a domande per lotto o per area:

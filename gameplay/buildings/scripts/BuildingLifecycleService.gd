@@ -563,9 +563,10 @@ static func produce_village_waste(ctx: GameContext, effects: GameEffects) -> voi
 				Building.RUBBLE_ORIGIN_VILLAGE, true, GroundPileService.MAX_DROP_SEARCH_RADIUS
 			)
 			leftover = int(placed["leftover"])
-		print("[WASTE] %s: %d abitanti -> %d rifiuti, %d nelle Fosse, %d come macerie, %d senza posto." % [
-			village.get_display_name(), inhabitants, amount, dumped, amount - dumped - leftover, leftover
-		])
+		if DebugLogging.SHOW_WASTE_LOGS:
+			print("[WASTE] %s: %d abitanti -> %d rifiuti, %d nelle Fosse, %d come macerie, %d senza posto." % [
+				village.get_display_name(), inhabitants, amount, dumped, amount - dumped - leftover, leftover
+			])
 		changed = true
 	if changed:
 		BuildingMaintenanceService.request_rubble_check(ctx.game_data)

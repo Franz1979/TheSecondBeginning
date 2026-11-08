@@ -106,7 +106,7 @@ static func clear_ground(macro_state: MacroCellState, pos: Vector2i, is_currentl
 	# sono entry INDIPENDENTI (capacità congelata fino al prossimo checkpoint growth), mai ripulite
 	# quando il TREE/SHRUB che la generava viene rimosso sopra (_clear_type cancella solo
 	# tree_claimed_lots/tree_individual_subtype/tree_virtual_birth_year — LotCapacityService.
-	# refresh_vegetation_lot_capacity NON rigenera/azzera mai un lotto appena USCITO da
+	# refresh_all_vegetation_lot_capacities NON rigenera/azzera mai un lotto appena USCITO da
 	# tree_claimed_lots, itera solo quelli ANCORA presenti). Senza questo, un pilastro di bastoncini/
 	# funghi raccoglibili poteva restare "vivo" per il resto del checkpoint growth corrente
 	# esattamente sulla microcella ora occupata dal cantiere/edificio — un individuo poteva ancora

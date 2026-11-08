@@ -16,13 +16,9 @@ func encroach_resources(world: World) -> Dictionary:
 	# ENCROACHABLE_TYPES is ordered or extended in the future.
 	var ordered_types := ResourceCalculator.get_types_ordered_by_succession(ENCROACHABLE_TYPES)
 
-	for cell in world.cells:
-		var state := world.get_cell_state_at(cell.x, cell.y)
-		if state == null:
-			continue
-		# LOD0: macrocella mai scoperta dentro una sessione con focus attivo — congelata, nessun
-		# encroachment finché il player non ci arriva (vedi LODOrchestrator.is_vegetation_frozen).
-		if LODOrchestrator.is_vegetation_frozen(world, state):
+	for state: MacroCellState in LODOrchestrator.engine_states(world):
+		var cell := world.get_cell_at(state.x, state.y)
+		if cell == null:
 			continue
 
 		var cell_key := Vector2i(cell.x, cell.y)

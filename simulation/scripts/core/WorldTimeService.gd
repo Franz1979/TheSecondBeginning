@@ -1,6 +1,17 @@
 class_name WorldTimeService
 extends RefCounted
 
+# Vegetazione a richiesta (docs/progetto_vegetazione_a_richiesta.md): crescita, avanzata tra specie, mortalità e fasce
+# d'età girano solo sulle celle accese (LODOrchestrator.engine_states). Una cella spenta resta com'è e alla riaccensione
+# non recupera gli anni passati. false spegne questi passi del tutto.
+const VEGETATION_ENGINE_ENABLED := true
+# Tolti dal gioco: migrazione delle piante tra celle ed eventi naturali.
+const VEGETATION_MIGRATION_ENABLED := false
+const NATURAL_EVENTS_ENABLED := false
+# false spegne crescita, migrazione e mortalità dei pesci, che scorrono tutte le celle del mondo. Gli altri animali sono
+# già locali e non passano da qui.
+const FISH_ENGINE_ENABLED := false
+
 # Accumulatore del timing diagnostico per il checkpoint stagionale (vedi _run_timed/
 # _run_seasonal_checkpoints/_print_checkpoint_timing_summary sotto) — azzerato a inizio di ogni
 # chiamata a _run_seasonal_checkpoints, così l'instance persistente di WorldTimeService (se il
@@ -111,8 +122,9 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 	var overall_start_usec := Time.get_ticks_usec()
 
 	if day == SeasonCalculator.get_season_day_range(GameTypes.Season.SPRING).x:
-		_run_timed("migration_checkpoint", func(): _run_migration_checkpoint(world, game_data))
-		game_data.vegetation_checkpoint_count += 1
+		if VEGETATION_MIGRATION_ENABLED:
+			_run_timed("migration_checkpoint", func(): _run_migration_checkpoint(world, game_data))
+			game_data.vegetation_checkpoint_count += 1
 		checkpoint_ran = true
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.WINTER):
@@ -121,12 +133,14 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SPRING):
 		_run_timed("growth_checkpoint", func(): _run_growth_checkpoint(world, game_data))
-		game_data.vegetation_checkpoint_count += 1
+		if VEGETATION_ENGINE_ENABLED:
+			game_data.vegetation_checkpoint_count += 1
 		checkpoint_ran = true
 		season_ended = GameTypes.Season.SPRING
 
 	if day == SeasonCalculator.get_season_end_day(GameTypes.Season.SUMMER):
-		_run_timed("fauna_migration_checkpoint", func(): _run_fauna_migration_checkpoint(world))
+		if FISH_ENGINE_ENABLED:
+			_run_timed("fauna_migration_checkpoint", func(): _run_fauna_migration_checkpoint(world))
 		checkpoint_ran = true
 		season_ended = GameTypes.Season.SUMMER
 
@@ -146,7 +160,7 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 			# a mano).
 			_run_timed(
 				"lot_capacity_harvest_reset_checkpoint",
-				func(): LotCapacityService.reset_all_lot_harvests_on_season_rise(world, SeasonCalculator.get_previous_season(season), season)
+				func(): LotCapacityService.reset_all_lot_harvests_on_season_rise(LODOrchestrator.engine_states(world), SeasonCalculator.get_previous_season(season), season)
 			)
 			_run_timed("natural_events_checkpoint", func(): _run_natural_events_checkpoint(world, game_data, season))
 			checkpoint_ran = true
@@ -156,7 +170,8 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 		# tornato a 0 quando year_rolled_over è true, vedi GameData.advance_day) — year_rolled_over
 		# stesso è il segnale di fine autunno, stesso schema già usato da _run_mortality_checkpoint.
 		_run_timed("mortality_checkpoint", func(): _run_mortality_checkpoint(world))
-		game_data.vegetation_checkpoint_count += 1
+		if VEGETATION_ENGINE_ENABLED:
+			game_data.vegetation_checkpoint_count += 1
 		checkpoint_ran = true
 		season_ended = GameTypes.Season.AUTUMN
 
@@ -252,33 +267,34 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	# ereditata dagli anni precedenti, cosicché le nascite di growth in questo stesso ciclo
 	# (età 0) non vengano mai incluse nella maturazione dello stesso anno in cui compaiono —
 	# vedi ResourceAgeBandService.
-	_run_timed("  mature_age_bands (vegetazione)", func(): ResourceAgeBandService.new().mature_age_bands(world))
+	if VEGETATION_ENGINE_ENABLED:
+		_run_timed("  mature_age_bands (vegetazione)", func(): ResourceAgeBandService.new().mature_age_bands(world))
 
-	_run_timed("  grow_resources", func(): ResourceGrowthService.new().grow_resources(world, game_data))
+		_run_timed("  grow_resources", func(): ResourceGrowthService.new().grow_resources(world, game_data))
 
 	# Fine della finestra di visibilità dei marker "morto" da mortalità naturale (vedi
 	# SeasonCalculator.is_within_natural_death_visibility_window/IndividualVegetationService): a
 	# differenza del taglio (persistente, azione deliberata del giocatore), la morte naturale è solo
 	# un artificio grafico stagionale — "morto" da fine autunno a qui, poi la ricrescita rioccupa lo
-	# slot. Pulizia GLOBALE (tutto world.cell_states, non solo le celle vive), stessa ampiezza di
-	# ResourceMortalityService/grow_resources sopra: una cella mai visitata deve arrivare comunque
-	# "pulita" al prossimo first-sight, esattamente come una già nota.
+	# slot. Solo sulle celle accese; una cella spenta li perde alla riaccensione (SeasonalResourceService).
 	_run_timed("  clear_natural_death_markers", func(): _clear_natural_death_markers(world))
 
 	# Rigenerazione ANNUALE delle risorse a lotto senza stagionalita' (2026-09-19, richiesta utente): il
 	# raccolto accumulato sui lotti (es. stick) si azzera qui, insieme al ricalcolo annuale della capacita'.
 	# Le risorse con moltiplicatore che sale sono gia' azzerate all'inizio della stagione in cui sale, vedi
 	# LotCapacityService.reset_harvests_for_resources_without_seasonal_rise.
-	_run_timed("  lot_harvest_reset_annuale (senza stagionalita')", func(): LotCapacityService.reset_harvests_for_resources_without_seasonal_rise(world))
+	_run_timed("  lot_harvest_reset_annuale (senza stagionalita')", func(): LotCapacityService.reset_harvests_for_resources_without_seasonal_rise(LODOrchestrator.engine_states(world)))
 
-	var encroach_start_usec := Time.get_ticks_usec()
-	var encroachment_service := ResourceEncroachmentService.new()
-	var leftover_surplus := encroachment_service.encroach_resources(world)
-	_checkpoint_timings_ms["  encroach_resources"] = float(_checkpoint_timings_ms.get("  encroach_resources", 0.0)) + (Time.get_ticks_usec() - encroach_start_usec) / 1000.0
-	if DebugLogging.ENABLED:
-		pass
-		#print("[TIMING]   encroach_resources: %.2f ms" % [(Time.get_ticks_usec() - encroach_start_usec) / 1000.0])
-	_store_pending_migration_surplus(world, leftover_surplus)
+	if VEGETATION_ENGINE_ENABLED:
+		var encroach_start_usec := Time.get_ticks_usec()
+		var encroachment_service := ResourceEncroachmentService.new()
+		var leftover_surplus := encroachment_service.encroach_resources(world)
+		_checkpoint_timings_ms["  encroach_resources"] = float(_checkpoint_timings_ms.get("  encroach_resources", 0.0)) + (Time.get_ticks_usec() - encroach_start_usec) / 1000.0
+		if DebugLogging.ENABLED:
+			pass
+			#print("[TIMING]   encroach_resources: %.2f ms" % [(Time.get_ticks_usec() - encroach_start_usec) / 1000.0])
+		if VEGETATION_MIGRATION_ENABLED:
+			_store_pending_migration_surplus(world, leftover_surplus)
 
 	# FISH cresce sullo stesso checkpoint di fine primavera della vegetazione, ma su un budget
 	# separato (water_dedicated_space): nessuna interazione con
@@ -286,11 +302,12 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	# invece in checkpoint propri (fine estate/fine autunno, vedi sotto) — a differenza della
 	# vegetazione, growth->migration->mortality per FISH restano tre momenti separati dell'anno
 	# invece che un'unica pipeline diretta, per poter osservare l'evoluzione di ciascuna fase.
-	_run_timed("  grow_fauna", func(): FaunaGrowthService.new().grow_fauna(world))
+	if FISH_ENGINE_ENABLED:
+		_run_timed("  grow_fauna", func(): FaunaGrowthService.new().grow_fauna(world))
 
 
 func _clear_natural_death_markers(world: World) -> void:
-	for state in world.cell_states:
+	for state in LODOrchestrator.engine_states(world):
 		if not state.vegetation_death_exceptions.is_empty():
 			state.vegetation_death_exceptions.clear()
 
@@ -302,21 +319,22 @@ func _run_fauna_migration_checkpoint(world: World) -> void:
 
 
 func _run_mortality_checkpoint(world: World) -> void:
-	var mortality_service := ResourceMortalityService.new()
-	mortality_service.apply_mortality(world)
+	if VEGETATION_ENGINE_ENABLED:
+		var mortality_service := ResourceMortalityService.new()
+		mortality_service.apply_mortality(world)
 
 	# Rete di sicurezza annuale contro il raro overshoot di dedicated_space introdotto da
 	# BuildingSiteClearingService (vedi SpaceReconciliationService) — subito dopo la mortalità
 	# perché è il momento in cui dedicated_space[TREE/SHRUB/GRASS] è già stato ridotto in base a
 	# chi è morto davvero: nella maggior parte dei casi la somma è già tornata sotto TOTAL_SPACE da
-	# sola, questo passaggio interviene solo sul residuo. GLOBALE (tutto world.cell_states, non
-	# solo le celle vive), stessa ampiezza di apply_mortality sopra.
-	for state in world.cell_states:
+	# sola, questo passaggio interviene solo sul residuo. Solo sulle celle accese, come apply_mortality sopra.
+	for state in LODOrchestrator.engine_states(world):
 		SpaceReconciliationService.reconcile(state)
 
 	# Stesso checkpoint di fine autunno (year_rolled_over) della mortalità vegetale, su
 	# water_dedicated_space invece che dedicated_space.
-	FaunaMortalityService.new().apply_fauna_mortality(world)
+	if FISH_ENGINE_ENABLED:
+		FaunaMortalityService.new().apply_fauna_mortality(world)
 
 
 # Decadimento giornaliero di Building.stored_resources per OGNI edificio del mondo (2026-09-09,
@@ -382,6 +400,8 @@ func _run_migration_checkpoint(world: World, game_data: GameData) -> void:
 
 
 func _run_natural_events_checkpoint(world: World, game_data: GameData, season: GameTypes.Season) -> void:
+	if not NATURAL_EVENTS_ENABLED:
+		return
 	var natural_event_service := NaturalEventService.new()
 	# Un evento distrugge vegetazione: il contatore sale solo se ne è scattato almeno uno (vegetation_checkpoint_count
 	# segna solo i controlli che cambiano davvero la vegetazione, vedi migrazione, crescita e mortalità sopra).
@@ -392,92 +412,14 @@ func _run_natural_events_checkpoint(world: World, game_data: GameData, season: G
 func _run_secondary_resource_stock_checkpoint(
 	world: World, previous_season: GameTypes.Season, new_season: GameTypes.Season
 ) -> void:
-	# Skip a monte (richiesta utente, 2026-09-05): si salta se il potenziale attuale e lo stock già presente sono 0
-	# (CaloricCalculator.has_secondary_resource_potential legge solo dati grezzi già in RAM), o se la cella è congelata
-	# (LODOrchestrator.is_vegetation_frozen, mai scoperta).
-	# Log diagnostico di quante celle (su world.cell_states.size(), tipicamente 10.000) sono state
-	# effettivamente saltate per ciascuna fonte.
-	#
-	# MIGLIORAMENTO FUTURO possibile (misurato in sessione, 2026-09-05 — non implementato): anche a
-	# skip ~100%, il checkpoint resta a ~150-180ms (contro le migliaia di ms di prima, ma non i
-	# "pochi ms" sperati) perché il ciclo sotto continua comunque a VISITARE tutte le 40.000
-	# combinazioni fonte×cella per decidere di saltarle — l'overhead di chiamata GDScript ripetuto
-	# 40.000 volte è ormai il costo dominante, non il calcolo vero. Per scendere oltre servirebbe
-	# smettere di scorrere world.cell_states per intero: mantenere un insieme esplicito e già
-	# aggiornato di "celle potenzialmente rilevanti" (scoperte + territori attivi, tipicamente
-	# minuscolo) e iterare SOLO quello — richiede un indice che oggi non esiste da nessuna parte
-	# (has_ever_been_discovered è un flag per-cella, non una lista consultabile), quindi un cambio
-	# più strutturale, rimandato.
-	var skip_summary: Array[String] = []
-	var total_skipped := 0
-	var total_checked := 0
-	for source in CaloricCalculator.SECONDARY_SOURCES:
-		var rules := CaloricCalculator.get_caloric_source_rules(source["resource_name"])
-		if rules == null:
+	# Solo sulle celle accese: una cella spenta si allinea alla stagione quando si riaccende (SeasonalResourceService).
+	# Una cella accesa non ancora scoperta riceve la scorta alla scoperta (LODOrchestrator.set_focus_region).
+	for state: MacroCellState in LODOrchestrator.engine_states(world):
+		if LODOrchestrator.is_vegetation_frozen(world, state):
 			continue
-		var skipped := 0
-		for state in world.cell_states:
-			var cell := world.get_cell_at(state.x, state.y)
-			if cell == null:
-				continue
-			total_checked += 1
-			if (
-				not CaloricCalculator.has_secondary_resource_potential(rules, state, source["primary_resource_type"])
-				and state.get_secondary_resource_stock(source["resource_name"]) == 0.0
-			):
-				skipped += 1
-				continue
-			if LODOrchestrator.is_vegetation_frozen(world, state):
-				skipped += 1
-				continue
-			CaloricCalculator.update_secondary_resource_stock(
-				rules, cell, state, source["primary_resource_type"], previous_season, new_season
-			)
-			# Raccolto per lotto delle risorse "fruit stock" (2026-09-17, richiesta utente —
-			# CORREZIONE: azzerare ad OGNI aggiornamento stagionale era sbagliato, segnalato
-			# dall'utente — poi GENERALIZZATO in preparazione di fruit/acorn, nessun cambio di
-			# comportamento per berry) — azzerato SOLO quando il moltiplicatore stagionale di
-			# QUESTA risorsa SALE rispetto alla stagione precedente (per berry.tres [0.1, 0.0, 0.7,
-			# 1.0]: primavera->estate, estate->autunno): solo lì c'è vera "ricrescita" da riflettere
-			# nella disponibilità PER LOTTO. Nelle transizioni in cui il moltiplicatore SCENDE lo
-			# stock aggregato decade (CaloricCalculator.update_secondary_resource_stock, ramo "il
-			# tetto scende") — la memoria di quanto già raccolto in ciascun lotto deve restare, non
-			# solo per non "regalare" frutto appena raccolto tornando disponibile, ma perché in
-			# quelle transizioni non è mai comparso nulla di nuovo da nessuna parte. Confrontato sul
-			# solo moltiplicatore (non sul "tetto" pieno, che dipende anche da base_quantity) — vedi
-			# SecondaryResourceRules.seasonal_availability_multiplier — LETTO da `rules`, già
-			# risolta per la risorsa di questa iterazione: NESSUNA costante di berry qui, la curva
-			# stagionale usata è sempre quella VERA della risorsa in corso. Confinato QUI (non
-			# dentro CaloricCalculator.update_secondary_resource_stock, che resta generico per
-			# qualunque risorsa a stock, mai specializzato per nome) perché questo loop è l'unico
-			# punto che già sa "sto aggiornando questa risorsa, ed è appena successo un cambio di
-			# stagione per lei" — vedi MacroCellState.berry_harvested_by_lot. La membership nel
-			# registro (TerrainScatteredResourceService.FRUIT_STOCK_SOURCES) è il solo modo con cui
-			# questo blocco riconosce "sono una delle risorse a raccolta per-microcella" — oggi solo
-			# "berry", domani anche fruit/acorn senza toccare questo file.
-			if TerrainScatteredResourceService.FRUIT_STOCK_SOURCES.has(source["resource_name"]):
-				var resource_name: String = source["resource_name"]
-				var previous_multiplier: float = float(rules.seasonal_availability_multiplier[previous_season])
-				var new_multiplier: float = float(rules.seasonal_availability_multiplier[new_season])
-				# not is_empty() (2026-09-17, richiesta utente — ottimizzazione costo berry): la
-				# stragrande maggioranza delle celle non ha mai avuto un raccolto umano, azzerare un
-				# Dictionary già vuoto non cambierebbe nulla ma incrementerebbe comunque
-				# berry_harvested_revision, invalidando inutilmente la firma leggera che GameScene usa
-				# per saltare il ricalcolo del ratio — vedi TerrainScatteredResourceService.
-				# get_fruit_stock_recompute_signature/MacroCellState.berry_harvested_revision.
-				var per_lot: Dictionary = state.berry_harvested_by_lot.get(resource_name, {})
-				if new_multiplier > previous_multiplier and not per_lot.is_empty():
-					state.berry_harvested_by_lot.erase(resource_name)
-					var revision: int = int(state.berry_harvested_revision.get(resource_name, 0))
-					state.berry_harvested_revision[resource_name] = revision + 1
-		skip_summary.append("%s=%d/%d" % [source["resource_name"], skipped, world.cell_states.size()])
-		total_skipped += skipped
-
-	if DebugLogging.SHOW_DAILY_TIMING_LOGS:
-		print("[SECONDARY STOCK SKIP] %s | totale=%d/%d (%.1f%%)" % [
-			", ".join(skip_summary), total_skipped, total_checked,
-			100.0 * total_skipped / total_checked if total_checked > 0 else 0.0
-		])
+		var cell := world.get_cell_at(state.x, state.y)
+		if cell != null:
+			SeasonalResourceService.update_cell_stock(cell, state, previous_season, new_season)
 
 
 func _store_pending_migration_surplus(world: World, leftover_surplus: Dictionary) -> void:
