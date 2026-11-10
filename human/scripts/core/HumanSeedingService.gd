@@ -128,8 +128,8 @@ const SEED_EXCLUDED_SKILLS: Array[String] = []
 # mai richiamato da qui). group_size_preference sconosciuta/vuota -> fallback
 # DEFAULT_GROUP_SIZE_PREFERENCE (stesso principio "default neutro" gia' in uso ovunque nel
 # progetto). human_rules/folk_name sono decisi dal chiamante (oggi GameScene carica direttamente il
-# .tres del player) — questo servizio resta generico, non conosce alcun path su disco. current_year
-# passato esplicitamente (non letto da GameData) per restare stateless rispetto ad anno/durate.
+# .tres del player) — questo servizio resta generico, non conosce alcun path su disco. today (giorno
+# assoluto, GameData.get_absolute_day) passato esplicitamente (non letto da GameData) per restare stateless rispetto ad anno/durate.
 # game_data (bugfix, 2026-09-06): NUOVO parametro, usato SOLO per game_data.allocate_human_id() —
 # a differenza degli altri campi di GameData, l'id univoco per HumanIndividual non può essere
 # risolto dal chiamante e passato come valore semplice (è un contatore condiviso che deve
@@ -143,7 +143,7 @@ const SEED_EXCLUDED_SKILLS: Array[String] = []
 # mai collegati a nessun consumatore reale finora): il CHIAMANTE risolve le durate età-per-fascia
 # GIA' scalate per l'Era (tipicamente game_data.era_effective_age_band_durations_male/female, dopo
 # aver chiamato GameData.set_current_era) e le passa qui — questo servizio resta stateless, non
-# tocca mai GameData/EraCalculator da sé (stesso principio di current_year sopra). human_rules
+# tocca mai GameData/EraCalculator da sé (stesso principio di today sopra). human_rules
 # resta comunque un parametro a sé: serve ancora per Folk.human_rules_ref (altri campi come
 # stamina, mai le durate età, che ora passano SOLO dagli array qui sotto). NESSUN fallback
 # difensivo se il chiamante passa array vuoti/troppo corti (il chiamante DEVE aver già risolto
@@ -166,7 +166,7 @@ func seed_player_start(
 	group_size_preference: String,
 	human_rules: HumanRules,
 	folk_name: String,
-	current_year: int,
+	today: int,
 	effective_age_band_durations_male: Array[float],
 	effective_age_band_durations_female: Array[float],
 	game_data: GameData
@@ -186,7 +186,7 @@ func seed_player_start(
 
 	if resolved_preference == "GROUP":
 		individuals = _create_unpaired_fertile_group(
-			effective_age_band_durations_male, effective_age_band_durations_female, current_year, game_data
+			effective_age_band_durations_male, effective_age_band_durations_female, today, game_data
 		)
 	elif resolved_preference == "FAMILY":
 		# FAMILY è sempre esattamente 1 coppia — percorso interamente dedicato (richiesta utente,
@@ -196,7 +196,7 @@ func seed_player_start(
 		var total_children: int = GROUP_SIZE_COMPOSITIONS["FAMILY"]["children"]
 		var used_names: Array[String] = []
 
-		var couple := _create_coordinated_couple(effective_age_band_durations_male, effective_age_band_durations_female, current_year, game_data, used_names)
+		var couple := _create_coordinated_couple(effective_age_band_durations_male, effective_age_band_durations_female, today, game_data, used_names)
 		var mother: HumanIndividual = couple[0]
 		var father: HumanIndividual = couple[1]
 		mother.partner_id = father.id
@@ -205,7 +205,7 @@ func seed_player_start(
 		individuals.append(father)
 
 		var children := _create_family_children(
-			effective_age_band_durations_male, effective_age_band_durations_female, current_year,
+			effective_age_band_durations_male, effective_age_band_durations_female, today,
 			mother, father, game_data, total_children, used_names
 		)
 		individuals.append_array(children)
@@ -215,7 +215,7 @@ func seed_player_start(
 		for child in children:
 			var child_age_band := HumanCalculator.get_age_band(
 				effective_age_band_durations_male, effective_age_band_durations_female,
-				child.sex, float(current_year - child.birth_year_virtual)
+				child.sex, child.get_age(today)
 			)
 			if child_age_band == HumanTypes.AgeBand.INFANT and mother.dependent_child_id == -1:
 				mother.dependent_child_id = child.id
@@ -227,7 +227,7 @@ func seed_player_start(
 		# lì), semplicemente senza mai chiamare _create_family_children: GROUP_SIZE_COMPOSITIONS
 		# ["COUPLE"].children è 0 per definizione, nessun figlio da creare per questo tipo.
 		var couple := _create_coordinated_couple(
-			effective_age_band_durations_male, effective_age_band_durations_female, current_year, game_data, ([] as Array[String]),
+			effective_age_band_durations_male, effective_age_band_durations_female, today, game_data, ([] as Array[String]),
 			true
 		)
 		var mother: HumanIndividual = couple[0]
@@ -277,13 +277,13 @@ func _grid_spawn_position(index: int, total: int) -> Vector2:
 # group_size come conteggio diretto invece delle etichette COUPLE/FAMILY/GROUP (quelle
 # sono un'opzione di NewGameOptionsMenu specifica del player — un insediamento indigeno
 # probabilmente non le usera' allo stesso modo, da decidere quando arrivera' questo passo),
-# human_rules/folk_name propri di quel Folk (diversi da quelli del player), current_year.
+# human_rules/folk_name propri di quel Folk (diversi da quelli del player), today.
 func seed_indigenous_settlement(
 	macro_coords: Vector2i,
 	group_size: int,
 	human_rules: HumanRules,
 	folk_name: String,
-	current_year: int
+	today: int
 ) -> HumanSeedingResult:
 	# TODO: non ancora progettato. Aperto: se riusare _distribute_children/_create_adult/
 	# _create_child cosi' come sono (probabile, sono gia' generici — nessuno dei tre conosce
@@ -323,7 +323,7 @@ func _distribute_children(couple_count: int, total_children: int) -> Array[int]:
 # _age_band_year_range — durate GIA' scalate per l'Era corrente (vedi il commento su
 # effective_age_band_durations_male/female in seed_player_start).
 func _create_adult(
-	durations_male: Array[float], durations_female: Array[float], current_year: int, sex: HumanTypes.Sex, id: int
+	durations_male: Array[float], durations_female: Array[float], today: int, sex: HumanTypes.Sex, id: int
 ) -> HumanIndividual:
 	var individual := HumanIndividual.new()
 	individual.id = id
@@ -331,7 +331,7 @@ func _create_adult(
 
 	var age_band := HumanTypes.AgeBand.FERTILE_ADULT if randf() < 0.5 else HumanTypes.AgeBand.MATURE_ADULT
 	var age := _random_age_in_band(durations_male, durations_female, sex, age_band)
-	individual.birth_year_virtual = current_year - int(round(age))
+	individual.set_birth_for_age(today, int(round(age)))
 
 	individual.assign_random_name()
 	# Fondatore, nessun genitore simulato — assign_hair_color()/assign_skin_color() senza argomenti
@@ -339,7 +339,7 @@ func _create_adult(
 	individual.assign_hair_color()
 	individual.assign_skin_color()
 	individual.assign_random_clothing()
-	individual.equip_starting_apparel(durations_male, durations_female, current_year)
+	individual.equip_starting_apparel(durations_male, durations_female, today)
 	seed_random_skills(individual)
 	return individual
 
@@ -378,7 +378,7 @@ func _create_adult(
 # longevity_multiplier_by_age = [1,1,0.6,0.6,0.6]), FERTILE_ADULT risulta più corta della durata
 # base di HumanRules, quindi anche il range scalato qui sotto è più stretto di conseguenza.
 func _create_unpaired_fertile_group(
-	durations_male: Array[float], durations_female: Array[float], current_year: int, game_data: GameData
+	durations_male: Array[float], durations_female: Array[float], today: int, game_data: GameData
 ) -> Array[HumanIndividual]:
 	var individuals: Array[HumanIndividual] = []
 	var local_index := 1
@@ -395,7 +395,7 @@ func _create_unpaired_fertile_group(
 			var min_age: float = fertile_range.x if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else fertile_range.x + FERTILE_EDGE_MARGIN_YEARS
 			var max_age: float = fertile_range.y if DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT else fertile_range.y - FERTILE_EDGE_MARGIN_MAX_YEARS
 			var age: float = randf_range(min_age, max_age) if max_age > min_age else fertile_range.x
-			individual.birth_year_virtual = current_year - int(round(age))
+			individual.set_birth_for_age(today, int(round(age)))
 
 			individual.assign_random_name()
 			# Fondatore, nessun genitore simulato — random puro (vedi assign_hair_color/
@@ -403,7 +403,7 @@ func _create_unpaired_fertile_group(
 			individual.assign_hair_color()
 			individual.assign_skin_color()
 			individual.assign_random_clothing()
-			individual.equip_starting_apparel(durations_male, durations_female, current_year)
+			individual.equip_starting_apparel(durations_male, durations_female, today)
 			seed_random_skills(individual)
 			individuals.append(individual)
 			local_index += 1
@@ -429,7 +429,7 @@ func _create_unpaired_fertile_group(
 # use_couple_age_range (2026-09-29): true solo per COUPLE — età da COUPLE_MIN_AGE_YEARS/COUPLE_MAX_AGE_YEARS invece
 # che dalla fascia FERTILE_ADULT con i margini (FAMILY passa false, il default: comportamento invariato).
 func _create_coordinated_couple(
-	durations_male: Array[float], durations_female: Array[float], current_year: int, game_data: GameData, used_names: Array[String],
+	durations_male: Array[float], durations_female: Array[float], today: int, game_data: GameData, used_names: Array[String],
 	use_couple_age_range: bool = false
 ) -> Array[HumanIndividual]:
 	var couple_ages := use_couple_age_range and not DEBUG_SEED_FOUNDERS_AS_MATURE_ADULT
@@ -443,14 +443,14 @@ func _create_coordinated_couple(
 	var father_age: float = randf_range(father_min, father_max) if father_max > father_min else father_range.x
 	if couple_ages:
 		father_age = float(randi_range(COUPLE_MIN_AGE_YEARS, COUPLE_MAX_AGE_YEARS))
-	father.birth_year_virtual = current_year - int(round(father_age))
+	father.set_birth_for_age(today, int(round(father_age)))
 	father.assign_random_name(used_names)
 	# Fondatore, nessun genitore simulato — random puro (vedi assign_hair_color/assign_skin_color
 	# in HumanIndividual.gd).
 	father.assign_hair_color()
 	father.assign_skin_color()
 	father.assign_random_clothing()
-	father.equip_starting_apparel(durations_male, durations_female, current_year)
+	father.equip_starting_apparel(durations_male, durations_female, today)
 	seed_random_skills(father)
 	used_names.append(father.name)
 
@@ -468,14 +468,14 @@ func _create_coordinated_couple(
 	var mother_age: float = randf_range(mother_min, mother_max) if mother_max > mother_min else mother_min
 	if couple_ages:
 		mother_age = float(randi_range(COUPLE_MIN_AGE_YEARS, maxi(int(father_age), COUPLE_MIN_AGE_YEARS)))
-	mother.birth_year_virtual = current_year - int(round(mother_age))
+	mother.set_birth_for_age(today, int(round(mother_age)))
 	mother.assign_random_name(used_names)
 	# Fondatrice, nessun genitore simulato — random puro (vedi assign_hair_color/assign_skin_color
 	# in HumanIndividual.gd).
 	mother.assign_hair_color()
 	mother.assign_skin_color()
 	mother.assign_random_clothing()
-	mother.equip_starting_apparel(durations_male, durations_female, current_year)
+	mother.equip_starting_apparel(durations_male, durations_female, today)
 	seed_random_skills(mother)
 	used_names.append(mother.name)
 
@@ -502,11 +502,11 @@ func _create_coordinated_couple(
 # child_count preso da GROUP_SIZE_COMPOSITIONS["FAMILY"]["children"] dal chiamante (mai hardcoded
 # "3" qui dentro), così un futuro ritocco di quel numero non richiede toccare anche questa funzione.
 func _create_family_children(
-	durations_male: Array[float], durations_female: Array[float], current_year: int,
+	durations_male: Array[float], durations_female: Array[float], today: int,
 	mother: HumanIndividual, father: HumanIndividual, game_data: GameData, child_count: int, used_names: Array[String]
 ) -> Array[HumanIndividual]:
-	var mother_age: float = float(current_year - mother.birth_year_virtual)
-	var father_age: float = float(current_year - father.birth_year_virtual)
+	var mother_age: float = mother.get_age(today)
+	var father_age: float = father.get_age(today)
 	var youngest_parent_age: float = minf(mother_age, father_age)
 	var youngest_parent_sex: HumanTypes.Sex = mother.sex if mother_age <= father_age else father.sex
 
@@ -536,7 +536,7 @@ func _create_family_children(
 		child.sex = HumanTypes.Sex.FEMALE if randf() < 0.5 else HumanTypes.Sex.MALE
 		child.mother_id = mother.id
 		child.father_id = father.id
-		child.birth_year_virtual = current_year - int(round(age))
+		child.set_birth_for_age(today, int(round(age)))
 		child.assign_random_name(used_names)
 		# Unico punto di creazione con genitori VERI disponibili — 40/40/20 madre/padre/random
 		# (regola genetica già esistente, confermata con l'utente — vedi
@@ -544,7 +544,7 @@ func _create_family_children(
 		child.assign_hair_color(mother, father)
 		child.assign_skin_color(mother, father)
 		child.assign_random_clothing()
-		child.equip_starting_apparel(durations_male, durations_female, current_year)
+		child.equip_starting_apparel(durations_male, durations_female, today)
 		seed_random_skills(child)
 		used_names.append(child.name)
 		children.append(child)
@@ -567,7 +567,7 @@ func _create_family_children(
 # used_names sono rimasti come parametri opzionali (default = comportamento originale, mai
 # richiesti dai chiamanti attuali) proprio per questo.
 func _create_child(
-	durations_male: Array[float], durations_female: Array[float], current_year: int,
+	durations_male: Array[float], durations_female: Array[float], today: int,
 	mother: HumanIndividual, father: HumanIndividual, id: int,
 	max_age_override: float = -1.0, use_dynamic_parent_gap: bool = false, used_names: Array[String] = []
 ) -> HumanIndividual:
@@ -577,8 +577,8 @@ func _create_child(
 	individual.mother_id = mother.id
 	individual.father_id = father.id
 
-	var mother_age: float = float(current_year - mother.birth_year_virtual)
-	var father_age: float = float(current_year - father.birth_year_virtual)
+	var mother_age: float = mother.get_age(today)
+	var father_age: float = father.get_age(today)
 	var youngest_parent_age: float
 	var youngest_parent_sex: HumanTypes.Sex
 	if mother_age <= father_age:
@@ -600,7 +600,7 @@ func _create_child(
 		child_band_duration = minf(child_band_duration, max_age_override)
 	var max_child_age: float = maxf(0.0, minf(child_band_duration, youngest_parent_age - parent_child_gap))
 	var age: float = randf_range(0.0, max_child_age) if max_child_age > 0.0 else 0.0
-	individual.birth_year_virtual = current_year - int(round(age))
+	individual.set_birth_for_age(today, int(round(age)))
 
 	individual.assign_random_name(used_names)
 	# Unico punto di creazione con genitori VERI disponibili — 40/40/20 madre/padre/random (vedi
@@ -608,7 +608,7 @@ func _create_child(
 	individual.assign_hair_color(mother, father)
 	individual.assign_skin_color(mother, father)
 	individual.assign_random_clothing()
-	individual.equip_starting_apparel(durations_male, durations_female, current_year)
+	individual.equip_starting_apparel(durations_male, durations_female, today)
 	seed_random_skills(individual)
 	used_names.append(individual.name)
 	return individual

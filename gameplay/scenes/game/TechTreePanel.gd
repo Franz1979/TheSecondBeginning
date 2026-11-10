@@ -353,6 +353,16 @@ func _layout_ideas(ideas: Dictionary) -> Dictionary:
 		return a < b
 	)
 
+	# Figli in ordine di Idea.tree_order e poi di id (2026-11-09, richiesta utente: Addomesticazione delle piante sopra
+	# quella degli animali, così la linea verso Trappole avanzate non incrocia le altre).
+	for parent_id in children:
+		(children[parent_id] as Array).sort_custom(func(a: String, b: String) -> bool:
+			var order_a: int = (ideas[a] as Idea).tree_order
+			var order_b: int = (ideas[b] as Idea).tree_order
+			if order_a != order_b:
+				return order_a < order_b
+			return a < b
+		)
 	var cells: Dictionary = {}
 	var next_row := 0
 	for root_id in roots:
@@ -380,7 +390,6 @@ func _place_subtree(idea_id: String, row: int, children: Dictionary, column_of: 
 		placed_row += 1
 	cells[idea_id] = Vector2i(column, placed_row)
 	var kids: Array = children.get(idea_id, [])
-	kids.sort()
 	var used := 0
 	for kid in kids:
 		used += _place_subtree(String(kid), row + used, children, column_of, cells)

@@ -15,6 +15,9 @@ var current_day: int = START_DAY # 0..DAYS_PER_YEAR-1
 # Quanti giorni con controllo stagionale sono passati nella partita: la vegetazione può cambiare solo lì. Confrontato con
 # MacroCellState.vegetation_layout_checkpoint per riusare la disposizione di una cella riattivata.
 var vegetation_checkpoint_count: int = 0
+# Registro per giorno degli eventi umani programmati (2026-11-09): non salvato, ricostruito dai campi
+# scheduled_* degli individui da GameTimeService.connect_to_clock. Vedi HumanEventSchedule.
+var human_event_schedule := HumanEventSchedule.new()
 
 # Era geologico/tecnologica corrente (richiesta utente, 2026-09-04) — GLOBALE alla partita per
 # ora (un solo current_era_name per l'intera GameData, non uno per Folk), coerentemente col fatto
@@ -151,6 +154,12 @@ var placed_traps_revision: int = 0
 # "macro_y", "lot_x", "lot_y", "broken_day"} JSON-nativi; tolte da TrapService.advance_daily alla scadenza. Salvate
 # ("broken_traps"); il disegno segue placed_traps_revision.
 var broken_traps: Array[Dictionary] = []
+# Lacci (2026-11-09, SnareService): passaggi del giorno ("area|specie" -> ore) e disturbi dopo una cattura ("area|specie" ->
+# {"until_day", "species", "macro_x", "macro_y", "rect": [x, y, w, h]}), salvati. snare_sample_slot (ultima ora contata,
+# giorno × 24 + ora) non salvata.
+var snare_passages: Dictionary = {}
+var snare_disturbances: Dictionary = {}
+var snare_sample_slot: int = -1
 # Regola del WM "Trappole per zona" (2026-11-07): trappole volute in ogni zona del loro lavoro, per tipo di trappola
 # (nome -> numero; assente o 0 = nessuna). Una zona può avere il proprio numero (WorkArea.trap_targets). Salvata.
 var stock_traps_per_zone: Dictionary = {}

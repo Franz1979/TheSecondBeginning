@@ -512,6 +512,9 @@ var building_avoidance_radius: float = 0.0
 # Edifici da cui tenere lontani i centri dei gruppetti (centri in coordinate locali, MOVEMENT esclusi): ultimo valore
 # letto da disturbance_source in _run_disturbance_check, usato a ogni frame da _push_cluster_out_of_buildings.
 var _cluster_avoid_buildings: Array = []
+# Aree da evitare per i centri dei gruppetti (2026-11-09, SnareService: zona di un laccio dopo una cattura), in microcelle:
+# un centro dentro viene spinto fuori dal lato più vicino, come dagli edifici.
+var avoid_rects: Array[Rect2] = []
 # Raggio vero degli edifici per chi gironzola (2026-11-01, richiesta utente): griglia WIDTH×HEIGHT, 1 = microcella entro
 # building_avoidance_radius di uno di _cluster_avoid_buildings. Vuota = nessuna zona. Ricostruita solo se quegli edifici
 # cambiano (_update_building_zone), così il controllo a ogni passo non dipende da quanti edifici ci sono.
@@ -1168,6 +1171,7 @@ func _process(real_delta: float) -> void:
 		# Centri dei gruppetti senza collisione (2026-09-27): solo i singoli individui scorrono lungo gli ostacoli.
 		cluster.position += cluster.direction * move_speed * delta
 		_push_cluster_out_of_buildings(cluster, delta)
+		_push_cluster_out_of_rects(cluster, delta)
 		_bounce_at_bounds(cluster)
 
 	for i in range(_groups.size()):
@@ -1442,6 +1446,37 @@ func _push_cluster_out_of_buildings(cluster: AnimalVisualGroup, delta: float) ->
 	var away: Vector2 = offset / nearest_distance if nearest_distance > 0.001 else Vector2.RIGHT.rotated(randf_range(0.0, TAU))
 	cluster.direction = away
 	cluster.position += away * minf(CLUSTER_BUILDING_PUSH_SPEED * delta, avoid_distance - nearest_distance + 0.01)
+
+
+# Centro dentro un'area da evitare (avoid_rects): spinto fuori dal lato più vicino a CLUSTER_BUILDING_PUSH_SPEED, con la
+# direzione di vagare girata nello stesso verso.
+func _push_cluster_out_of_rects(cluster: AnimalVisualGroup, delta: float) -> void:
+	for rect in avoid_rects:
+		if not rect.has_point(cluster.position):
+			continue
+		var to_left := cluster.position.x - rect.position.x
+		var to_right := rect.end.x - cluster.position.x
+		var to_top := cluster.position.y - rect.position.y
+		var to_bottom := rect.end.y - cluster.position.y
+		var nearest := minf(minf(to_left, to_right), minf(to_top, to_bottom))
+		var away := Vector2.LEFT
+		if nearest == to_right:
+			away = Vector2.RIGHT
+		elif nearest == to_top:
+			away = Vector2.UP
+		elif nearest == to_bottom:
+			away = Vector2.DOWN
+		cluster.direction = away
+		cluster.position += away * minf(CLUSTER_BUILDING_PUSH_SPEED * delta, nearest + 0.5)
+		return
+
+
+# Posizioni dei centri dei gruppetti (in microcelle), per i passaggi dei lacci (SnareService).
+func get_cluster_positions() -> Array[Vector2]:
+	var positions: Array[Vector2] = []
+	for cluster in _clusters:
+		positions.append((cluster as AnimalVisualGroup).position)
+	return positions
 
 
 # Direzione e intensità del disagio di UN individuo. Umani: solo il più vicino, e solo se entro

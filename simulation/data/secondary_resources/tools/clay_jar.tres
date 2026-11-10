@@ -7,6 +7,7 @@ script = ExtResource("1_clay_jar")
 secondary_resource_name = "clay_jar"
 calories_per_unit = 0.0
 category = 4
+panel_group = "containers"
 required_idea_id = "pottery"
 generation_source = 2
 space_per_unit = 50.0

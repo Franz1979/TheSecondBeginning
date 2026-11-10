@@ -7,6 +7,7 @@ script = ExtResource("1_waterskin")
 secondary_resource_name = "waterskin"
 calories_per_unit = 0.0
 category = 4
+panel_group = "transport"
 required_idea_id = "smoking"
 generation_source = 2
 space_per_unit = 2.0

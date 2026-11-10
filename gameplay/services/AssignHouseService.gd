@@ -8,8 +8,8 @@ extends RefCounted
 # una volta al giorno (BuildingLifecycleService.evict_damaged_house_overflow): questo service non sa QUANDO va
 # richiamato, solo COME assegnare dato lo stato attuale.
 #
-# `human_individuals` è la STESSA lista del chiamante (World non possiede gli individui) e `current_year` serve per
-# l'età (current_year - birth_year_virtual).
+# `human_individuals` è la STESSA lista del chiamante (World non possiede gli individui) e `today` serve per
+# l'età (giorno assoluto, HumanIndividual.get_age_years).
 #
 # TRE PASSATE (2026-10-22, richiesta utente — Hut per nucleo famigliare):
 #   1. CASE DI NUCLEO (residency_assignment_tier >= NUCLEUS_HOUSE_TIER, oggi la Hut): ognuna è di UN SOLO nucleo
@@ -80,16 +80,16 @@ static var _trigger_printed: bool = false
 
 # `trigger`: perché si riassegna ("casa completata: Capanna #82", "nascita di …"), solo per il log.
 static func assign_pending_residents(
-	world: World, human_individuals: Array[HumanIndividual], current_year: int, priority_by_building: Dictionary = {},
+	world: World, human_individuals: Array[HumanIndividual], today: int, priority_by_building: Dictionary = {},
 	trigger: String = ""
 ) -> void:
 	if world == null:
 		return
 	_trigger = trigger
 	_trigger_printed = false
-	_assign_nucleus_houses(world, human_individuals, current_year, priority_by_building)
-	_assign_common_houses(world, human_individuals, current_year)
-	_assign_guest_houses(world, human_individuals, current_year)
+	_assign_nucleus_houses(world, human_individuals, today, priority_by_building)
+	_assign_common_houses(world, human_individuals, today)
+	_assign_guest_houses(world, human_individuals, today)
 	_trigger = ""
 
 
@@ -105,7 +105,7 @@ static func _nucleus_houses(world: World) -> Array[Building]:
 # Passata 1: case di nucleo (vedi TRE PASSATE in testa). `priority_by_building`: id edificio -> id dei residenti di prima
 # del miglioramento; il loro nucleo prende quella casa per primo.
 static func _assign_nucleus_houses(
-	world: World, human_individuals: Array[HumanIndividual], current_year: int, priority_by_building: Dictionary
+	world: World, human_individuals: Array[HumanIndividual], today: int, priority_by_building: Dictionary
 ) -> void:
 	var houses := _nucleus_houses(world)
 	if houses.is_empty():
@@ -128,7 +128,7 @@ static func _assign_nucleus_houses(
 		var owner := _owner_nucleus(residents, nuclei, housed)
 		if owner == "":
 			# Nessun nucleo: casa senza nucleo. Restano, fino ai posti (escono i più giovani).
-			residents.sort_custom(func(a: HumanIndividual, b: HumanIndividual) -> bool: return a.birth_year_virtual < b.birth_year_virtual)
+			residents.sort_custom(func(a: HumanIndividual, b: HumanIndividual) -> bool: return a.get_birth_absolute_day() < b.get_birth_absolute_day())
 			var capacity := get_max_residents(house)
 			while residents.size() > capacity:
 				_move_out(residents.pop_back(), house, "esce: residente in più nella hut danneggiata, il più giovane")
@@ -138,7 +138,7 @@ static func _assign_nucleus_houses(
 			if String(by_member.get((resident as HumanIndividual).id, "")) != owner:
 				_move_out(resident, house, "esce: non è del nucleo della casa")
 		housed[owner] = house
-		_fit_nucleus(house, owner, nuclei, current_year)
+		_fit_nucleus(house, owner, nuclei, today)
 	var waiting: Array = []
 	for nucleus_key in nuclei["members"].keys():
 		if not housed.has(nucleus_key):
@@ -150,7 +150,7 @@ static func _assign_nucleus_houses(
 		var size_b: int = (nuclei["members"][b] as Array).size()
 		if size_a != size_b:
 			return size_a > size_b
-		return FamilyNucleusService.oldest_birth_year(nuclei["members"][a]) < FamilyNucleusService.oldest_birth_year(nuclei["members"][b])
+		return FamilyNucleusService.oldest_birth_day(nuclei["members"][a]) < FamilyNucleusService.oldest_birth_day(nuclei["members"][b])
 	)
 	for house in free_houses:
 		if waiting.is_empty():
@@ -173,7 +173,7 @@ static func _assign_nucleus_houses(
 		waiting.erase(chosen)
 		_log_nucleus_choice(house, chosen, nuclei, reason, waiting)
 		housed[chosen] = house
-		_fit_nucleus(house, chosen, nuclei, current_year)
+		_fit_nucleus(house, chosen, nuclei, today)
 	# Nuclei ancora in attesa: si riprendono le case senza nucleo, dalla meno abitata.
 	var reclaimable: Array[Building] = []
 	for house in houses:
@@ -191,7 +191,7 @@ static func _assign_nucleus_houses(
 			if (guest as HumanIndividual).house_id == house.id:
 				_move_out(guest, house, "esce: la hut serve a un nucleo")
 		housed[chosen] = house
-		_fit_nucleus(house, chosen, nuclei, current_year)
+		_fit_nucleus(house, chosen, nuclei, today)
 
 
 # Nucleo proprietario di una casa di nucleo: tra i nuclei con almeno un CAPO che ci vive (un figlio da solo non porta lì il
@@ -211,14 +211,14 @@ static func _owner_nucleus(residents: Array, nuclei: Dictionary, housed: Diction
 	var best := ""
 	for key in with_head.keys():
 		if best == "" or int(counts[key]) > int(counts[best]) or (int(counts[key]) == int(counts[best]) \
-				and FamilyNucleusService.oldest_birth_year(nuclei["members"][key]) < FamilyNucleusService.oldest_birth_year(nuclei["members"][best])):
+				and FamilyNucleusService.oldest_birth_day(nuclei["members"][key]) < FamilyNucleusService.oldest_birth_day(nuclei["members"][best])):
 			best = String(key)
 	return best
 
 
 # Passata 3: residenti senza nucleo (vedi TRE PASSATE in testa). Chi è ancora senza casa dopo le tende, dal più anziano, nelle case di
 # nucleo che nessun nucleo usa (vuote o già abitate senza nucleo), fino ai posti.
-static func _assign_guest_houses(world: World, human_individuals: Array[HumanIndividual], current_year: int) -> void:
+static func _assign_guest_houses(world: World, human_individuals: Array[HumanIndividual], today: int) -> void:
 	var unhoused: Array[HumanIndividual] = []
 	for individual in human_individuals:
 		if individual.house_id == -1:
@@ -231,7 +231,7 @@ static func _assign_guest_houses(world: World, human_individuals: Array[HumanInd
 	var nuclei := FamilyNucleusService.compute_nuclei(human_individuals)
 	var occupants := _residents_by_house(human_individuals)
 	unhoused.sort_custom(func(a: HumanIndividual, b: HumanIndividual) -> bool:
-		return (current_year - a.birth_year_virtual) > (current_year - b.birth_year_virtual)
+		return a.get_birth_absolute_day() < b.get_birth_absolute_day()
 	)
 	for house in houses:
 		if unhoused.is_empty():
@@ -250,21 +250,21 @@ static func _assign_guest_houses(world: World, human_individuals: Array[HumanInd
 # Il nucleo `nucleus_key` nella casa `house`, fino ai posti: restano sempre i capi e i figli minori già dentro; poi, finché
 # c'è posto, capi e minori che vivono altrove, poi i figli adulti dal più giovane. Chi del nucleo è dentro ma non ci sta
 # esce; chi ci sta e vive altrove entra (lascia la sua casa).
-static func _fit_nucleus(house: Building, nucleus_key: String, nuclei: Dictionary, current_year: int) -> void:
+static func _fit_nucleus(house: Building, nucleus_key: String, nuclei: Dictionary, today: int) -> void:
 	var capacity := get_max_residents(house)
 	var chosen: Array[HumanIndividual] = []
 	var candidates: Array[HumanIndividual] = []
 	var adults: Array[HumanIndividual] = []
 	for member in nuclei["members"][nucleus_key]:
 		var individual: HumanIndividual = member
-		var essential := FamilyNucleusService.is_head(nuclei, nucleus_key, individual) or not FamilyNucleusService.is_adult(individual, current_year)
+		var essential := FamilyNucleusService.is_head(nuclei, nucleus_key, individual) or not FamilyNucleusService.is_adult(individual, today)
 		if not essential:
 			adults.append(individual)
 		elif individual.house_id == house.id:
 			chosen.append(individual)
 		else:
 			candidates.append(individual)
-	adults.sort_custom(func(a: HumanIndividual, b: HumanIndividual) -> bool: return a.birth_year_virtual > b.birth_year_virtual)
+	adults.sort_custom(func(a: HumanIndividual, b: HumanIndividual) -> bool: return a.get_birth_absolute_day() > b.get_birth_absolute_day())
 	candidates.append_array(adults)
 	for candidate in candidates:
 		if chosen.size() >= capacity:
@@ -339,7 +339,7 @@ static func _residents_by_house(human_individuals: Array[HumanIndividual]) -> Di
 
 
 # Passata 2: case comuni (le tende), regola di sempre — vedi TRE PASSATE in testa.
-static func _assign_common_houses(world: World, human_individuals: Array[HumanIndividual], current_year: int) -> void:
+static func _assign_common_houses(world: World, human_individuals: Array[HumanIndividual], today: int) -> void:
 	# Individui senza casa, ordinati per età DECRESCENTE (più anziani prima): un solo ordinamento per l'intera passata.
 	var unhoused: Array[HumanIndividual] = []
 	for individual in human_individuals:
@@ -348,7 +348,7 @@ static func _assign_common_houses(world: World, human_individuals: Array[HumanIn
 	if unhoused.is_empty():
 		return
 	unhoused.sort_custom(func(a: HumanIndividual, b: HumanIndividual) -> bool:
-		return (current_year - a.birth_year_virtual) > (current_year - b.birth_year_virtual)
+		return a.get_birth_absolute_day() < b.get_birth_absolute_day()
 	)
 
 	# Ordine degli edifici (2026-10-03, richiesta utente): dal moltiplicatore di riposo più alto al più basso, così i più

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_advanced_traps"]
+
+; Trappole avanzate (2026-11-09, segnaposto): per ora non sblocca nulla. Con questa idea si sbloccheranno le trappole che
+; catturano gli animali vivi (cesto a caduta per il coniglio, recinto a imbuto per le mandrie) da portare al recinto.
+[resource]
+script = ExtResource("1_advanced_traps")
+id = "advanced_traps"
+display_name = "idea_advanced_traps"
+summary = "idea_advanced_traps_summary"
+description = "idea_advanced_traps_description"
+thoughts_cost = 70
+prerequisites = Array[String](["animal_domestication", "advanced_paleolithic_constructions"])
+era = "paleolithic"

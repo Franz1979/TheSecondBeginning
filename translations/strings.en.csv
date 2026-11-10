@@ -458,8 +458,6 @@ random_event_illness_name,Illness
 random_event_illness_popup,{name} falls ill ({illness}): they must rest until they recover.
 illness_fever,fever
 individual_health_sick_suffix,unwell
-random_event_wound_name,Wound
-random_event_wound_popup,{name} is wounded ({wound}): they must rest until they recover.
 wound_laceration,laceration
 wound_fracture,fracture
 wound_burn,burn
@@ -1580,6 +1578,11 @@ pending_reason_clearer_missing,Nobody is clearing it
 pending_reason_emptier_missing,Nobody is emptying it
 pending_reason_no_waste_pit,No open waste pit with room
 warehouse_column_quantity,Qty
+warehouse_group_hunting,Hunting
+warehouse_group_traps_fishing,Traps and fishing
+warehouse_group_work,Work
+warehouse_group_transport,Transport
+warehouse_group_containers,Containers
 warehouse_column_min,Min
 warehouse_column_max,Max
 warehouse_level_wheel_hint,Mouse wheel to change (Shift: 10 at a time); empty = no limit
@@ -1907,3 +1910,9 @@ warehouse_quantity_processing_tooltip,"In storage: {stored} · At workstations: 
 storage_slot_auto_days_short,{days}d
 storage_slot_auto_progress_ready_tooltip,"Ready, waiting for space"
 drawer_weapon_without_ammo,"{weapon} in storage, but ammunition is missing: {ammo}, at least {shots} shots"
+idea_advanced_traps,Advanced Traps
+idea_advanced_traps_summary,Traps that catch animals alive, to be brought to the pen.
+idea_advanced_traps_description,"Those who can build traps and have learned to approach animals realize that prey can be caught without killing it. With baskets, cages and pens, animals caught alive can be kept and bred."
+carried_resource_tooltip_snare,Bundle of snares
+pending_trap_no_site,"{area}: no suitable spot for {trap}"
+trap_pickup_catch_prey,"Prey: {detail}"

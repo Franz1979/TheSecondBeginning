@@ -51,6 +51,12 @@ static func assign_empty(ctx: GameContext, worker: HumanIndividual, trap_id: int
 		_reject(worker, trap.macro_coords, trap.lot, GameContext.tr_text("trap_empty_reject_nothing"), effects)
 		return
 	var request := AssignRequest.create(worker, task, "task_activity_empty_trap", false).at_microcell(trap.macro_coords, trap.lot, "trap")
+	# Attrezzi della trappola (2026-11-09, rete: coltello) già addosso: a mano non si va a prenderli.
+	var tool_gate := ToolGateService.check_and_prepare(worker, task, ctx.game_data)
+	if tool_gate["result"] != ToolGateService.Result.OK:
+		CommandFeedback.tool_gate_failure(worker, tool_gate, effects)
+		AssignService.reject_icon(request, effects)
+		return
 	AssignService.assign(request, ctx.age_band_of(worker), effects)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
 

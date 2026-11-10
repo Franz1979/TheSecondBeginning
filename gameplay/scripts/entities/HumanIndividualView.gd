@@ -294,7 +294,7 @@ static func body_draw_color(target: HumanIndividual, age_band: HumanTypes.AgeBan
 static func body_draw_color_now(target: HumanIndividual, p_game_data: GameData) -> Color:
 	if p_game_data == null:
 		return body_draw_color(target, HumanTypes.AgeBand.FERTILE_ADULT)
-	var age := float(p_game_data.year - target.birth_year_virtual)
+	var age := target.get_age(p_game_data.get_absolute_day())
 	return body_draw_color(target, HumanCalculator.get_age_band(
 		p_game_data.era_effective_age_band_durations_male, p_game_data.era_effective_age_band_durations_female, target.sex, age
 	))
@@ -418,7 +418,7 @@ func _process(delta: float) -> void:
 	# uno stato persistito che oggi non esiste; fuori scope per questa richiesta (solo "bambini più
 	# piccoli", non varianza individuale).
 	if human_rules != null and game_data != null:
-		var age := float(game_data.year - individual.birth_year_virtual)
+		var age := individual.get_age(game_data.get_absolute_day())
 		# durations GIA' scalate per l'Era corrente (bugfix, richiesta utente 2026-09-04 — PRIMA
 		# passava human_rules qui, ignorando l'Era: vedi HumanCalculator.get_age_band).
 		_current_age_band = HumanCalculator.get_age_band(

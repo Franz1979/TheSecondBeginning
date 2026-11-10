@@ -55,6 +55,6 @@ extends Resource
 @export var discovery_only: bool = false
 
 # Ordine dall'alto delle idee radice (senza prerequisiti) nella loro colonna dell'albero (2026-11-07, richiesta utente —
-# Conoscenza delle piante accanto ad Addomesticazione). Solo le radici lo leggono (TechTreePanel._compute_layout); a
-# parità di valore conta l'id. Default alto: una radice nuova senza valore va in fondo.
+# Conoscenza delle piante accanto ad Addomesticazione). Lo leggono le radici e, dal 2026-11-09, i figli dello stesso primo
+# prerequisito (TechTreePanel._layout_ideas); a parità di valore conta l'id. Default alto: un'idea senza valore va in fondo.
 @export var tree_order: int = 1000

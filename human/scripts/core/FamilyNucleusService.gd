@@ -86,22 +86,22 @@ static func is_head(nuclei: Dictionary, nucleus_key: String, member: HumanIndivi
 
 
 # Figlio adulto: dalla fascia FERTILE_ADULT in su (durate dell'era della partita). Senza partita: mai adulto (nessuna uscita).
-static func is_adult(member: HumanIndividual, current_year: int) -> bool:
+static func is_adult(member: HumanIndividual, today: int) -> bool:
 	var game_data: GameData = GameSettings.active_game_data
 	if game_data == null:
 		return false
 	var band := HumanCalculator.get_age_band(
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, member.sex,
-		float(current_year - member.birth_year_virtual)
+		member.get_age(today)
 	)
 	return int(band) >= int(HumanTypes.AgeBand.FERTILE_ADULT)
 
 
-# Anno di nascita del membro più anziano (spareggio: il nucleo con il membro più anziano vince).
-static func oldest_birth_year(members: Array) -> int:
+# Giorno assoluto di nascita del membro più anziano (spareggio: il nucleo con il membro più anziano vince).
+static func oldest_birth_day(members: Array) -> int:
 	var oldest := 1 << 30
 	for member in members:
-		oldest = mini(oldest, (member as HumanIndividual).birth_year_virtual)
+		oldest = mini(oldest, (member as HumanIndividual).get_birth_absolute_day())
 	return oldest
 
 

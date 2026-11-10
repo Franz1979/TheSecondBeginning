@@ -2444,7 +2444,7 @@ static func get_restock_pouch_calorie_cap(individual: HumanIndividual, autonomy_
 		return INF
 	var age_band := HumanCalculator.get_age_band(
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
-		individual.sex, float(game_data.year - individual.birth_year_virtual)
+		individual.sex, individual.get_age(game_data.get_absolute_day())
 	)
 	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
 	var daily_consumption: float = HumanCalculator.get_daily_calorie_consumption(
@@ -2522,7 +2522,7 @@ func _handle_food_interrupt(individual: HumanIndividual, task: Task, world: Worl
 # sopra: non tocca mai `self`, reso static solo perché resolve_idle_individual la chiama da un
 # contesto senza istanza.
 static func _resolve_age_band(individual: HumanIndividual, game_data: GameData) -> HumanTypes.AgeBand:
-	var age := float(game_data.year - individual.birth_year_virtual)
+	var age := individual.get_age(game_data.get_absolute_day())
 	return HumanCalculator.get_age_band(
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
 		individual.sex, age

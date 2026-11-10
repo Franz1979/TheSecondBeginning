@@ -1,0 +1,160 @@
+class_name SnareService
+extends RefCounted
+
+# Catture dei lacci (2026-11-09, TrapService.QUARRY_SMALL_GAME): conigli e pernici veri, presi dalle mandrie della fauna
+# ad hoc (WildFaunaService) solo quando passano dove sta il laccio. Solo celle accese: è lì che le mandrie hanno i gruppetti
+# disegnati (AnimalGroupRenderer) con una posizione.
+#   - Passaggi (sample_hour, ogni ora di gioco): per ogni area dei lacci (la zona di caccia del laccio, o un quadrato
+#     attorno a quello piazzato fuori zona) e ogni specie preda (trap_prey_species), +1 se il centro di un gruppetto è
+#     dentro l'area. GameData.snare_passages, azzerati a fine giornata (end_day).
+#   - Tiro (roll_catch, fine giornata da TrapService.advance_daily): per specie trap_daily_catch_chance × peso della specie
+#     × passaggi / trap_full_passage_hours (al massimo 1); al massimo una preda al giorno per laccio.
+#   - Preda (take_prey): un capo in meno nella mandria (remove_one) e la figura più vicina al laccio tolta dalla mappa.
+#   - Disturbo: dopo una cattura i gruppetti di quella specie evitano l'area per trap_disturbance_days giorni
+#     (AnimalGroupRenderer.avoid_rects, spinti fuori come dagli edifici); in quei giorni nessun passaggio.
+# Celle spente: nessun passaggio e quindi nessuna cattura. DA FARE: decidere cosa succede quando la cella non è accesa
+# (vale per tutte le trappole: rete e nassa oggi prendono anche lì).
+# Statico; lo stato (passaggi, disturbi, ultima ora contata) sta in GameData.
+
+const HOURS_PER_DAY := 24
+
+
+# Ora di gioco nuova: conta i passaggi nelle celle accese con lacci e aggiorna le aree da evitare dei gruppetti.
+static func sample_hour(game_data: GameData, live_cells: Dictionary, day_progress: float) -> void:
+	if game_data == null:
+		return
+	var day := game_data.get_absolute_day()
+	var slot := day * HOURS_PER_DAY + clampi(int(day_progress * HOURS_PER_DAY), 0, HOURS_PER_DAY - 1)
+	if slot == game_data.snare_sample_slot:
+		return
+	game_data.snare_sample_slot = slot
+	_prune_disturbances(game_data, day)
+	_apply_avoidance(game_data, live_cells)
+	# Aree dei lacci per cella accesa: coords -> {chiave area: {"rect", "species"}}.
+	var areas_by_cell := {}
+	for trap in game_data.placed_traps:
+		var rules := TrapService.get_rules(trap.trap_name)
+		if rules == null or rules.trap_quarry != TrapService.QUARRY_SMALL_GAME or not live_cells.has(trap.macro_coords):
+			continue
+		var area := passage_area(game_data, trap, rules)
+		if not areas_by_cell.has(trap.macro_coords):
+			areas_by_cell[trap.macro_coords] = {}
+		areas_by_cell[trap.macro_coords][area["key"]] = {"rect": area["rect"], "species": rules.trap_prey_species}
+	for coords in areas_by_cell:
+		var cell: LiveMacroCell = live_cells[coords]
+		var areas: Dictionary = areas_by_cell[coords]
+		for area_key in areas:
+			var rect: Rect2 = areas[area_key]["rect"]
+			for species in areas[area_key]["species"]:
+				var renderer: AnimalGroupRenderer = cell.animal_renderers.get(species)
+				if renderer == null or is_disturbed(game_data, area_key, species, day):
+					continue
+				for center in renderer.get_cluster_positions():
+					if rect.has_point(center):
+						var key := _key(area_key, species)
+						game_data.snare_passages[key] = int(game_data.snare_passages.get(key, 0)) + 1
+						break
+
+
+# Area dei passaggi del laccio: la sua zona di caccia, o (piazzato fuori zona) un quadrato di lato 2×trap_passage_radius+1
+# attorno a lui. {"key": String, "rect": Rect2 in microcelle}.
+static func passage_area(game_data: GameData, trap: PlacedTrap, rules: SecondaryResourceRules) -> Dictionary:
+	var area := WorkAreaService.find_by_id(game_data, trap.work_area_id) if trap.work_area_id > 0 else null
+	if area != null:
+		return {"key": "zone%d" % area.id, "rect": Rect2(area.rect)}
+	var radius := maxi(rules.trap_passage_radius, 0)
+	return {"key": "trap%d" % trap.id, "rect": Rect2(Vector2(trap.lot - Vector2i(radius, radius)), Vector2.ONE * float(radius * 2 + 1))}
+
+
+static func is_disturbed(game_data: GameData, area_key: String, species: String, day: int) -> bool:
+	var entry: Dictionary = game_data.snare_disturbances.get(_key(area_key, species), {})
+	return not entry.is_empty() and int(entry.get("until_day", 0)) > day
+
+
+# Specie presa oggi dal laccio, o "" se nessuna. `roll` in 0..1.
+static func roll_catch(game_data: GameData, trap: PlacedTrap, rules: SecondaryResourceRules, roll: float) -> String:
+	var area_key := String(passage_area(game_data, trap, rules)["key"])
+	var day := game_data.get_absolute_day()
+	var herds := WildFaunaService.get_herds_in_cell(game_data, trap.macro_coords)
+	var full_hours := maxf(float(rules.trap_full_passage_hours), 1.0)
+	var threshold := 0.0
+	for i in range(rules.trap_prey_species.size()):
+		var species := String(rules.trap_prey_species[i])
+		var passages := int(game_data.snare_passages.get(_key(area_key, species), 0))
+		if passages <= 0 or not herds.has(species) or is_disturbed(game_data, area_key, species, day):
+			continue
+		var weight := float(rules.trap_prey_weights[i]) if i < rules.trap_prey_weights.size() else 1.0
+		threshold += rules.trap_daily_catch_chance * weight * minf(float(passages) / full_hours, 1.0)
+		if roll < threshold:
+			return species
+	return ""
+
+
+# Preda presa: la figura della specie più vicina al laccio sparisce dalla mappa, la mandria perde un capo della sua età e
+# l'area resta evitata da quella specie per trap_disturbance_days giorni. Restituisce la fascia d'età della preda.
+static func take_prey(game_data: GameData, trap: PlacedTrap, rules: SecondaryResourceRules, species: String) -> int:
+	var age_band := int(GameTypes.AgeBand.ADULT)
+	var live_cell := PathfindingService.get_live_cell(trap.macro_coords)
+	var renderer: AnimalGroupRenderer = live_cell.animal_renderers.get(species) if live_cell != null else null
+	if renderer != null:
+		var nearest: AnimalVisualGroup = null
+		var nearest_distance := INF
+		var snare_point := Vector2(trap.lot) + Vector2(0.5, 0.5)
+		for body in renderer.get_individuals():
+			var distance: float = (body as AnimalVisualGroup).position.distance_squared_to(snare_point)
+			if distance < nearest_distance:
+				nearest_distance = distance
+				nearest = body
+		if nearest != null:
+			age_band = int(nearest.age_band)
+			renderer.remove_individual(nearest.id)
+	WildFaunaService.remove_one(game_data, species, age_band, trap.macro_coords)
+	var area := passage_area(game_data, trap, rules)
+	var rect: Rect2 = area["rect"]
+	game_data.snare_disturbances[_key(String(area["key"]), species)] = {
+		"until_day": game_data.get_absolute_day() + maxi(rules.trap_disturbance_days, 0), "species": species,
+		"macro_x": trap.macro_coords.x, "macro_y": trap.macro_coords.y,
+		"rect": [rect.position.x, rect.position.y, rect.size.x, rect.size.y],
+	}
+	if live_cell != null:
+		_apply_avoidance(game_data, {trap.macro_coords: live_cell})
+	return age_band
+
+
+# Fine giornata (dopo i tiri): i passaggi ricominciano da zero.
+static func end_day(game_data: GameData) -> void:
+	if game_data != null:
+		game_data.snare_passages.clear()
+
+
+static func _key(area_key: String, species: String) -> String:
+	return "%s|%s" % [area_key, species]
+
+
+static func _prune_disturbances(game_data: GameData, day: int) -> void:
+	for key in game_data.snare_disturbances.keys():
+		if int((game_data.snare_disturbances[key] as Dictionary).get("until_day", 0)) <= day:
+			game_data.snare_disturbances.erase(key)
+
+
+# Aree da evitare dei renderer delle celle accese, dai disturbi ancora attivi.
+static func _apply_avoidance(game_data: GameData, live_cells: Dictionary) -> void:
+	var rects_by_renderer := {}
+	for entry in game_data.snare_disturbances.values():
+		var coords := Vector2i(int(entry.get("macro_x", 0)), int(entry.get("macro_y", 0)))
+		var cell: LiveMacroCell = live_cells.get(coords)
+		var renderer: AnimalGroupRenderer = cell.animal_renderers.get(String(entry.get("species", ""))) if cell != null else null
+		if renderer == null:
+			continue
+		var raw: Array = entry.get("rect", [0, 0, 0, 0])
+		if not rects_by_renderer.has(renderer):
+			rects_by_renderer[renderer] = []
+		rects_by_renderer[renderer].append(Rect2(float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3])))
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell == null:
+			continue
+		for renderer in cell.animal_renderers.values():
+			var rects: Array[Rect2] = []
+			rects.assign(rects_by_renderer.get(renderer, []))
+			(renderer as AnimalGroupRenderer).avoid_rects = rects

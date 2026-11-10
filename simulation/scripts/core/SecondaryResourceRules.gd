@@ -80,6 +80,10 @@ extends Resource
 # alimentare senza campo esplicito (forage/berry/fruit/fish_meat/bird_meat). Nessuna logica lo
 # consulta ancora.
 @export var category: SecondaryResourceTypes.Category
+# Gruppo nel cassetto Scorte (2026-11-09, richiesta utente — attrezzi raggruppati): le righe con lo stesso gruppo stanno in
+# un riquadro tratteggiato col nome sul bordo (tr("warehouse_group_" + panel_group)). "" = nessun gruppo, righe in fondo
+# senza riquadro. Ordine dei gruppi: WarehousePanel.PANEL_GROUP_ORDER. Oggi usato solo dagli attrezzi.
+@export var panel_group: String = ""
 # Allo scarico di una Task con CONTEXT_PREFER_RECIPE_WORKSTATION (oggi la macellazione) questa risorsa va prima alla
 # postazione di lavoro di una sua ricetta, poi al magazzino (2026-10-02, richiesta utente). Default false: le altre
 # risorse (pelli, ossa, tendini) vanno al magazzino anche se sono ingredienti di una ricetta. Oggi true solo su meat.
@@ -336,6 +340,18 @@ extends Resource
 @export var trap_idle_wear_days: int = 0
 # Chiave della skill (SkillActionEffects) per montarla e svuotarla, 2026-11-08: "trap" = caccia, "fish" = pesca (nassa).
 @export var trap_skill_effect_key: String = "trap"
+# Attrezzi per svuotarla (2026-11-09, richiesta utente: rete col coltello, TaskTypes.ToolCategory): richiesti a ogni
+# svuotamento (anche a mano), presi in deposito prima dei lavori automatici, un uso consumato per trappola svuotata.
+@export var trap_empty_tool_categories: Array[int] = []
+# Lacci (2026-11-09, SnareService): specie delle mandrie che prende e peso di ognuna nel tiro (stesso ordine).
+@export var trap_prey_species: Array[String] = []
+@export var trap_prey_weights: Array[float] = []
+# Ore di passaggi in un giorno che danno il tiro pieno (meno ore = tiro più basso in proporzione).
+@export var trap_full_passage_hours: int = 6
+# Giorni in cui, dopo una cattura, i gruppetti di quella specie evitano l'area del laccio.
+@export var trap_disturbance_days: int = 0
+# Laccio piazzato fuori da una zona: i passaggi si contano in un quadrato di questo raggio attorno a lui.
+@export var trap_passage_radius: int = 5
 
 @export_group("Apparel")
 # Campi del vestiario (2026-10-11, richiesta utente — vestiti, scarpe, monili; category APPAREL). La durata di un capo

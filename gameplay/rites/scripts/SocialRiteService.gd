@@ -759,7 +759,7 @@ static func _age_band(individual: HumanIndividual, game_data: GameData) -> int:
 		return HumanTypes.AgeBand.FERTILE_ADULT
 	return HumanCalculator.get_age_band(
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
-		individual.sex, float(game_data.year - individual.birth_year_virtual)
+		individual.sex, individual.get_age(game_data.get_absolute_day())
 	)
 
 

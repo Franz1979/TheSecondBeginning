@@ -18,6 +18,8 @@ const BROKEN_NET_COLOR := Color(0.62, 0.56, 0.44, 0.75)
 const FISH_TRAP_COLOR := Color(0.88, 0.76, 0.52, 1.0)
 const FISH_TRAP_DARK_COLOR := Color(0.55, 0.42, 0.24, 1.0)
 const FISH_TRAP_BROKEN_COLOR := Color(0.66, 0.58, 0.44, 0.8)
+const SNARE_CORD_COLOR := Color(0.90, 0.82, 0.60, 1.0)
+const SNARE_BROKEN_COLOR := Color(0.62, 0.56, 0.44, 0.75)
 
 var _macro_coords: Vector2i = Vector2i.ZERO
 var _drawn_revision: int = -1
@@ -47,6 +49,8 @@ func _draw() -> void:
 			_draw_bird_net(top_left, trap.id)
 		elif rules != null and rules.trap_quarry == TrapService.QUARRY_FISH:
 			_draw_fish_trap(trap.lot, top_left, false)
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_SMALL_GAME:
+			_draw_snare(top_left, trap.id, false)
 		else:
 			_draw_symbol(top_left)
 	for broken in TrapService.broken_in_macro_cell(game_data, _macro_coords):
@@ -56,6 +60,8 @@ func _draw() -> void:
 			_draw_broken_bird_net(top_left, int(broken.get("id", 0)))
 		elif rules != null and rules.trap_quarry == TrapService.QUARRY_FISH:
 			_draw_fish_trap(Vector2i(int(broken.get("lot_x", 0)), int(broken.get("lot_y", 0))), top_left, true)
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_SMALL_GAME:
+			_draw_snare(top_left, int(broken.get("id", 0)), true)
 
 
 # Rete rotta (posto a riposo, TrapService.broken_traps): stessi paletti, uno storto, e la rete strappata a metà che pende
@@ -115,6 +121,23 @@ func _draw_fish_trap(lot: Vector2i, top_left: Vector2, broken: bool) -> void:
 	if not broken:
 		draw_circle(mouth, half_width * 0.75, FISH_TRAP_DARK_COLOR)
 	draw_line(mouth + across * half_width, mouth - across * half_width, body_color, CELL_SIZE * 0.05, true)
+
+
+# Lacci visti dall'alto (2026-11-09): più piccoli della rete, due paletti (puntini scuri) e tra loro un anellino di corda
+# chiara. Rotti: corda spenta e anello aperto.
+func _draw_snare(top_left: Vector2, trap_id: int, broken: bool) -> void:
+	var center := top_left + Vector2.ONE * CELL_SIZE * 0.5
+	var angle := deg_to_rad(35.0 if trap_id % 2 == 0 else -30.0)
+	var half := Vector2(cos(angle), sin(angle)) * CELL_SIZE * 0.17
+	var a := center - half
+	var b := center + half
+	var color := SNARE_BROKEN_COLOR if broken else SNARE_CORD_COLOR
+	var radius := CELL_SIZE * 0.08
+	draw_line(a, center - half.normalized() * radius, color, CELL_SIZE * 0.03, true)
+	draw_line(center + half.normalized() * radius, b, color, CELL_SIZE * 0.03, true)
+	draw_arc(center, radius, 0.0, TAU * (0.7 if broken else 1.0), 14, color, CELL_SIZE * 0.035, true)
+	draw_circle(a, CELL_SIZE * 0.04, POLE_COLOR)
+	draw_circle(b, CELL_SIZE * 0.04, POLE_COLOR)
 
 
 # Simbolino generico: un piccolo cerchio chiaro con una croce.

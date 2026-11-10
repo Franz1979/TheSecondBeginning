@@ -1,8 +1,8 @@
 class_name HumanBirthIndividualService
 extends RefCounted
 
-# Risoluzione annuale delle gravidanze in corso (day 20, ~9 mesi dopo il concepimento di
-# HumanConceptionIndividualService al day 110 dell'anno precedente), per Folk —
+# Parto (nel giorno di ciascuna donna, vedi sotto) delle gravidanze in corso, concepite da
+# HumanConceptionIndividualService.conceive GESTATION_DAYS prima, per Folk —
 # stesso principio di HumanCouplingIndividualService/HumanConceptionIndividualService: un
 # *Service RefCounted stateless, un metodo statico che opera su un Array[HumanIndividual],
 # raggruppando internamente per folk_ref (stesso schema di raggruppamento di
@@ -14,13 +14,8 @@ extends RefCounted
 # PESATO (50/50 puro, come confermato) per i nati vivi; nessun tiro sesso affatto per i nati morti
 # (vedi _record_stillbirth_event).
 #
-# SEMPLIFICAZIONE NOTA (day 20 fisso, non ancora un vero calendario nascite): oggi TUTTE le
-# nascite dell'anno cadono nello stesso identico giorno, indipendentemente da quando è avvenuto il
-# concepimento — un artefatto del trigger fisso in GameTimeService._on_day_advanced (giorno 20),
-# non un modello di gestazione reale. In futuro andrebbe distribuita sull'anno (es. ~9 mesi dopo
-# il giorno VERO di concepimento di ciascuna donna, non un giorno fisso uguale per tutte) — non
-# implementato qui, richiede prima di persistere il giorno di concepimento per donna (oggi non
-# tracciato, solo l'anno tramite birth_year_virtual del futuro neonato).
+# Parti sparsi nell'anno (2026-11-09): ogni donna partorisce nel suo giorno (HumanIndividual.scheduled_birth_day,
+# concepimento + HumanConceptionIndividualService.GESTATION_DAYS), letto dal registro per giorno in GameTimeService.
 #
 # hair_color/skin_color/father_id del neonato vengono SOLO letti da pending_child_* sulla madre
 # (precalcolati al concepimento da HumanConceptionIndividualService) — MAI da woman.partner_id né
@@ -70,20 +65,15 @@ const DEPENDENT_CHILD_SIDE_OFFSET: float = 0.2
 # (figlio/madre) e i due tiri indipendenti corrispondenti. STEP 3 (2026-09-06, richiesta utente):
 # il tiro FIGLIO ora ha un effetto reale — vedi _run_births_in_group sotto. Il tiro MADRE resta
 # SOLO osservato/loggato dal chiamante (nessun effetto ancora, task futuro separato).
+#
+# Parti sparsi (2026-11-09): `mothers` sono SOLO le donne che partoriscono oggi (dal registro per giorno di
+# GameTimeService), non più tutta la popolazione scorsa al giorno 20; `individuals` resta l'array completo dove il
+# neonato viene aggiunto.
 static func run_births(
-	individuals: Array[HumanIndividual], game_data: GameData, human_rules: HumanRules, era_rules: EraRules
+	mothers: Array[HumanIndividual], individuals: Array[HumanIndividual], game_data: GameData,
+	human_rules: HumanRules, era_rules: EraRules
 ) -> Dictionary:
-	var groups: Dictionary = {}
-	for individual in individuals:
-		var group_key: Folk = individual.folk_ref
-		if not groups.has(group_key):
-			groups[group_key] = [] as Array[HumanIndividual]
-		groups[group_key].append(individual)
-	var birth_results: Array[Dictionary] = []
-	for group_individuals in groups.values():
-		var result := _run_births_in_group(group_individuals, individuals, game_data, human_rules, era_rules)
-		birth_results.append_array(result["birth_results"])
-	return {"birth_results": birth_results}
+	return _run_births_in_group(mothers, individuals, game_data, human_rules, era_rules)
 
 
 # Resa per un SINGOLO gruppo (già filtrato da run_births sopra) — ogni donna con is_pregnant==true
@@ -113,6 +103,7 @@ static func _run_births_in_group(
 		else:
 			_record_stillbirth_event(woman, game_data)
 		woman.is_pregnant = false
+		woman.scheduled_birth_day = -1
 		# Reset ai default di riposo (stessa convenzione "mai letto finché is_pregnant è false" già
 		# dichiarata sui campi in HumanIndividual) — non strettamente necessario per la correttezza
 		# (verranno sovrascritti dal prossimo concepimento prima di essere riletti), ma evita che
@@ -173,6 +164,7 @@ static func _create_newborn(mother: HumanIndividual, game_data: GameData, all_in
 	newborn.partner_id = -1
 	newborn.sex = HumanTypes.Sex.FEMALE if randf() < 0.5 else HumanTypes.Sex.MALE
 	newborn.birth_year_virtual = game_data.year
+	newborn.birth_day = game_data.current_day
 	newborn.assign_random_name()
 	# hair_color/skin_color: SOLO dai valori precalcolati al concepimento (vedi doc di testa al
 	# file) — mai un nuovo tiro qui.

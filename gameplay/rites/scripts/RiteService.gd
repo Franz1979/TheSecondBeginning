@@ -120,7 +120,7 @@ static func has_possible_celebrant(building: Building, rules: RiteRules, individ
 			continue
 		var age_band := HumanCalculator.get_age_band(
 			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
-			individual.sex, float(game_data.year - individual.birth_year_virtual)
+			individual.sex, individual.get_age(game_data.get_absolute_day())
 		)
 		# I riti religiosi passano dalla task rite.tres (età propria); gli altri solo dall'età del rito.
 		if rules is ReligiousRiteRules and not RITE_TASK_AGE_BANDS.has(age_band):

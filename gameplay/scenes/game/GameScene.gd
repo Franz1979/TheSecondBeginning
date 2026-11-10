@@ -1216,6 +1216,8 @@ func _process(delta: float) -> void:
 	# non solo del selezionato — smetteva di avanzare. game_delta serve ora al ciclo su
 	# active_individuals sotto, che deve girare indipendentemente da chi (se qualcuno) è selezionato.
 	var game_delta := clock.get_game_day_delta(delta)
+	# Lacci (2026-11-09): passaggi delle mandrie nelle celle accese, una volta per ora di gioco.
+	SnareService.sample_hour(game_data, live_cells, clock.get_day_progress())
 
 	# TEMPORANEO (debug — vedi _debug_panel_refresh_timer sopra per il perché): refresh forzato del
 	# pannello individuo selezionato ogni DEBUG_PANEL_REFRESH_INTERVAL_SEC secondi REALI, con `delta`
@@ -3421,7 +3423,7 @@ func _resolve_building_residents_display_data(building: Building) -> Array[Dicti
 	for individual in human_individuals:
 		if individual.house_id != building.id:
 			continue
-		var age: int = game_data.year - individual.birth_year_virtual
+		var age: int = individual.get_age_years(game_data.get_absolute_day())
 		var age_band := _resolve_age_band(individual)
 		residents_display_data.append({
 			"id": individual.id,
@@ -7911,7 +7913,7 @@ func _resolve_trap_pickup_candidates(current_absolute_day: int) -> Array[Diction
 			continue
 		candidates.append({
 			"resource_name": rules.trap_catch_resource,
-			"display_name": tr("trap_pickup_catch_birds") if rules.trap_quarry == TrapService.QUARRY_BIRDS else (tr("trap_pickup_catch_fish") if rules.trap_quarry == TrapService.QUARRY_FISH else IconRegistry.get_resource_display_name(rules.trap_catch_resource)),
+			"display_name": _trap_catch_display_name(trap, rules),
 			"macro_coords": trap.macro_coords,
 			"position": trap.lot,
 			"available_quantity": trap.get_caught(),
@@ -7919,6 +7921,25 @@ func _resolve_trap_pickup_candidates(current_absolute_day: int) -> Array[Diction
 			"trap_id": trap.id,
 		})
 	return candidates
+
+
+# Nome della riga in Raccogli per le prede di una trappola: "Uccelli", "Pesci", per i lacci (2026-11-09) "Prede: 1 Coniglio,
+# 2 …" con le specie dentro.
+func _trap_catch_display_name(trap: PlacedTrap, rules: SecondaryResourceRules) -> String:
+	match rules.trap_quarry:
+		TrapService.QUARRY_BIRDS:
+			return tr("trap_pickup_catch_birds")
+		TrapService.QUARRY_FISH:
+			return tr("trap_pickup_catch_fish")
+		TrapService.QUARRY_SMALL_GAME:
+			var counts := {}
+			for species in trap.catch_species:
+				counts[species] = int(counts.get(species, 0)) + 1
+			var parts: Array[String] = []
+			for species in counts:
+				parts.append("%d %s" % [int(counts[species]), tr("animal_species_%s" % String(species))])
+			return tr("trap_pickup_catch_prey").format({"detail": ", ".join(parts)})
+	return IconRegistry.get_resource_display_name(rules.trap_catch_resource)
 
 
 func _resolve_ground_pile_pickup_candidates(current_absolute_day: int) -> Array[Dictionary]:
@@ -8467,6 +8488,8 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 	entries.append_array(_collect_too_heavy_material_entries())
 	# Trappole che nessuno riesce a portare alla zona (2026-11-07).
 	entries.append_array(TrapJobProvider.collect_nobody_can_carry_entries(_game_context()))
+	# Trappole volute in una zona senza più posti adatti (2026-11-09).
+	entries.append_array(TrapJobProvider.collect_no_site_entries(_game_context()))
 	# Idea dell'assegnazione senza punto di assegnazione (2026-10-10): la coda non è attiva.
 	if JobBoardService.is_idea_completed(human_folk) and not board_enabled:
 		var no_point_text := tr("pending_no_assignment_point")
@@ -8941,7 +8964,15 @@ func _assign_trap_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var task := TrapJobProvider.build_task(ctx, worker, job)
 	if task == null:
 		return
-	worker.assign_task(task, _resolve_age_band(worker))
+	# Svuotamento (2026-11-09): il coltello da prendere in deposito, se serve, prima di partire.
+	var tools := TrapJobProvider.job_tool_categories(job)
+	var fetch_plan: Array[Dictionary] = []
+	if not tools.is_empty():
+		fetch_plan = ToolFetchService.plan_fetch(macro_world, worker, tools)
+	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
+		return
+	if not fetch_plan.is_empty():
+		_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
 	if worker == individual:
 		_refresh_selected_individual_panel()
 
@@ -10709,7 +10740,7 @@ func _select_individual(target: HumanIndividual) -> void:
 # limita a raccogliere i tre argomenti che richiede (durate EFFETTIVE per l'Era corrente, mai le
 # durate BASE di HumanRules, stesso bugfix storico già fissato ovunque nel progetto).
 func _resolve_age_band(target: HumanIndividual) -> HumanTypes.AgeBand:
-	var age := float(game_data.year - target.birth_year_virtual)
+	var age := target.get_age(game_data.get_absolute_day())
 	return HumanCalculator.get_age_band(
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, target.sex, age
 	)
@@ -10722,7 +10753,7 @@ func _resolve_age_band(target: HumanIndividual) -> HumanTypes.AgeBand:
 # game_info_tabs.show_selection_tab(), facendo saltare la UI sulla scheda 🔍 ad ogni cambio
 # d'anno anche se l'utente stava guardando tutt'altra scheda (es. 🧍 Popolazione).
 func _update_individual_panel_content(target: HumanIndividual) -> void:
-	var age: int = game_data.year - target.birth_year_virtual
+	var age: int = target.get_age_years(game_data.get_absolute_day())
 	var age_band := _resolve_age_band(target)
 	# Moltiplicatori gravidanza/figlio a carico (2026-09-06) — SOLO display, migliorano
 	# l'accuratezza del numero mostrato, nessun sistema di consumo stamina reale esiste ancora.
@@ -10873,7 +10904,7 @@ func _resolve_children(parent_id: int) -> Array[Dictionary]:
 			seen[member.id] = true
 			children.append({
 				"id": member.id, "name": member.name, "dead": false,
-				"age": game_data.year - member.birth_year_virtual, "birth_year": member.birth_year_virtual,
+				"age": member.get_age_years(game_data.get_absolute_day()), "birth_year": member.birth_year_virtual,
 			})
 	var deaths_by_id: Dictionary = {}
 	for event in game_data.death_events:
@@ -10943,7 +10974,7 @@ func _refresh_population_panel() -> void:
 	# Un solo villaggio possibile per ora (2026-10-12): il primo del Folk, se esiste.
 	var village: Village = human_folk.villages[0] if not human_folk.villages.is_empty() else null
 	human_population_info_panel.show_population(
-		human_folk.count_members(human_individuals), human_individuals, game_data.year,
+		human_folk.count_members(human_individuals), human_individuals, game_data.get_absolute_day(),
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
 		human_folk.name, village.get_display_name() if village != null else "", village.count_inhabitants(human_individuals) if village != null else 0,
 		_compute_housing_capacity(), game_data.population_list_sort
@@ -17006,7 +17037,12 @@ func _linear_link_group(rules: BuildingRules, building_type_name: String) -> Str
 func _collect_linear_tiles(link_group: String) -> Dictionary:
 	var tiles: Dictionary = {}
 	for other in macro_world.buildings:
-		if other.is_demolished or other.rules == null or not other.rules.is_linear:
+		if other.is_demolished or other.rules == null:
+			continue
+		# Guado di pietre (2026-11-10): il sentiero accanto lo tratta come un suo pezzo (BuildingRules.linear_joins_group).
+		if not other.rules.is_linear:
+			if other.rules.linear_joins_group == link_group and link_group != "":
+				tiles[Vector4i(other.macro_x, other.macro_y, other.micro_x, other.micro_y)] = true
 			continue
 		if _linear_link_group(other.rules, other.building_type_name) == link_group:
 			tiles[Vector4i(other.macro_x, other.macro_y, other.micro_x, other.micro_y)] = true

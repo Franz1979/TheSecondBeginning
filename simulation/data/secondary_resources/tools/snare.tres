@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_snare"]
+
+; Mazzo di lacci (2026-11-09, capanna del trappoliere): cappi di corda con i loro paletti, per conigli e pernici.
+; Passo 2 (2026-11-09): piazzamento nella zona di caccia, fuori da bosco, ruscello, argilla e pietre.
+; Passo 3 (2026-11-09): catture di conigli e pernici veri (SnareService).
+; Passo 4 (2026-11-09): svuotamento col coltello, ogni preda macellata sul posto (ButcherAction.compute_yields).
+[resource]
+script = ExtResource("1_snare")
+secondary_resource_name = "snare"
+calories_per_unit = 0.0
+category = 4
+panel_group = "traps_fishing"
+generation_source = 2
+space_per_unit = 10.0
+recipe_inputs = {
+"fiber_rope": 2,
+"plant_fiber": 2,
+"stick": 3
+}
+recipe_labor = 120.0
+recipe_workstation_types = Array[String](["trapper_hut"])
+recipe_required_tool_categories = Array[int]([1, 6])
+tool_categories = Array[int]([14])
+max_uses = 15
+trap_zone_job = "hunt"
+trap_quarry = "small_game"
+trap_min_spacing = 3
+trap_setup_days = 0.08
+trap_rest_days = 60
+trap_idle_wear_days = 20
+trap_capacity = 3
+trap_daily_catch_chance = 0.5
+trap_catch_spoil_days = 5
+trap_empty_after_days = 1
+trap_empty_days = 0.04
+trap_catch_resource = "meat"
+trap_catch_yield = 1
+trap_prey_species = Array[String](["rabbit", "partridge"])
+trap_prey_weights = Array[float]([0.6, 0.4])
+trap_full_passage_hours = 6
+trap_disturbance_days = 3
+trap_passage_radius = 5
+trap_empty_tool_categories = Array[int]([4])

@@ -107,9 +107,12 @@ var is_selected: bool = false
 var id: int = 0
 var sex: HumanTypes.Sex = HumanTypes.Sex.MALE
 # Anno di nascita virtuale (calendario di gioco) — l'età si ricava sempre al volo altrove come
-# anno_corrente - birth_year_virtual, mai salvata come campo separato (evita un secondo dato da
+# get_age/get_age_years (vedi birth_day sotto), mai salvata come campo separato (evita un secondo dato da
 # tenere sincronizzato ad ogni avanzamento anno).
 var birth_year_virtual: int = 0
+# Giorno dell'anno di nascita (0..GameData.DAYS_PER_YEAR-1, 2026-11-09): con birth_year_virtual dà il compleanno vero.
+# L'età si legge SOLO da get_age/get_age_years, mai sottraendo gli anni a mano. 0 per i salvataggi precedenti.
+var birth_day: int = 0
 # Giorno (0..GameData.DAYS_PER_YEAR-1) in cui questo individuo morirà quest'anno, se
 # HumanMortalityIndividualService.check_mortality l'ha marcato — Step 4 del piano mortalità.
 # Sentinella -1 = nessuna morte programmata quest'anno (default, e valore di TUTTI gli individui
@@ -157,6 +160,12 @@ var pending_child_skin_color: HumanTypes.SkinColor = HumanTypes.SkinColor.LIGHT
 # neonato, MAI woman.partner_id (che potrebbe essere già stato azzerato da _free_partner_if_any
 # se il padre è morto tra il concepimento e la nascita).
 var pending_child_father_id: int = -1
+# Concepimento e parto sparsi nell'anno (2026-11-09): giorni ASSOLUTI (GameData.get_absolute_day), -1 = nessuno.
+# scheduled_conception_day fissato dal tiro annuale (HumanConceptionIndividualService.run_conception), quel giorno la
+# donna resta incinta e si fissa scheduled_birth_day (concepimento + GESTATION_DAYS). Iscritti in
+# GameData.human_event_schedule, salvati qui.
+var scheduled_conception_day: int = -1
+var scheduled_birth_day: int = -1
 # Id del figlio da trasportare finché non cammina da solo (richiesta utente, 2026-09-06, piano
 # "trasporto neonati") — valorizzato UNA VOLTA alla nascita (HumanBirthIndividualService, stesso
 # momento in cui il neonato riceve mother_id = questo individuo), MAI più scritto altrove per
@@ -2078,9 +2087,30 @@ static func is_apparel_age_band(age_band: HumanTypes.AgeBand) -> bool:
 	return age_band != HumanTypes.AgeBand.INFANT and age_band != HumanTypes.AgeBand.CHILD
 
 
-func uses_village_apparel_at(durations_male: Array[float], durations_female: Array[float], current_year: int) -> bool:
-	var age := float(current_year - birth_year_virtual)
-	return is_apparel_age_band(HumanCalculator.get_age_band(durations_male, durations_female, sex, age))
+# Età dal compleanno vero (2026-11-09). today = giorno assoluto (GameData.get_absolute_day). get_age è l'età esatta con la
+# virgola (fasce d'età: si cambia fascia il giorno giusto), get_age_years gli anni compiuti (età mostrata, regole intere).
+func get_birth_absolute_day() -> int:
+	return birth_year_virtual * GameData.DAYS_PER_YEAR + birth_day
+
+
+func get_age(today: int) -> float:
+	return float(today - get_birth_absolute_day()) / float(GameData.DAYS_PER_YEAR)
+
+
+func get_age_years(today: int) -> int:
+	return floori(get_age(today))
+
+
+# Nascita per chi entra in partita con un'età già decisa (fondatori, visitatori): compleanno a caso, e anno di nascita
+# scelto in modo che oggi abbia esattamente age_years anni compiuti.
+func set_birth_for_age(today: int, age_years: int) -> void:
+	var birth_absolute_day := today - age_years * GameData.DAYS_PER_YEAR - randi() % GameData.DAYS_PER_YEAR
+	birth_year_virtual = floori(float(birth_absolute_day) / float(GameData.DAYS_PER_YEAR))
+	birth_day = posmod(birth_absolute_day, GameData.DAYS_PER_YEAR)
+
+
+func uses_village_apparel_at(durations_male: Array[float], durations_female: Array[float], today: int) -> bool:
+	return is_apparel_age_band(HumanCalculator.get_age_band(durations_male, durations_female, sex, get_age(today)))
 
 
 # Stessa domanda con le durate e l'anno della partita; true se game_data manca (nessuna esenzione senza dati).
@@ -2088,14 +2118,15 @@ func uses_village_apparel(game_data: GameData) -> bool:
 	if game_data == null:
 		return true
 	return uses_village_apparel_at(
-		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data.year
+		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
+		game_data.get_absolute_day()
 	)
 
 
 # Capi di partenza (STARTING_APPAREL), nuovi, negli slot ancora liberi: pipottini della partita iniziale e famiglie in
 # arrivo, solo dall'adolescenza in su (i bambini hanno vestiti di recupero, vedi is_apparel_age_band).
-func equip_starting_apparel(durations_male: Array[float], durations_female: Array[float], current_year: int) -> void:
-	if not uses_village_apparel_at(durations_male, durations_female, current_year):
+func equip_starting_apparel(durations_male: Array[float], durations_female: Array[float], today: int) -> void:
+	if not uses_village_apparel_at(durations_male, durations_female, today):
 		return
 	_ensure_apparel_slots()
 	for slot_index in STARTING_APPAREL:

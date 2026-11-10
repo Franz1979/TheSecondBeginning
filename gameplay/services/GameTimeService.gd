@@ -8,7 +8,11 @@ extends RefCounted
 # tocca "[HUMAN MORTALITY DEBUG]" (diagnostico per-individuo, tag distinto, non menzionato dalla
 # richiesta) né alcun'altra logica dei due service.
 const DEBUG_LOG_MORTALITY := false
-const DEBUG_LOG_COUPLING := true
+const DEBUG_LOG_COUPLING := false
+# Log spenti il 2026-11-09 (richiesta utente: restano accesi solo concepimento e parto): [HUMAN DEATH]/[DEATH LOG]/
+# [DEAD BODY LOG] e gli altri di questo file ([RANDOM EVENTS], [EXPIRED OBJECTS CLEANUP]). Riattivabili a true.
+const DEBUG_LOG_DEATHS := false
+const DEBUG_LOG_OTHER := false
 
 # Primo consumatore gameplay-side dei checkpoint temporali classificati esposti da
 # GameClockController (day_advanced/season_ended/year_rolled_over, propagati da WorldTimeService.
@@ -59,7 +63,7 @@ signal unburied_body_expired(body_name: String)
 signal unburied_body_warning(body_name: String, days_remaining: int)
 # Step 4 del piano riproduzione (2026-09-06) — stesso schema simmetrico di individual_died sopra:
 # emesso DOPO che il neonato è già stato aggiunto a _human_individuals (HumanBirthIndividualService
-# lo appende direttamente, vedi _run_annual_human_births sotto), non prima — GameScene lo ascolta
+# lo appende direttamente, vedi _apply_scheduled_births sotto), non prima — GameScene lo ascolta
 # per creare la HumanIndividualView corrispondente e tenerla parallela per indice a
 # human_individual_views (stesso invariante già rispettato per le rimozioni di individual_died).
 signal individual_born(individual: HumanIndividual)
@@ -145,6 +149,7 @@ func connect_to_clock(
 	_human_folk = human_folk
 	_world = world
 	_individual_action_service = individual_action_service
+	_rebuild_human_event_schedule()
 	clock.day_advanced.connect(_on_day_advanced)
 	clock.year_rolled_over.connect(_on_year_rolled_over)
 	clock.season_ended.connect(_on_season_ended)
@@ -224,17 +229,14 @@ func _on_day_advanced(_checkpoint_ran: bool) -> void:
 	# di tutti già coerente con year corrente prima di valutare FERTILE_ADULT per il pool.
 	if _game_data.current_day == 15:
 		_run_annual_human_coupling()
-	# Step 3 del piano riproduzione (2026-09-06): giorno 110 fisso, stesso pattern/motivazione dei
-	# blocchi giorno 10/15 sopra — blocco `if` A SÉ, indipendente, non annidato/fuso con nessuno
-	# degli altri tre.
-	if _game_data.current_day == 110:
-		_run_annual_human_conception()
-	# Step 1 del piano parto (2026-09-06): giorno 20 fisso, stesso pattern/motivazione dei blocchi
-	# giorno 10/15/110 sopra — blocco `if` A SÉ, indipendente, non annidato/fuso con nessuno degli
-	# altri tre. Verificato libero (nessun altro blocco su questo giorno). ~9 mesi dopo il
-	# concepimento del day 110 dell'ANNO PRECEDENTE (110 -> fine anno -> 20 del nuovo anno).
+	# Concepimenti e parti sparsi (2026-11-09): ogni giorno solo le donne iscritte nel registro per oggi, PRIMA del tiro
+	# annuale qui sotto, così chi concepisce il giorno del tiro risulta già incinta.
+	_apply_scheduled_conceptions()
+	_apply_scheduled_births()
+	# Tiro annuale del concepimento: giorno 20 (2026-11-09, prima giorno 110), dopo la formazione delle coppie del
+	# giorno 15. Fissa il giorno del concepimento di chi lo supera, nei 365 giorni seguenti.
 	if _game_data.current_day == 20:
-		_run_annual_human_births()
+		_run_annual_human_conception()
 
 
 # Ricalcolo giornaliero di HumanIndividual.max_stamina per l'INTERA popolazione (2026-09-06,
@@ -251,7 +253,7 @@ func _on_day_advanced(_checkpoint_ran: bool) -> void:
 # limita a garantire che max_stamina non resti mai stantio più di un giorno di gioco.
 #
 # era_rules risolto UNA VOLTA qui (non per ogni individuo dentro il ciclo) — stesso principio già
-# seguito da _run_annual_human_conception/_run_annual_human_births: non cambia da un individuo
+# seguito da _run_annual_human_conception/_apply_scheduled_births: non cambia da un individuo
 # all'altro nello stesso giorno, ricalcolarlo N volte sarebbe lavoro ripetuto inutile (anche se
 # EraCalculator.get_era_rules è già cachato da Godot via load(), quindi il costo reale sarebbe
 # comunque basso — resta comunque il pattern corretto per coerenza col resto del file).
@@ -298,7 +300,7 @@ func _validate_daily_dependent_children() -> void:
 		if child == null:
 			mother.dependent_child_id = -1
 			continue
-		var child_age := float(_game_data.year - child.birth_year_virtual)
+		var child_age := child.get_age(_game_data.get_absolute_day())
 		var child_age_band := HumanCalculator.get_age_band(
 			_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female,
 			child.sex, child_age
@@ -325,7 +327,7 @@ func _log_daily_food_need() -> void:
 		if human_rules == null:
 			return
 		var era_rules := EraCalculator.get_era_rules(_game_data.current_era_name)
-		var age := float(_game_data.year - individual.birth_year_virtual)
+		var age := individual.get_age(_game_data.get_absolute_day())
 		var age_band := HumanCalculator.get_age_band(
 			_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female,
 			individual.sex, age
@@ -526,7 +528,7 @@ func _apply_random_event(event_id: String, params: Dictionary) -> void:
 		push_warning("GameTimeService: evento casuale '%s' sconosciuto." % event_id)
 		return
 	var popup_text := RandomEventService.apply_event(_build_random_event_context(rules, params))
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DEBUG_LOG_OTHER:
 		print("[RANDOM EVENTS] anno=%d giorno=%d: applicato '%s'." % [_game_data.year, _game_data.current_day, event_id])
 	random_event_applied.emit(event_id, popup_text)
 
@@ -577,7 +579,7 @@ func _cleanup_expired_objects() -> void:
 	# "Always announce" come [HUMAN MORTALITY] (richiesta utente) — stampa anche "0 rimossi", non
 	# solo quando succede qualcosa (a differenza di [HUMAN DEATH]/[DEAD BODY LOG], che loggano solo
 	# eventi reali).
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DEBUG_LOG_OTHER:
 		print("[EXPIRED OBJECTS CLEANUP] anno=%d, giorno=%d: %d record rimossi (rimasti: %d)" % [
 			_game_data.year, _game_data.current_day, removed_count, _game_data.expired_objects.size()
 		])
@@ -678,7 +680,7 @@ func _run_annual_human_coupling() -> void:
 	var durations_male := _game_data.era_effective_age_band_durations_male
 	var durations_female := _game_data.era_effective_age_band_durations_female
 	var formed := HumanCouplingIndividualService.form_couples(
-		_human_individuals, _game_data.year, durations_male, durations_female
+		_human_individuals, _game_data.get_absolute_day(), durations_male, durations_female
 	)
 	if not DebugLogging.ENABLED or not DEBUG_LOG_COUPLING:
 		return
@@ -697,7 +699,7 @@ func _run_annual_human_coupling() -> void:
 
 # Step 3 del piano riproduzione (2026-09-06): concepimento (SOLO concepimento, nessun parto)
 # FERTILE_ADULT/FERTILE_ADULT senza figlio sotto soglia, chiamata da _on_day_advanced sopra al
-# giorno 110 fisso. Stessa fonte di durate EFFETTIVE già passata a check_mortality/form_couples —
+# giorno 20 fisso (prima 110). Fissa solo il giorno del concepimento (vedi _apply_scheduled_conceptions). Stessa fonte di durate EFFETTIVE già passata a check_mortality/form_couples —
 # un solo posto di verità per età/age_band. era_rules risolto qui da EraCalculator.get_era_rules
 # (stesso canale già esistente usato per la cache delle durate in GameData.set_current_era) — MAI
 # un nuovo canale di cache per le probabilità scalari di Reproduction, verificato con l'utente
@@ -725,10 +727,13 @@ func _run_annual_human_conception() -> void:
 	var durations_male := _game_data.era_effective_age_band_durations_male
 	var durations_female := _game_data.era_effective_age_band_durations_female
 	var result := HumanConceptionIndividualService.run_conception(
-		_human_individuals, _game_data.year, durations_male, durations_female,
+		_human_individuals, _game_data.get_absolute_day(), durations_male, durations_female,
 		_human_folk.human_rules_ref, era_rules
 	)
 	var query_time_ms: float = result["query_time_usec"] / 1000.0
+	var scheduled: Array[HumanIndividual] = result["scheduled"]
+	for woman in scheduled:
+		_game_data.human_event_schedule.add(HumanEventSchedule.Kind.CONCEPTION, woman.scheduled_conception_day, woman)
 	if not DebugLogging.ENABLED:
 		return
 	var eligible_women: Array[HumanIndividual] = result["eligible_women"]
@@ -740,7 +745,6 @@ func _run_annual_human_conception() -> void:
 	var excluded_partner_sick: Array[HumanIndividual] = result["excluded_partner_sick"]
 	var discarded_for_spacing: Array[HumanIndividual] = result["discarded_for_spacing"]
 	var candidates: Array[HumanIndividual] = result["candidates"]
-	var newly_pregnant: Array[HumanIndividual] = result["newly_pregnant"]
 	var min_birth_spacing_years: int = result["min_birth_spacing_years"]
 	var conception_probability: float = result["conception_probability"]
 
@@ -792,16 +796,19 @@ func _run_annual_human_conception() -> void:
 	if not candidates.is_empty():
 		var candidate_details: Array[String] = []
 		for woman in candidates:
-			candidate_details.append("#%d %s %s" % [woman.id, woman.name, "OK" if newly_pregnant.has(woman) else "NO"])
+			candidate_details.append("#%d %s %s" % [woman.id, woman.name, "OK" if scheduled.has(woman) else "NO"])
 		stages.append("%d candidate al tiro (prob=%.1f%%): %s" % [
 			candidates.size(), conception_probability * 100.0, ", ".join(candidate_details)
 		])
+	var scheduled_details: Array[String] = []
+	for woman in scheduled:
+		scheduled_details.append("#%d %s (%s)" % [woman.id, woman.name, _format_absolute_day(woman.scheduled_conception_day)])
 	stages.append(
-		"%d concepimenti" % newly_pregnant.size()
-		if newly_pregnant.is_empty() else
-		"%d concepimenti: %s" % [newly_pregnant.size(), _format_individuals(newly_pregnant)]
+		"%d concepimenti fissati" % scheduled.size()
+		if scheduled.is_empty() else
+		"%d concepimenti fissati: %s" % [scheduled.size(), ", ".join(scheduled_details)]
 	)
-	print("[HUMAN CONCEPTION] anno=%d: %s (query figli-sotto-soglia: %.3f ms)" % [
+	print("[HUMAN CONCEPTION] tiro anno=%d: %s (query figli-sotto-soglia: %.3f ms)" % [
 		_game_data.year, " -> ".join(stages), query_time_ms
 	])
 
@@ -818,7 +825,7 @@ func _format_individuals(individuals: Array[HumanIndividual]) -> String:
 
 # Risoluzione annuale delle gravidanze (vedi HumanBirthIndividualService per la logica di
 # dettaglio — hair_color/skin_color/father_id vengono SOLO da pending_child_*, mai da un nuovo
-# tiro o da woman.partner_id), chiamata da _on_day_advanced sopra al giorno 20 fisso. Nessun tiro
+# tiro o da woman.partner_id), chiamata ogni giorno da _on_day_advanced sopra. Nessun tiro
 # sesso pesato (50/50 puro, confermato). Effetto nato-morto (tiro sopravvivenza figlio) ed effetto
 # morte materna (tiro sopravvivenza madre, 2026-09-06) sono entrambi ORA reali e completamente
 # indipendenti l'uno dall'altro — vedi il ciclo su birth_results sotto.
@@ -830,24 +837,31 @@ func _format_individuals(individuals: Array[HumanIndividual]) -> String:
 # Log "[HUMAN BIRTH]" NON dietro DEBUG_LOG_* (richiesta utente, stesso trattamento di
 # "[HUMAN CONCEPTION]" sopra): è il log nuovo che serve vedere — resta comunque dietro
 # DebugLogging.ENABLED come tutti gli altri log di questo file.
-func _run_annual_human_births() -> void:
-	if _human_individuals.is_empty():
+#
+# Parti sparsi (2026-11-09): non più al giorno 20 per tutte, ma ogni giorno per le sole donne iscritte nel registro per
+# oggi (ancora nel roster, ancora incinte, col giorno del parto uguale a oggi — annullamento pigro come per le morti).
+func _apply_scheduled_births() -> void:
+	var absolute_today := _game_data.get_absolute_day()
+	var due: Array = _game_data.human_event_schedule.take(HumanEventSchedule.Kind.BIRTH, absolute_today)
+	if due.is_empty():
 		return
 	if _human_folk == null or _human_folk.human_rules_ref == null:
 		return
 	var era_rules := EraCalculator.get_era_rules(_game_data.current_era_name)
 	if era_rules == null:
 		return
+	var mothers: Array[HumanIndividual] = []
+	for woman: HumanIndividual in due:
+		if woman.is_pregnant and woman.scheduled_birth_day == absolute_today and _human_individuals.has(woman):
+			mothers.append(woman)
+	if mothers.is_empty():
+		return
 	var result := HumanBirthIndividualService.run_births(
-		_human_individuals, _game_data, _human_folk.human_rules_ref, era_rules
+		mothers, _human_individuals, _game_data, _human_folk.human_rules_ref, era_rules
 	)
 	# birth_results: un elemento per OGNI gravidanza risolta (successo O nato-morto), non più tre
 	# array paralleli — vedi HumanBirthIndividualService.run_births per il perché del cambio.
 	var birth_results: Array[Dictionary] = result["birth_results"]
-	if birth_results.is_empty():
-		if DebugLogging.ENABLED:
-			print("[HUMAN BIRTH] anno=%d: nessuna gravidanza da risolvere" % _game_data.year)
-		return
 	# individual_born per i nati VIVI, human_stillbirth per i nati morti (entry["newborn"] == null
 	# — vedi HumanBirthIndividualService._run_births_in_group) — Step 2 dell'effetto nato-morto,
 	# 2026-09-06. Effetto morte materna (STEP 2/3, 2026-09-06): DOPO il segnale sul figlio (nato
@@ -878,7 +892,7 @@ func _run_annual_human_births() -> void:
 				)
 			# Casa per chi ne è senza (2026-10-18, refactoring GameScene blocco 5c — prima in GameScene, subito prima della
 			# vista del neonato).
-			AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.year, {},
+			AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.get_absolute_day(), {},
 				"nascita di %s #%d" % [newborn.name, newborn.id])
 			individual_born.emit(newborn)
 		else:
@@ -888,7 +902,7 @@ func _run_annual_human_births() -> void:
 			# La custodia del figlio a carico passa ora da _kill_individual (a OGNI morte, qualunque causa).
 			var mother_index := _human_individuals.find(mother)
 			if mother_index != -1:
-				var mother_age_at_death := _game_data.year - mother.birth_year_virtual
+				var mother_age_at_death := mother.get_age_years(_game_data.get_absolute_day())
 				_kill_individual(
 					mother, mother_index, DeathTypes.DeathCause.CHILDBIRTH, _game_data.current_day, mother_age_at_death
 				)
@@ -932,9 +946,39 @@ func _run_annual_human_births() -> void:
 					mother_outcome_suffix,
 				]
 			)
-	print("[HUMAN BIRTH] anno=%d: %d esiti -> %s" % [
-		_game_data.year, birth_results.size(), ", ".join(details)
+	print("[HUMAN BIRTH] anno=%d giorno=%d: %d esiti -> %s" % [
+		_game_data.year, _game_data.current_day, birth_results.size(), ", ".join(details)
 	])
+
+
+# Concepimenti del giorno (2026-11-09): le donne iscritte nel registro per oggi dal tiro annuale. Annullamento pigro
+# (fuori dal roster o giorno cambiato: saltata in silenzio). Chi non ha più un partner vivo perde il concepimento.
+func _apply_scheduled_conceptions() -> void:
+	var absolute_today := _game_data.get_absolute_day()
+	var due: Array = _game_data.human_event_schedule.take(HumanEventSchedule.Kind.CONCEPTION, absolute_today)
+	if due.is_empty():
+		return
+	var details: Array[String] = []
+	for woman: HumanIndividual in due:
+		if woman.scheduled_conception_day != absolute_today or not _human_individuals.has(woman):
+			continue
+		var father := HumanConceptionIndividualService.conceive(woman, _human_individuals, absolute_today)
+		if father == null:
+			details.append("#%d %s SALTATO (nessun partner vivo)" % [woman.id, woman.name])
+			continue
+		_game_data.human_event_schedule.add(HumanEventSchedule.Kind.BIRTH, woman.scheduled_birth_day, woman)
+		details.append("#%d %s incinta di #%d %s, parto %s" % [
+			woman.id, woman.name, father.id, father.name, _format_absolute_day(woman.scheduled_birth_day)
+		])
+	if DebugLogging.ENABLED and not details.is_empty():
+		print("[HUMAN CONCEPTION] anno=%d giorno=%d: %s" % [_game_data.year, _game_data.current_day, ", ".join(details)])
+
+
+# "anno A giorno G" da un giorno assoluto, per i log di concepimento e parto.
+func _format_absolute_day(absolute_day: int) -> String:
+	return "anno %d giorno %d" % [
+		floori(float(absolute_day) / float(GameData.DAYS_PER_YEAR)), posmod(absolute_day, GameData.DAYS_PER_YEAR)
+	]
 
 
 func _on_year_rolled_over() -> void:
@@ -944,6 +988,41 @@ func _on_year_rolled_over() -> void:
 	VillageCohesionService.apply_annual_decay(_human_folk)
 	StatisticsSnapshotService.record_year_end(_game_data, _human_individuals, _human_folk, _world)
 	_run_annual_human_mortality_determination()
+	# Registro (2026-11-09): il giro giornaliero di oggi (giorno 0) è già passato prima di questo segnale, quindi
+	# chi ha estratto il giorno 0 muore adesso — prima moriva al giorno 0 dell'anno DOPO.
+	_apply_scheduled_human_deaths()
+
+
+# Registro per giorno (2026-11-09): ricostruito dai campi scheduled_* salvati, all'aggancio al clock (partita
+# nuova o caricata). Solo i giorni ancora da venire: il giro di oggi è già passato quando si salva.
+func _rebuild_human_event_schedule() -> void:
+	var schedule := _game_data.human_event_schedule
+	schedule.clear()
+	var absolute_today := _game_data.get_absolute_day()
+	for individual in _human_individuals:
+		if individual.scheduled_death_day > _game_data.current_day:
+			schedule.add(HumanEventSchedule.Kind.DEATH, _death_absolute_day(individual), individual)
+		# Concepimento fissato ma con il giorno già passato (non dovrebbe capitare): tolto, altrimenti la donna resterebbe
+		# esclusa da ogni tiro futuro.
+		if individual.scheduled_conception_day != -1:
+			if individual.scheduled_conception_day > absolute_today:
+				schedule.add(HumanEventSchedule.Kind.CONCEPTION, individual.scheduled_conception_day, individual)
+			else:
+				individual.scheduled_conception_day = -1
+		if individual.is_pregnant:
+			# Salvataggi precedenti ai parti sparsi: incinta senza giorno del parto -> il prossimo giorno 20, quando avrebbe
+			# partorito col sistema vecchio. Giorno già passato (non dovrebbe capitare): domani.
+			if individual.scheduled_birth_day == -1:
+				var birth_year := _game_data.year if _game_data.current_day < 20 else _game_data.year + 1
+				individual.scheduled_birth_day = birth_year * GameData.DAYS_PER_YEAR + 20
+			elif individual.scheduled_birth_day <= absolute_today:
+				individual.scheduled_birth_day = absolute_today + 1
+			schedule.add(HumanEventSchedule.Kind.BIRTH, individual.scheduled_birth_day, individual)
+
+
+# scheduled_death_day è un giorno dell'anno corrente (estratto a capodanno), non assoluto.
+func _death_absolute_day(individual: HumanIndividual) -> int:
+	return _game_data.year * GameData.DAYS_PER_YEAR + individual.scheduled_death_day
 
 
 # Step 5 del piano mortalità (2026-09-05): determinazione + assegnazione scheduled_death_day
@@ -973,8 +1052,8 @@ func _run_annual_human_mortality_determination() -> void:
 	# più. Dietro DEBUG_LOG_MORTALITY (2026-10-03, richiesta utente — riordino dei log): spento con il resto.
 	if DebugLogging.ENABLED and DEBUG_LOG_MORTALITY:
 		for individual in _human_individuals:
-			var age := _game_data.year - individual.birth_year_virtual
-			var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, float(age))
+			var age := individual.get_age_years(_game_data.get_absolute_day())
+			var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, individual.get_age(_game_data.get_absolute_day()))
 			var probability := HumanCalculator.get_annual_death_probability(
 				age, _human_folk.human_rules_ref, durations_male, durations_female
 			)
@@ -986,8 +1065,10 @@ func _run_annual_human_mortality_determination() -> void:
 				health_ratio * 100.0, health_multiplier, probability * health_multiplier
 			])
 	var marked := HumanMortalityIndividualService.check_mortality(
-		_human_individuals, _human_folk.human_rules_ref, _game_data.year, durations_male, durations_female
+		_human_individuals, _human_folk.human_rules_ref, _game_data.get_absolute_day(), durations_male, durations_female
 	)
+	for individual in marked:
+		_game_data.human_event_schedule.add(HumanEventSchedule.Kind.DEATH, _death_absolute_day(individual), individual)
 	if not DebugLogging.ENABLED or not DEBUG_LOG_MORTALITY:
 		return
 	if marked.is_empty():
@@ -1009,10 +1090,6 @@ func _run_annual_human_mortality_determination() -> void:
 # condiviso con kill_individual_now (morte immediata di debug, causa MURDER, mai passa da
 # scheduled_death_day). Comportamento del percorso OLD_AGE qui INVARIATO, solo il codice è ora
 # condiviso invece che duplicato.
-#
-# Iterazione ALL'INDIETRO (mai un for in avanti su un Array da cui si rimuove durante lo scorso:
-# remove_at farebbe scalare tutto di una posizione, saltando l'elemento successivo) — stesso
-# idioma già in uso altrove nel progetto per rimozioni in-place da un Array scorso linearmente.
 func _apply_scheduled_human_deaths() -> void:
 	if _human_individuals.is_empty():
 		return
@@ -1023,27 +1100,31 @@ func _apply_scheduled_human_deaths() -> void:
 	# 👨‍👩‍👧 stantia anche a fronte di rimozioni vere).
 	var any_removed := false
 	var removed_log_lines: Array[String] = []
-	var i := _human_individuals.size() - 1
-	while i >= 0:
-		var individual: HumanIndividual = _human_individuals[i]
-		if individual.scheduled_death_day == today:
-			var age_at_death := _game_data.year - individual.birth_year_virtual
-			var partner_freed := _kill_individual(
-				individual, i, individual.scheduled_death_cause, today, age_at_death
-			)
-			any_removed = true
-			if DebugLogging.ENABLED:
-				removed_log_lines.append("#%d %s (eta'=%d, causa=%s%s)" % [
-					individual.id, individual.name, age_at_death,
-					_cause_debug_name(individual.scheduled_death_cause),
-					", coniuge liberato" if partner_freed else ""
-				])
-		i -= 1
+	# Registro per giorno (2026-11-09): solo gli iscritti di oggi, non più tutta la popolazione. Annullamento pigro:
+	# salta chi non è più nel roster o il cui giorno di morte è cambiato (vedi HumanEventSchedule).
+	var absolute_today := _game_data.get_absolute_day()
+	for individual: HumanIndividual in _game_data.human_event_schedule.take(HumanEventSchedule.Kind.DEATH, absolute_today):
+		if _death_absolute_day(individual) != absolute_today:
+			continue
+		var i := _human_individuals.find(individual)
+		if i == -1:
+			continue
+		var age_at_death := individual.get_age_years(_game_data.get_absolute_day())
+		var partner_freed := _kill_individual(
+			individual, i, individual.scheduled_death_cause, today, age_at_death
+		)
+		any_removed = true
+		if DebugLogging.ENABLED:
+			removed_log_lines.append("#%d %s (eta'=%d, causa=%s%s)" % [
+				individual.id, individual.name, age_at_death,
+				_cause_debug_name(individual.scheduled_death_cause),
+				", coniuge liberato" if partner_freed else ""
+			])
 	if not any_removed:
 		return
 	# Nessuna riga se oggi non muore nessuno (a differenza del riepilogo annuale sopra, che
 	# stampa sempre) — evita spam giornaliero, richiesta utente.
-	if DebugLogging.ENABLED and not removed_log_lines.is_empty():
+	if DebugLogging.ENABLED and DEBUG_LOG_DEATHS and not removed_log_lines.is_empty():
 		print("[HUMAN DEATH] giorno=%d: %s" % [today, ", ".join(removed_log_lines)])
 	# Solo ora (dopo TUTTE le rimozioni/il totale del giorno) — vedi commento sul signal.
 	human_population_changed.emit()
@@ -1065,11 +1146,11 @@ func kill_individual_now(individual: HumanIndividual, cause: DeathTypes.DeathCau
 	var index := _human_individuals.find(individual)
 	if index == -1:
 		return
-	var age_at_death := _game_data.year - individual.birth_year_virtual
+	var age_at_death := individual.get_age_years(_game_data.get_absolute_day())
 	var partner_freed := _kill_individual(
 		individual, index, cause, _game_data.current_day, age_at_death
 	)
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DEBUG_LOG_DEATHS:
 		print("[HUMAN DEATH] kill immediato: #%d %s (eta'=%d, causa=%s%s)" % [
 			individual.id, individual.name, age_at_death, _cause_debug_name(cause),
 			", coniuge liberato" if partner_freed else ""
@@ -1125,7 +1206,7 @@ func _kill_individual(
 	# Log di verifica SEPARATO dal riepilogo "[HUMAN DEATH]" (mai toccato, richiesta esplicita) —
 	# conferma che l'evento è stato davvero registrato in game_data.death_events e mostra il
 	# conteggio totale accumulato (utile anche per controllare che sopravviva a un save/load).
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DEBUG_LOG_DEATHS:
 		print("[DEATH LOG] registrato: %s (totale eventi finora: %d)" % [
 			_game_data.death_events[-1], _game_data.death_events.size()
 		])
@@ -1186,7 +1267,7 @@ func _kill_individual(
 	})
 	# Log di verifica, stesso stile/scopo di "[DEATH LOG]" sopra per death_events — conferma che il
 	# record è stato registrato in game_data.expired_objects e mostra il conteggio totale.
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DEBUG_LOG_DEATHS:
 		print("[DEAD BODY LOG] registrato: %s (totale oggetti scaduti finora: %d)" % [
 			_game_data.expired_objects[-1], _game_data.expired_objects.size()
 		])
@@ -1205,7 +1286,7 @@ func _kill_individual(
 	individual_died.emit(individual, index, age_at_death, partner_freed, cause, day)
 	_human_individuals.remove_at(index)
 	# Case dei vivi riassegnate (2026-10-18, refactoring GameScene blocco 5c — prima in GameScene._on_human_individual_died).
-	AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.year, {},
+	AssignHouseService.assign_pending_residents(_world, _human_individuals, _game_data.get_absolute_day(), {},
 		"morte di %s #%d" % [individual.name, individual.id])
 	return partner_freed
 
@@ -1291,7 +1372,7 @@ func _apply_daily_starvation() -> void:
 	for individual in _human_individuals:
 		var age_band := HumanCalculator.get_age_band(
 			_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female,
-			individual.sex, float(_game_data.year - individual.birth_year_virtual)
+			individual.sex, individual.get_age(_game_data.get_absolute_day())
 		)
 		var starving: bool
 		if age_band == HumanTypes.AgeBand.INFANT:
@@ -1314,7 +1395,7 @@ func _kill_doomed(doomed: Array[HumanIndividual], cause: DeathTypes.DeathCause) 
 		var index := _human_individuals.find(individual)
 		if index == -1:
 			continue
-		var age_at_death := _game_data.year - individual.birth_year_virtual
+		var age_at_death := individual.get_age_years(_game_data.get_absolute_day())
 		var partner_freed := _kill_individual(
 			individual, index, cause, _game_data.current_day, age_at_death
 		)
@@ -1323,7 +1404,7 @@ func _kill_doomed(doomed: Array[HumanIndividual], cause: DeathTypes.DeathCause) 
 				individual.id, individual.name, age_at_death,
 				_cause_debug_name(cause), ", coniuge liberato" if partner_freed else ""
 			])
-	if DebugLogging.ENABLED and not removed_log_lines.is_empty():
+	if DebugLogging.ENABLED and DEBUG_LOG_DEATHS and not removed_log_lines.is_empty():
 		print("[HUMAN DEATH] giorno=%d: %s" % [_game_data.current_day, ", ".join(removed_log_lines)])
 	human_population_changed.emit()
 
@@ -1343,7 +1424,7 @@ func _apply_daily_illness_deaths() -> void:
 		var index := _human_individuals.find(individual)
 		if index == -1:
 			continue
-		var age_at_death := _game_data.year - individual.birth_year_virtual
+		var age_at_death := individual.get_age_years(_game_data.get_absolute_day())
 		var cause := HealthConditionService.death_cause(individual)
 		var partner_freed := _kill_individual(
 			individual, index, cause, _game_data.current_day, age_at_death
@@ -1353,7 +1434,7 @@ func _apply_daily_illness_deaths() -> void:
 				individual.id, individual.name, age_at_death,
 				_cause_debug_name(cause), ", coniuge liberato" if partner_freed else ""
 			])
-	if DebugLogging.ENABLED and not removed_log_lines.is_empty():
+	if DebugLogging.ENABLED and DEBUG_LOG_DEATHS and not removed_log_lines.is_empty():
 		print("[HUMAN DEATH] giorno=%d: %s" % [_game_data.current_day, ", ".join(removed_log_lines)])
 	human_population_changed.emit()
 

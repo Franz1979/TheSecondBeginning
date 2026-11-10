@@ -21,7 +21,7 @@ const SHOW_FAUNA_DIAGNOSTICS_LOGS := false
 # performance/timing, stesso interruttore unico. A false: nessun comportamento di simulazione
 # cambia, solo il print viene soppresso — rimetti a true per riavere tutto il gruppo com'era
 # (utile quando si torna a misurare i checkpoint stagionali).
-const SHOW_DAILY_TIMING_LOGS := true
+const SHOW_DAILY_TIMING_LOGS := false
 
 # Righe [WILD ANIMAL VISITS]/[WILD ANIMAL GROUPS] (visite e gruppi degli animali selvatici): passano da log_wild_animal.
 const SHOW_WILD_ANIMAL_LOGS := false
@@ -48,7 +48,7 @@ static func log_wild_animal(text: String) -> void:
 # Riacceso il 2026-10-03 (richiesta utente — diagnostica del rallentamento sulla raccolta): la riga [VEG REFRESH
 # TIMING] ora dice anche chi ha chiesto il ridisegno (motivo=...). Rispento il 2026-10-04 (richiesta utente): il codice
 # delle misure resta, basta rimettere true.
-const SHOW_VEGETATION_REFRESH_TIMING_LOGS := true
+const SHOW_VEGETATION_REFRESH_TIMING_LOGS := false
 
 # Progetto B fase 2a (2026-10-24, richiesta utente: spento di default): a ogni taglio aggiornato per lotto rifà anche la
 # lettura completa della vegetazione e i pesi dei frutti, e avvisa ([CUT PATCH]) se differiscono. Costa quanto prima.

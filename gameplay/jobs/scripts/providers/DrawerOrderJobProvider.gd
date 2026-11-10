@@ -52,10 +52,15 @@ static func _produce_job(ctx: GameContext, provider: Dictionary, order: Dictiona
 	var bound := ProductionEvictionService.bound_building(ctx.world, order)
 	var building := DrawerOrderService.choose_produce_building(ctx.world, recipe, quantity, busy_counts, false, bound)
 	# Nessun posto libero (2026-10-23, ProductionEvictionService): si prende il posto di un ordine in attesa di materiali,
-	# salvo per un ordine già scalzato (anti ping-pong: solo posti liberi).
+	# Un ordine già scalzato (anti ping-pong) solo se ha già gli ingredienti di un ciclo (2026-11-10,
+	# ProductionEvictionService.has_inputs_for_cycle), e solo nella sua postazione se è legato.
 	var evict: Dictionary = {}
-	if building == null and not order.has(ProductionEvictionService.EVICTED_KEY):
-		evict = ProductionEvictionService.find_evictable(ctx.world, ctx.individuals, recipe, quantity)
+	if building == null:
+		var already_evicted := order.has(ProductionEvictionService.EVICTED_KEY)
+		evict = ProductionEvictionService.find_evictable(ctx.world, ctx.individuals, recipe, quantity, bound)
+		if already_evicted and not evict.is_empty() \
+				and not ProductionEvictionService.has_inputs_for_cycle(ctx.world, evict["building"], recipe):
+			evict = {}
 		if not evict.is_empty():
 			building = evict["building"]
 	var blocked_reason := ""

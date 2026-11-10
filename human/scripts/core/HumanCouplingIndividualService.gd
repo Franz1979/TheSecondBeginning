@@ -36,7 +36,7 @@ static func is_incestuous_pair(a: HumanIndividual, b: HumanIndividual) -> bool:
 # debba occuparsene). "Stesso Folk" è quindi implicito: due individui di gruppi diversi non
 # vengono mai confrontati tra loro.
 #
-# current_year/durations_male/durations_female: stessa necessità e stessa convenzione di
+# today/durations_male/durations_female: stessa necessità e stessa convenzione di
 # HumanMortalityIndividualService.check_mortality — age_band non è un campo salvato su
 # HumanIndividual, va ricavato da birth_year_virtual con le durate EFFETTIVE (scalate per Era),
 # stessa fonte già passata a check_mortality dal chiamante.
@@ -45,7 +45,7 @@ static func is_incestuous_pair(a: HumanIndividual, b: HumanIndividual) -> bool:
 # check_mortality: nessuna scrittura di log qui, solo dati per il chiamante che vorrà loggare.
 static func form_couples(
 	individuals: Array[HumanIndividual],
-	current_year: int,
+	today: int,
 	durations_male: Array[float],
 	durations_female: Array[float]
 ) -> Array[Dictionary]:
@@ -58,7 +58,7 @@ static func form_couples(
 	var formed: Array[Dictionary] = []
 	for group_individuals in groups.values():
 		formed.append_array(
-			_form_couples_in_group(group_individuals, current_year, durations_male, durations_female)
+			_form_couples_in_group(group_individuals, today, durations_male, durations_female)
 		)
 	return formed
 
@@ -72,7 +72,7 @@ static func form_couples(
 # riconsiderato l'anno prossimo — nessuno stato aggiuntivo da tenere per questo.
 static func _form_couples_in_group(
 	individuals: Array[HumanIndividual],
-	current_year: int,
+	today: int,
 	durations_male: Array[float],
 	durations_female: Array[float]
 ) -> Array[Dictionary]:
@@ -81,8 +81,7 @@ static func _form_couples_in_group(
 	for individual in individuals:
 		if individual.partner_id != -1:
 			continue
-		var age := current_year - individual.birth_year_virtual
-		var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, float(age))
+		var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, individual.get_age(today))
 		if age_band != HumanTypes.AgeBand.FERTILE_ADULT:
 			continue
 		if individual.sex == HumanTypes.Sex.MALE:

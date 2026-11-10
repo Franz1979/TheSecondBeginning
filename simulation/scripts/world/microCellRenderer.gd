@@ -2004,7 +2004,10 @@ var _dirt_ground_speckles_by_variant: Dictionary = {}
 # battuta: dritti verso un edificio completo confinante ("dirt_neighbors", calcolata da GameScene),
 # irregolari verso le celle senza nulla.
 const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
-	"stick_tent", "hide_tent", "pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones",
+	"stick_tent", "hide_tent",
+	# Capanna (2026-11-10, richiesta utente: come le tende da cui nasce).
+	"hut",
+	"pebble_circle", "campfire", "drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones",
 	# Capanna dell'attrezzista (2026-10-04, richiesta utente: si vedeva il verde sotto, come gli altri edifici).
 	"toolmaker_hut",
 	# Legnaia (2026-10-08, richiesta utente — segnaposto): stesso fondo degli altri edifici segnaposto.

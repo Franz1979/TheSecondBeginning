@@ -73,6 +73,7 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"fishing_line": "_draw_deposit_storage_fishing_line_icon",
 	"bird_net": "_draw_deposit_storage_bird_net_icon",
 	"fish_trap": "_draw_deposit_storage_fish_trap_icon",
+	"snare": "_draw_deposit_storage_snare_icon",
 	"fish_meat": "_draw_deposit_storage_fish_meat_icon",
 	"cooked_fish": "_draw_deposit_storage_cooked_fish_icon",
 	"dried_fish": "_draw_deposit_storage_dried_fish_icon",
@@ -94,6 +95,10 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"clay": "_draw_deposit_storage_clay_icon",
 	"clay_jar": "_draw_deposit_storage_clay_jar_icon",
 	"clay_bowl": "_draw_deposit_storage_clay_bowl_icon",
+	# Rimedi (2026-11-09): prima cadevano nel pallino di ripiego.
+	"herbal_ointment": "_draw_deposit_storage_herbal_ointment_icon",
+	"herbal_infusion": "_draw_deposit_storage_herbal_infusion_icon",
+	"splint": "_draw_deposit_storage_splint_icon",
 }
 
 
@@ -601,6 +606,11 @@ static func _draw_deposit_storage_fish_trap_icon(canvas: CanvasItem, top_left: V
 	FishTrapIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
+# Mazzo di lacci (2026-11-09): stessa geometria dell'icona del pannello (SnareIcon.draw_into).
+static func _draw_deposit_storage_snare_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	SnareIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
 # Rete per uccelli (2026-11-07): stessa geometria dell'icona del pannello (BirdNetIcon.draw_into).
 static func _draw_deposit_storage_bird_net_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	BirdNetIcon.draw_into(canvas, top_left, Vector2(side, side))
@@ -705,3 +715,76 @@ static func _draw_deposit_storage_fiber_rope_icon(canvas: CanvasItem, top_left: 
 	points.append(top_left + Vector2(0.88, 0.88) * side)
 	canvas.draw_polyline(points, DEPOSIT_STORAGE_FIBER_ROPE_OUTLINE_COLOR, side * 0.13, true)
 	canvas.draw_polyline(points, DEPOSIT_STORAGE_FIBER_ROPE_COLOR, side * 0.08, true)
+
+
+# --- Rimedi (2026-11-09, richiesta utente) ---
+const DEPOSIT_STORAGE_REMEDY_OUTLINE_COLOR := Color(0.22, 0.16, 0.10, 1.0)
+const DEPOSIT_STORAGE_OINTMENT_POT_COLOR := Color(0.62, 0.42, 0.26, 1.0)
+const DEPOSIT_STORAGE_OINTMENT_LID_COLOR := Color(0.46, 0.60, 0.30, 1.0)
+const DEPOSIT_STORAGE_OINTMENT_TIE_COLOR := Color(0.80, 0.72, 0.48, 1.0)
+const DEPOSIT_STORAGE_INFUSION_CUP_COLOR := Color(0.55, 0.36, 0.22, 1.0)
+const DEPOSIT_STORAGE_INFUSION_LIQUID_COLOR := Color(0.55, 0.62, 0.22, 1.0)
+const DEPOSIT_STORAGE_INFUSION_STEAM_COLOR := Color(0.92, 0.92, 0.88, 0.85)
+const DEPOSIT_STORAGE_SPLINT_WOOD_COLOR := Color(0.72, 0.55, 0.32, 1.0)
+const DEPOSIT_STORAGE_SPLINT_TIE_COLOR := Color(0.82, 0.76, 0.52, 1.0)
+
+
+# Unguento di erbe: vasetto di terracotta tozzo chiuso da un coperchio di foglie legato con fibra.
+static func _draw_deposit_storage_herbal_ointment_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	var pot := PackedVector2Array([
+		top_left + Vector2(0.26, 0.42) * side, top_left + Vector2(0.74, 0.42) * side,
+		top_left + Vector2(0.80, 0.62) * side, top_left + Vector2(0.72, 0.86) * side,
+		top_left + Vector2(0.28, 0.86) * side, top_left + Vector2(0.20, 0.62) * side,
+	])
+	canvas.draw_colored_polygon(pot, DEPOSIT_STORAGE_OINTMENT_POT_COLOR)
+	var closed := pot.duplicate()
+	closed.append(pot[0])
+	canvas.draw_polyline(closed, DEPOSIT_STORAGE_REMEDY_OUTLINE_COLOR, side * 0.05, true)
+	# Coperchio di foglie, un po' più largo della bocca.
+	var lid := PackedVector2Array([
+		top_left + Vector2(0.20, 0.42) * side, top_left + Vector2(0.34, 0.22) * side,
+		top_left + Vector2(0.66, 0.22) * side, top_left + Vector2(0.80, 0.42) * side,
+	])
+	canvas.draw_colored_polygon(lid, DEPOSIT_STORAGE_OINTMENT_LID_COLOR)
+	var lid_closed := lid.duplicate()
+	lid_closed.append(lid[0])
+	canvas.draw_polyline(lid_closed, DEPOSIT_STORAGE_REMEDY_OUTLINE_COLOR, side * 0.04, true)
+	canvas.draw_line(top_left + Vector2(0.22, 0.45) * side, top_left + Vector2(0.78, 0.45) * side, DEPOSIT_STORAGE_OINTMENT_TIE_COLOR, side * 0.06)
+
+
+# Infuso di erbe: tazza di terracotta con l'infuso verde e due fili di vapore.
+static func _draw_deposit_storage_herbal_infusion_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	var cup := PackedVector2Array([
+		top_left + Vector2(0.18, 0.48) * side, top_left + Vector2(0.72, 0.48) * side,
+		top_left + Vector2(0.64, 0.86) * side, top_left + Vector2(0.26, 0.86) * side,
+	])
+	canvas.draw_colored_polygon(cup, DEPOSIT_STORAGE_INFUSION_CUP_COLOR)
+	var closed := cup.duplicate()
+	closed.append(cup[0])
+	canvas.draw_polyline(closed, DEPOSIT_STORAGE_REMEDY_OUTLINE_COLOR, side * 0.05, true)
+	# Manico a destra.
+	canvas.draw_arc(top_left + Vector2(0.74, 0.64) * side, side * 0.10, -PI * 0.5, PI * 0.5, 8, DEPOSIT_STORAGE_REMEDY_OUTLINE_COLOR, side * 0.05, true)
+	# Superficie dell'infuso.
+	canvas.draw_line(top_left + Vector2(0.22, 0.53) * side, top_left + Vector2(0.68, 0.53) * side, DEPOSIT_STORAGE_INFUSION_LIQUID_COLOR, side * 0.07)
+	# Vapore.
+	for x in [0.36, 0.54]:
+		var steam := PackedVector2Array()
+		for i in range(7):
+			var t: float = float(i) / 6.0
+			steam.append(top_left + Vector2(x + sin(t * TAU) * 0.04, 0.42 - t * 0.28) * side)
+		canvas.draw_polyline(steam, DEPOSIT_STORAGE_INFUSION_STEAM_COLOR, side * 0.04, true)
+
+
+# Steccatura: due stecche di legno parallele, in diagonale, legate da due giri di fibra.
+static func _draw_deposit_storage_splint_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	var direction := Vector2(1.0, -1.0).normalized()
+	var normal := Vector2(1.0, 1.0).normalized()
+	var center := top_left + Vector2(0.5, 0.5) * side
+	for offset in [-0.08, 0.08]:
+		var a: Vector2 = center + normal * offset * side - direction * 0.36 * side
+		var b: Vector2 = center + normal * offset * side + direction * 0.36 * side
+		canvas.draw_line(a, b, DEPOSIT_STORAGE_REMEDY_OUTLINE_COLOR, side * 0.13)
+		canvas.draw_line(a, b, DEPOSIT_STORAGE_SPLINT_WOOD_COLOR, side * 0.08)
+	for along in [-0.18, 0.18]:
+		var tie_center: Vector2 = center + direction * along * side
+		canvas.draw_line(tie_center - normal * 0.17 * side, tie_center + normal * 0.17 * side, DEPOSIT_STORAGE_SPLINT_TIE_COLOR, side * 0.07)

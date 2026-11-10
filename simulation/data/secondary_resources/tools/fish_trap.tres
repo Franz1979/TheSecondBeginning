@@ -7,6 +7,7 @@ script = ExtResource("1_fish_trap")
 secondary_resource_name = "fish_trap"
 calories_per_unit = 0.0
 category = 4
+panel_group = "traps_fishing"
 generation_source = 2
 space_per_unit = 25.0
 recipe_inputs = {

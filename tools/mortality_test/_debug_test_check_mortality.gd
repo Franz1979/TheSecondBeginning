@@ -38,7 +38,7 @@ func _run_mortality_frequency_check(rules: HumanRules) -> void:
 
 	for i in range(RUNS):
 		var marked := HumanMortalityIndividualService.check_mortality(
-			individuals, rules, TEST_YEAR, rules.age_band_durations_male, rules.age_band_durations_female
+			individuals, rules, TEST_YEAR * GameData.DAYS_PER_YEAR, rules.age_band_durations_male, rules.age_band_durations_female
 		)
 		for individual in marked:
 			marked_counts[individual.id] += 1
@@ -62,7 +62,7 @@ func _run_scheduled_death_day_check(rules: HumanRules) -> void:
 	for attempt in range(2):
 		var individuals := _build_test_population()
 		var marked := HumanMortalityIndividualService.check_mortality(
-			individuals, rules, TEST_YEAR, rules.age_band_durations_male, rules.age_band_durations_female
+			individuals, rules, TEST_YEAR * GameData.DAYS_PER_YEAR, rules.age_band_durations_male, rules.age_band_durations_female
 		)
 		var marked_ids: Dictionary = {}
 		for individual in marked:

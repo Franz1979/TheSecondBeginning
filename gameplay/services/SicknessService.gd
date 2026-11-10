@@ -19,7 +19,7 @@ static func release_sick_queues(ctx: GameContext) -> void:
 			on_bedridden(ctx, individual, GameEffects.new())
 
 
-# Va a letto (2026-10-25): chiamata appena una condizione rende `individual` malato (IllnessEvent, WoundEvent, giro
+# Va a letto (2026-10-25): chiamata appena una condizione rende `individual` malato (IllnessEvent, giro
 # giornaliero). Il compito in corso si chiude come con H se non è un bisogno; prima: il rito sociale che organizza si
 # annulla, travois e zaino cadono a terra in un mucchio, le carcasse che doveva macellare finiscono negli avvisi
 # "In sospeso" e la coda si libera.

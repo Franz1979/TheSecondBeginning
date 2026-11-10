@@ -17,6 +17,8 @@ const JOB_EMPTY := "empty"
 # svuotata; chi lo prende passa da tutte quelle della zona con prede (le più vicine prima, finché la resa sta nello zaino)
 # e consegna una volta sola. Le trappole fuori zona (piazzate a mano) restano col lavoro di una sola (JOB_EMPTY).
 const JOB_ROUND := "round"
+# Età per lo svuotamento col coltello (2026-11-09): come la macellazione, niente neonati né bambini.
+const EMPTY_AGE_KIND := DrawerOrderService.TYPE_CUT
 const ROUND_ZONE_JOBS: Array[String] = ["hunt", "fish"]
 # Nome e descrizione del giro per lavoro di zona.
 const ROUND_TEXT_KEYS := {
@@ -79,6 +81,8 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 				continue
 			var microcell := first_lot if first_lot != TrapService.NO_SITE else area.rect.get_center()
 			var text_keys: Array = ROUND_TEXT_KEYS[zone_job]
+			var round_tools := TrapService.round_tool_categories(zone_job)
+			var round_blocked := "" if round_assigned or round_tools.is_empty() else ToolFetchService.blocked_reason(ctx, round_tools, EMPTY_AGE_KIND)
 			jobs.append({
 				"key": "trap:round:%d:%s" % [area.id, zone_job], "kind": "trap",
 				"name": GameContext.tr_text(text_keys[0]).format({"area": area.name, "count": with_catch}),
@@ -87,7 +91,7 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 				"icon": {"text": IconRegistry.get_command_icon("trap")}, "macro": round_macro, "microcell": microcell,
 				"reach_target": {"macro_x": round_macro.x, "macro_y": round_macro.y, "micro_x": microcell.x, "micro_y": microcell.y},
 				"entry_kind": "work_area", "id": area.id, "sort": 0.0,
-				"assigned": round_assigned, "hidden": false, "blocked_reason": "",
+				"assigned": round_assigned, "hidden": false, "blocked_reason": round_blocked,
 				"area_id": area.id, "zone_job": zone_job, "provider": provider, "job_type": JOB_ROUND,
 			})
 	for trap in ctx.game_data.placed_traps:
@@ -100,6 +104,8 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 		var display_name := IconRegistry.get_resource_display_name(trap.trap_name)
 		var rules := TrapService.get_rules(trap.trap_name)
 		var capacity := rules.trap_capacity if rules != null else 0
+		var empty_tools := TrapService.empty_tool_categories(trap.trap_name)
+		var empty_blocked := "" if is_assigned or empty_tools.is_empty() else ToolFetchService.blocked_reason(ctx, empty_tools, EMPTY_AGE_KIND)
 		jobs.append({
 			"key": "trap:empty:%d" % trap.id, "kind": "trap",
 			"name": GameContext.tr_text("task_empty_trap_job_name").format({"trap": display_name, "caught": trap.get_caught(), "capacity": capacity}),
@@ -108,7 +114,7 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 			"icon": {"text": IconRegistry.get_command_icon("trap")}, "macro": trap.macro_coords, "microcell": trap.lot,
 			"reach_target": {"macro_x": trap.macro_coords.x, "macro_y": trap.macro_coords.y, "micro_x": trap.lot.x, "micro_y": trap.lot.y},
 			"entry_kind": "work_area", "id": trap.work_area_id, "sort": 0.0,
-			"assigned": is_assigned, "hidden": false, "blocked_reason": "",
+			"assigned": is_assigned, "hidden": false, "blocked_reason": empty_blocked,
 			"trap_id": trap.id, "trap_name": trap.trap_name, "provider": provider, "job_type": JOB_EMPTY,
 		})
 	return jobs
@@ -120,10 +126,28 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary
 	var trap_name := String(job.get("trap_name", ""))
 	if String(job.get("job_type", JOB_PLACE)) == JOB_PLACE and not worker.can_carry_one_unit_when_empty(trap_name):
 		return HumanIndividualActionService.no_room_message(worker, [trap_name] as Array[String])
+	# Svuotamento (2026-11-09): gli attrezzi addosso o da prendere in deposito, come la macellazione.
+	var tools := job_tool_categories(job)
+	if not tools.is_empty():
+		var tool_rejection := ToolFetchService.rejection(ctx, worker, tools, EMPTY_AGE_KIND)
+		if tool_rejection != "":
+			return tool_rejection
 	var task := build_task(ctx, worker, job)
 	if task == null:
 		return "nessuna trappola raggiungibile o nessun posto"
 	return worker.get_assign_rejection_reason(task, ctx.age_band_of(worker))
+
+
+# Attrezzi che il lavoro chiede (vuoto per il piazzamento): giro = tutti i tipi del suo lavoro di zona, svuotamento di una
+# trappola = i suoi.
+static func job_tool_categories(job: Dictionary) -> Array[TaskTypes.ToolCategory]:
+	match String(job.get("job_type", JOB_PLACE)):
+		JOB_ROUND:
+			return TrapService.round_tool_categories(String(job.get("zone_job", "hunt")))
+		JOB_EMPTY:
+			return TrapService.empty_tool_categories(String(job.get("trap_name", "")))
+	var none: Array[TaskTypes.ToolCategory] = []
+	return none
 
 
 # La Task per `worker`: trappola dall'edificio più vicino al posto. null se manca la trappola, la zona o il posto.
@@ -182,45 +206,40 @@ static func _build_empty_task(ctx: GameContext, worker: HumanIndividual, job: Di
 # Giro delle trappole della zona `area_id` (2026-11-07): tutte quelle con prede e non già nella Task di un altro, in ordine
 # di vicinanza (dal pipottino, poi dalla tappa precedente), finché la resa prevista sta nello zaino (la prima sempre).
 # Task di svuotamento della prima più un cammino + EmptyTrapAction per ognuna delle altre. null se non ce n'è nessuna.
+# Dal 2026-11-09 la Task ha solo la prima tappa (la più vicina, anche se la sua resa non entra tutta nello zaino): le altre
+# le aggiunge EmptyTrapAction a fine tappa (next_round_trap), così entrano anche le trappole riempite strada facendo.
 static func build_round_task(ctx: GameContext, worker: HumanIndividual, area_id: int, zone_job: String) -> Task:
-	var busy := TrapService.trap_ids_being_emptied(ctx.individuals, worker)
-	var left: Array[PlacedTrap] = []
-	for trap in ctx.game_data.placed_traps:
-		if trap.work_area_id == area_id and trap.get_caught() > 0 and not busy.has(trap.id) and _zone_job_of(trap) == zone_job:
-			left.append(trap)
-	if left.is_empty():
+	var exclude: Array[int] = []
+	var first := next_round_trap(ctx.game_data, ctx.individuals, worker, area_id, zone_job, worker.position, INF, exclude)
+	if first == null:
 		return null
-	var free_space := worker.max_carry_capacity - worker.get_carried_space()
-	var chosen: Array[PlacedTrap] = []
-	var from := worker.position
-	while not left.is_empty():
-		var best_index := 0
-		var best_distance := INF
-		for i in range(left.size()):
-			var distance := _site_point(worker, left[i]).distance_squared_to(from)
-			if distance < best_distance:
-				best_distance = distance
-				best_index = i
-		var trap: PlacedTrap = left[best_index]
-		left.remove_at(best_index)
-		var space := _catch_space(trap)
-		if not chosen.is_empty() and space > free_space:
-			continue
-		chosen.append(trap)
-		free_space -= space
-		from = _site_point(worker, trap)
-	var task := build_empty_task(ctx, worker, chosen[0].id)
+	var task := build_empty_task(ctx, worker, first.id)
 	if task == null:
 		return null
 	task.context[TrapService.CONTEXT_ROUND] = true
 	task.context[TrapService.CONTEXT_ROUND_JOB] = zone_job
 	task.context[TrapService.CONTEXT_AREA_ID] = area_id
-	for i in range(1, chosen.size()):
-		var steps: Array[Action] = [WalkAction.new(_site_point(worker, chosen[i])), EmptyTrapAction.new(chosen[i].id)]
-		task.append_steps(steps)
-		task.step_descriptions[task.steps.size() - 2] = "task_empty_trap_step_walk"
-		task.step_descriptions[task.steps.size() - 1] = "task_empty_trap_step_empty"
 	return task
+
+
+# Prossima tappa del giro della zona `area_id` per `worker`: la trappola del lavoro di zona `zone_job` più vicina a `from`
+# con prede, non già nella Task di svuotamento di un altro né in `exclude`, la cui resa entra in `free_space`. null se nessuna.
+static func next_round_trap(game_data: GameData, individuals: Array[HumanIndividual], worker: HumanIndividual, area_id: int,
+		zone_job: String, from: Vector2, free_space: float, exclude: Array[int]) -> PlacedTrap:
+	if game_data == null:
+		return null
+	var busy := TrapService.trap_ids_being_emptied(individuals, worker)
+	var best: PlacedTrap = null
+	var best_distance := INF
+	for trap in game_data.placed_traps:
+		if trap.work_area_id != area_id or trap.get_caught() <= 0 or busy.has(trap.id) or exclude.has(trap.id) \
+				or _zone_job_of(trap) != zone_job or catch_space(trap) > free_space:
+			continue
+		var distance := site_point(worker, trap).distance_squared_to(from)
+		if distance < best_distance:
+			best_distance = distance
+			best = trap
+	return best
 
 
 static func _zone_job_of(trap: PlacedTrap) -> String:
@@ -229,15 +248,22 @@ static func _zone_job_of(trap: PlacedTrap) -> String:
 
 
 # Punto d'arrivo alla trappola, nelle coordinate di `worker`.
-static func _site_point(worker: HumanIndividual, trap: PlacedTrap) -> Vector2:
+static func site_point(worker: HumanIndividual, trap: PlacedTrap) -> Vector2:
 	return Vector2(trap.lot) + Vector2(0.5, 0.5) + TaskBuilderService.macro_offset(worker, trap.macro_coords)
 
 
-# Spazio nello zaino della resa attuale della trappola (prede × trap_catch_yield × space_per_unit della risorsa).
-static func _catch_space(trap: PlacedTrap) -> float:
+# Spazio nello zaino della resa attuale della trappola (prede × trap_catch_yield × space_per_unit della risorsa; lacci:
+# i prodotti della macellazione delle prede).
+static func catch_space(trap: PlacedTrap) -> float:
 	var rules := TrapService.get_rules(trap.trap_name)
 	if rules == null:
 		return 0.0
+	if rules.trap_quarry == TrapService.QUARRY_SMALL_GAME:
+		var space := 0.0
+		for product in TrapService.catch_products(trap, 0):
+			var product_rules := CaloricCalculator.get_caloric_source_rules(String(product["resource"]))
+			space += float(product["quantity"]) * (product_rules.space_per_unit if product_rules != null else 0.0)
+		return space
 	var resource_rules := CaloricCalculator.get_caloric_source_rules(rules.trap_catch_resource)
 	var unit_space := resource_rules.space_per_unit if resource_rules != null else 0.0
 	return float(trap.get_caught() * maxi(rules.trap_catch_yield, 0)) * unit_space
@@ -261,6 +287,10 @@ static func build_empty_task(ctx: GameContext, worker: HumanIndividual, trap_id:
 	var rules := TrapService.get_rules(trap.trap_name)
 	if task != null and rules != null and rules.trap_quarry == TrapService.QUARRY_FISH:
 		task.task_name = TrapService.EMPTY_FISH_TASK_NAME
+	if task != null:
+		for step in task.steps:
+			if step is EmptyTrapAction:
+				(step as EmptyTrapAction).refresh_required_tools(task.context)
 	return task
 
 
@@ -288,6 +318,30 @@ static func collect_nobody_can_carry_entries(ctx: GameContext) -> Array[Dictiona
 				"building": area.name, "resource": IconRegistry.get_resource_display_name(trap_name),
 			})
 			entries.append(PendingEntryService.make_entry("trap_too_heavy:%d:%s" % [area.id, trap_name], text, {
+				"kind": "work_area", "id": area.id, "macro": area.macro_coords, "sort": float(area.id), "name": text,
+			}, true))
+	return entries
+
+
+# Avvisi della campanella (2026-11-09, tutte le trappole): una voce per zona e tipo quando la zona ne vuole ancora, una è
+# pronta in un edificio, nessuno la sta già portando lì e nella zona non resta un posto adatto (TrapService.choose_site).
+static func collect_no_site_entries(ctx: GameContext) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	if ctx.game_data == null or ctx.world == null:
+		return entries
+	for trap_name in TrapService.list_trap_names():
+		if not WarehouseSelectionService.has_retrieval_source(ctx.world, trap_name):
+			continue
+		for area in ctx.game_data.work_areas:
+			var target := TrapService.target_for(ctx.game_data, area, trap_name)
+			if target <= 0 or TrapService.count_for_area(ctx.game_data, ctx.individuals, area, trap_name) >= target:
+				continue
+			if TrapService.choose_site(ctx.game_data, ctx.world, ctx.individuals, area, trap_name) != TrapService.NO_SITE:
+				continue
+			var text := GameContext.tr_text("pending_trap_no_site").format({
+				"area": area.name, "trap": IconRegistry.get_resource_display_name(trap_name),
+			})
+			entries.append(PendingEntryService.make_entry("trap_no_site:%d:%s" % [area.id, trap_name], text, {
 				"kind": "work_area", "id": area.id, "macro": area.macro_coords, "sort": float(area.id), "name": text,
 			}, true))
 	return entries

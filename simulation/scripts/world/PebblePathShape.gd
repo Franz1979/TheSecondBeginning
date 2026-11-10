@@ -2,7 +2,8 @@ class_name PebblePathShape
 extends RefCounted
 
 # Sentiero di ciottoli (pebble_path, 2026-10-16, richiesta utente) a pezzi uniti, condiviso da mappa, anteprima di
-# piazzamento e icona tramite LinearShapes. Si unisce solo ad altri pezzi di sentiero (linear_link_group vuoto), mai al
+# piazzamento e icona tramite LinearShapes. Si unisce solo ad altri pezzi di sentiero (linear_link_group vuoto) e al guado
+# di pietre (BuildingRules.linear_joins_group, 2026-11-10), mai al
 # vallo.
 # 2026-10-17 (richiesta utente — "è un sentiero del paleolitico, deve apparire più grossolano"): niente striscia a bordi
 # dritti; il corpo è una fila di macchie irregolari color sabbia lungo il tracciato (body_points + blob_polygon), con i

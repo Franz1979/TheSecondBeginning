@@ -167,6 +167,17 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for saved_broken in data["game"].get("broken_traps", []):
 		if saved_broken is Dictionary:
 			game_data.broken_traps.append(saved_broken)
+	game_data.snare_passages = {}
+	var saved_passages = data["game"].get("snare_passages", {})
+	if saved_passages is Dictionary:
+		for key in saved_passages:
+			game_data.snare_passages[String(key)] = int(saved_passages[key])
+	game_data.snare_disturbances = {}
+	var saved_disturbances = data["game"].get("snare_disturbances", {})
+	if saved_disturbances is Dictionary:
+		for key in saved_disturbances:
+			if saved_disturbances[key] is Dictionary:
+				game_data.snare_disturbances[String(key)] = saved_disturbances[key]
 	game_data.placed_traps_revision += 1
 	game_data.stock_traps_per_zone.clear()
 	var saved_trap_levels = data["game"].get("stock_traps_per_zone", {})
@@ -926,6 +937,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.id = int(individual_data["id"])
 			individual.sex = int(individual_data["sex"])
 			individual.birth_year_virtual = int(individual_data["birth_year_virtual"])
+			# Compleanno vero (2026-11-09): 0 per i salvataggi precedenti (compleanno a capodanno, come prima).
+			individual.birth_day = int(individual_data.get("birth_day", 0))
 			individual.mother_id = int(individual_data["mother_id"])
 			individual.father_id = int(individual_data["father_id"])
 			individual.partner_id = int(individual_data["partner_id"])
@@ -962,6 +975,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.pending_child_hair_color = int(individual_data["pending_child_hair_color"])
 			individual.pending_child_skin_color = int(individual_data["pending_child_skin_color"])
 			individual.pending_child_father_id = int(individual_data["pending_child_father_id"])
+			# Concepimento e parto sparsi (2026-11-09): -1 per i salvataggi precedenti (GameTimeService assegna il parto alle
+			# incinte senza giorno).
+			individual.scheduled_conception_day = int(individual_data.get("scheduled_conception_day", -1))
+			individual.scheduled_birth_day = int(individual_data.get("scheduled_birth_day", -1))
 			# Piano "trasporto neonati" (2026-09-06) — accesso diretto, nessuna retrocompatibilità
 			# richiesta, stesso trattamento dei campi pending_child_* sopra.
 			individual.dependent_child_id = int(individual_data["dependent_child_id"])

@@ -29,10 +29,10 @@ extends RefCounted
 # inutile per età sotto quella soglia). age_band risolto con HumanCalculator.get_age_band, stesso
 # sesso dell'individuo e le durate passate dal chiamante (vedi durations_male/female sotto).
 #
-# current_year (aggiunto rispetto alla firma proposta, che aveva solo individuals/rules):
+# today (aggiunto rispetto alla firma proposta, che aveva solo individuals/rules):
 # HumanIndividual non salva l'età come campo — solo birth_year_virtual (vedi HumanIndividual.gd,
 # "l'età si ricava sempre al volo... mai salvata come campo separato") — serve quindi l'anno
-# corrente per calcolare age = current_year - birth_year_virtual, esattamente come fa il resto del
+# corrente per calcolare age = individual.get_age_years(today) (today = giorno assoluto), esattamente come fa il resto del
 # progetto (es. i pannelli info umani).
 #
 # durations_male/female AGGIUNTI (richiesta utente, 2026-09-05 — bugfix: PRIMA questo metodo
@@ -54,14 +54,14 @@ extends RefCounted
 static func check_mortality(
 	individuals: Array[HumanIndividual],
 	rules: HumanRules,
-	current_year: int,
+	today: int,
 	durations_male: Array[float],
 	durations_female: Array[float]
 ) -> Array[HumanIndividual]:
 	var marked_for_death: Array[HumanIndividual] = []
 	for individual in individuals:
-		var age := current_year - individual.birth_year_virtual
-		var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, float(age))
+		var age := individual.get_age_years(today)
+		var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, individual.get_age(today))
 		if age_band != HumanTypes.AgeBand.MATURE_ADULT and age_band != HumanTypes.AgeBand.OLD:
 			continue
 		# Salute al momento del tiro (2026-10-25, richiesta utente): moltiplicatore da HumanRules.mortality_health_*.

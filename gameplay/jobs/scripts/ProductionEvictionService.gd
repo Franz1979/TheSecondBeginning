@@ -8,7 +8,8 @@ extends RefCounted
 # per edificio e sullo stato di adesso: un ordine della coda che non trova posto in nessuna postazione adatta fa tornare
 # in coda l'ordine in attesa più vecchio di una di queste, e ne prende il posto. I materiali già consegnati restano nel
 # deposito dell'edificio; il lavoro fatto resta come produzione sospesa della ricetta (ProductionService.cancel_order).
-# Anti ping-pong: l'ordine tornato in coda porta EVICTED_KEY e può prendere solo posti liberi, mai scalzare.
+# Anti ping-pong: l'ordine tornato in coda porta EVICTED_KEY e può prendere solo posti liberi; scalza solo se ha già gli
+# ingredienti di un ciclo (2026-11-10, has_inputs_for_cycle).
 # Esclusi: ordini riservati a un rito, tenuti per l'edificio e cotture automatiche dei giorni di cibo (hanno regole loro).
 # Statico e senza stato, come gli altri servizi.
 
@@ -39,12 +40,16 @@ static func is_order_waiting(individuals: Array[HumanIndividual], building: Buil
 # Postazione e ordine da scalzare per un ordine di `quantity` pezzi di `recipe` che non trova posto: tra le postazioni
 # che sanno farlo (ricetta, quantità per ordine, posto in uscita) ma piene, l'ordine in attesa più vecchio (contatore più
 # basso nella chiave). {"building", "order_key"}, {} se nessuno.
-static func find_evictable(world: World, individuals: Array[HumanIndividual], recipe: String, quantity: int) -> Dictionary:
+# `only_building` (2026-11-10): solo quella postazione (ordine scalzato legato, EVICTED_FROM_KEY).
+static func find_evictable(world: World, individuals: Array[HumanIndividual], recipe: String, quantity: int,
+		only_building: Building = null) -> Dictionary:
 	var best: Dictionary = {}
 	var best_index := -1
 	if world == null:
 		return best
 	for building in world.buildings:
+		if only_building != null and building != only_building:
+			continue
 		if not ProductionService.can_produce_at(building, recipe) or ProductionService.get_max_order_quantity(building) < quantity:
 			continue
 		if not ProductionService.has_output_room(building, recipe):
@@ -132,6 +137,39 @@ static func bound_building(world: World, order: Dictionary) -> Building:
 				return building
 	order.erase(EVICTED_FROM_KEY)
 	return null
+
+
+# Ordine scalzato pronto (2026-11-10, richiesta utente — la corda di fibre ferma dietro al vestito di pelliccia senza
+# pelle): un ciclo di `recipe` ha tutti gli ingredienti, nel deposito di `building` più quelli prelevabili in automatico
+# dagli altri edifici. Solo così un ordine già scalzato può scalzare a sua volta: chi entra lavora davvero, niente
+# andirivieni. Conta anche il combustibile, se la ricetta lo usa.
+static func has_inputs_for_cycle(world: World, building: Building, recipe: String) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(recipe)
+	if rules == null or world == null:
+		return false
+	for input_name in rules.recipe_inputs.keys():
+		var needed := int(rules.recipe_inputs[input_name])
+		var have := ProductionService.get_input_available(building, String(input_name))
+		for other in world.buildings:
+			if have >= needed:
+				break
+			if other != building and not other.is_demolished:
+				have += BuildingStorageService.get_auto_available_quantity(other, String(input_name))
+		if have < needed:
+			return false
+	# Combustibile (2026-11-10, richiesta utente): quello che manca nel deposito della postazione, coperto da quello
+	# prelevabile in automatico dagli altri edifici.
+	var missing_fuel := ProductionService.get_missing_fuel_for(building, recipe)
+	for other in world.buildings:
+		if missing_fuel <= ProductionService.FUEL_EPSILON:
+			break
+		if other == building or other.is_demolished:
+			continue
+		for stored_name in other.stored_resources.keys():
+			var fuel_value := ProductionService.get_fuel_value(String(stored_name))
+			if fuel_value > 0.0:
+				missing_fuel -= float(BuildingStorageService.get_auto_available_quantity(other, String(stored_name))) * fuel_value
+	return missing_fuel <= ProductionService.FUEL_EPSILON
 
 
 # true se nel deposito di `building` c'è almeno uno degli ingredienti di `recipe`.

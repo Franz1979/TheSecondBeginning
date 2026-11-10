@@ -55,7 +55,7 @@ func setup_population(human_rules: HumanRules, start_macro_coords: Vector2i) -> 
 		return true
 	var seeding_result := HumanSeedingService.new().seed_player_start(
 		start_macro_coords, game_data.starting_group_size_preference, human_rules,
-		game_data.starting_folk_name if game_data.starting_folk_name != "" else Folk.pick_random_name(), game_data.year,
+		game_data.starting_folk_name if game_data.starting_folk_name != "" else Folk.pick_random_name(), game_data.get_absolute_day(),
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data
 	)
 	folk = seeding_result.folk
@@ -319,7 +319,7 @@ func welcome_visitor_party(party: VisitorParty, effects: GameEffects) -> void:
 		if GameContext.age_band_for(newcomer, game_data) >= HumanTypes.AgeBand.FERTILE_ADULT:
 			adult_count += 1
 	VillageInfluenceService.add_accepted_adults(folk, village, adult_count)
-	AssignHouseService.assign_pending_residents(world, individuals, game_data.year, {}, "visitatori accolti (%d)" % newcomers.size())
+	AssignHouseService.assign_pending_residents(world, individuals, game_data.get_absolute_day(), {}, "visitatori accolti (%d)" % newcomers.size())
 	# newcomers è nello stesso ordine di party.members (VisitorService.materialize_members): l'indice serve alla dote.
 	for i in range(newcomers.size()):
 		var newcomer := newcomers[i]

@@ -7,6 +7,7 @@ script = ExtResource("1_arrow_bundle")
 secondary_resource_name = "arrow_bundle"
 calories_per_unit = 0.0
 category = 4
+panel_group = "hunting"
 generation_source = 2
 space_per_unit = 2.0
 recipe_inputs = {

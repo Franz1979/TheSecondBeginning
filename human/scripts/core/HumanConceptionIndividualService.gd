@@ -1,8 +1,11 @@
 class_name HumanConceptionIndividualService
 extends RefCounted
 
-# Concepimento annuale (SOLO concepimento — il parto/nascita è un task separato, non ancora
-# scritto), per Folk — stesso principio di HumanCouplingIndividualService/
+# Durata fissa della gravidanza (2026-11-09, richiesta utente): la variabilità sta già nel giorno del concepimento.
+const GESTATION_DAYS := 270
+
+# Tiro annuale del concepimento (giorno 20) e concepimento vero nel giorno fissato (conceive, 2026-11-09)
+# per Folk — stesso principio di HumanCouplingIndividualService/
 # HumanMortalityIndividualService: un *Service RefCounted stateless, un metodo statico che opera su
 # un Array[HumanIndividual], raggruppando internamente per folk_ref (vedi
 # HumanCouplingIndividualService.form_couples per lo stesso schema di raggruppamento, riusato identico qui).
@@ -26,12 +29,12 @@ extends RefCounted
 # l'età anagrafica vera, non la fascia). <= e non < (richiesta esplicita, 2026-09-06): con soglia=1,
 # un figlio di ESATTAMENTE 1 anno blocca ancora la madre, solo un figlio di 2+ anni la libera.
 static func _has_child_below_spacing_threshold(
-	woman: HumanIndividual, individuals: Array[HumanIndividual], current_year: int, min_birth_spacing_years: int
+	woman: HumanIndividual, individuals: Array[HumanIndividual], today: int, min_birth_spacing_years: int
 ) -> bool:
 	for child in individuals:
 		if child.mother_id != woman.id:
 			continue
-		var child_age := current_year - child.birth_year_virtual
+		var child_age := child.get_age_years(today)
 		if child_age <= min_birth_spacing_years:
 			return true
 	return false
@@ -44,10 +47,10 @@ static func _find_by_id(individuals: Array[HumanIndividual], id: int) -> HumanIn
 	return null
 
 
-# Entry point annuale (day 110): concepimento per ciascun Folk rappresentato in
+# Entry point annuale (day 20): concepimento per ciascun Folk rappresentato in
 # `individuals`, separatamente — stesso raggruppamento via folk_ref di
 # HumanCouplingIndividualService.form_couples. Ritorna un Dictionary con, oltre a
-# "newly_pregnant"/"query_time_usec" di prima:
+# "scheduled" (concepimento fissato a un giorno, vedi (C)) e "query_time_usec":
 #   "eligible_women": Array[HumanIndividual] — passate il filtro (A) (sesso/gravidanza/partner/
 #     età_band), su TUTTI i gruppi
 #   "excluded_already_pregnant"/"excluded_self_not_fertile"/"excluded_partner_not_fertile"/
@@ -63,7 +66,7 @@ static func _find_by_id(individuals: Array[HumanIndividual], id: int) -> HumanIn
 # (richiesta utente, 2026-09-06 — log esplicativo di scarti/tiro, non solo il conteggio finale).
 static func run_conception(
 	individuals: Array[HumanIndividual],
-	current_year: int,
+	today: int,
 	durations_male: Array[float],
 	durations_female: Array[float],
 	human_rules: HumanRules,
@@ -84,11 +87,11 @@ static func run_conception(
 	var excluded_partner_sick: Array[HumanIndividual] = []
 	var discarded_for_spacing: Array[HumanIndividual] = []
 	var candidates: Array[HumanIndividual] = []
-	var newly_pregnant: Array[HumanIndividual] = []
+	var scheduled: Array[HumanIndividual] = []
 	var query_time_usec := 0
 	for group_individuals in groups.values():
 		var result := _run_conception_in_group(
-			group_individuals, current_year, durations_male, durations_female, human_rules, era_rules
+			group_individuals, today, durations_male, durations_female, human_rules, era_rules
 		)
 		eligible_women.append_array(result["eligible_women"])
 		excluded_already_pregnant.append_array(result["excluded_already_pregnant"])
@@ -99,7 +102,7 @@ static func run_conception(
 		excluded_partner_sick.append_array(result["excluded_partner_sick"])
 		discarded_for_spacing.append_array(result["discarded_for_spacing"])
 		candidates.append_array(result["candidates"])
-		newly_pregnant.append_array(result["newly_pregnant"])
+		scheduled.append_array(result["scheduled"])
 		query_time_usec += result["query_time_usec"]
 	return {
 		"eligible_women": eligible_women,
@@ -111,7 +114,7 @@ static func run_conception(
 		"excluded_partner_sick": excluded_partner_sick,
 		"discarded_for_spacing": discarded_for_spacing,
 		"candidates": candidates,
-		"newly_pregnant": newly_pregnant,
+		"scheduled": scheduled,
 		"query_time_usec": query_time_usec,
 		# Costanti rispetto ai dati del gruppo (solo human_rules/era_rules) — calcolate una volta
 		# sola qui invece che ripetute identiche in ogni risultato per-gruppo.
@@ -127,7 +130,7 @@ static func run_conception(
 # sopravvissute anche a (B).
 static func _run_conception_in_group(
 	individuals: Array[HumanIndividual],
-	current_year: int,
+	today: int,
 	durations_male: Array[float],
 	durations_female: Array[float],
 	human_rules: HumanRules,
@@ -153,11 +156,11 @@ static func _run_conception_in_group(
 			continue
 		if woman.partner_id == -1:
 			continue
-		if woman.is_pregnant:
+		# Anche chi ha già un concepimento fissato e non ancora avvenuto (2026-11-09): per il tiro conta come incinta.
+		if woman.is_pregnant or woman.scheduled_conception_day != -1:
 			excluded_already_pregnant.append(woman)
 			continue
-		var woman_age := current_year - woman.birth_year_virtual
-		var woman_age_band := HumanCalculator.get_age_band(durations_male, durations_female, woman.sex, float(woman_age))
+		var woman_age_band := HumanCalculator.get_age_band(durations_male, durations_female, woman.sex, woman.get_age(today))
 		if not HumanTypes.FERTILE_AGE_BANDS.has(woman_age_band):
 			excluded_self_not_fertile.append(woman)
 			continue
@@ -168,8 +171,7 @@ static func _run_conception_in_group(
 			# se mai succedesse.
 			excluded_partner_missing.append(woman)
 			continue
-		var partner_age := current_year - partner.birth_year_virtual
-		var partner_age_band := HumanCalculator.get_age_band(durations_male, durations_female, partner.sex, float(partner_age))
+		var partner_age_band := HumanCalculator.get_age_band(durations_male, durations_female, partner.sex, partner.get_age(today))
 		if not HumanTypes.FERTILE_AGE_BANDS.has(partner_age_band):
 			excluded_partner_not_fertile.append(woman)
 			continue
@@ -191,7 +193,7 @@ static func _run_conception_in_group(
 	var candidates: Array[HumanIndividual] = []
 	var discarded_for_spacing: Array[HumanIndividual] = []
 	for woman in eligible_women:
-		if _has_child_below_spacing_threshold(woman, individuals, current_year, era_rules.min_birth_spacing_years):
+		if _has_child_below_spacing_threshold(woman, individuals, today, era_rules.min_birth_spacing_years):
 			discarded_for_spacing.append(woman)
 		else:
 			candidates.append(woman)
@@ -200,22 +202,14 @@ static func _run_conception_in_group(
 	# (C) Tiro di concepimento: base di HumanRules × moltiplicatore di EraRules, letto qui al
 	# momento del calcolo (nessuna cache — vedi commento di testa al file).
 	var conception_probability := human_rules.conception_base_probability * era_rules.conception_probability_multiplier
-	var newly_pregnant: Array[HumanIndividual] = []
+	# Concepimento sparso (2026-11-09): chi supera il tiro non resta incinta subito, riceve un giorno di concepimento a
+	# caso nei 365 giorni dopo il tiro (domani .. stesso giorno dell'anno dopo, prima del tiro successivo). Quel giorno
+	# GameTimeService chiama conceive sotto.
+	var scheduled: Array[HumanIndividual] = []
 	for woman in candidates:
 		if randf() < conception_probability:
-			woman.is_pregnant = true
-			# Step 2 del piano riproduzione (2026-09-06): tratti/padre del figlio in arrivo
-			# CRISTALLIZZATI qui, una volta sola — padre = partner ATTUALE di `woman` (già risolto
-			# e verificato FERTILE_ADULT in (A) sopra, ri-cercato qui perché quella variabile locale
-			# non sopravvive oltre il ciclo di (A) — sicuramente vivo in questo istante, zero
-			# ambiguità). HumanBirthIndividualService (day 20) userà SOLO questi tre campi, mai
-			# woman.partner_id: se il padre muore tra concepimento e nascita, il tiro è comunque già
-			# fatto e non va rifatto (vedi HumanIndividual.pending_child_father_id).
-			var father := _find_by_id(individuals, woman.partner_id)
-			woman.pending_child_hair_color = HumanIndividual.roll_inherited_hair_color(woman, father)
-			woman.pending_child_skin_color = HumanIndividual.roll_inherited_skin_color(woman, father)
-			woman.pending_child_father_id = father.id
-			newly_pregnant.append(woman)
+			woman.scheduled_conception_day = today + 1 + randi() % GameData.DAYS_PER_YEAR
+			scheduled.append(woman)
 
 	return {
 		"eligible_women": eligible_women,
@@ -227,6 +221,28 @@ static func _run_conception_in_group(
 		"excluded_partner_sick": excluded_partner_sick,
 		"discarded_for_spacing": discarded_for_spacing,
 		"candidates": candidates,
-		"newly_pregnant": newly_pregnant,
+		"scheduled": scheduled,
 		"query_time_usec": query_time_usec,
 	}
+
+
+# Il giorno del concepimento fissato dal tiro (2026-11-09): la donna resta incinta del partner che ha IN QUESTO MOMENTO
+# e si fissa il parto a GESTATION_DAYS. Se non ha più un partner vivo (morto, o coppia sciolta) il concepimento salta.
+# Ritorna il padre, o null se è saltato. scheduled_conception_day azzerato in entrambi i casi.
+#
+# Tratti/padre del figlio CRISTALLIZZATI qui, una volta sola (Step 2 del piano riproduzione, 2026-09-06):
+# HumanBirthIndividualService userà SOLO pending_child_*, mai woman.partner_id: se il padre muore tra concepimento e
+# nascita il tiro è già fatto e non va rifatto (vedi HumanIndividual.pending_child_father_id).
+static func conceive(woman: HumanIndividual, individuals: Array[HumanIndividual], today: int) -> HumanIndividual:
+	woman.scheduled_conception_day = -1
+	if woman.partner_id == -1:
+		return null
+	var father := _find_by_id(individuals, woman.partner_id)
+	if father == null:
+		return null
+	woman.is_pregnant = true
+	woman.pending_child_hair_color = HumanIndividual.roll_inherited_hair_color(woman, father)
+	woman.pending_child_skin_color = HumanIndividual.roll_inherited_skin_color(woman, father)
+	woman.pending_child_father_id = father.id
+	woman.scheduled_birth_day = today + GESTATION_DAYS
+	return father

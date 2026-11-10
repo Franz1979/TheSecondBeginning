@@ -38,6 +38,9 @@ const SKILL_EFFECT_KEY := "trap"
 const QUARRY_BIRDS := "birds"
 # Nassa (2026-11-08): si monta solo sul ruscello e rende secondo i pesci a portata (StreamFishService.get_fish_in_reach).
 const QUARRY_FISH := "fish"
+# Mazzo di lacci (2026-11-09): conigli e pernici. Si monta fuori da bosco, ruscello, argilla e pietre, e in automatico si
+# piazza comunque (numero del WM), senza guardare se ci sono le mandrie: le catture le leggeranno.
+const QUARRY_SMALL_GAME := "small_game"
 const NO_SITE := Vector2i(-1, -1)
 
 static var _trap_names: Array[String] = []
@@ -75,6 +78,30 @@ static func target_for(game_data: GameData, area: WorkArea, trap_name: String) -
 	if area.trap_targets.has(trap_name):
 		return maxi(int(area.trap_targets[trap_name]), 0)
 	return maxi(int(game_data.stock_traps_per_zone.get(trap_name, 0)), 0)
+
+
+# Attrezzi per svuotare `trap_name` (SecondaryResourceRules.trap_empty_tool_categories).
+static func empty_tool_categories(trap_name: String) -> Array[TaskTypes.ToolCategory]:
+	var categories: Array[TaskTypes.ToolCategory] = []
+	var rules := get_rules(trap_name)
+	if rules != null:
+		for category in rules.trap_empty_tool_categories:
+			if not categories.has(category):
+				categories.append(category as TaskTypes.ToolCategory)
+	return categories
+
+
+# Attrezzi per il giro di un lavoro di zona: quelli di tutti i tipi di trappola di quel lavoro (caccia: coltello per le reti).
+static func round_tool_categories(zone_job: String) -> Array[TaskTypes.ToolCategory]:
+	var categories: Array[TaskTypes.ToolCategory] = []
+	for trap_name in list_trap_names():
+		var rules := get_rules(trap_name)
+		if rules == null or rules.trap_zone_job != zone_job:
+			continue
+		for category in empty_tool_categories(trap_name):
+			if not categories.has(category):
+				categories.append(category)
+	return categories
 
 
 static func is_place_task(task: Task) -> bool:
@@ -129,14 +156,28 @@ static func needs_emptying(game_data: GameData, trap: PlacedTrap) -> bool:
 
 
 # Svuota la trappola (EmptyTrapAction all'arrivo): prende tutte le prede ancora dentro, toglie un uso (a zero la trappola
-# sparisce) e restituisce {"resource", "quantity", "decay_fraction"}: trap_catch_yield unità per preda, vecchie in media
-# quanto le prede (giorni dalla cattura / day_durability della risorsa). Senza prede non consuma l'uso (quantity 0).
+# sparisce) e restituisce {"resource", "quantity", "decay_fraction", "preys", "products"}: trap_catch_yield unità per preda,
+# vecchie in media quanto le prede (giorni dalla cattura / day_durability della risorsa). Senza prede non consuma l'uso
+# (quantity 0). "products": [{"resource", "quantity", "decay_fraction"}] da mettere nello zaino; per i lacci (2026-11-09)
+# la macellazione di ogni preda (catch_products), altrimenti la sola trap_catch_resource. "preys": prede tolte.
 static func empty(game_data: GameData, trap: PlacedTrap) -> Dictionary:
 	var rules := get_rules(trap.trap_name)
-	var result := {"resource": rules.trap_catch_resource if rules != null else "", "quantity": 0, "decay_fraction": 0.0}
+	var result := {"resource": rules.trap_catch_resource if rules != null else "", "quantity": 0, "decay_fraction": 0.0,
+		"preys": 0, "products": []}
 	if rules == null or trap.catch_days.is_empty():
 		return result
 	var day := game_data.get_absolute_day()
+	result["preys"] = trap.get_caught()
+	if rules.trap_quarry == QUARRY_SMALL_GAME:
+		result["products"] = catch_products(trap, day)
+		for product in result["products"]:
+			result["quantity"] = int(result["quantity"]) + int(product["quantity"])
+		trap.catch_days.clear()
+		trap.catch_species.clear()
+		trap.catch_ages.clear()
+		_consume_use(game_data, trap, rules, day, "ultimo svuotamento")
+		game_data.placed_traps_revision += 1
+		return result
 	var total_age := 0
 	for catch_day in trap.catch_days:
 		total_age += maxi(day - catch_day, 0)
@@ -146,10 +187,46 @@ static func empty(game_data: GameData, trap: PlacedTrap) -> Dictionary:
 	if durability > 0.0:
 		result["decay_fraction"] = clampf(float(total_age) / float(caught) / durability, 0.0, 1.0)
 	result["quantity"] = caught * maxi(rules.trap_catch_yield, 0)
+	result["products"] = [{"resource": result["resource"], "quantity": result["quantity"], "decay_fraction": result["decay_fraction"]}]
 	trap.catch_days.clear()
+	trap.catch_species.clear()
+	trap.catch_ages.clear()
 	_consume_use(game_data, trap, rules, day, "ultimo svuotamento")
 	game_data.placed_traps_revision += 1
 	return result
+
+
+# Prodotti della macellazione delle prede di un laccio (2026-11-09): per preda ButcherAction.compute_yields(specie, età),
+# ognuno vecchio quanto la preda (giorni dalla cattura / day_durability del prodotto). Una voce per preda e prodotto.
+static func catch_products(trap: PlacedTrap, day: int) -> Array:
+	var products: Array = []
+	for i in range(trap.catch_days.size()):
+		var species := trap.catch_species[i] if i < trap.catch_species.size() else ""
+		var age_band := trap.catch_ages[i] if i < trap.catch_ages.size() else int(GameTypes.AgeBand.ADULT)
+		var yields := ButcherAction.compute_yields(species, age_band)
+		for resource_name in yields:
+			var quantity := int(yields[resource_name])
+			if quantity <= 0:
+				continue
+			var resource_rules := get_rules(String(resource_name))
+			var durability := float(resource_rules.day_durability) if resource_rules != null else 0.0
+			var decay := clampf(float(maxi(day - trap.catch_days[i], 0)) / durability, 0.0, 1.0) if durability > 0.0 else 0.0
+			products.append({"resource": String(resource_name), "quantity": quantity, "decay_fraction": decay})
+	return products
+
+
+# Giorni di macellazione sul posto delle prede di un laccio (ritmo di ButcherAction); 0 per le altre trappole.
+static func butcher_days(trap: PlacedTrap) -> float:
+	var rules := get_rules(trap.trap_name)
+	if rules == null or rules.trap_quarry != QUARRY_SMALL_GAME:
+		return 0.0
+	var days := 0.0
+	for i in range(trap.catch_days.size()):
+		var species := trap.catch_species[i] if i < trap.catch_species.size() else ""
+		var age_band := trap.catch_ages[i] if i < trap.catch_ages.size() else int(GameTypes.AgeBand.ADULT)
+		var meat := float(ButcherAction.compute_yields(species, age_band)["meat"])
+		days += maxf(meat / ButcherAction.MEAT_UNITS_PER_DAY, ButcherAction.MIN_DURATION_DAYS)
+	return days
 
 
 # Toglie un uso alla trappola e fa ripartire il conto dell'usura a riposo. A zero usi la trappola è rotta: sparisce (le
@@ -215,6 +292,8 @@ static func site_index(trap_name: String, world: World, macro_coords: Vector2i, 
 			var fish := StreamFishService.get_fish_in_reach(state, StreamMicrocellService.get_positions(world, cell),
 				macro_coords.x, macro_coords.y, lot, game_data.get_absolute_day())
 			return clampf(float(fish) / float(StreamFishService.TRAP_FULL_FISH), 0.0, 1.0)
+		QUARRY_SMALL_GAME:
+			return 1.0
 	return 0.0
 
 
@@ -226,7 +305,7 @@ static func current_index(trap_name: String, p_site_index: float, season: GameTy
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.apply_season(p_site_index, season)
-		QUARRY_FISH:
+		QUARRY_FISH, QUARRY_SMALL_GAME:
 			return p_site_index
 	return 0.0
 
@@ -239,14 +318,32 @@ static func is_worth_setting(trap_name: String, index: float) -> bool:
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.level_for_index(index) != BirdPresenceService.Level.NONE
-		QUARRY_FISH:
+		QUARRY_FISH, QUARRY_SMALL_GAME:
 			return index > 0.0
 	return false
 
 
-# true se il tipo di trappola si può montare lì quanto a terreno: la nassa solo sul ruscello, le altre mai.
-static func _fits_ground(rules: SecondaryResourceRules, stream_positions: Dictionary, lot: Vector2i) -> bool:
-	return stream_positions.has(lot) == (rules.trap_quarry == QUARRY_FISH)
+# true se il tipo di trappola si può montare lì quanto a terreno: la nassa solo sul ruscello, le altre mai; i lacci
+# (2026-11-09) nemmeno su alberi, argilla (se già scoperta) o pietre (`stone_lots`, da _stone_lots_of).
+static func _fits_ground(rules: SecondaryResourceRules, stream_positions: Dictionary, lot: Vector2i, macro_state: MacroCellState, stone_lots: Dictionary) -> bool:
+	if stream_positions.has(lot) != (rules.trap_quarry == QUARRY_FISH):
+		return false
+	if rules.trap_quarry != QUARRY_SMALL_GAME:
+		return true
+	if macro_state == null or stone_lots.has(lot):
+		return false
+	if macro_state.tree_claimed_lots.has(lot) and VegetationLotIndex.has_lot(macro_state, GameTypes.WorldObjectType.TREE, lot):
+		return false
+	return TerrainScatteredResourceService.is_resource_locked(ClayDepositService.RESOURCE_NAME) or not ClayDepositService.has_clay(macro_state, lot)
+
+
+# Microcelle con pietre della cella, come insieme (stone_positions è un Array).
+static func _stone_lots_of(macro_state: MacroCellState) -> Dictionary:
+	var lots := {}
+	if macro_state != null:
+		for pos in macro_state.stone_positions:
+			lots[pos] = true
+	return lots
 
 
 static func _stream_positions_of(world: World, macro_coords: Vector2i) -> Dictionary:
@@ -283,14 +380,22 @@ static func choose_site(game_data: GameData, world: World, individuals: Array[Hu
 	var best := NO_SITE
 	var best_index := 0.0
 	var stream_positions := _stream_positions_of(world, area.macro_coords)
+	var macro_state := world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
+	var stone_lots := _stone_lots_of(macro_state) if rules.trap_quarry == QUARRY_SMALL_GAME else {}
+	var best_score := 0.0
 	for y in range(area.rect.position.y, area.rect.end.y):
 		for x in range(area.rect.position.x, area.rect.end.x):
 			var lot := Vector2i(x, y)
-			if occupied.has(lot) or resting.has(lot) or not _fits_ground(rules, stream_positions, lot) \
+			if occupied.has(lot) or resting.has(lot) or not _fits_ground(rules, stream_positions, lot, macro_state, stone_lots) \
 					or not _far_from(lot, taken, rules.trap_min_spacing):
 				continue
 			var index := current_index(trap_name, site_index(trap_name, world, area.macro_coords, lot), season)
-			if index > best_index and is_worth_setting(trap_name, index):
+			if not is_worth_setting(trap_name, index):
+				continue
+			# Lacci: tutti i posti valgono uguale; uno sparso a caso (stabile per microcella) invece del primo in alto a sinistra.
+			var score := index + (_scatter(lot, area.id) if rules.trap_quarry == QUARRY_SMALL_GAME else 0.0)
+			if score > best_score:
+				best_score = score
 				best_index = index
 				best = lot
 	if String(cached.get("key", "")).is_empty() or cached.get("lot", NO_SITE) != best:
@@ -298,6 +403,11 @@ static func choose_site(game_data: GameData, world: World, individuals: Array[Hu
 			"posto %s, indice %.2f (%d già prese o in viaggio)" % [best, best_index, taken.size()] if best != NO_SITE else "nessun posto che valga"])
 	_site_cache[cache_id] = {"key": cache_key, "lot": best}
 	return best
+
+
+# Numero piccolo (0..0.001) e stabile per microcella e zona: sparge i posti che valgono uguale.
+static func _scatter(lot: Vector2i, area_id: int) -> float:
+	return float(absi(hash(Vector3i(lot.x, lot.y, area_id))) % 1000) * 0.000001
 
 
 # Trappole piazzabili a mano sulla microcella (clic destro, 2026-11-07): [{"trap_name", "index", "level"}] per ogni tipo
@@ -317,9 +427,11 @@ static func placeable_traps(game_data: GameData, world: World, individuals: Arra
 			return result
 	var season := SeasonCalculator.get_season_for_day(game_data.current_day)
 	var stream_positions := _stream_positions_of(world, macro_coords)
+	var macro_state := world.get_cell_state_at(macro_coords.x, macro_coords.y)
+	var stone_lots := _stone_lots_of(macro_state)
 	for trap_name in list_trap_names():
 		var rules := get_rules(trap_name)
-		if not _fits_ground(rules, stream_positions, lot) or not WarehouseSelectionService.has_retrieval_source(world, trap_name):
+		if not _fits_ground(rules, stream_positions, lot, macro_state, stone_lots) or not WarehouseSelectionService.has_retrieval_source(world, trap_name):
 			continue
 		var index := current_index(trap_name, site_index(trap_name, world, macro_coords, lot), season)
 		var level := -1
@@ -376,6 +488,7 @@ static func place(game_data: GameData, world: World, trap_name: String, instance
 # marciscono, poi un tiro per trappola non piena. Le trappole sono poche: costa niente.
 static func advance_daily(game_data: GameData, world: World) -> void:
 	if game_data == null or (game_data.placed_traps.is_empty() and game_data.broken_traps.is_empty()):
+		SnareService.end_day(game_data)
 		return
 	var day := game_data.get_absolute_day()
 	var season := SeasonCalculator.get_season_for_day(game_data.current_day)
@@ -394,6 +507,18 @@ static func advance_daily(game_data: GameData, world: World) -> void:
 			log_line("%s #%d in %s %s: usura senza svuotamenti, usi rimasti %d" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, trap.get_remaining_uses()])
 		if trap.get_caught() >= rules.trap_capacity:
 			continue
+		# Lacci (2026-11-09): una preda vera al giorno al massimo, dai passaggi del giorno (SnareService).
+		if rules.trap_quarry == QUARRY_SMALL_GAME:
+			var species := SnareService.roll_catch(game_data, trap, rules, randf())
+			if species == "":
+				continue
+			var age_band := SnareService.take_prey(game_data, trap, rules, species)
+			trap.catch_days.append(day)
+			trap.catch_species.append(species)
+			trap.catch_ages.append(age_band)
+			changed = true
+			log_line("%s #%d in %s %s: preso %s (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, species, trap.get_caught(), rules.trap_capacity])
+			continue
 		# Nassa: i pesci a portata si contano ogni giorno, e il pescato esce davvero dal ruscello.
 		var index_now: float = site_index(trap.trap_name, world, trap.macro_coords, trap.lot) if rules.trap_quarry == QUARRY_FISH else trap.site_index
 		var caught := roll_catch(rules, current_index(trap.trap_name, index_now, season), randf())
@@ -406,6 +531,7 @@ static func advance_daily(game_data: GameData, world: World) -> void:
 			trap.catch_days.append(day)
 		changed = true
 		log_line("%s #%d in %s %s: prese %d (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, caught, trap.get_caught(), rules.trap_capacity])
+	SnareService.end_day(game_data)
 	if changed:
 		game_data.placed_traps_revision += 1
 
@@ -522,13 +648,21 @@ static func _spoil_old_catches(trap: PlacedTrap, rules: SecondaryResourceRules, 
 	if rules.trap_catch_spoil_days <= 0 or trap.catch_days.is_empty():
 		return false
 	var kept: Array[int] = []
-	for catch_day in trap.catch_days:
-		if day - catch_day < rules.trap_catch_spoil_days:
-			kept.append(catch_day)
+	var kept_species: Array[String] = []
+	var kept_ages: Array[int] = []
+	for i in range(trap.catch_days.size()):
+		if day - trap.catch_days[i] < rules.trap_catch_spoil_days:
+			kept.append(trap.catch_days[i])
+			if i < trap.catch_species.size():
+				kept_species.append(trap.catch_species[i])
+			if i < trap.catch_ages.size():
+				kept_ages.append(trap.catch_ages[i])
 	var lost := trap.catch_days.size() - kept.size()
 	if lost <= 0:
 		return false
 	trap.catch_days = kept
+	trap.catch_species = kept_species
+	trap.catch_ages = kept_ages
 	log_line("%s #%d in %s %s: %d marcite o portate via (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, lost, trap.get_caught(), rules.trap_capacity])
 	return true
 

@@ -232,11 +232,11 @@ func _sort_less(sort_id: String, a: HumanIndividual, b: HumanIndividual) -> bool
 				return b_homeless
 			if a.house_id != b.house_id:
 				return a.house_id < b.house_id
-			if a.birth_year_virtual != b.birth_year_virtual:
-				return a.birth_year_virtual < b.birth_year_virtual
+			if a.get_birth_absolute_day() != b.get_birth_absolute_day():
+				return a.get_birth_absolute_day() < b.get_birth_absolute_day()
 		_:
-			if a.birth_year_virtual != b.birth_year_virtual:
-				return a.birth_year_virtual < b.birth_year_virtual
+			if a.get_birth_absolute_day() != b.get_birth_absolute_day():
+				return a.get_birth_absolute_day() < b.get_birth_absolute_day()
 	return a.id < b.id
 
 
@@ -259,7 +259,7 @@ func _sort_less(sort_id: String, a: HumanIndividual, b: HumanIndividual) -> bool
 # un dato sulla POPOLAZIONE, non sugli edifici in generale (che includono anche political/storage,
 # mai rilevanti per questo conteggio) — vedi housing_label sotto per il formato scelto.
 func show_population(
-	total_count: int, individuals: Array[HumanIndividual], current_year: int,
+	total_count: int, individuals: Array[HumanIndividual], today: int,
 	era_effective_age_band_durations_male: Array[float], era_effective_age_band_durations_female: Array[float],
 	folk_name: String, village_name: String, village_count: int, housing_capacity: int, sort_id: String = DEFAULT_SORT_ID
 ) -> void:
@@ -306,7 +306,7 @@ func show_population(
 			var entry: Dictionary = _command_rows[i]
 			var member: HumanIndividual = sorted_members[i]
 			var name_label: Label = entry["name_label"]
-			var name_text := _row_name_text(member, current_year, era_effective_age_band_durations_male, era_effective_age_band_durations_female)
+			var name_text := _row_name_text(member, today, era_effective_age_band_durations_male, era_effective_age_band_durations_female)
 			if name_label.text != name_text:
 				name_label.text = name_text
 			_apply_house_icon(entry["house_icon"], member)
@@ -348,7 +348,7 @@ func show_population(
 		# andare a capo, così la riga non cambia altezza.
 		label.clip_text = true
 		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		label.text = _row_name_text(member, current_year, era_effective_age_band_durations_male, era_effective_age_band_durations_female)
+		label.text = _row_name_text(member, today, era_effective_age_band_durations_male, era_effective_age_band_durations_female)
 		row.add_child(label)
 
 		# Spaziatore largo quanto i pulsanti delle azioni quando la riga è sotto il mouse, in fondo alla riga.
@@ -448,10 +448,10 @@ func _rows_match(sorted_members: Array[HumanIndividual]) -> bool:
 
 # "Nome — F, 34 (Adult)": nome, sesso, età e fascia d'età.
 func _row_name_text(
-	member: HumanIndividual, current_year: int, durations_male: Array[float], durations_female: Array[float]
+	member: HumanIndividual, today: int, durations_male: Array[float], durations_female: Array[float]
 ) -> String:
-	var age: int = current_year - member.birth_year_virtual
-	var age_band := HumanCalculator.get_age_band(durations_male, durations_female, member.sex, float(age))
+	var age: int = member.get_age_years(today)
+	var age_band := HumanCalculator.get_age_band(durations_male, durations_female, member.sex, member.get_age(today))
 	return "%s — %s, %d (%s)" % [
 		member.name,
 		"F" if member.sex == HumanTypes.Sex.FEMALE else "M",

@@ -26,7 +26,7 @@ func age_band_of(member: HumanIndividual) -> HumanTypes.AgeBand:
 static func age_band_for(member: HumanIndividual, game_data: GameData) -> HumanTypes.AgeBand:
 	return HumanCalculator.get_age_band(
 		game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
-		member.sex, float(game_data.year - member.birth_year_virtual)
+		member.sex, member.get_age(game_data.get_absolute_day())
 	)
 
 

@@ -7,6 +7,7 @@ script = ExtResource("1_bone_awl")
 secondary_resource_name = "bone_awl"
 calories_per_unit = 0.0
 category = 4
+panel_group = "work"
 generation_source = 2
 recipe_inputs = {
 "bone": 1

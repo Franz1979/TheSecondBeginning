@@ -2863,6 +2863,9 @@ func _refresh_heating(building: Building, is_house: bool) -> void:
 		influence_received_label.add_sibling(_heating_label)
 	_heating_label.visible = heatable
 	if not heatable:
+		# Riga della zuppa (2026-11-10, bugfix): restava visibile dalla casa selezionata prima.
+		if _soup_label != null:
+			_soup_label.visible = false
 		return
 	# Solo acceso/spento (2026-10-22, richiesta utente): il combustibile si vede già nel deposito qui sotto.
 	_heating_label.text = tr("building_heating_label").format({

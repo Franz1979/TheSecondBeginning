@@ -19,8 +19,8 @@ required_materials = {
 "fiber_rope": 20,
 "pebble": 40,
 "stick": 100,
-"stone": 40,
-"wood": 30
+"stone": 20,
+"wood": 40
 }
 required_space = 1
 visibility_radius = 4

@@ -283,11 +283,11 @@ func _refresh_all_tabs() -> void:
 		building_series = _game_data.village_building_snapshots.get(_scope_village_id, {})
 	_refresh_mortality_tab(_scoped_events(_game_data.death_events))
 	_refresh_births_tab(
-		_scoped_events(_game_data.birth_events), individuals, _game_data.year,
+		_scoped_events(_game_data.birth_events), individuals, _game_data.get_absolute_day(),
 		_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female
 	)
 	_refresh_population_tab(
-		individuals, population_series, _game_data.year,
+		individuals, population_series, _game_data.get_absolute_day(),
 		_game_data.era_effective_age_band_durations_male, _game_data.era_effective_age_band_durations_female
 	)
 	_refresh_parameters_tab(individuals)
@@ -388,11 +388,11 @@ func _cause_name(cause: int) -> String:
 # prima era sempre true) NON è un figlio nel senso demografico di questa statistica, quindi va
 # escluso qui — stesso principio già rispettato "naturalmente" dal vincolo di spaziatura minima
 # parti in HumanConceptionIndividualService (interroga solo individui realmente esistiti/vivi in
-# human_individuals, un nato-morto non vi compare mai). current_year/durations_male/female
+# human_individuals, un nato-morto non vi compare mai). today/durations_male/female
 # servono SOLO per ricavare l'age_band di ciascuna vivente (stessa formula HumanCalculator.
 # get_age_band già usata ovunque nel progetto per questo scopo).
 func _refresh_births_tab(
-	birth_events: Array[Dictionary], human_individuals: Array[HumanIndividual], current_year: int,
+	birth_events: Array[Dictionary], human_individuals: Array[HumanIndividual], today: int,
 	durations_male: Array[float], durations_female: Array[float]
 ) -> void:
 	# "Parti" è il conteggio degli EVENTI di parto avvenuti (nati vivi + nati morti, richiesta
@@ -423,7 +423,7 @@ func _refresh_births_tab(
 	for individual in human_individuals:
 		if individual.sex != HumanTypes.Sex.FEMALE:
 			continue
-		var age := float(current_year - individual.birth_year_virtual)
+		var age := individual.get_age(today)
 		var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, age)
 		if age_band != HumanTypes.AgeBand.FERTILE_ADULT:
 			continue
@@ -461,7 +461,7 @@ func _refresh_births_tab(
 # per il grafico storico popolazione/anno, un dato diverso ("quant'era la popolazione ALLORA", non
 # "quant'è ADESSO").
 func _refresh_population_tab(
-	human_individuals: Array[HumanIndividual], population_snapshots: Dictionary, current_year: int,
+	human_individuals: Array[HumanIndividual], population_snapshots: Dictionary, today: int,
 	durations_male: Array[float], durations_female: Array[float]
 ) -> void:
 	total_population_label.text = tr("statistics_total_population").format({"count": human_individuals.size()})
@@ -470,7 +470,7 @@ func _refresh_population_tab(
 	var female_count := 0
 	var age_sum := 0
 	for individual in human_individuals:
-		age_sum += current_year - individual.birth_year_virtual
+		age_sum += individual.get_age_years(today)
 		if individual.sex == HumanTypes.Sex.MALE:
 			male_count += 1
 		else:
@@ -490,7 +490,7 @@ func _refresh_population_tab(
 	for age_band_name in HumanTypes.AgeBand.keys():
 		age_band_counts[String(age_band_name).capitalize()] = 0
 	for individual in human_individuals:
-		var age := float(current_year - individual.birth_year_virtual)
+		var age := individual.get_age(today)
 		var age_band := HumanCalculator.get_age_band(durations_male, durations_female, individual.sex, age)
 		var age_band_name := String(HumanTypes.AgeBand.keys()[age_band]).capitalize()
 		age_band_counts[age_band_name] += 1

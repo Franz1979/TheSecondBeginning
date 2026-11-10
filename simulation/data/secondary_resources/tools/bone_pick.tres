@@ -7,6 +7,7 @@ script = ExtResource("1_bone_pick")
 secondary_resource_name = "bone_pick"
 calories_per_unit = 0.0
 category = 4
+panel_group = "work"
 generation_source = 2
 space_per_unit = 5.0
 recipe_inputs = {

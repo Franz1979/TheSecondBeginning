@@ -122,6 +122,8 @@ const RESOURCE_ICON_NODES := {
 	# Rete per uccelli (2026-11-07, capanna del trappoliere): due paletti con la rete tesa.
 	"bird_net": preload("res://simulation/scripts/ui/BirdNetIcon.gd"),
 	"fish_trap": preload("res://simulation/scripts/ui/FishTrapIcon.gd"),
+	# Mazzo di lacci (2026-11-09): due paletti con il cappio teso.
+	"snare": preload("res://simulation/scripts/ui/SnareIcon.gd"),
 	"fish_meat": preload("res://simulation/scripts/ui/FishMeatIcon.gd"),
 	# Pesce cotto, essiccato e affumicato (2026-10-31): la sagoma del pesce crudo con i propri colori e dettagli.
 	"cooked_fish": preload("res://simulation/scripts/ui/CookedFishIcon.gd"),

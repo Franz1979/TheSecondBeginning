@@ -1157,23 +1157,73 @@ func _rebuild_rows(names: Array[String]) -> void:
 			food_row.add_child(days_field)
 			box.add_child(food_row)
 			box.add_child(HSeparator.new())
-		box.add_child(_build_column_header())
+		var category_names: Array[String] = []
 		for resource_name in names:
 			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 			# La carne cruda (2026-10-11): solo in "Da cucinare o lavorare" del Cibo.
 			if StockRequestService.DERIVED_LEVEL_RESOURCES.has(resource_name):
 				continue
 			if rules != null and rules.category == category:
+				category_names.append(resource_name)
+		var groups := _panel_groups(category_names)
+		if groups.is_empty():
+			box.add_child(_build_column_header())
+			for resource_name in category_names:
 				box.add_child(_build_row(resource_name))
+		else:
+			_add_grouped_rows(box, groups)
 		if category == SecondaryResourceTypes.Category.FOOD:
 			_add_food_ingredients_section(box, names)
 	_show_selected_category()
 	_apply_quantities()
 
 
+# Gruppi delle righe (2026-11-09, richiesta utente — attrezzi raggruppati, SecondaryResourceRules.panel_group): in quest'ordine,
+# poi eventuali gruppi non elencati in ordine alfabetico; le righe senza gruppo in fondo, senza riquadro.
+const PANEL_GROUP_ORDER: Array[String] = ["hunting", "traps_fishing", "work", "transport", "containers"]
+
+
+# Gruppo -> nomi (ordine alfabetico già dato da `names`), con "" per le righe senza gruppo. Vuoto se nessuna riga ha un
+# gruppo: la linguetta resta un elenco semplice.
+func _panel_groups(names: Array[String]) -> Dictionary:
+	var groups: Dictionary = {}
+	var any_group := false
+	for resource_name in names:
+		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		var group := rules.panel_group if rules != null else ""
+		any_group = any_group or group != ""
+		if not groups.has(group):
+			groups[group] = [] as Array[String]
+		(groups[group] as Array[String]).append(resource_name)
+	return groups if any_group else {}
+
+
+func _add_grouped_rows(box: VBoxContainer, groups: Dictionary) -> void:
+	# Le righe nei riquadri rientrano di DashedGroupBox.SIDE_INSET a destra: l'intestazione pure, così le colonne combaciano.
+	box.add_child(_build_column_header(true, DashedGroupBox.SIDE_INSET))
+	var ordered: Array[String] = []
+	for group in PANEL_GROUP_ORDER:
+		if groups.has(group):
+			ordered.append(group)
+	var others: Array[String] = []
+	for group in groups.keys():
+		if String(group) != "" and not ordered.has(String(group)):
+			others.append(String(group))
+	others.sort()
+	ordered.append_array(others)
+	if groups.has(""):
+		ordered.append("")
+	for group in ordered:
+		var group_box := DashedGroupBox.new(tr("warehouse_group_" + group) if group != "" else "")
+		for resource_name in groups[group]:
+			group_box.content.add_child(_build_row(resource_name))
+		box.add_child(group_box)
+
+
 # Intestazione delle colonne (2026-10-18): "Qtà", "Min", "Max" allineate ai campi delle righe. Senza with_levels (2026-10-31,
-# sezione con solo carne e pesce crudi) "Min" e "Max" restano colonne vuote, così "Qtà" resta allineata.
-func _build_column_header(with_levels: bool = true) -> Control:
+# sezione con solo carne e pesce crudi) "Min" e "Max" restano colonne vuote, così "Qtà" resta allineata. right_inset: spazio
+# in fondo, per le righe dentro i riquadri dei gruppi.
+func _build_column_header(with_levels: bool = true, right_inset: int = 0) -> Control:
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 6)
 	var spacer := Control.new()
@@ -1189,6 +1239,11 @@ func _build_column_header(with_levels: bool = true) -> Control:
 		label.horizontal_alignment = column[2]
 		label.modulate = COLUMN_HEADER_COLOR
 		header.add_child(label)
+	if right_inset > 0:
+		# Senza la separazione dell'HBox: lo spazio dopo "Max" è esattamente right_inset.
+		var inset := Control.new()
+		inset.custom_minimum_size.x = maxf(0.0, float(right_inset - 6))
+		header.add_child(inset)
 	return header
 
 

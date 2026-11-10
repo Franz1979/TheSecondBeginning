@@ -129,6 +129,9 @@ extends Resource
 # = il nome del tipo (building_type_name), cioè si collegano solo tra loro.
 @export var is_linear: bool = false
 @export var linear_link_group: String = ""
+# Edificio non lineare a cui i pezzi di un gruppo lineare si uniscono come a un loro pezzo (2026-11-10, richiesta utente:
+# il guado di pietre continua il sentiero, "pebble_path"). Lui si disegna com'è; cambia solo la forma dei pezzi accanto.
+@export var linear_joins_group: String = ""
 # Cancello (2026-10-23, richiesta utente): attraversabile solo se l'istanza è aperta (Building.gate_open, Building.is_walkable).
 @export var is_gate: bool = false
 # Strada sotto (2026-10-24, richiesta utente): un edificio calpestabile di suolo (walkable, es. sentiero, terra battuta) può

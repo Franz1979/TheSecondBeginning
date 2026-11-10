@@ -11,7 +11,7 @@ extends HumanIndividualView
 # inventarne una nuova" (richiesta utente).
 #
 # _process()/_draw() sono COMPLETAMENTE RISCRITTI qui, mai richiamati via super(): quelli della
-# classe base leggono `individual`/`game_data.year - individual.birth_year_virtual`/is_moving/
+# classe base leggono `individual`/`individual.get_age_years(game_data.get_absolute_day())`/is_moving/
 # is_selected/facing_direction — nessuno dei quali ha senso per un cadavere (l'HumanIndividual
 # originale è già stato rimosso da _human_individuals allo Step 6 del piano mortalità quando
 # questa view viene creata). Il campo ereditato `individual` resta sempre null qui, innocuo

@@ -86,6 +86,8 @@ func save_game_to_json(
 			),
 			"next_placed_trap_id": game_data.next_placed_trap_id,
 			"broken_traps": game_data.broken_traps,
+			"snare_passages": game_data.snare_passages,
+			"snare_disturbances": game_data.snare_disturbances,
 			"stock_traps_per_zone": game_data.stock_traps_per_zone,
 			"domestic_starvation_days": game_data.domestic_starvation_days,
 			"domestic_first_arrival_day": game_data.domestic_first_arrival_day,
@@ -598,6 +600,7 @@ func save_game_to_json(
 				"id": individual.id,
 				"sex": individual.sex,
 				"birth_year_virtual": individual.birth_year_virtual,
+				"birth_day": individual.birth_day,
 				"mother_id": individual.mother_id,
 				"father_id": individual.father_id,
 				"partner_id": individual.partner_id,
@@ -643,6 +646,8 @@ func save_game_to_json(
 				"pending_child_hair_color": individual.pending_child_hair_color,
 				"pending_child_skin_color": individual.pending_child_skin_color,
 				"pending_child_father_id": individual.pending_child_father_id,
+				"scheduled_conception_day": individual.scheduled_conception_day,
+				"scheduled_birth_day": individual.scheduled_birth_day,
 				# Piano "trasporto neonati" (2026-09-06) — va persistito o un reload perderebbe il
 				# legame "sto trasportando questo figlio" (nessuna retrocompatibilità richiesta,
 				# stesso trattamento dei campi pending_child_* sopra).

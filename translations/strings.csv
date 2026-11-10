@@ -637,8 +637,6 @@ random_event_illness_name,Malattia
 random_event_illness_popup,{name} si ammala ({illness}): dovrà riposare finché non guarisce.
 illness_fever,febbre
 individual_health_sick_suffix,sta male
-random_event_wound_name,Ferita
-random_event_wound_popup,{name} si ferisce ({wound}): dovrà riposare finché non guarisce.
 wound_laceration,lacerazione
 wound_fracture,frattura
 wound_burn,ustione
@@ -1634,6 +1632,11 @@ pending_reason_clearer_missing,Manca chi sgombera
 pending_reason_emptier_missing,Manca chi svuota
 pending_reason_no_waste_pit,Nessuna Fossa dei rifiuti aperta con posto
 warehouse_column_quantity,Qtà
+warehouse_group_hunting,Caccia
+warehouse_group_traps_fishing,Trappole e pesca
+warehouse_group_work,Lavoro
+warehouse_group_transport,Trasporto
+warehouse_group_containers,Recipienti
 warehouse_column_min,Min
 warehouse_column_max,Max
 warehouse_level_wheel_hint,Rotella del mouse per cambiare (Shift: 10 alla volta); vuoto = nessun limite
@@ -1961,3 +1964,9 @@ warehouse_quantity_processing_tooltip,"In deposito: {stored} · Sulle postazioni
 storage_slot_auto_days_short,{days}g
 storage_slot_auto_progress_ready_tooltip,"Pronto, in attesa di spazio"
 drawer_weapon_without_ammo,"{weapon} in deposito, ma mancano le munizioni: {ammo}, almeno {shots} colpi"
+idea_advanced_traps,Trappole avanzate
+idea_advanced_traps_summary,Trappole che prendono gli animali vivi, da portare al recinto.
+idea_advanced_traps_description,"Chi sa costruire trappole e ha imparato ad avvicinare gli animali capisce che una preda può essere presa senza ucciderla. Con cesti, gabbie e recinti gli animali catturati vivi potranno essere tenuti e allevati."
+carried_resource_tooltip_snare,Mazzo di lacci
+pending_trap_no_site,"{area}: nessun posto adatto per {trap}"
+trap_pickup_catch_prey,"Prede: {detail}"

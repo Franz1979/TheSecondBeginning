@@ -368,7 +368,7 @@ static func materialize_members(
 		var individual := HumanIndividual.new()
 		individual.id = game_data.allocate_human_id()
 		individual.sex = member.get("sex", HumanTypes.Sex.MALE)
-		individual.birth_year_virtual = game_data.year - int(member.get("age", 0))
+		individual.set_birth_for_age(game_data.get_absolute_day(), int(member.get("age", 0)))
 		individual.assign_random_name(used_names)
 		used_names.append(individual.name)
 		individual.hair_color = member.get("hair_color", HumanTypes.HairColor.BROWN)
@@ -376,7 +376,7 @@ static func materialize_members(
 		individual.clothing_color = member.get("clothing_color", HumanTypes.ClothingColor.TAN)
 		# Dotazione di vestiario di chi arriva (2026-10-11, richiesta utente): la stessa dell'inizio partita.
 		individual.equip_starting_apparel(
-			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data.year
+			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data.get_absolute_day()
 		)
 		HumanSeedingService.seed_random_skills(individual)
 		individual.folk_ref = folk
@@ -404,7 +404,7 @@ static func materialize_members(
 			continue
 		var age_band := HumanCalculator.get_age_band(
 			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female,
-			child.sex, float(game_data.year - child.birth_year_virtual)
+			child.sex, child.get_age(game_data.get_absolute_day())
 		)
 		if age_band == HumanTypes.AgeBand.INFANT and created[mother_index].dependent_child_id == -1:
 			created[mother_index].dependent_child_id = child.id

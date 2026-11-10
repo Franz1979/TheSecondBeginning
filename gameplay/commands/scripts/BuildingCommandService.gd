@@ -61,11 +61,29 @@ static func assign_resumable(ctx: GameContext, worker: HumanIndividual, building
 	CommandFeedback.forget_job_board_waits(ctx.game_data, BuildingJobProvider.job_keys(building), effects)
 	# Segnali di SetupSiteAction/ClearAction e degli altri step della Build (GameScene._reconnect_build_task_signals).
 	effects.wire_task(GameEffects.WireKind.BUILD_STEPS, task, worker)
+	# Travois (2026-11-10, richiesta utente): materiali per più di un viaggio di carico -> lo prende prima, se ce n'è uno
+	# libero (stessa regola dei trasporti del magazzino). Il comando manuale e la coda dei lavori passano entrambi da qui.
+	if not is_demolition and site_needs_towing(worker, building):
+		ZoneOrderCommandService.start_towed_fetch(ctx, worker, "cantiere #%d" % building.id, effects)
 	if DebugLogging.ENABLED and (DebugLogging.SHOW_TRANSPORT_BUILD_LOGS or DebugLogging.SHOW_BUILDERS_LOGS):
 		print("[BUILD] Task di %s assegnata a #%d %s per l'edificio #%d." % [
 			"demolizione" if is_demolition else "costruzione", worker.id, worker.name, building.id
 		])
 	return true
+
+
+# true se i materiali che mancano al cantiere (MaterialSupplyService.get_missing_materials) occupano più della portata
+# di `worker`, cioè servirebbe più di un viaggio (2026-11-10, come ToolFetchService.needs_towing_for).
+static func site_needs_towing(worker: HumanIndividual, building: Building) -> bool:
+	var space := 0.0
+	var missing := MaterialSupplyService.get_missing_materials(building)
+	for material_name in missing.keys():
+		if String(material_name) == MaterialSupplyService.FUEL_KEY:
+			continue
+		var rules := CaloricCalculator.get_caloric_source_rules(String(material_name))
+		if rules != null:
+			space += float(missing[material_name]) * rules.space_per_unit
+	return space > worker.max_carry_capacity
 
 
 # Sgombero delle macerie o svuotamento di una Fossa: Transport dei detriti alla Fossa. Nessuna Fossa con posto: X e

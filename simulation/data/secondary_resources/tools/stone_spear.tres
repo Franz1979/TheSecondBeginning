@@ -7,6 +7,7 @@ script = ExtResource("1_stone_spear")
 secondary_resource_name = "stone_spear"
 calories_per_unit = 0.0
 category = 4
+panel_group = "hunting"
 generation_source = 2
 space_per_unit = 8.0
 recipe_inputs = {
