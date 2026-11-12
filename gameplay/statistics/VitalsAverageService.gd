@@ -7,9 +7,9 @@ extends RefCounted
 # massimo cambia con età e sesso (la media assoluta calerebbe a ogni nascita), per le skill è HumanIndividual.SKILL_MAX.
 # Stateless.
 
-const PARAMETERS: Array[String] = ["health", "happiness", "stamina", "thirst", "loyalty", "faith"]
-const CURRENT_FIELDS: Array[StringName] = [&"current_health", &"current_happiness", &"current_stamina", &"current_thirst", &"current_loyalty", &"current_faith"]
-const MAX_FIELDS: Array[StringName] = [&"max_health", &"max_happiness", &"max_stamina", &"max_thirst", &"max_loyalty", &"max_faith"]
+const PARAMETERS: Array[String] = ["health", "happiness", "stamina", "loyalty", "faith"]
+const CURRENT_FIELDS: Array[StringName] = [&"current_health", &"current_happiness", &"current_stamina", &"current_loyalty", &"current_faith"]
+const MAX_FIELDS: Array[StringName] = [&"max_health", &"max_happiness", &"max_stamina", &"max_loyalty", &"max_faith"]
 
 const SKILLS: Array[String] = [
 	"leadership", "builder", "management", "transporter", "gathering", "cognition", "hunting", "crafting", "ritual", "social", "medicine", "fishing",

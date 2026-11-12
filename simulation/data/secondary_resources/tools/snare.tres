@@ -37,8 +37,10 @@ trap_empty_after_days = 1
 trap_empty_days = 0.04
 trap_catch_resource = "meat"
 trap_catch_yield = 1
-trap_prey_species = Array[String](["rabbit", "partridge"])
-trap_prey_weights = Array[float]([0.6, 0.4])
+trap_prey_weights = {
+"partridge": 0.4,
+"rabbit": 0.6
+}
 trap_full_passage_hours = 6
 trap_disturbance_days = 3
 trap_passage_radius = 5

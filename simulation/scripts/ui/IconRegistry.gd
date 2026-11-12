@@ -124,6 +124,8 @@ const RESOURCE_ICON_NODES := {
 	"fish_trap": preload("res://simulation/scripts/ui/FishTrapIcon.gd"),
 	# Mazzo di lacci (2026-11-09): due paletti con il cappio teso.
 	"snare": preload("res://simulation/scripts/ui/SnareIcon.gd"),
+	# Pali per fossa (2026-11-11): fascio di pali appuntiti legati.
+	"stake_pit": preload("res://simulation/scripts/ui/StakePitIcon.gd"),
 	"fish_meat": preload("res://simulation/scripts/ui/FishMeatIcon.gd"),
 	# Pesce cotto, essiccato e affumicato (2026-10-31): la sagoma del pesce crudo con i propri colori e dettagli.
 	"cooked_fish": preload("res://simulation/scripts/ui/CookedFishIcon.gd"),

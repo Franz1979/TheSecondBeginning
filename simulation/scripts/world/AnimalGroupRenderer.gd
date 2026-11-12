@@ -67,18 +67,23 @@ const CHASE_CONTACT_DISTANCE: float = 0.3
 const STAND_REACH_DISTANCE: float = 0.3
 const STAND_POINT_ATTEMPTS: int = 6
 const STAND_HEADING_JITTER: float = 0.4
-# Mandria che cambia cella (2026-11-01, passo 7c): a circa 25-40 microcelle al giorno entra solo per un tratto (microcelle
-# dal bordo, zona larga WALK_IN_AREA_RADIUS) ed esce a velocità doppia. Partono scaglionati entro WALK_STAGGER_DAYS (fila,
-# e i percorsi A* non cadono nello stesso fotogramma), sparsi di WALK_BORDER_SPREAD lungo il bordo. Dopo i giorni massimi
-# (bloccati, o mai arrivati) la camminata finisce comunque: larghi abbastanza per il giro attorno a un villaggio.
+# Mandria che cambia cella (2026-11-01, passo 7c): entra solo per un tratto (microcelle dal bordo, zona larga
+# WALK_IN_AREA_RADIUS) ed esce verso il bordo. Dal 2026-11-11 (richiesta utente: da tranquilli camminano, corrono solo in
+# pericolo) entra ed esce al passo (hop_speed × walk_speed_fraction), non più di corsa (prima: ingresso a hop_speed,
+# uscita al doppio). Partono scaglionati entro WALK_STAGGER_DAYS (fila, e i percorsi A* non cadono nello stesso
+# fotogramma), sparsi di WALK_BORDER_SPREAD lungo il bordo. Dopo i giorni massimi (bloccati, o mai arrivati) la camminata
+# finisce comunque: larghi abbastanza perché al passo, ~3 microcelle al giorno per le prede grosse, si arrivi.
+# Attraversamento (2026-11-11, WildFaunaService.CROSSING_MAX_DAYS): i centri dei gruppetti piegano piano verso il lato
+# d'uscita (herd_exit_side) mentre vagano; quando in media sono entro HERD_EXIT_MARGIN da quel bordo parte herd_exit_reached.
+const HERD_HEADING_STEER_RATE: float = 2.0
+const HERD_EXIT_MARGIN: float = 4.0
 const WALK_IN_DEPTH_MIN: float = 15.0
 const WALK_IN_DEPTH_MAX: float = 25.0
 const WALK_IN_AREA_RADIUS: float = 8.0
 const WALK_STAGGER_DAYS: float = 0.25
 const WALK_BORDER_SPREAD: float = 4.0
-const WALK_OUT_SPEED_SCALE: float = 2.0
-const WALK_IN_MAX_DAYS: float = 3.0
-const WALK_OUT_MAX_DAYS: float = 4.0
+const WALK_IN_MAX_DAYS: float = 15.0
+const WALK_OUT_MAX_DAYS: float = 40.0
 # Meta d'arrivo fuori dagli edifici: quanto può allontanarsi dal bordo la zona d'arrivo se quella normale è occupata
 # (_walk_in_area_center); passo e direzioni della ricerca del punto libero più vicino (_out_of_building_zone).
 const WALK_IN_DEPTH_FALLBACK: float = 80.0
@@ -426,6 +431,9 @@ var cluster_attraction_strength: float = 12.0 # tasso per giorno di gioco della 
 var hop_speed: float = 0.0
 # Andature quando vaga (AnimalRules.walk_speed_fraction, run_phase_chance).
 var walk_speed_fraction: float = 1.0
+# Preda grossa (AnimalRules.max_hunters > 1, 2026-11-11): esce dalla zona degli edifici al passo; le piccole (coniglio,
+# pernice) di corsa come prima (_walk_out_of_building_zone).
+var _is_big_prey: bool = false
 var run_phase_chance: float = 0.0
 var movement_phase_duration_min: float = 0.25
 var movement_phase_duration_max: float = 0.625
@@ -551,6 +559,10 @@ static var _live_renderers: Array = []
 var macro_coords: Vector2i = Vector2i.ZERO
 
 var _groups: Array = [] # Array[AnimalVisualGroup], un elemento per individuo (id > 0)
+# Lato (una delle 4 direzioni) da cui la mandria esce attraversando la cella, ZERO se vaga e basta (set_herd_exit_side).
+var herd_exit_side: Vector2i = Vector2i.ZERO
+var _herd_exit_reported: bool = false
+signal herd_exit_reached
 var _clusters: Array = [] # Array[AnimalVisualGroup], riusata come "centro mobile", mai disegnata
 var _multimesh: MultiMesh
 var _multimesh_instance: MultiMeshInstance2D
@@ -590,6 +602,7 @@ func configure(params: Dictionary) -> void:
 		discomfort_radius = species_rules.discomfort_radius
 		flee_radius = species_rules.flee_radius
 		building_avoidance_radius = species_rules.building_avoidance_radius
+		_is_big_prey = species_rules.max_hunters > 1
 		# Valore negativo (default di AnimalRules) = specie che non la dichiara: resta AVOID_BIAS_PER_HOP.
 		if species_rules.avoidance_strength >= 0.0:
 			avoidance_strength = species_rules.avoidance_strength
@@ -1169,10 +1182,13 @@ func _process(real_delta: float) -> void:
 		cluster.direction = cluster.direction.rotated(randf_range(-turn_rate, turn_rate) * delta)
 		_apply_cluster_avoidance(cluster, delta)
 		# Centri dei gruppetti senza collisione (2026-09-27): solo i singoli individui scorrono lungo gli ostacoli.
+		if herd_exit_side != Vector2i.ZERO and not _herd_leaving:
+			cluster.direction = cluster.direction.slerp(Vector2(herd_exit_side), clampf(HERD_HEADING_STEER_RATE * delta, 0.0, 1.0)).normalized()
 		cluster.position += cluster.direction * move_speed * delta
 		_push_cluster_out_of_buildings(cluster, delta)
 		_push_cluster_out_of_rects(cluster, delta)
 		_bounce_at_bounds(cluster)
+	_check_herd_exit()
 
 	for i in range(_groups.size()):
 		var group: AnimalVisualGroup = _groups[i]
@@ -1387,7 +1403,9 @@ func _walk_out_of_building_zone(group: AnimalVisualGroup, delta: float) -> void:
 			away += offset / distance * (building_avoidance_radius - distance + 1.0)
 	if away.length_squared() > 0.000001:
 		group.direction = away.normalized()
-	_move_with_collision(group, group.direction * hop_speed * _wounded_speed_factor(group) * delta)
+	# Prede grosse al passo (2026-11-11): uscire dalla zona degli edifici non è un pericolo. Le piccole corrono come prima.
+	var speed_fraction := walk_speed_fraction if _is_big_prey else 1.0
+	_move_with_collision(group, group.direction * hop_speed * speed_fraction * _wounded_speed_factor(group) * delta)
 
 
 # Raggio della zona da evitare per i centri dei gruppetti, in microcelle (0 = nessuna zona).
@@ -1644,8 +1662,102 @@ func start_herd_walk_in(first_index: int, border_point: Vector2) -> void:
 		var shift: Vector2 = cluster_shifts.get(body.cluster_index, Vector2.ZERO)
 		var target := _out_of_building_zone(_clamp_to_cell(body.position + shift))
 		body.position = _herd_border_spot(border_point)
-		set_individual_behavior(body.id, AnimalVisualGroup.Behavior.GO_TO, target)
+		set_individual_behavior(body.id, AnimalVisualGroup.Behavior.GO_TO, target, 0.0, 0.0, walk_speed_fraction)
 		_begin_herd_walk(body, AnimalVisualGroup.HerdWalk.ENTERING, WALK_IN_MAX_DAYS)
+	_refresh_instances()
+
+
+# DEBUG (2026-11-10, pulsante 🦌+ della DebugBar): sposta tutta la mandria vicino a `point` (il centro del villaggio),
+# fuori dalla distanza che i gruppetti tengono dagli edifici e in un punto che la nebbia lascia vedere (visibility_test),
+# il più vicino possibile, preferendo quelli lontani dagli umani (sennò scappa subito). Poi vaga come sempre.
+func debug_move_herd_near(point: Vector2) -> void:
+	_refresh_building_zone()
+	var humans: Array = []
+	if disturbance_source.is_valid():
+		humans = (disturbance_source.call() as Dictionary).get("humans", [])
+	var start := _cluster_building_avoid_distance() + 1.0
+	var spot := Vector2(-1, -1)
+	var fallback := Vector2(-1, -1)
+	var distance := start
+	while distance < World.WIDTH and spot.x < 0.0:
+		for angle_index in range(24):
+			var candidate := _clamp_to_cell(point + Vector2.from_angle(TAU * angle_index / 24.0) * distance)
+			var microcell := Vector2i(candidate.floor())
+			if _is_wander_blocked(microcell) or (visibility_test.is_valid() and not bool(visibility_test.call(microcell))):
+				continue
+			if fallback.x < 0.0:
+				fallback = candidate
+			if _nearest_point_distance(candidate, humans) > discomfort_radius + 2.0:
+				spot = candidate
+				break
+		distance += 1.0
+	if spot.x < 0.0:
+		spot = fallback if fallback.x >= 0.0 else _out_of_building_zone(_clamp_to_cell(point + Vector2.RIGHT * start))
+	var cluster_shifts: Dictionary = {}
+	for c in range(_clusters.size()):
+		var moved := _clamp_to_cell(spot + Vector2.from_angle(randf() * TAU) * randf() * 2.0)
+		cluster_shifts[c] = moved - _clusters[c].position
+		_clusters[c].position = moved
+	for body in _groups:
+		var target := _clamp_to_cell(spot + Vector2.from_angle(randf() * TAU) * randf() * 3.0)
+		body.position = target if not _is_wander_blocked(Vector2i(target.floor())) else spot
+	_refresh_instances()
+	print("[WILD FAUNA] DEBUG: mandrietta spostata in %s (centro villaggio %s, %d animali)" % [str(spot.snapped(Vector2(0.1, 0.1))),
+		str(point), _groups.size()])
+
+
+static func _nearest_point_distance(point: Vector2, others: Array) -> float:
+	var best := INF
+	for other in others:
+		best = minf(best, point.distance_to(other))
+	return best
+
+
+# Lato d'uscita della mandria (WildFaunaService.herd_exit_side, da GameScene a ogni riconciliazione); uno nuovo riarma
+# l'avviso d'arrivo al bordo.
+func set_herd_exit_side(side: Vector2i) -> void:
+	if side == herd_exit_side:
+		return
+	herd_exit_side = side
+	_herd_exit_reported = false
+
+
+# Centri dei gruppetti in media entro HERD_EXIT_MARGIN dal bordo d'uscita: una volta sola per lato, poi decide GameScene.
+func _check_herd_exit() -> void:
+	if herd_exit_side == Vector2i.ZERO or _herd_exit_reported or _herd_leaving or _clusters.is_empty():
+		return
+	var mean := Vector2.ZERO
+	for cluster in _clusters:
+		mean += cluster.position
+	mean /= float(_clusters.size())
+	var reached := false
+	match herd_exit_side:
+		Vector2i(1, 0):
+			reached = mean.x >= World.WIDTH - HERD_EXIT_MARGIN
+		Vector2i(-1, 0):
+			reached = mean.x <= HERD_EXIT_MARGIN
+		Vector2i(0, 1):
+			reached = mean.y >= World.HEIGHT - HERD_EXIT_MARGIN
+		Vector2i(0, -1):
+			reached = mean.y <= HERD_EXIT_MARGIN
+	if reached:
+		_herd_exit_reported = true
+		herd_exit_reached.emit()
+
+
+# Mandria già nella cella quando questa si accende, arrivata da una cella accanto (chi la segue): tutta vicino al bordo
+# da cui è entrata, come a fine ingresso a piedi, invece che sparsa a caso.
+func place_herd_near_border(border_point: Vector2) -> void:
+	_refresh_building_zone()
+	var area_center := _walk_in_area_center(border_point)
+	var cluster_shifts: Dictionary = {}
+	for c in range(_clusters.size()):
+		var moved := _clamp_to_cell(area_center + Vector2.from_angle(randf() * TAU) * randf() * WALK_IN_AREA_RADIUS)
+		cluster_shifts[c] = moved - _clusters[c].position
+		_clusters[c].position = moved
+	for body in _groups:
+		var target := _out_of_building_zone(_clamp_to_cell(body.position + cluster_shifts.get(body.cluster_index, Vector2.ZERO)))
+		body.position = target if not _is_wander_blocked(Vector2i(target.floor())) else area_center
 	_refresh_instances()
 
 
@@ -1655,7 +1767,7 @@ func start_herd_leaving(border_point: Vector2) -> void:
 	_herd_leaving = true
 	for body in _groups:
 		set_individual_behavior(body.id, AnimalVisualGroup.Behavior.GO_TO, _herd_border_spot(border_point), 0.0, 0.0,
-			WALK_OUT_SPEED_SCALE)
+			walk_speed_fraction)
 		_begin_herd_walk(body, AnimalVisualGroup.HerdWalk.LEAVING, WALK_OUT_MAX_DAYS)
 
 

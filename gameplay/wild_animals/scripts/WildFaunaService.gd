@@ -50,6 +50,17 @@ const FREE_MICROCELL_ATTEMPTS := 20
 
 # Prede piccole garantite sulla cella di partenza con "presenza sicura animali". SMALL_PREY_HABITAT_SPECIES è la specie il
 # cui habitat fa da criterio di scelta della cella (FirstStartMacroCellSelectionService): coniglio e pernice hanno lo stesso.
+# Attraversamento (2026-11-11, richiesta utente): nella cella che si guarda la mandria la attraversa pascolando ed esce dal
+# lato opposto, nella cella accanto (AnimalGroupRenderer la fa camminare, GameScene chiama herd_reached_exit). Il conto dei
+# giorni (stay_remaining) lì vale solo come rete di sicurezza: dopo CROSSING_MAX_DAYS senza arrivare al bordo (bloccata
+# dal villaggio, da un fiume) si sposta comunque. In una cella non guardata la mandria resta ferma dov'è andata, finché
+# nessuno guarda il riquadro per più dei suoi herd_stay_days_max: allora si rimette in una cella a caso (_unseen_too_long).
+const CROSSING_MAX_DAYS := 60
+# Giro nel riquadro (2026-11-11, richiesta utente — più passaggi delle prede grosse): quando la mandria lascia una cella non
+# guardata, una cella accesa pesa tanto quanto LIVE_CELL_WEIGHT celle spente nella scelta della prossima.
+const LIVE_CELL_WEIGHT := 3
+const SIDES: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+
 const SMALL_PREY_SPECIES: Array[String] = ["rabbit", "partridge"]
 const SMALL_PREY_HABITAT_SPECIES := "rabbit"
 
@@ -108,10 +119,10 @@ static func ensure_cell(world: World, game_data: GameData, coords: Vector2i, for
 		var key := region_key(species, region)
 		if game_data.wild_fauna.has(key):
 			known += 1
-			# Nessuno guardava il riquadro da più di un giorno: la mandria si rimette in una cella a caso.
+			# Nessuno guardava il riquadro da più dei giorni di soggiorno: la mandria si rimette in una cella a caso.
 			var known_entry: WildFaunaRegion = game_data.wild_fauna[key]
 			_catch_up(world, game_data, rules, known_entry, today)
-			if _moves(known_entry) and known_entry.last_move_day < today - 1:
+			if _moves(known_entry) and _unseen_too_long(rules, known_entry, today):
 				_place(world, rules, known_entry, today, "rientro: ")
 			continue
 		var entry := _create_region(world, game_data, rules, species, region, side, today, forced_species.has(species))
@@ -143,7 +154,8 @@ static func _create_region(world: World, game_data: GameData, rules: AnimalRules
 	entry.status = WildFaunaRegion.Status.PRESENT
 	_roll_herd(game_data, rules, entry)
 	entry.current_cell = suitable.pick_random()
-	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
+	entry.stay_remaining = CROSSING_MAX_DAYS
+	entry.exit_side = Vector2i.ZERO
 	entry.last_move_day = today
 	return entry
 
@@ -254,6 +266,122 @@ static func exterminate_in_cell(game_data: GameData, coords: Vector2i) -> void:
 				entry.region.y, coords.x, coords.y, total])
 
 
+# DEBUG (2026-11-10, pulsante 🦌+ della DebugBar): una mandrietta di una preda grossa (max_hunters > 1,
+# specie a caso tra quelle che non hanno già la mandria in `coords`) messa subito in `coords`, a prescindere dall'habitat.
+# Il riquadro della specie la perde dalla cella in cui era. Ritorna la specie, "" se nessuna.
+static func debug_spawn_small_herd(world: World, game_data: GameData, coords: Vector2i) -> String:
+	var candidates: Array[String] = []
+	var already := get_herds_in_cell(game_data, coords)
+	for species in herd_species():
+		var rules := AnimalCalculator.get_animal_rules(species)
+		if rules != null and rules.max_hunters > 1 and not already.has(species):
+			candidates.append(species)
+	if candidates.is_empty():
+		return ""
+	var species: String = candidates.pick_random()
+	var rules := AnimalCalculator.get_animal_rules(species)
+	var side := region_side(rules)
+	var region := Vector2i(coords.x / side, coords.y / side)
+	var today := game_data.get_absolute_day()
+	var entry := _region_at(game_data, species, coords)
+	if entry == null:
+		entry = _create_region(world, game_data, rules, species, region, side, today, true)
+		game_data.wild_fauna[region_key(species, region)] = entry
+	entry.status = WildFaunaRegion.Status.PRESENT
+	entry.age_counts = {GameTypes.AgeBand.YOUNG: randi_range(1, 2), GameTypes.AgeBand.ADULT: randi_range(3, 5), GameTypes.AgeBand.OLD: 0}
+	entry.previous_cell = entry.current_cell
+	entry.current_cell = coords
+	entry.stay_remaining = CROSSING_MAX_DAYS
+	entry.exit_side = Vector2i.ZERO
+	ensure_exit_side(world, entry)
+	entry.last_move_day = today
+	entry.last_update_day = today
+	print("[WILD FAUNA] DEBUG: mandrietta di %s in (%d, %d): %s" % [species, coords.x, coords.y, str(entry.age_counts)])
+	return species
+
+
+# Mai guardata da più dei giorni di soggiorno della specie (almeno 1): chi torna la trova altrove nel riquadro.
+static func _unseen_too_long(rules: AnimalRules, entry: WildFaunaRegion, today: int) -> bool:
+	return today - entry.last_move_day > maxi(1, rules.herd_stay_days_max)
+
+
+# La cella accanto a `coords` in direzione `side` è del riquadro e va bene alla specie (niente acqua, bioma e terreno).
+static func _crossable_neighbor(world: World, rules: AnimalRules, entry: WildFaunaRegion, coords: Vector2i,
+		side: Vector2i) -> bool:
+	var next := coords + side
+	if Vector2i(floori(float(next.x) / entry.side), floori(float(next.y) / entry.side)) != entry.region:
+		return false
+	var cell := world.get_cell_at(next.x, next.y)
+	return cell != null and cell.terrain_base != GameTypes.TerrainBase.WATER and rules.is_suitable_for(cell.biome, cell.terrain_base)
+
+
+# Lato d'uscita della mandria da current_cell, scelto se manca: dritto (opposto al lato da cui è entrata) se la cella là va
+# bene, sennò un altro lato a caso, indietro solo se non c'è altro; ZERO se nessuna cella accanto va bene.
+static func ensure_exit_side(world: World, entry: WildFaunaRegion) -> Vector2i:
+	if entry.exit_side != Vector2i.ZERO or entry.status != WildFaunaRegion.Status.PRESENT or world == null:
+		return entry.exit_side
+	var rules := AnimalCalculator.get_animal_rules(entry.species)
+	if rules == null:
+		return Vector2i.ZERO
+	# Salvataggi di prima dell'attraversamento: il vecchio soggiorno (5-15 giorni) la farebbe spostare a metà cella.
+	entry.stay_remaining = maxi(entry.stay_remaining, CROSSING_MAX_DAYS)
+	var coords := entry.current_cell
+	var heading := coords - entry.previous_cell
+	var came_straight := entry.previous_cell.x >= 0 and SIDES.has(heading)
+	if came_straight and _crossable_neighbor(world, rules, entry, coords, heading):
+		entry.exit_side = heading
+		return entry.exit_side
+	var others: Array[Vector2i] = []
+	for side in SIDES:
+		if (not came_straight or side != -heading) and _crossable_neighbor(world, rules, entry, coords, side):
+			others.append(side)
+	if others.is_empty() and came_straight and _crossable_neighbor(world, rules, entry, coords, -heading):
+		others.append(-heading)
+	entry.exit_side = others.pick_random() if not others.is_empty() else Vector2i.ZERO
+	return entry.exit_side
+
+
+# Lato d'uscita della mandria di `species` che sta in `coords` (ZERO se non c'è o non ne ha).
+static func herd_exit_side(world: World, game_data: GameData, species: String, coords: Vector2i) -> Vector2i:
+	var entry := _region_at(game_data, species, coords)
+	if entry == null or entry.status != WildFaunaRegion.Status.PRESENT or entry.current_cell != coords:
+		return Vector2i.ZERO
+	return ensure_exit_side(world, entry)
+
+
+# Bordo da cui la mandria di `species` è entrata in `coords`, se è arrivata da una cella accanto (chi la segue la trova
+# lì); null altrimenti.
+static func herd_arrival_point(world: World, game_data: GameData, species: String, coords: Vector2i) -> Variant:
+	var entry := _region_at(game_data, species, coords)
+	if entry == null or entry.current_cell != coords or not SIDES.has(coords - entry.previous_cell):
+		return null
+	return _border_point_toward(world, coords, entry.previous_cell)
+
+
+# La mandria è arrivata al bordo d'uscita di `coords` (AnimalGroupRenderer.herd_exit_reached): passa nella cella accanto da
+# quel lato e sceglie già il prossimo lato. False se non è più lì o la cella accanto non va più bene (lato da rifare).
+static func herd_reached_exit(world: World, game_data: GameData, species: String, coords: Vector2i) -> bool:
+	var entry := _region_at(game_data, species, coords)
+	if entry == null or entry.status != WildFaunaRegion.Status.PRESENT or entry.current_cell != coords \
+			or entry.exit_side == Vector2i.ZERO:
+		return false
+	var rules := AnimalCalculator.get_animal_rules(species)
+	if rules == null or not _crossable_neighbor(world, rules, entry, coords, entry.exit_side):
+		entry.exit_side = Vector2i.ZERO
+		return false
+	var today := game_data.get_absolute_day()
+	entry.previous_cell = coords
+	entry.current_cell = coords + entry.exit_side
+	entry.exit_side = Vector2i.ZERO
+	entry.stay_remaining = CROSSING_MAX_DAYS
+	entry.last_move_day = today
+	ensure_exit_side(world, entry)
+	if DebugLogging.SHOW_WILD_FAUNA_LOGS:
+		print("[WILD FAUNA] giorno %d %s (%d,%d): attraversata (%d, %d), entra in (%d, %d), uscirà verso %s" % [today, species,
+			entry.region.x, entry.region.y, coords.x, coords.y, entry.current_cell.x, entry.current_cell.y, str(entry.exit_side)])
+	return true
+
+
 static func _region_at(game_data: GameData, species: String, coords: Vector2i) -> WildFaunaRegion:
 	var rules := AnimalCalculator.get_animal_rules(species)
 	if rules == null:
@@ -284,14 +412,28 @@ static func tick_day(ctx: GameContext) -> void:
 				ctx.game_data.wild_fauna_moved = true
 			if not _moves(entry) or entry.last_move_day >= today:
 				continue
-			if entry.last_move_day < today - 1:
+			if _unseen_too_long(rules, entry, today):
 				_place(ctx.world, rules, entry, today, "rientro: ")
 				ctx.game_data.wild_fauna_moved = true
 				continue
 			entry.last_move_day = today
+			# Attraversamento: in quella guardata esce quando arriva al bordo (herd_reached_exit), il conto dei giorni è solo
+			# la rete di sicurezza. In una cella non guardata di un riquadro guardato (2026-11-11, correzione — prima restava
+			# ferma per sempre: il riquadro guardato rinnova last_move_day ogni giorno e _unseen_too_long non scattava mai)
+			# resta herd_stay_days_min..max giorni, poi passa a un'altra cella del riquadro (_place), come prima
+			# dell'attraversamento: così torna anche nelle celle guardate.
+			if not ctx.live_cells.has(entry.current_cell):
+				if entry.stay_remaining > rules.herd_stay_days_max:
+					entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
+				entry.stay_remaining -= 1
+				if entry.stay_remaining <= 0:
+					_place(ctx.world, rules, entry, today, "giro nel riquadro: ", ctx.live_cells)
+					ctx.game_data.wild_fauna_moved = true
+				continue
+			ensure_exit_side(ctx.world, entry)
 			entry.stay_remaining -= 1
 			if entry.stay_remaining <= 0:
-				_place(ctx.world, rules, entry, today, "")
+				_place(ctx.world, rules, entry, today, "attraversamento troppo lungo: ")
 				ctx.game_data.wild_fauna_moved = true
 
 
@@ -369,7 +511,8 @@ static func _recolonize(world: World, game_data: GameData, rules: AnimalRules, e
 	_roll_herd(game_data, rules, entry, RECOLONIZE_START_RATIO)
 	entry.previous_cell = Vector2i(-1, -1)
 	entry.current_cell = suitable.pick_random()
-	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
+	entry.stay_remaining = CROSSING_MAX_DAYS
+	entry.exit_side = Vector2i.ZERO
 	entry.last_move_day = today
 	if DebugLogging.SHOW_WILD_FAUNA_LOGS:
 		print("[WILD FAUNA] giorno %d %s (%d,%d): ricolonizzato, arrivati %d/%d/%d (giovani/adulti/vecchi) in (%d, %d)" % [
@@ -449,7 +592,9 @@ static func _moves(entry: WildFaunaRegion) -> bool:
 
 # Mette la mandria in una cella adatta del riquadro diversa da quella di adesso (se ce n'è più di una) e tira un nuovo
 # soggiorno.
-static func _place(world: World, rules: AnimalRules, entry: WildFaunaRegion, today: int, log_prefix: String) -> void:
+# `live_cells` (giro nel riquadro): le celle accese pesano LIVE_CELL_WEIGHT; vuoto = tutte uguali.
+static func _place(world: World, rules: AnimalRules, entry: WildFaunaRegion, today: int, log_prefix: String,
+		live_cells: Dictionary = {}) -> void:
 	var suitable := _suitable_cells(world, rules, entry.region, entry.side)
 	if suitable.is_empty():
 		return
@@ -457,8 +602,13 @@ static func _place(world: World, rules: AnimalRules, entry: WildFaunaRegion, tod
 		suitable.erase(entry.current_cell)
 	var from := entry.current_cell
 	entry.previous_cell = from
-	entry.current_cell = suitable.pick_random()
-	entry.stay_remaining = randi_range(rules.herd_stay_days_min, maxi(rules.herd_stay_days_min, rules.herd_stay_days_max))
+	var weighted: Array[Vector2i] = []
+	for cell_coords in suitable:
+		for i in range(LIVE_CELL_WEIGHT if live_cells.has(cell_coords) else 1):
+			weighted.append(cell_coords)
+	entry.current_cell = weighted.pick_random()
+	entry.stay_remaining = CROSSING_MAX_DAYS
+	entry.exit_side = Vector2i.ZERO
 	entry.last_move_day = today
 	if DebugLogging.SHOW_WILD_FAUNA_LOGS:
 		print("[WILD FAUNA] giorno %d %s (%d,%d): %sda (%d, %d) a (%d, %d), resta %d giorni" % [today, entry.species,

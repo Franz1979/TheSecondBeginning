@@ -41,6 +41,9 @@ const QUARRY_FISH := "fish"
 # Mazzo di lacci (2026-11-09): conigli e pernici. Si monta fuori da bosco, ruscello, argilla e pietre, e in automatico si
 # piazza comunque (numero del WM), senza guardare se ci sono le mandrie: le catture le leggeranno.
 const QUARRY_SMALL_GAME := "small_game"
+# Fossa con pali (2026-11-11, richiesta utente): come i lacci, ma prende le prede grosse. Lacci = specie delle mandrie con
+# AnimalRules.max_hunters == 1, fossa = con max_hunters > 1 (prey_species).
+const QUARRY_BIG_GAME := "big_game"
 const NO_SITE := Vector2i(-1, -1)
 
 static var _trap_names: Array[String] = []
@@ -58,6 +61,24 @@ static func list_trap_names() -> Array[String]:
 			if rules != null and rules.trap_zone_job != "":
 				_trap_names.append(resource_name)
 	return _trap_names
+
+
+# Lacci e fossa: prendono animali veri delle mandrie (SnareService), stessa logica.
+static func is_herd_quarry(rules: SecondaryResourceRules) -> bool:
+	return rules != null and (rules.trap_quarry == QUARRY_SMALL_GAME or rules.trap_quarry == QUARRY_BIG_GAME)
+
+
+# Specie delle mandrie che la trappola prende: lacci max_hunters == 1, fossa max_hunters > 1. Vuoto per le altre.
+static func prey_species(rules: SecondaryResourceRules) -> Array[String]:
+	var result: Array[String] = []
+	if not is_herd_quarry(rules):
+		return result
+	var big := rules.trap_quarry == QUARRY_BIG_GAME
+	for species in WildFaunaService.herd_species():
+		var animal_rules := AnimalCalculator.get_animal_rules(species)
+		if animal_rules != null and (animal_rules.max_hunters > 1) == big:
+			result.append(species)
+	return result
 
 
 static func get_rules(trap_name: String) -> SecondaryResourceRules:
@@ -86,6 +107,17 @@ static func empty_tool_categories(trap_name: String) -> Array[TaskTypes.ToolCate
 	var rules := get_rules(trap_name)
 	if rules != null:
 		for category in rules.trap_empty_tool_categories:
+			if not categories.has(category):
+				categories.append(category as TaskTypes.ToolCategory)
+	return categories
+
+
+# Attrezzi per montare `trap_name` (SecondaryResourceRules.trap_setup_tool_categories, 2026-11-11: fossa col piccone).
+static func setup_tool_categories(trap_name: String) -> Array[TaskTypes.ToolCategory]:
+	var categories: Array[TaskTypes.ToolCategory] = []
+	var rules := get_rules(trap_name)
+	if rules != null:
+		for category in rules.trap_setup_tool_categories:
 			if not categories.has(category):
 				categories.append(category as TaskTypes.ToolCategory)
 	return categories
@@ -168,7 +200,7 @@ static func empty(game_data: GameData, trap: PlacedTrap) -> Dictionary:
 		return result
 	var day := game_data.get_absolute_day()
 	result["preys"] = trap.get_caught()
-	if rules.trap_quarry == QUARRY_SMALL_GAME:
+	if is_herd_quarry(rules):
 		result["products"] = catch_products(trap, day)
 		for product in result["products"]:
 			result["quantity"] = int(result["quantity"]) + int(product["quantity"])
@@ -218,7 +250,7 @@ static func catch_products(trap: PlacedTrap, day: int) -> Array:
 # Giorni di macellazione sul posto delle prede di un laccio (ritmo di ButcherAction); 0 per le altre trappole.
 static func butcher_days(trap: PlacedTrap) -> float:
 	var rules := get_rules(trap.trap_name)
-	if rules == null or rules.trap_quarry != QUARRY_SMALL_GAME:
+	if rules == null or not is_herd_quarry(rules):
 		return 0.0
 	var days := 0.0
 	for i in range(trap.catch_days.size()):
@@ -292,7 +324,7 @@ static func site_index(trap_name: String, world: World, macro_coords: Vector2i, 
 			var fish := StreamFishService.get_fish_in_reach(state, StreamMicrocellService.get_positions(world, cell),
 				macro_coords.x, macro_coords.y, lot, game_data.get_absolute_day())
 			return clampf(float(fish) / float(StreamFishService.TRAP_FULL_FISH), 0.0, 1.0)
-		QUARRY_SMALL_GAME:
+		QUARRY_SMALL_GAME, QUARRY_BIG_GAME:
 			return 1.0
 	return 0.0
 
@@ -305,7 +337,7 @@ static func current_index(trap_name: String, p_site_index: float, season: GameTy
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.apply_season(p_site_index, season)
-		QUARRY_FISH, QUARRY_SMALL_GAME:
+		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME:
 			return p_site_index
 	return 0.0
 
@@ -318,23 +350,25 @@ static func is_worth_setting(trap_name: String, index: float) -> bool:
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.level_for_index(index) != BirdPresenceService.Level.NONE
-		QUARRY_FISH, QUARRY_SMALL_GAME:
+		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME:
 			return index > 0.0
 	return false
 
 
-# true se il tipo di trappola si può montare lì quanto a terreno: la nassa solo sul ruscello, le altre mai; i lacci
-# (2026-11-09) nemmeno su alberi, argilla (se già scoperta) o pietre (`stone_lots`, da _stone_lots_of).
+# true se il tipo di trappola si può montare lì quanto a terreno: la nassa solo sul ruscello, le altre mai; nessuna
+# sull'argilla, scoperta o no (2026-11-12, richiesta utente — prima solo i lacci e solo dopo la scoperta; quelle già
+# montate sull'argilla restano finché si rompono); lacci e fossa (2026-11-09) nemmeno su alberi o pietre (`stone_lots`,
+# da _stone_lots_of).
 static func _fits_ground(rules: SecondaryResourceRules, stream_positions: Dictionary, lot: Vector2i, macro_state: MacroCellState, stone_lots: Dictionary) -> bool:
 	if stream_positions.has(lot) != (rules.trap_quarry == QUARRY_FISH):
 		return false
-	if rules.trap_quarry != QUARRY_SMALL_GAME:
+	if macro_state == null or ClayDepositService.has_clay(macro_state, lot):
+		return false
+	if not is_herd_quarry(rules):
 		return true
-	if macro_state == null or stone_lots.has(lot):
+	if stone_lots.has(lot):
 		return false
-	if macro_state.tree_claimed_lots.has(lot) and VegetationLotIndex.has_lot(macro_state, GameTypes.WorldObjectType.TREE, lot):
-		return false
-	return TerrainScatteredResourceService.is_resource_locked(ClayDepositService.RESOURCE_NAME) or not ClayDepositService.has_clay(macro_state, lot)
+	return not (macro_state.tree_claimed_lots.has(lot) and VegetationLotIndex.has_lot(macro_state, GameTypes.WorldObjectType.TREE, lot))
 
 
 # Microcelle con pietre della cella, come insieme (stone_positions è un Array).
@@ -357,20 +391,33 @@ static func choose_site(game_data: GameData, world: World, individuals: Array[Hu
 	var rules := get_rules(trap_name)
 	if rules == null or world == null or area == null:
 		return NO_SITE
+	# `taken` (stesso tipo): per la distanza minima. `other_lots` (2026-11-12, richiesta utente — fossa sopra un laccio):
+	# microcelle di trappole di altri tipi, montate o in viaggio, mai la stessa microcella (come il clic destro,
+	# placeable_traps). `resting`: posti a riposo di trappole rotte di qualunque tipo.
 	var taken: Array[Vector2i] = []
+	var other_lots: Array[Vector2i] = []
 	for trap in game_data.placed_traps:
-		if trap.trap_name == trap_name and trap.macro_coords == area.macro_coords:
-			taken.append(trap.lot)
-	for task in open_place_tasks(individuals):
-		if String(task.context[CONTEXT_TRAP_NAME]) != trap_name:
+		if trap.macro_coords != area.macro_coords:
 			continue
-		if Vector2i(int(task.context.get(CONTEXT_MACRO_X, -1)), int(task.context.get(CONTEXT_MACRO_Y, -1))) == area.macro_coords:
-			taken.append(Vector2i(int(task.context.get(CONTEXT_LOT_X, -1)), int(task.context.get(CONTEXT_LOT_Y, -1))))
+		if trap.trap_name == trap_name:
+			taken.append(trap.lot)
+		else:
+			other_lots.append(trap.lot)
+	for task in open_place_tasks(individuals):
+		if Vector2i(int(task.context.get(CONTEXT_MACRO_X, -1)), int(task.context.get(CONTEXT_MACRO_Y, -1))) != area.macro_coords:
+			continue
+		var task_lot := Vector2i(int(task.context.get(CONTEXT_LOT_X, -1)), int(task.context.get(CONTEXT_LOT_Y, -1)))
+		if String(task.context[CONTEXT_TRAP_NAME]) == trap_name:
+			taken.append(task_lot)
+		else:
+			other_lots.append(task_lot)
 	var day := game_data.get_absolute_day()
 	var cache_id := "%d|%s" % [area.id, trap_name]
 	var resting := {}
-	for broken in broken_in_macro_cell(game_data, area.macro_coords, trap_name):
+	for broken in broken_in_macro_cell(game_data, area.macro_coords):
 		resting[Vector2i(int(broken.get("lot_x", -1)), int(broken.get("lot_y", -1)))] = true
+	for lot in other_lots:
+		resting[lot] = true
 	var cache_key := "%d|%d|%s|%d|%s" % [day, area.revision, str(taken), world.buildings.size(), str(resting.keys())]
 	var cached: Dictionary = _site_cache.get(cache_id, {})
 	if String(cached.get("key", "")) == cache_key:
@@ -381,7 +428,7 @@ static func choose_site(game_data: GameData, world: World, individuals: Array[Hu
 	var best_index := 0.0
 	var stream_positions := _stream_positions_of(world, area.macro_coords)
 	var macro_state := world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
-	var stone_lots := _stone_lots_of(macro_state) if rules.trap_quarry == QUARRY_SMALL_GAME else {}
+	var stone_lots := _stone_lots_of(macro_state) if is_herd_quarry(rules) else {}
 	var best_score := 0.0
 	for y in range(area.rect.position.y, area.rect.end.y):
 		for x in range(area.rect.position.x, area.rect.end.x):
@@ -393,7 +440,7 @@ static func choose_site(game_data: GameData, world: World, individuals: Array[Hu
 			if not is_worth_setting(trap_name, index):
 				continue
 			# Lacci: tutti i posti valgono uguale; uno sparso a caso (stabile per microcella) invece del primo in alto a sinistra.
-			var score := index + (_scatter(lot, area.id) if rules.trap_quarry == QUARRY_SMALL_GAME else 0.0)
+			var score := index + (_scatter(lot, area.id) if is_herd_quarry(rules) else 0.0)
 			if score > best_score:
 				best_score = score
 				best_index = index
@@ -508,7 +555,7 @@ static func advance_daily(game_data: GameData, world: World) -> void:
 		if trap.get_caught() >= rules.trap_capacity:
 			continue
 		# Lacci (2026-11-09): una preda vera al giorno al massimo, dai passaggi del giorno (SnareService).
-		if rules.trap_quarry == QUARRY_SMALL_GAME:
+		if is_herd_quarry(rules):
 			var species := SnareService.roll_catch(game_data, trap, rules, randf())
 			if species == "":
 				continue
@@ -704,13 +751,12 @@ static func _far_from(lot: Vector2i, taken: Array[Vector2i], spacing: int) -> bo
 	return true
 
 
-# Microcelle della macrocella coperte da un edificio non calpestabile (strade e sentieri non contano).
+# Microcelle della macrocella coperte da un edificio, anche calpestabile (2026-11-12, richiesta utente — nasse sul guado:
+# niente trappole su guado di pietre, sentieri, terra battuta e spiazzo delle feste; prima questi non contavano).
 static func _building_lots(world: World, macro_coords: Vector2i) -> Dictionary:
 	var lots: Dictionary = {}
 	for building in world.buildings:
 		if building == null or building.is_demolished or Vector2i(building.macro_x, building.macro_y) != macro_coords:
-			continue
-		if building.rules != null and building.rules.walkable:
 			continue
 		for lot in BuildingFootprint.cells_of(building):
 			lots[lot] = true

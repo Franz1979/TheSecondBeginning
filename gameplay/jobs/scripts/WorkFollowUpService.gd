@@ -69,6 +69,65 @@ static func butcher_after_hunt(ctx: GameContext, hunter: HumanIndividual, carcas
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
 
 
+# Caccia di gruppo (2026-11-11, richiesta utente): macellazione finita da `butcher`, i compagni che inseguivano la preda
+# all'uccisione (request["helpers"], ButcherAction.CONTEXT_PENDING_HELPERS) vanno al mucchio e ne portano via un carico
+# ciascuno, fino a mucchio vuoto, con la stessa destinazione della macellazione (focolare/essiccatoio/magazzino). Solo chi
+# è libero in quel momento: senza task, in svago, in "Cerca lavoro" o in pattuglia di caccia senza una preda puntata (la
+# pattuglia va in coda e riprende dopo). Gli altri no: il mucchio resta comunque nella lista dei lavori (PileJobProvider).
+static func butcher_helpers(ctx: GameContext, butcher: HumanIndividual, request: Dictionary, effects: GameEffects) -> void:
+	var macro_coords := Vector2i(int(request.get("macro_x", 0)), int(request.get("macro_y", 0)))
+	var microcell := Vector2i(int(request.get("micro_x", 0)), int(request.get("micro_y", 0)))
+	var pile := GroundPileService.find_at(ctx.game_data, macro_coords, microcell)
+	var cell: LiveMacroCell = ctx.live_cells.get(macro_coords)
+	if pile == null or pile.resources.is_empty() or cell == null or cell.macro_state == null:
+		return
+	var helper_ids: Array = request.get("helpers", [])
+	var sent: PackedStringArray = []
+	var skipped: PackedStringArray = []
+	for member in ctx.individuals:
+		if member == butcher or not helper_ids.has(member.id):
+			continue
+		if not _is_free_to_carry(member):
+			skipped.append(member.name)
+			continue
+		var task := TaskBuilderService.build_pile_job_task(member, pile, cell.macro_state)
+		if task == null:
+			continue
+		task.context[CONTEXT_BUTCHER_HELPER] = true
+		if request.has("butcher_destination"):
+			task.context[ButcherDestinationService.CONTEXT_KEY] = String(request["butcher_destination"])
+		effects.wire_task(GameEffects.WireKind.PICKUP, task, member)
+		if not member.assign_task(task, ctx.age_band_of(member)) or (member.current_task != task and not member.task_queue.has(task)):
+			skipped.append(member.name)
+			continue
+		effects.wire_task(GameEffects.WireKind.STEP_SIGNALS, task, member)
+		sent.append(member.name)
+	if not sent.is_empty():
+		effects.command_icon_at_microcell(macro_coords, microcell, "pickup")
+		effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
+	HuntService.log_event(butcher, "macellazione finita: aiutano a portare %s%s." % [
+		", ".join(sent) if not sent.is_empty() else "nessuno",
+		"" if skipped.is_empty() else " (occupati: %s)" % ", ".join(skipped)
+	])
+
+
+# Context del ritiro di un compagno di caccia (butcher_helpers): come i viaggi del macellatore, non chiude il mucchio
+# alla lista dei lavori (PileJobProvider.collect_claims).
+const CONTEXT_BUTCHER_HELPER := "butcher_helper_haul"
+
+
+static func _is_free_to_carry(member: HumanIndividual) -> bool:
+	if member.is_sick():
+		return false
+	var task := member.current_task
+	if task == null or task.is_finished():
+		return true
+	if task.is_idle_activity or task.task_name == JobBoardService.SEEK_JOB_TASK_NAME:
+		return true
+	return HuntService.is_hunt_task(task) and task.is_suspendable \
+			and int(task.context.get(HuntZoneService.CONTEXT_PREY_ID, -1)) < 0
+
+
 # Dove `member` ha già una macellazione della carcassa `carcass_id` (task in corso e/o posizioni in coda); "" se nessuna.
 static func describe_butcher_task_for_carcass(member: HumanIndividual, carcass_id: int) -> String:
 	var places := PackedStringArray()

@@ -1968,5 +1968,6 @@ idea_advanced_traps,Trappole avanzate
 idea_advanced_traps_summary,Trappole che prendono gli animali vivi, da portare al recinto.
 idea_advanced_traps_description,"Chi sa costruire trappole e ha imparato ad avvicinare gli animali capisce che una preda può essere presa senza ucciderla. Con cesti, gabbie e recinti gli animali catturati vivi potranno essere tenuti e allevati."
 carried_resource_tooltip_snare,Mazzo di lacci
+carried_resource_tooltip_stake_pit,Fossa con pali
 pending_trap_no_site,"{area}: nessun posto adatto per {trap}"
 trap_pickup_catch_prey,"Prede: {detail}"

@@ -20,6 +20,11 @@ const FISH_TRAP_DARK_COLOR := Color(0.55, 0.42, 0.24, 1.0)
 const FISH_TRAP_BROKEN_COLOR := Color(0.66, 0.58, 0.44, 0.8)
 const SNARE_CORD_COLOR := Color(0.90, 0.82, 0.60, 1.0)
 const SNARE_BROKEN_COLOR := Color(0.62, 0.56, 0.44, 0.75)
+# Fossa con pali (2026-11-11): buca scura coperta di rametti, con le punte dei pali che spuntano.
+const PIT_COLOR := Color(0.16, 0.11, 0.06, 0.9)
+const PIT_COVER_COLOR := Color(0.62, 0.50, 0.30, 0.9)
+const PIT_STAKE_COLOR := Color(0.80, 0.66, 0.42, 1.0)
+const PIT_BROKEN_COLOR := Color(0.40, 0.34, 0.26, 0.6)
 
 var _macro_coords: Vector2i = Vector2i.ZERO
 var _drawn_revision: int = -1
@@ -51,6 +56,8 @@ func _draw() -> void:
 			_draw_fish_trap(trap.lot, top_left, false)
 		elif rules != null and rules.trap_quarry == TrapService.QUARRY_SMALL_GAME:
 			_draw_snare(top_left, trap.id, false)
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_BIG_GAME:
+			_draw_stake_pit(top_left, trap.id, false)
 		else:
 			_draw_symbol(top_left)
 	for broken in TrapService.broken_in_macro_cell(game_data, _macro_coords):
@@ -62,6 +69,8 @@ func _draw() -> void:
 			_draw_fish_trap(Vector2i(int(broken.get("lot_x", 0)), int(broken.get("lot_y", 0))), top_left, true)
 		elif rules != null and rules.trap_quarry == TrapService.QUARRY_SMALL_GAME:
 			_draw_snare(top_left, int(broken.get("id", 0)), true)
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_BIG_GAME:
+			_draw_stake_pit(top_left, int(broken.get("id", 0)), true)
 
 
 # Rete rotta (posto a riposo, TrapService.broken_traps): stessi paletti, uno storto, e la rete strappata a metà che pende
@@ -138,6 +147,24 @@ func _draw_snare(top_left: Vector2, trap_id: int, broken: bool) -> void:
 	draw_arc(center, radius, 0.0, TAU * (0.7 if broken else 1.0), 14, color, CELL_SIZE * 0.035, true)
 	draw_circle(a, CELL_SIZE * 0.04, POLE_COLOR)
 	draw_circle(b, CELL_SIZE * 0.04, POLE_COLOR)
+
+
+# Fossa con pali vista dall'alto: buca quasi grande come la microcella, rametti di copertura di sbieco (verso stabile per
+# trappola, dal suo id) e tre punte chiare. Rotta (posto a riposo): solo la buca spenta, senza copertura né pali.
+func _draw_stake_pit(top_left: Vector2, trap_id: int, broken: bool) -> void:
+	var center := top_left + Vector2.ONE * CELL_SIZE * 0.5
+	var radius := CELL_SIZE * 0.36
+	draw_circle(center, radius, PIT_BROKEN_COLOR if broken else PIT_COLOR)
+	if broken:
+		return
+	var angle := deg_to_rad(30.0 if trap_id % 2 == 0 else -25.0)
+	var along := Vector2(cos(angle), sin(angle))
+	var across := Vector2(-along.y, along.x)
+	for offset in [-0.18, 0.0, 0.18]:
+		var mid: Vector2 = center + across * CELL_SIZE * offset
+		draw_line(mid - along * radius * 0.85, mid + along * radius * 0.85, PIT_COVER_COLOR, CELL_SIZE * 0.035, true)
+	for point in [Vector2(-0.12, -0.10), Vector2(0.13, -0.04), Vector2(-0.02, 0.14)]:
+		draw_circle(center + (point as Vector2) * CELL_SIZE, CELL_SIZE * 0.035, PIT_STAKE_COLOR)
 
 
 # Simbolino generico: un piccolo cerchio chiaro con una croce.

@@ -52,7 +52,6 @@ const PARAMETER_DISPLAY := {
 	"health": {"name": "statistics_param_health", "color": Color(0.9, 0.35, 0.35)},
 	"happiness": {"name": "statistics_param_happiness", "color": Color(0.95, 0.8, 0.3)},
 	"stamina": {"name": "statistics_param_stamina", "color": Color(0.45, 0.8, 0.4)},
-	"thirst": {"name": "statistics_param_thirst", "color": Color(0.35, 0.65, 0.95)},
 	"loyalty": {"name": "statistics_param_loyalty", "color": Color(0.7, 0.5, 0.95)},
 	"faith": {"name": "statistics_param_faith", "color": Color(0.85, 0.85, 0.85)},
 }

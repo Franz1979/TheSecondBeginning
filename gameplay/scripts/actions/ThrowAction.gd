@@ -154,6 +154,9 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 	HuntService.log_event(individual, "COLPITO %s (probabilità %.0f%%, tiro %.2f): danno %.1f, salute %.1f -> %.1f." % [
 		combat_target.describe(), hit_chance * 100.0, roll, attack_power, health_before, animal.health
 	])
+	# Richiamo (2026-11-11, caccia di gruppo passo 2): preda grossa ferita per la prima volta, chi l'ha colpita fischia.
+	if animal.health > 0.0:
+		HuntCallService.call_for_help(individual, animal, health_before)
 	if animal.health <= 0.0:
 		HuntService.log_event(individual, "%s UCCISO (fascia %s)." % [
 			combat_target.describe(), String(GameTypes.AgeBand.keys()[animal.age_band])
@@ -170,6 +173,12 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 			GameSettings.active_game_data, animal.macro_coords, animal.position, combat_target.label, int(animal.age_band)
 		)
 		if carcass_pile != null:
+			# Caccia di gruppo (2026-11-11): i compagni che inseguivano la stessa preda, sulla carcassa; a macellazione
+			# finita aiutano a portare i prodotti (ButcherAction, WorkFollowUpService.butcher_helpers).
+			var helper_ids := HuntZoneService.hunter_ids_on_prey(animal.id, individual)
+			if not helper_ids.is_empty():
+				carcass_pile.carcasses[-1][ButcherAction.CARCASS_HELPERS_KEY] = helper_ids
+				HuntService.log_event(individual, "compagni sulla preda all'uccisione: %s." % str(helper_ids))
 			context[HuntService.CONTEXT_KILL_CARCASS] = {
 				"macro_x": carcass_pile.macro_coords.x, "macro_y": carcass_pile.macro_coords.y,
 				"micro_x": carcass_pile.microcell.x, "micro_y": carcass_pile.microcell.y,

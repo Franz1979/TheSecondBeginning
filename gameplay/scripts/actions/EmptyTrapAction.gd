@@ -111,7 +111,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var result := TrapService.empty(game_data, trap)
 	var preys := int(result["preys"])
 	# Coltello: un uso per preda macellata (lacci) o uno per trappola svuotata (rete).
-	var uses := preys if rules != null and rules.trap_quarry == TrapService.QUARRY_SMALL_GAME else mini(preys, 1)
+	var uses := preys if TrapService.is_herd_quarry(rules) else mini(preys, 1)
 	for i in range(uses):
 		var broken := ToolGateService.consume_tool_uses(individual, required_tool_categories, null)
 		if not broken.is_empty():
@@ -126,9 +126,31 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		if quantity <= 0 or resource_name == "":
 			continue
 		var added: int = individual.add_carried_resource(resource_name, quantity, float(product["decay_fraction"]))
+		# Fossa con pali (2026-11-11): una preda grossa non sta nello zaino; il resto resta a terra in un mucchio accanto
+		# alla fossa (lista dei lavori, "mucchi"), invece di perderlo.
+		var left_on_ground := 0
+		if added < quantity and rules != null and rules.trap_quarry == TrapService.QUARRY_BIG_GAME:
+			left_on_ground = quantity - added
+			var pile := GroundPileService.drop_entries(game_data, trap.macro_coords, Vector2(trap.lot) + Vector2(0.5, 0.5), {
+				resource_name: {"quantity": left_on_ground, "decay_fraction": float(product["decay_fraction"])}
+			})
+			# Viaggi al mucchio (2026-11-12, richiesta utente): consegnato il carico, chi svuota torna al mucchio finché è
+			# vuoto, come chi macella dopo la caccia (HumanIndividualActionService._continue_butcher_pile_trips, stessa
+			# destinazione della carne). Un mucchio per giro (il primo); il mucchio resta aperto alla lista dei lavori.
+			if pile != null and not context.has(ButcherAction.CONTEXT_PILE_TRIPS):
+				context[ButcherAction.CONTEXT_PILE_TRIPS] = {
+					"macro_x": pile.macro_coords.x, "macro_y": pile.macro_coords.y,
+					"micro_x": pile.microcell.x, "micro_y": pile.microcell.y,
+					"last_total": -1,
+				}
+		var shortfall_text := ""
+		if left_on_ground > 0:
+			shortfall_text = " — non c'era posto nello zaino, %d lasciate in un mucchio accanto" % left_on_ground
+		elif added != quantity:
+			shortfall_text = " — non c'era posto nello zaino, perse %d" % (quantity - added)
 		TrapService.log_line("#%d %s svuota %s #%d: %d %s (deperimento %.2f), usi rimasti %d%s" % [
 			individual.id, individual.name, trap.trap_name, current_id, quantity, resource_name, float(product["decay_fraction"]),
-			trap.get_remaining_uses(), "" if added == quantity else " — non c'era posto nello zaino, perse %d" % (quantity - added)
+			trap.get_remaining_uses(), shortfall_text
 		])
 		if added > 0:
 			catch[resource_name] = int(catch.get(resource_name, 0)) + added

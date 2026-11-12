@@ -158,28 +158,133 @@ static func find_sighted_prey(area: WorkArea, hunter: HumanIndividual, live_cell
 	return sighted
 
 
-# Preda da puntare: tra le avvistate, la più vicina non già puntata da un altro cacciatore della stessa zona (Task di
-# caccia in corso con CONTEXT_WORK_AREA_ID == area.id) e non lasciata in questa uscita (`ignored_ids`,
-# CONTEXT_IGNORED_PREY_IDS). null se nessuna.
+# --- Caccia di gruppo (2026-11-11, richiesta utente — passo 1: zona e prede) ---
+# Preda grossa = AnimalRules.max_hunters > 1: la cacciano fino a max_hunters persone insieme; le piccole (coniglio,
+# pernice) una sola, come prima. Nessun raduno né attesa: la cooperazione nasce da come si scelgono zona e preda.
+
+static func max_hunters_for(species: String) -> int:
+	var rules := AnimalCalculator.get_animal_rules(species)
+	return maxi(rules.max_hunters, 1) if rules != null else 1
+
+
+static func is_big_prey(species: String) -> bool:
+	return max_hunters_for(species) > 1
+
+
+# Cacciatori che inseguono ora ogni preda (Task di caccia corrente, diretta o in zona, con CONTEXT_PREY_ID), escluso
+# `except`: {id preda -> numero}.
+static func hunters_per_prey(except: HumanIndividual = null) -> Dictionary:
+	var counts: Dictionary = {}
+	for other in GameSettings.active_human_individuals:
+		if other == except or not HuntService.is_hunt_task(other.current_task) or other.current_task.is_finished():
+			continue
+		var prey_id := int(other.current_task.context.get(CONTEXT_PREY_ID, -1))
+		if prey_id >= 0:
+			counts[prey_id] = int(counts.get(prey_id, 0)) + 1
+	return counts
+
+
+# Chi sta cacciando la preda `prey_id` (Task di caccia in corso con quella preda puntata), tranne `except`: id degli
+# individui. Caccia di gruppo (2026-11-11): all'uccisione sono i compagni che aiutano a portare la carne.
+static func hunter_ids_on_prey(prey_id: int, except: HumanIndividual = null) -> Array[int]:
+	var ids: Array[int] = []
+	for other in GameSettings.active_human_individuals:
+		if other == except or not HuntService.is_hunt_task(other.current_task) or other.current_task.is_finished():
+			continue
+		if int(other.current_task.context.get(CONTEXT_PREY_ID, -1)) == prey_id:
+			ids.append(other.id)
+	return ids
+
+
+# Posti ancora liberi sulla preda `animal` con `count` cacciatori già sopra.
+static func _has_free_slot(animal: AnimalVisualGroup, count: int) -> bool:
+	return count < max_hunters_for(animal.species_name)
+
+
+# Altri cacciatori della zona `area`, già lì o in arrivo (Task di caccia in zona corrente o in coda, per esempio
+# mentre prendono l'arma in deposito).
+static func _has_zone_companions(area: WorkArea, hunter: HumanIndividual) -> bool:
+	for other in GameSettings.active_human_individuals:
+		if other == hunter:
+			continue
+		for task in JobWorkScanService.open_tasks(other):
+			if is_zone_hunt_task(task) and int(task.context.get(CONTEXT_WORK_AREA_ID, -1)) == area.id:
+				return true
+	return false
+
+
+# Salute massima di `animal` per la sua fascia d'età (AnimalRules.max_health × size_multiplier_by_age).
+static func max_health_of(animal: AnimalVisualGroup) -> float:
+	var rules := AnimalCalculator.get_animal_rules(animal.species_name)
+	if rules == null:
+		return 0.0
+	var age_scale := 1.0
+	if animal.age_band >= 0 and animal.age_band < rules.size_multiplier_by_age.size():
+		age_scale = float(rules.size_multiplier_by_age[animal.age_band])
+	return rules.max_health * age_scale
+
+
+# Preda da puntare tra le avvistate e non lasciate in questa uscita (`ignored_ids`, CONTEXT_IGNORED_PREY_IDS), con un
+# posto libero (piccola: nessun altro cacciatore sopra; grossa: meno di max_hunters). Per livelli (2026-11-11):
+#   1. preda grossa già cacciata da un compagno o già ferita (2026-11-11: anche se chi l'ha ferita ha chiuso la caccia,
+#      per esempio senza più armi) — la più ferita, a pari ferita la più vicina ("vado ad aiutare" / "la finisco");
+#   2. preda grossa libera, se nella zona ci sono altri cacciatori (o in arrivo) oppure se le armi di `hunter` bastano a
+#      ucciderla da solo (HuntService.damage_budget >= salute attuale) — la più vicina;
+#   3. tutte le altre (piccole, e grosse che da solo non riuscirebbe ad abbattere) — la più vicina, come prima.
+# Richiamo (2026-11-11, passo 2 — HuntCallService): la preda di un fischio sentito in pattuglia è candidata anche se non
+# si vede e anche fuori dalla zona; puntata, il richiamo è consumato.
+# null se nessuna.
 static func choose_prey(area: WorkArea, hunter: HumanIndividual, live_cells: Dictionary, ignored_ids: Array[int] = []) -> AnimalVisualGroup:
 	if area == null or hunter == null:
 		return null
-	var targeted: Dictionary = {}
-	for other in GameSettings.active_human_individuals:
-		if other == hunter or not HuntService.is_hunt_task(other.current_task) or other.current_task.is_finished():
-			continue
-		var context: Dictionary = other.current_task.context
-		if int(context.get(CONTEXT_WORK_AREA_ID, -1)) == area.id:
-			targeted[int(context.get(CONTEXT_PREY_ID, -1))] = true
+	var counts := hunters_per_prey(hunter)
+	var companions := _has_zone_companions(area, hunter)
+	var budget := HuntService.damage_budget(hunter)
 	var best: AnimalVisualGroup = null
+	var best_tier := 99
+	var best_health_ratio := INF
 	var best_distance_sq := INF
-	for animal in find_sighted_prey(area, hunter, live_cells):
-		if targeted.has(animal.id) or ignored_ids.has(animal.id):
+	var candidates := find_sighted_prey(area, hunter, live_cells)
+	var heard := HuntCallService.heard_prey_for(hunter)
+	if heard != null and not candidates.has(heard):
+		candidates.append(heard)
+	for animal in candidates:
+		if ignored_ids.has(animal.id):
 			continue
+		var count := int(counts.get(animal.id, 0))
+		if not _has_free_slot(animal, count):
+			continue
+		var big := is_big_prey(animal.species_name)
+		var tier := 3
+		var health_ratio := 1.0
+		var max_health := max_health_of(animal)
+		var wounded: bool = max_health > 0.0 and animal.health < max_health - 0.001
+		if big and (count > 0 or wounded):
+			tier = 1
+			health_ratio = animal.health / max_health if max_health > 0.0 else 1.0
+		elif big and (companions or budget >= animal.health):
+			tier = 2
 		var distance_sq := hunter.position.distance_squared_to(ApproachPreyAction.prey_position_for(hunter, animal))
-		if distance_sq < best_distance_sq:
-			best_distance_sq = distance_sq
+		var better := tier < best_tier
+		if tier == best_tier:
+			if tier == 1 and not is_equal_approx(health_ratio, best_health_ratio):
+				better = health_ratio < best_health_ratio
+			else:
+				better = distance_sq < best_distance_sq
+		if better:
 			best = animal
+			best_tier = tier
+			best_health_ratio = health_ratio
+			best_distance_sq = distance_sq
+	if best != null and best == heard:
+		HuntCallService.forget(hunter)
+		HuntService.log_event(hunter, "scelta della preda: %s #%d — ha sentito il fischio di un compagno." % [best.species_name, best.id])
+	elif best != null:
+		var reasons := {1: ("preda grossa già cacciata da %d compagni" % int(counts.get(best.id, 0))) if int(counts.get(best.id, 0)) > 0
+				else "preda grossa già ferita (salute %.1f), nessuno la insegue" % best.health,
+			2: "preda grossa libera (%s)" % ("compagni nella zona" if companions else "armi %.0f >= salute %.1f" % [budget, best.health]),
+			3: "la più vicina"}
+		HuntService.log_event(hunter, "scelta della preda in %s: %s #%d — %s." % [area.name, best.species_name, best.id, reasons[best_tier]])
 	# Fuori dalla vista del cacciatore: l'ha trovata il fiuto del cane (passo 2).
 	if best != null:
 		var radius := get_hunter_visibility_radius(hunter, live_cells, area.macro_coords)
@@ -327,6 +432,10 @@ static func choose_work_area(
 ) -> WorkArea:
 	if hunter == null:
 		return null
+	var join := _zone_to_join(game_data, live_cells, hunter.home_macro_coords, hunter.position, excluded_ids, hunter)
+	if join != null:
+		HuntService.log_event(hunter, "zona scelta: %s — un compagno caccia lì una preda grossa con posti liberi." % join.name)
+		return join
 	var best: WorkArea = null
 	var best_prey := -1.0
 	var best_distance_score := -1.0
@@ -334,10 +443,7 @@ static func choose_work_area(
 		if excluded_ids.has(area.id):
 			continue
 		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - hunter.home_macro_coords) * World.WIDTH
-		var crowding := 1.0
-		for other in GameSettings.active_human_individuals:
-			if other != hunter and is_zone_hunt_task(other.current_task) and int(other.current_task.context.get(CONTEXT_WORK_AREA_ID, -1)) == area.id:
-				crowding *= ZONE_CROWDING_FACTOR
+		var crowding := _zone_crowding(area, hunter)
 		var prey_count := list_prey_in_area(area, live_cells).size()
 		if require_prey and prey_count == 0:
 			continue
@@ -354,6 +460,10 @@ static func choose_work_area(
 # choose_work_area ma da un punto (`origin_macro`/`origin_pos`, il punto di assegnazione) invece che dal cacciatore,
 # così le prede di ogni zona si contano una volta per ordine e non per ogni pipottino che arriva al punto.
 static func choose_work_area_from(game_data: GameData, live_cells: Dictionary, origin_macro: Vector2i, origin_pos: Vector2) -> WorkArea:
+	var join := _zone_to_join(game_data, live_cells, origin_macro, origin_pos, [], null)
+	if join != null:
+		HuntService.log_event(null, "zona dell'ordine: %s — un cacciatore caccia lì una preda grossa con posti liberi." % join.name)
+		return join
 	var best: WorkArea = null
 	var best_prey := -1.0
 	var best_distance_score := -1.0
@@ -361,10 +471,7 @@ static func choose_work_area_from(game_data: GameData, live_cells: Dictionary, o
 		if not live_cells.has(area.macro_coords):
 			continue
 		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - origin_macro) * World.WIDTH
-		var crowding := 1.0
-		for other in GameSettings.active_human_individuals:
-			if is_zone_hunt_task(other.current_task) and int(other.current_task.context.get(CONTEXT_WORK_AREA_ID, -1)) == area.id:
-				crowding *= ZONE_CROWDING_FACTOR
+		var crowding := _zone_crowding(area, null)
 		var prey_score := float(list_prey_in_area(area, live_cells).size()) * crowding
 		var distance_score := crowding / (origin_pos.distance_to(center) + ZONE_DISTANCE_OFFSET)
 		if prey_score > best_prey + 0.000001 or (absf(prey_score - best_prey) <= 0.000001 and distance_score > best_distance_score):
@@ -372,6 +479,52 @@ static func choose_work_area_from(game_data: GameData, live_cells: Dictionary, o
 			best_distance_score = distance_score
 			best = area
 	return best
+
+
+# Zona da raggiungere per aiutare (2026-11-11, caccia di gruppo passo 1): fra le zone di caccia con la macrocella viva
+# (non in `excluded_ids`), quelle con dentro una preda grossa ammessa dal filtro che qualcuno sta già cacciando e con
+# posti liberi; la più vicina a `origin_pos` (locale a `origin_macro`). null se nessuna. `except`: chi sceglie, non conta
+# tra i cacciatori.
+static func _zone_to_join(game_data: GameData, live_cells: Dictionary, origin_macro: Vector2i, origin_pos: Vector2,
+		excluded_ids: Array[int], except: HumanIndividual) -> WorkArea:
+	var counts := hunters_per_prey(except)
+	if counts.is_empty():
+		return null
+	var best: WorkArea = null
+	var best_distance := INF
+	for area in list_hunt_work_areas(game_data):
+		if excluded_ids.has(area.id) or not live_cells.has(area.macro_coords):
+			continue
+		var wanted := false
+		for animal in list_prey_in_area(area, live_cells):
+			var count := int(counts.get(animal.id, 0))
+			if count > 0 and is_big_prey(animal.species_name) and _has_free_slot(animal, count):
+				wanted = true
+				break
+		if not wanted:
+			continue
+		var center := Vector2(area.rect.position) + Vector2(area.rect.size) * 0.5 + Vector2(area.macro_coords - origin_macro) * World.WIDTH
+		var distance := origin_pos.distance_to(center)
+		if distance < best_distance:
+			best_distance = distance
+			best = area
+	return best
+
+
+# Penalità di affollamento della zona: ZONE_CROWDING_FACTOR per ogni altro cacciatore lì (Task di caccia in zona
+# corrente), tranne chi insegue una preda grossa (2026-11-11: non allontana gli altri, li chiama).
+static func _zone_crowding(area: WorkArea, except: HumanIndividual) -> float:
+	var crowding := 1.0
+	for other in GameSettings.active_human_individuals:
+		if other == except or not is_zone_hunt_task(other.current_task):
+			continue
+		var context: Dictionary = other.current_task.context
+		if int(context.get(CONTEXT_WORK_AREA_ID, -1)) != area.id:
+			continue
+		if int(context.get(CONTEXT_PREY_ID, -1)) >= 0 and is_big_prey(String(context.get(CONTEXT_PREY_SPECIES, ""))):
+			continue
+		crowding *= ZONE_CROWDING_FACTOR
+	return crowding
 
 
 # WorkArea della Task di caccia in zona (null se eliminata o se la Task non lo è).

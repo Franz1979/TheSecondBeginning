@@ -1914,5 +1914,6 @@ idea_advanced_traps,Advanced Traps
 idea_advanced_traps_summary,Traps that catch animals alive, to be brought to the pen.
 idea_advanced_traps_description,"Those who can build traps and have learned to approach animals realize that prey can be caught without killing it. With baskets, cages and pens, animals caught alive can be kept and bred."
 carried_resource_tooltip_snare,Bundle of snares
+carried_resource_tooltip_stake_pit,Stake pit
 pending_trap_no_site,"{area}: no suitable spot for {trap}"
 trap_pickup_catch_prey,"Prey: {detail}"

@@ -32,6 +32,11 @@ const PRODUCT_NAMES: Array[String] = ["meat", "hide", "sinew", "bone"]
 # Context della Task di macellazione: mucchio da svuotare a più viaggi {"macro_x", "macro_y", "micro_x", "micro_y",
 # "last_total" (prodotti nel mucchio alla partenza dell'ultimo viaggio aggiunto, -1 = nessuno)}. JSON-nativo.
 const CONTEXT_PILE_TRIPS := "butcher_pile_trips"
+# Caccia di gruppo (2026-11-11, richiesta utente): id dei compagni che inseguivano la preda all'uccisione, nella
+# carcassa (ThrowAction). A macellazione finita aiutano a portare i prodotti: CONTEXT_PENDING_HELPERS =
+# {"helpers", "macro_x", "macro_y", "micro_x", "micro_y"}, consumato da HumanIndividualActionService.
+const CARCASS_HELPERS_KEY := "helpers"
+const CONTEXT_PENDING_HELPERS := "butcher_pending_helpers"
 
 var pile_macro_coords: Vector2i = Vector2i.ZERO
 var pile_microcell: Vector2i = Vector2i.ZERO
@@ -110,7 +115,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	_elapsed += delta * SkillEffectService.get_factor_for_action(self, individual, context)
 	if _elapsed >= _duration:
 		_done = true
-		_finish_butchering(individual)
+		_finish_butchering(individual, context)
 	return -STAMINA_DRAIN_PER_DAY * delta
 
 
@@ -120,7 +125,7 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 
 # Prodotti nello stesso mucchio, poi via la carcassa (in quest'ordine: togliere prima la carcassa potrebbe
 # svuotare e rimuovere il mucchio), infine un uso del coltello.
-func _finish_butchering(individual: Variant) -> void:
+func _finish_butchering(individual: Variant, context: Dictionary) -> void:
 	var game_data: GameData = GameSettings.active_game_data
 	var carcass := _get_carcass()
 	if carcass.is_empty():
@@ -133,6 +138,12 @@ func _finish_butchering(individual: Variant) -> void:
 	if not entries.is_empty():
 		GroundPileService.drop_entries(game_data, pile_macro_coords, Vector2(pile_microcell) + Vector2(0.5, 0.5), entries)
 	GroundPileService.remove_carcass(game_data, pile_macro_coords, pile_microcell, carcass_id)
+	var helper_ids: Array = carcass.get(CARCASS_HELPERS_KEY, [])
+	if not helper_ids.is_empty() and not entries.is_empty():
+		context[CONTEXT_PENDING_HELPERS] = {
+			"helpers": helper_ids.duplicate(),
+			"macro_x": pile_macro_coords.x, "macro_y": pile_macro_coords.y, "micro_x": pile_microcell.x, "micro_y": pile_microcell.y,
+		}
 	var broken := ToolGateService.consume_tool_uses(individual, required_tool_categories, null)
 	if not broken.is_empty():
 		report_broken_tools(individual, broken)

@@ -343,9 +343,12 @@ extends Resource
 # Attrezzi per svuotarla (2026-11-09, richiesta utente: rete col coltello, TaskTypes.ToolCategory): richiesti a ogni
 # svuotamento (anche a mano), presi in deposito prima dei lavori automatici, un uso consumato per trappola svuotata.
 @export var trap_empty_tool_categories: Array[int] = []
-# Lacci (2026-11-09, SnareService): specie delle mandrie che prende e peso di ognuna nel tiro (stesso ordine).
-@export var trap_prey_species: Array[String] = []
-@export var trap_prey_weights: Array[float] = []
+# Attrezzi per montarla (2026-11-11, richiesta utente: fossa col piccone d'osso, TaskTypes.ToolCategory): presi in deposito
+# prima del lavoro di zona, un uso consumato a montaggio finito. Vuoto = nessuno (le altre trappole).
+@export var trap_setup_tool_categories: Array[int] = []
+# Lacci e fossa (SnareService): le specie le decide trap_quarry con AnimalRules.max_hunters (TrapService.prey_species,
+# 2026-11-11); qui solo il peso nel tiro per nome di specie, {"rabbit": 0.6}. Specie non scritta = 1.
+@export var trap_prey_weights: Dictionary = {}
 # Ore di passaggi in un giorno che danno il tiro pieno (meno ore = tiro più basso in proporzione).
 @export var trap_full_passage_hours: int = 6
 # Giorni in cui, dopo una cattura, i gruppetti di quella specie evitano l'area del laccio.

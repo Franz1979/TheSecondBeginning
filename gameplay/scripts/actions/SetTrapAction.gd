@@ -24,7 +24,12 @@ func get_skill_effect_key(_individual: Variant, context: Dictionary) -> String:
 	return rules.trap_skill_effect_key if rules != null else skill_effect_key
 
 
+# Attrezzi per montarla (2026-11-11, fossa col piccone d'osso): finché mancano il lavoro resta fermo (come la macellazione),
+# lo zaino li passa in cintura da solo (ensure_required_tools).
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
+	required_tool_categories = TrapService.setup_tool_categories(String(context.get(TrapService.CONTEXT_TRAP_NAME, "")))
+	if not required_tool_categories.is_empty() and not ensure_required_tools(individual):
+		return 0.0
 	_elapsed += delta * SkillEffectService.get_factor_for_action(self, individual, context)
 	return -STAMINA_DRAIN_PER_DAY * delta
 
@@ -46,6 +51,10 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var macro_coords := Vector2i(int(context.get(TrapService.CONTEXT_MACRO_X, 0)), int(context.get(TrapService.CONTEXT_MACRO_Y, 0)))
 	var lot := Vector2i(int(context.get(TrapService.CONTEXT_LOT_X, 0)), int(context.get(TrapService.CONTEXT_LOT_Y, 0)))
 	var trap := TrapService.place(game_data, GameSettings.active_world, trap_name, units[0], macro_coords, lot, int(context.get(TrapService.CONTEXT_AREA_ID, 0)))
+	if not required_tool_categories.is_empty():
+		var broken := ToolGateService.consume_tool_uses(individual, required_tool_categories, null)
+		if not broken.is_empty():
+			report_broken_tools(individual, broken)
 	TrapService.log_line("#%d %s monta %s #%d in macrocella %s microcella %s (zona #%d), usi %d, indice del posto %.2f" % [
 		individual.id, individual.name, trap_name, trap.id, macro_coords, lot, trap.work_area_id, trap.get_remaining_uses(), trap.site_index
 	])

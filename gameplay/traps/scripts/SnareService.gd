@@ -14,6 +14,8 @@ extends RefCounted
 #     (AnimalGroupRenderer.avoid_rects, spinti fuori come dagli edifici); in quei giorni nessun passaggio.
 # Celle spente: nessun passaggio e quindi nessuna cattura. DA FARE: decidere cosa succede quando la cella non è accesa
 # (vale per tutte le trappole: rete e nassa oggi prendono anche lì).
+# Fossa con pali (2026-11-11): stessa logica per le prede grosse (TrapService.QUARRY_BIG_GAME); le specie di ogni trappola
+# da TrapService.prey_species (max_hunters), i pesi per nome (trap_prey_weights).
 # Statico; lo stato (passaggi, disturbi, ultima ora contata) sta in GameData.
 
 const HOURS_PER_DAY := 24
@@ -34,12 +36,12 @@ static func sample_hour(game_data: GameData, live_cells: Dictionary, day_progres
 	var areas_by_cell := {}
 	for trap in game_data.placed_traps:
 		var rules := TrapService.get_rules(trap.trap_name)
-		if rules == null or rules.trap_quarry != TrapService.QUARRY_SMALL_GAME or not live_cells.has(trap.macro_coords):
+		if rules == null or not TrapService.is_herd_quarry(rules) or not live_cells.has(trap.macro_coords):
 			continue
 		var area := passage_area(game_data, trap, rules)
 		if not areas_by_cell.has(trap.macro_coords):
 			areas_by_cell[trap.macro_coords] = {}
-		areas_by_cell[trap.macro_coords][area["key"]] = {"rect": area["rect"], "species": rules.trap_prey_species}
+		areas_by_cell[trap.macro_coords][area["key"]] = {"rect": area["rect"], "species": TrapService.prey_species(rules)}
 	for coords in areas_by_cell:
 		var cell: LiveMacroCell = live_cells[coords]
 		var areas: Dictionary = areas_by_cell[coords]
@@ -78,12 +80,11 @@ static func roll_catch(game_data: GameData, trap: PlacedTrap, rules: SecondaryRe
 	var herds := WildFaunaService.get_herds_in_cell(game_data, trap.macro_coords)
 	var full_hours := maxf(float(rules.trap_full_passage_hours), 1.0)
 	var threshold := 0.0
-	for i in range(rules.trap_prey_species.size()):
-		var species := String(rules.trap_prey_species[i])
+	for species in TrapService.prey_species(rules):
 		var passages := int(game_data.snare_passages.get(_key(area_key, species), 0))
 		if passages <= 0 or not herds.has(species) or is_disturbed(game_data, area_key, species, day):
 			continue
-		var weight := float(rules.trap_prey_weights[i]) if i < rules.trap_prey_weights.size() else 1.0
+		var weight := float(rules.trap_prey_weights.get(species, 1.0))
 		threshold += rules.trap_daily_catch_chance * weight * minf(float(passages) / full_hours, 1.0)
 		if roll < threshold:
 			return species

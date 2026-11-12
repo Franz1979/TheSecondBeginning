@@ -38,6 +38,13 @@ static func get_required_categories(task: Task) -> Array[TaskTypes.ToolCategory]
 		for category in get_action_required_categories(step):
 			if not required.has(category):
 				required.append(category)
+		# Montaggio di una trappola (2026-11-12, fossa col piccone): gli attrezzi dipendono dalla trappola nel context, e lo
+		# step li carica solo quando parte. Dichiarati qui fin dall'inizio, così "Riponi gli attrezzi presi per un lavoro"
+		# non riporta in deposito il piccone preso per lo scavo (anche dopo un caricamento).
+		if step is SetTrapAction:
+			for category in TrapService.setup_tool_categories(String(task.context.get(TrapService.CONTEXT_TRAP_NAME, ""))):
+				if not required.has(category):
+					required.append(category)
 	return required
 
 

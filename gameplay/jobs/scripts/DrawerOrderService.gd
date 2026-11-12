@@ -395,8 +395,10 @@ static func fixed_zone_exhausted(ctx: GameContext, order: Dictionary) -> bool:
 # Edificio per un ordine "Produci" del cassetto (lo stesso per ogni pipottino; la vicinanza non conta): tra quelli dove
 # ProductionService.can_produce_at vale, che fanno tutta la `quantity` in un ordine (production_max_quantity, 2026-10-09:
 # niente più riduzione), non occupati (ordini in lavorazione < production_concurrent_orders), con la coda non piena
-# (production_max_orders) e posto in uscita per un ciclo: 1) il più libero (meno ordini, in corso + in coda); 2) a parità,
-# se la ricetta chiede un attrezzo, quello la cui Attrezzeria lo copre; 3) a parità, il primo. `busy_counts`: id edificio
+# (production_max_orders) e posto in uscita per un ciclo: 0) il più efficiente (production_labor_multiplier più basso,
+# 2026-11-11: i vestiti di pelliccia alla Capanna del vestiario prima che al focolare, che li fa solo se la capanna non
+# può prendere l'ordine); 1) a parità, il più libero (meno ordini, in corso + in coda); 2) a parità, se la ricetta chiede
+# un attrezzo, quello la cui Attrezzeria lo copre; 3) a parità, il primo. `busy_counts`: id edificio
 # -> ordini in lavorazione (dalle chiavi "id:ordine" di JobWorkScanService.collect_assignments). null se nessuno.
 # `covering_only` (2026-10-09): solo gli edifici la cui Attrezzeria copre tutti gli attrezzi della ricetta (quando nessun
 # pipottino adulto li ha: altrimenti nessuno potrebbe prendere l'ordine).
@@ -407,6 +409,7 @@ static func choose_produce_building(
 ) -> Building:
 	var categories := ToolFetchService.recipe_tool_categories(recipe)
 	var best: Building = null
+	var best_labor := 1.0
 	var best_orders := 0
 	var best_covered := false
 	for building in world.buildings:
@@ -422,8 +425,16 @@ static func choose_produce_building(
 		var covered := not categories.is_empty() and BuildingToolkitService.filter_uncovered(building, categories).is_empty()
 		if covering_only and not covered:
 			continue
-		if best == null or orders < best_orders or (orders == best_orders and covered and not best_covered):
+		var labor := building.rules.production_labor_multiplier if building.rules != null else 1.0
+		var better := best == null
+		if not better:
+			if not is_equal_approx(labor, best_labor):
+				better = labor < best_labor
+			else:
+				better = orders < best_orders or (orders == best_orders and covered and not best_covered)
+		if better:
 			best = building
+			best_labor = labor
 			best_orders = orders
 			best_covered = covered
 	return best

@@ -18,6 +18,11 @@ extends Resource
 # da HuntService.compute_hit_chance. Negativo (default) = la specie non lo dichiara e vale
 # HuntService.DEFAULT_HIT_CHANCE_SCALE.
 @export var hit_chance_scale: float = -1.0
+# Cacciatori al massimo per un individuo della specie (2026-11-10, richiesta utente, stesso schema di
+# BuildingRules.max_builders). 1 (default) = caccia da soli; > 1 = preda grossa, cacciabile da più persone insieme
+# (2026-11-11: la battuta di caccia è stata tolta; la regola dei più cacciatori sulla stessa preda è da decidere).
+# Oggi lo legge solo il pulsante di debug 🦌+ (WildFaunaService.debug_spawn_small_herd).
+@export var max_hunters: int = 1
 
 @export_group("Butchering")
 # Resa della macellazione di un individuo ADULTO della specie (2026-09-26, richiesta utente — macellazione,

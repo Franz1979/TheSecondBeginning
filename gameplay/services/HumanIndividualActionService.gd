@@ -31,6 +31,9 @@ signal carried_resource_discarded(individual: HumanIndividual, resource_name: St
 # "id"} (HuntService.CONTEXT_PENDING_BUTCHER). Segnale e non assegnazione diretta: costruire la Task, controllare
 # lama e coda e mostrare l'icona spetta a chi ascolta (GameScene._on_butcher_after_hunt_requested).
 signal butcher_after_hunt_requested(individual: HumanIndividual, carcass: Dictionary)
+# Caccia di gruppo (2026-11-11): macellazione finita, i compagni di caccia aiutano a portare i prodotti
+# (ButcherAction.CONTEXT_PENDING_HELPERS). Decide chi ascolta (GameScene -> WorkFollowUpService.butcher_helpers).
+signal butcher_helpers_requested(individual: HumanIndividual, request: Dictionary)
 
 # Trasporto di un mucchio a terra al magazzino (2026-09-27, richiesta utente — generico, oggi usato dalla demolizione):
 # uno step chiede di accodare allo stesso individuo "porta il mucchio al magazzino" scrivendo in context
@@ -355,6 +358,7 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 	_handle_pending_hunt_weapon_recovery(individual, task)
 	_handle_pending_hunt_reapproach(individual, task)
 	_handle_pending_hunt_butcher(individual, task)
+	_handle_pending_butcher_helpers(individual, task)
 	_handle_pending_hunt_zone_prey(individual, task)
 	_handle_pending_ground_pile_haul(individual, task)
 	# Riempimento delle giare (2026-11-06): giara riposta e altre da riempire -> il viaggio successivo in coda allo stesso
@@ -1983,6 +1987,18 @@ func _handle_pending_hunt_butcher(individual: HumanIndividual, task: Task) -> vo
 		step.get_script().get_global_name() if step != null else "-", HuntService.describe_now()
 	])
 	butcher_after_hunt_requested.emit(individual, carcass)
+
+
+# Compagni di caccia al mucchio (2026-11-11): consuma ButcherAction.CONTEXT_PENDING_HELPERS, con la destinazione della
+# macellazione, e lo passa a chi ascolta butcher_helpers_requested.
+func _handle_pending_butcher_helpers(individual: HumanIndividual, task: Task) -> void:
+	if not task.context.has(ButcherAction.CONTEXT_PENDING_HELPERS):
+		return
+	var request: Dictionary = (task.context[ButcherAction.CONTEXT_PENDING_HELPERS] as Dictionary).duplicate()
+	task.context.erase(ButcherAction.CONTEXT_PENDING_HELPERS)
+	if task.context.has(ButcherDestinationService.CONTEXT_KEY):
+		request["butcher_destination"] = String(task.context[ButcherDestinationService.CONTEXT_KEY])
+	butcher_helpers_requested.emit(individual, request)
 
 
 # Trasporto del mucchio al magazzino (2026-09-27): consuma CONTEXT_PENDING_GROUND_PILE_HAUL e lo passa a chi ascolta

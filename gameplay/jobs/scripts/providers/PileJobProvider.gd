@@ -24,7 +24,9 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 	# Tempi (2026-10-28): "mucchi: chi li ha", ": consegne", ": righe", ": svuotati".
 	var timing := JobBoardTimingService.is_enabled()
 	var started := JobBoardTimingService.now() if timing else 0
-	var claims := collect_claims(ctx.individuals, ctx.game_data)
+	# Caccia di gruppo (2026-11-11): i viaggi del macellatore e dei compagni di caccia non chiudono il mucchio, chiunque
+	# può prenderne un carico dalla lista.
+	var claims := collect_claims(ctx.individuals, ctx.game_data, true)
 	if timing:
 		JobBoardTimingService.add("mucchi: chi li ha", started)
 	started = JobBoardTimingService.now() if timing else 0
@@ -205,7 +207,10 @@ static func claim_key(macro_coords: Vector2i, microcell: Vector2i) -> String:
 #     successivo il viaggio dopo è già in coda con la stessa zona, quindi il mucchio resta suo;
 #   - ha nel context la consegna ancora da accodare (HumanIndividualActionService.CONTEXT_PENDING_GROUND_PILE_HAUL),
 #     chiesta da un taglio/estrazione/demolizione appena finiti.
-static func collect_claims(individuals: Array[HumanIndividual], game_data: GameData) -> Dictionary:
+# `skip_shared_butcher_hauls` (2026-11-11, caccia di gruppo): le task dei viaggi della macellazione
+# (ButcherAction.CONTEXT_PILE_TRIPS) e i ritiri dei compagni di caccia (WorkFollowUpService.CONTEXT_BUTCHER_HELPER) non
+# contano: il mucchio resta libero nella lista mentre loro lo svuotano.
+static func collect_claims(individuals: Array[HumanIndividual], game_data: GameData, skip_shared_butcher_hauls: bool = false) -> Dictionary:
 	var claims: Dictionary = {}
 	for member in individuals:
 		var tasks: Array = []
@@ -215,6 +220,9 @@ static func collect_claims(individuals: Array[HumanIndividual], game_data: GameD
 		for raw_task in tasks:
 			var task := raw_task as Task
 			if task == null or task.is_finished():
+				continue
+			if skip_shared_butcher_hauls and (task.context.has(ButcherAction.CONTEXT_PILE_TRIPS) \
+					or task.context.has(WorkFollowUpService.CONTEXT_BUTCHER_HELPER)):
 				continue
 			for key in task_claim_keys(task, game_data):
 				if not claims.has(key):

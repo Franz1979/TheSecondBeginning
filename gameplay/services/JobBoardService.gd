@@ -64,7 +64,12 @@ const SKILL_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "
 # finiti da consegnare ("output") come i Trasporti. Il tipo del lavoro resta il suo (stato, chiave, fornitore); qui solo
 # "Più adatto" (skill) e "Personalizzata" (ordine dei tipi). Gli ordini "transport" del cassetto (magazzino, Riempi giare,
 # Trasporta del giocatore) hanno già il tipo "transport" (DrawerOrderJobProvider._transport_job), con la skill Trasportatore.
-const PRIORITY_KIND_BY_KIND := {"pile": "gather", "output": "transport"}
+# Taglio per i cantieri ("site_cut", 2026-11-12, richiesta utente) conta come il Taglio: una sola riga nelle priorità;
+# dentro il Taglio prima i cantieri (PRIORITY_FIRST_KINDS).
+const PRIORITY_KIND_BY_KIND := {"pile": "gather", "output": "transport", "site_cut": "cut"}
+# Dentro la stessa categoria della priorità, questi tipi passano prima degli altri (poi il più vecchio): i tagli dei
+# cantieri bloccano una costruzione.
+const PRIORITY_FIRST_KINDS: Array[String] = ["site_cut"]
 # Tipo di lavoro -> icona di comando (IconRegistry) che lampeggia sull'edificio durante l'attesa per l'assegnazione a mano.
 const ICON_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt", "fish": "fish", "repair": "build", "inventory": "transport", "rite": "rite", "site_cut": "cut", "heal": "heal", "trap": "trap", "transport": "transport"}
 
@@ -88,7 +93,8 @@ const PRIORITY_NAME_KEYS := {
 # "hunt" (2026-10-09): ordini di caccia del cassetto, in fondo. "repair" (2026-10-10): riparazioni richieste, in fondo.
 # "inventory" (2026-10-11): l'inventario del magazzino, per primo (senza di lui non escono gli ordini del magazzino).
 # "transport" (2026-11-07): prende il posto di "pile" e "output" (PRIORITY_KIND_BY_KIND).
-const DEFAULT_KIND_ORDER: Array[String] = ["inventory", "heal", "body", "build", "upgrade", "demolish", "transport", "produce", "site_cut", "cut", "quarry", "gather", "hunt", "butcher", "fish", "trap", "repair", "rite"]
+# "site_cut" (2026-11-12): compreso in "cut" (PRIORITY_KIND_BY_KIND); un ordine salvato che lo ha ancora lo legge come "cut".
+const DEFAULT_KIND_ORDER: Array[String] = ["inventory", "heal", "body", "build", "upgrade", "demolish", "transport", "produce", "cut", "quarry", "gather", "hunt", "butcher", "fish", "trap", "repair", "rite"]
 # Tipo -> chiave tr() del nome nell'elenco dei tipi e nel log.
 const KIND_NAME_KEYS := {
 	"site_cut": "task_assignment_kind_site_cut",
@@ -335,7 +341,8 @@ static func pick_job(game_data: GameData, individual: HumanIndividual, jobs: Arr
 			for kind in get_kind_order(game_data):
 				var of_kind: Array = jobs.filter(func(job: Dictionary) -> bool: return priority_kind(String(job["kind"])) == kind)
 				if not of_kind.is_empty():
-					return {"job": _oldest(game_data, of_kind), "reason": "%s, %s" % [mode_name, get_kind_name(kind)]}
+					var first: Array = of_kind.filter(func(job: Dictionary) -> bool: return PRIORITY_FIRST_KINDS.has(String(job["kind"])))
+					return {"job": _oldest(game_data, first if not first.is_empty() else of_kind), "reason": "%s, %s" % [mode_name, get_kind_name(kind)]}
 			return {"job": _oldest(game_data, jobs), "reason": mode_name}
 	var best: Dictionary = {}
 	var best_skill := 0.0
@@ -362,6 +369,9 @@ static func sort_for_display(game_data: GameData, jobs: Array) -> void:
 			var index_b := order.find(priority_kind(String(b["kind"])))
 			if index_a != index_b:
 				return index_a < index_b
+			var first_a := PRIORITY_FIRST_KINDS.has(String(a["kind"]))
+			if first_a != PRIORITY_FIRST_KINDS.has(String(b["kind"])):
+				return first_a
 			return _is_older(game_data, a, b)
 		)
 	else:

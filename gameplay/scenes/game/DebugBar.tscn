@@ -103,17 +103,11 @@ theme_override_font_sizes/font_size = 11
 [node name="VSeparatorDomestication" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
 layout_mode = 2
 
-[node name="WolvesButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
+[node name="HerdButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
 custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 theme_override_font_sizes/font_size = 11
-text = "🐺-"
-
-[node name="DogPointsButton" type="Button" parent="MarginContainer/HBoxContainer/ContentGroup"]
-custom_minimum_size = Vector2(0, 32)
-layout_mode = 2
-theme_override_font_sizes/font_size = 11
-text = "🐕+100"
+text = "🦌+"
 
 [node name="VSeparatorThirst" type="VSeparator" parent="MarginContainer/HBoxContainer/ContentGroup"]
 layout_mode = 2

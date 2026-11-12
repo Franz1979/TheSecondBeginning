@@ -47,6 +47,9 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 				continue
 			var display_name := IconRegistry.get_resource_display_name(trap_name)
 			var microcell := site if site != TrapService.NO_SITE else area.rect.get_center()
+			# Attrezzi per montarla (2026-11-11, fossa col piccone): come lo svuotamento, presi in deposito.
+			var setup_tools := TrapService.setup_tool_categories(trap_name)
+			var place_blocked := "" if is_assigned or setup_tools.is_empty() else ToolFetchService.blocked_reason(ctx, setup_tools, EMPTY_AGE_KIND)
 			jobs.append({
 				"key": "trap:%d:%s" % [area.id, trap_name], "kind": "trap",
 				"name": GameContext.tr_text("task_place_trap_job_name").format({"trap": display_name, "area": area.name}),
@@ -55,7 +58,7 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 				"icon": {"text": IconRegistry.get_command_icon("trap")}, "macro": area.macro_coords, "microcell": microcell,
 				"reach_target": {"macro_x": area.macro_coords.x, "macro_y": area.macro_coords.y, "micro_x": microcell.x, "micro_y": microcell.y},
 				"entry_kind": "work_area", "id": area.id, "sort": 0.0,
-				"assigned": is_assigned, "hidden": false, "blocked_reason": "",
+				"assigned": is_assigned, "hidden": false, "blocked_reason": place_blocked,
 				"area_id": area.id, "trap_name": trap_name, "site": site, "provider": provider, "job_type": JOB_PLACE,
 			})
 	var busy := TrapService.trap_ids_being_emptied(ctx.individuals)
@@ -138,16 +141,15 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary
 	return worker.get_assign_rejection_reason(task, ctx.age_band_of(worker))
 
 
-# Attrezzi che il lavoro chiede (vuoto per il piazzamento): giro = tutti i tipi del suo lavoro di zona, svuotamento di una
-# trappola = i suoi.
+# Attrezzi che il lavoro chiede: giro = tutti i tipi del suo lavoro di zona, svuotamento di una trappola = i suoi,
+# piazzamento = quelli per montarla (2026-11-11, vuoto salvo la fossa).
 static func job_tool_categories(job: Dictionary) -> Array[TaskTypes.ToolCategory]:
 	match String(job.get("job_type", JOB_PLACE)):
 		JOB_ROUND:
 			return TrapService.round_tool_categories(String(job.get("zone_job", "hunt")))
 		JOB_EMPTY:
 			return TrapService.empty_tool_categories(String(job.get("trap_name", "")))
-	var none: Array[TaskTypes.ToolCategory] = []
-	return none
+	return TrapService.setup_tool_categories(String(job.get("trap_name", "")))
 
 
 # La Task per `worker`: trappola dall'edificio più vicino al posto. null se manca la trappola, la zona o il posto.
@@ -258,7 +260,7 @@ static func catch_space(trap: PlacedTrap) -> float:
 	var rules := TrapService.get_rules(trap.trap_name)
 	if rules == null:
 		return 0.0
-	if rules.trap_quarry == TrapService.QUARRY_SMALL_GAME:
+	if TrapService.is_herd_quarry(rules):
 		var space := 0.0
 		for product in TrapService.catch_products(trap, 0):
 			var product_rules := CaloricCalculator.get_caloric_source_rules(String(product["resource"]))

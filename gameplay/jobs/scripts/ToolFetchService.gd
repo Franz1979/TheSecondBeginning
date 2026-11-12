@@ -671,7 +671,7 @@ static func start_fetch(ctx: GameContext, worker: HumanIndividual, plan: Array[D
 
 
 # Prelievo ritentato (2026-10-23, richiesta utente — Ashi ferma al focolare con "Attrezzi mancanti: taglio" e 5 coltelli
-# in deposito): il prelievo si decideva solo alla presa del lavoro, e chi poi aspettava guardava solo cintura e zaino. Una
+# in deposito; dal 2026-11-12 anche montaggio/svuotamento delle trappole e macellazione): il prelievo si decideva solo alla presa del lavoro, e chi poi aspettava guardava solo cintura e zaino. Una
 # volta al secondo, chi è fermo su una produzione per attrezzi mancanti (MISSING_TOOLS, categorie già senza quelle
 # coperte dall'Attrezzeria dell'edificio) riprova plan_fetch: le categorie che sta già andando a prendere sono escluse da
 # member_missing_categories, quindi mai due prelievi per la stessa. Ritorna {"member", "task"} per ogni task creata
@@ -684,13 +684,29 @@ static func retry_waiting_fetches(ctx: GameContext) -> Array[Dictionary]:
 		var task := member.current_task
 		if task == null or task.is_finished():
 			continue
-		var produce := task.get_current_action() as ProduceAction
-		if produce == null or produce.tool_wait_result != ToolGateService.Result.MISSING_TOOLS:
+		var action := task.get_current_action()
+		var waiting: Array = []
+		var label := ""
+		var produce := action as ProduceAction
+		if produce != null:
+			if produce.tool_wait_result != ToolGateService.Result.MISSING_TOOLS:
+				continue
+			waiting = produce.tool_wait_missing_categories
+			label = "produrre %s (ritentato)" % produce.resource_name
+		elif action is SetTrapAction or action is EmptyTrapAction or action is ButcherAction:
+			# Montaggio e svuotamento delle trappole, macellazione (2026-11-12, richiesta utente — Nessa ferma sullo scavo
+			# col piccone in magazzino): aspettano allo stesso modo (ensure_required_tools), stesso ripescaggio.
+			var required := ToolGateService.get_action_required_categories(action)
+			if action is SetTrapAction:
+				required = TrapService.setup_tool_categories(String(task.context.get(TrapService.CONTEXT_TRAP_NAME, "")))
+			waiting = member_missing_categories(member, required)
+			label = "%s (ritentato)" % task.task_name
+		if waiting.is_empty():
 			continue
-		var plan := plan_fetch(ctx.world, member, produce.tool_wait_missing_categories)
+		var plan := plan_fetch(ctx.world, member, waiting)
 		if plan.is_empty():
 			continue
-		for fetch_task in start_fetch(ctx, member, plan, "produrre %s (ritentato)" % produce.resource_name):
+		for fetch_task in start_fetch(ctx, member, plan, label):
 			created.append({"member": member, "task": fetch_task})
 	return created
 

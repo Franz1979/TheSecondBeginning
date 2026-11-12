@@ -350,6 +350,41 @@ static func write_weapon_drop(context: Dictionary, macro_coords: Vector2i, local
 
 
 # true se l'individuo ha ancora un'arma di caccia in cintura o nello zaino (dopo che quella scagliata si è rotta).
+# Danno totale che le armi da caccia di `member` possono fare (2026-11-11, caccia di gruppo passo 1 — chi è da solo
+# punta una preda grossa solo se basta, HuntZoneService.choose_prey). Un'arma da lancio conta una volta (a segno senza
+# uccidere resta nell'animale); arco e mischia restano in mano e contano i colpi (usi o munizioni) fino a
+# MAX_SHOTS_PER_WEAPON. Nello zaino: un colpo per arma da lancio.
+const MAX_SHOTS_PER_WEAPON: int = 5
+
+
+static func damage_budget(member: HumanIndividual) -> float:
+	var total := 0.0
+	for slot in range(member.get_tool_slot_count()):
+		var tool_name := member.get_equipped_tool(slot)
+		if tool_name == "" or not ToolGateService._tool_categories(tool_name).has(TaskTypes.ToolCategory.HUNTING):
+			continue
+		var attack := get_attack_power(member, tool_name)
+		if attack <= 0.0:
+			continue
+		if is_thrown_weapon(tool_name):
+			total += attack
+			continue
+		var shots := member.get_equipped_tool_uses(slot)
+		var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+		if rules != null and rules.required_ammo_category >= 0:
+			var ammo_slot := ToolGateService.find_ammo_slot(member, rules.required_ammo_category)
+			shots = member.get_equipped_tool_uses(ammo_slot) if ammo_slot != -1 else 0
+		total += attack * mini(maxi(shots, 0), MAX_SHOTS_PER_WEAPON)
+	for tool_name in ToolGateService.get_tools_covering(TaskTypes.ToolCategory.HUNTING):
+		var quantity := member.get_carried_quantity(tool_name)
+		if quantity <= 0:
+			continue
+		var pack_rules := CaloricCalculator.get_caloric_source_rules(tool_name)
+		if pack_rules != null and pack_rules.required_ammo_category < 0:
+			total += pack_rules.attack_power * quantity
+	return total
+
+
 static func has_hunting_weapon_available(individual: HumanIndividual) -> bool:
 	# Armi a munizioni (2026-10-04): find_belt_slot_for salta già quelle senza munizione; nello zaino idem.
 	# Dal 2026-10-23 anche l'arma con la munizione nello zaino (ToolGateService.has_tool_for la mette in cintura).

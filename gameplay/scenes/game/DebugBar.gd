@@ -36,11 +36,8 @@ var _last_fps: int = -1
 # (RandomEventService.list_rules, nome tradotto, id come metadata) e pulsante per scatenare quello scelto.
 @onready var random_event_option_button: OptionButton = $MarginContainer/HBoxContainer/ContentGroup/RandomEventOptionButton
 @onready var random_event_apply_button: Button = $MarginContainer/HBoxContainer/ContentGroup/RandomEventApplyButton
-# Branco di lupi del villaggio (2026-10-26): numero di lupi, dettaglio per lupo nel tooltip (set_wolf_pack). Dal
-# 2026-10-28 (lupi passo L1) è un pulsante: fa partire una visita del branco (action_pressed &"wolf_visit").
-@onready var wolves_button: Button = $MarginContainer/HBoxContainer/ContentGroup/WolvesButton
-# Punti del cane (2026-11-03, cane passo 1): action_pressed &"dog_points", per arrivare alla scoperta senza anni di visite.
-@onready var dog_points_button: Button = $MarginContainer/HBoxContainer/ContentGroup/DogPointsButton
+# Mandrietta di prede grosse (2026-11-10, al posto di 🐺 e 🐕+100): action_pressed &"spawn_herd".
+@onready var herd_button: Button = $MarginContainer/HBoxContainer/ContentGroup/HerdButton
 # Sete (2026-10-31, richiesta utente): in fondo a destra, tra i controlli da togliere — accende/spegne
 # GameData.thirst_enabled (action_pressed &"toggle_thirst"; lo stato lo rimette GameScene con set_thirst_enabled).
 @onready var thirst_button: Button = $MarginContainer/HBoxContainer/ContentGroup/ThirstButton
@@ -84,9 +81,8 @@ func _ready() -> void:
 	random_event_apply_button.text = "▶"
 	random_event_apply_button.tooltip_text = TooltipText.wrap(tr("debug_random_event_apply") + ": " + tr("debug_random_event_apply_tooltip"))
 	random_event_apply_button.pressed.connect(_on_random_event_apply_pressed)
-	wolves_button.pressed.connect(func() -> void: action_pressed.emit(&"wolf_visit"))
-	dog_points_button.tooltip_text = TooltipText.wrap("Aggiunge 100 punti addomesticazione al cane")
-	dog_points_button.pressed.connect(func() -> void: action_pressed.emit(&"dog_points"))
+	herd_button.tooltip_text = TooltipText.wrap("Fa apparire una mandrietta di prede grosse nella cella centrale")
+	herd_button.pressed.connect(func() -> void: action_pressed.emit(&"spawn_herd"))
 	thirst_button.tooltip_text = TooltipText.wrap(tr("toggle_thirst_tooltip") + ": " + tr("toggle_thirst_description"))
 	thirst_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_thirst"))
 	_apply_state()
@@ -160,22 +156,6 @@ func set_playtime(in_game_seconds: float, playing_seconds: float) -> void:
 	if playtime_label.text == text:
 		return
 	playtime_label.text = text
-	reset_size()
-
-
-# Branco di lupi (debug): `count` < 0 = nessun branco ancora (serve un magazzino); `lines` = una riga per lupo.
-func set_wolf_pack(count: int, lines: PackedStringArray) -> void:
-	var text := "🐺-" if count < 0 else "🐺%d" % count
-	wolves_button.tooltip_text = TooltipText.wrap(
-		"Branco di lupi del villaggio: nessuno (serve un magazzino)" if count < 0
-		else "Clic: visita del branco al villaggio.
-Branco di lupi del villaggio:
-" + "
-".join(lines)
-	)
-	if wolves_button.text == text:
-		return
-	wolves_button.text = text
 	reset_size()
 
 

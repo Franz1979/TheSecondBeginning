@@ -492,6 +492,13 @@ static func from_save_data(data: Dictionary, parse_resources: Callable) -> Groun
 					"killed_day": int(raw_carcass.get("killed_day", 0)),
 					"butcherable": bool(raw_carcass.get("butcherable", true)),
 				})
+				# Compagni di caccia (2026-11-11, ButcherAction.CARCASS_HELPERS_KEY): .get per i salvataggi precedenti.
+				var raw_helpers = raw_carcass.get("helpers", [])
+				if raw_helpers is Array and not (raw_helpers as Array).is_empty():
+					var helper_ids: Array[int] = []
+					for raw_id in raw_helpers:
+						helper_ids.append(int(raw_id))
+					pile.carcasses[-1]["helpers"] = helper_ids
 	return pile
 
 

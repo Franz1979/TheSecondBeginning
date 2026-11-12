@@ -64,6 +64,10 @@ const LINE_ATTACH_STEP := 10.0
 const LINE_WIDTH := 2.0
 const LINE_WIDTH_HIGHLIGHT := 3.0
 const LINE_DIMMED_ALPHA := 0.18
+# Incroci (2026-11-10, richiesta utente): giri al massimo di scambi per ridurli (_reduce_crossings) e mezza larghezza
+# dell'interruzione sulla linea che passa sotto (_draw_crossing_gaps), così si vede che le due linee non si toccano.
+const CROSSING_PASSES := 6
+const CROSSING_GAP := 5.0
 
 @onready var title_label: Label = $Root/MarginContainer/VBoxContainer/HeaderRow/TitleLabel
 @onready var summary_label: Label = $Root/MarginContainer/VBoxContainer/HeaderRow/SummaryLabel
@@ -90,6 +94,8 @@ var _selected_idea_id: String = ""
 # Linee da disegnare, ricostruite ad ogni refresh_content: {"points": PackedVector2Array, "from_id", "to_id", "met"}
 # in coordinate locali di tree_canvas (vedi _build_edges e _on_tree_canvas_draw).
 var _edges: Array[Dictionary] = []
+# Incroci rimasti tra le linee (_find_crossings), ricostruiti con _edges: indici in _edges.
+var _crossings: Array[Dictionary] = []
 # Riquadro sotto il mouse ("" = nessuno): le sue linee in entrata e in uscita si accendono, le altre si attenuano.
 var _hovered_idea_id: String = ""
 # Fasce delle ere, ricostruite ad ogni refresh_content: {"x0": float, "x1": float, "color": Color}
@@ -141,6 +147,7 @@ func refresh_content() -> void:
 		tree_canvas.remove_child(child)
 		child.queue_free()
 	_edges.clear()
+	_crossings.clear()
 	_bands.clear()
 
 	var ideas: Dictionary = {}
@@ -451,40 +458,151 @@ func _build_edges(ideas: Dictionary, cells: Dictionary, first_parents: Dictionar
 			_add_user(lane_users, _lane_key(source, target), edge_index)
 			_add_user(channel_users, target.x - 1, edge_index)
 
-	var step_x := CARD_SIZE.x + COLUMN_GAP
-	var step_y := CARD_SIZE.y + ROW_GAP
+	var routing := {"raw": raw, "out": out_offsets, "in": in_offsets, "channels": channel_users, "lanes": lane_users}
+	_reduce_crossings(routing)
+	var routes := _route_all(routing)
 	for edge_index in raw.size():
 		var edge: Dictionary = raw[edge_index]
-		var source: Vector2i = edge["source"]
-		var target: Vector2i = edge["target"]
-		var source_right := CANVAS_MARGIN + source.x * step_x + CARD_SIZE.x
-		var target_left := CANVAS_MARGIN + target.x * step_x
-		var y_out: float = CANVAS_MARGIN + BAND_HEADER_HEIGHT + source.y * step_y + CARD_SIZE.y * 0.5 + out_offsets[edge_index]
-		var y_in: float = CANVAS_MARGIN + BAND_HEADER_HEIGHT + target.y * step_y + CARD_SIZE.y * 0.5 + in_offsets[edge_index]
-		var points := PackedVector2Array()
-		if edge["straight"]:
-			points.append(Vector2(source_right, y_out))
-			points.append(Vector2(target_left, y_out))
-		else:
-			var channel_out := _slot_position(
-				source_right, COLUMN_GAP, channel_users[source.x], edge_index
-			)
-			points.append(Vector2(source_right, y_out))
-			points.append(Vector2(channel_out, y_out))
-			if target.x == source.x + 1:
-				points.append(Vector2(channel_out, y_in))
-			else:
-				var lane_key := _lane_key(source, target)
-				var lane_top: float = CANVAS_MARGIN + BAND_HEADER_HEIGHT + lane_key * step_y - ROW_GAP
-				var lane_y := _slot_position(lane_top, ROW_GAP, lane_users[lane_key], edge_index)
-				var channel_in := _slot_position(
-					target_left - COLUMN_GAP, COLUMN_GAP, channel_users[target.x - 1], edge_index
-				)
-				points.append(Vector2(channel_out, lane_y))
-				points.append(Vector2(channel_in, lane_y))
-				points.append(Vector2(channel_in, y_in))
-			points.append(Vector2(target_left, y_in))
-		_edges.append({"points": points, "from_id": edge["from_id"], "to_id": edge["to_id"], "met": edge["met"]})
+		_edges.append({"points": routes[edge_index], "from_id": edge["from_id"], "to_id": edge["to_id"], "met": edge["met"]})
+	_crossings = _find_crossings(routes)
+
+
+# Meno incroci (2026-11-10, richiesta utente — groviglio davanti a Trappole avanzate): l'ordine delle linee dentro ogni
+# canale e ogni corsia era quello dell'elenco delle idee. Qui si prova a scambiare due linee vicine nello stesso spazio e
+# si tiene lo scambio se gli incroci totali calano; si ripete finché nessuno scambio migliora (al massimo
+# CROSSING_PASSES giri). Cambia solo l'ordine, non le regole dei percorsi né i punti di attacco.
+func _reduce_crossings(routing: Dictionary) -> void:
+	var best := _find_crossings(_route_all(routing)).size()
+	var attach_groups := _attach_groups(routing)
+	for _pass in CROSSING_PASSES:
+		if best == 0:
+			return
+		var improved := false
+		# Punti di attacco (2026-11-10, richiesta utente): due linee sullo stesso lato dello stesso riquadro, dalla stessa
+		# parte del centro, possono scambiarsi l'altezza di attacco (es. quella che sale da sotto con il tratto verticale
+		# più vicino al riquadro entra più in basso dell'altra, invece di tagliarla).
+		for group: Array in attach_groups:
+			var offsets: Dictionary = routing[group[0]]
+			for i in range(1, group.size()):
+				for j in range(i + 1, group.size()):
+					var a: int = group[i]
+					var b: int = group[j]
+					var offset_a: float = offsets[a]
+					offsets[a] = offsets[b]
+					offsets[b] = offset_a
+					var swapped_count := _find_crossings(_route_all(routing)).size()
+					if swapped_count < best:
+						best = swapped_count
+						improved = true
+					else:
+						offsets[b] = offsets[a]
+						offsets[a] = offset_a
+		for group: Dictionary in [routing["channels"], routing["lanes"]]:
+			for key in group:
+				var users: Array = group[key]
+				for i in users.size() - 1:
+					var first: int = users[i]
+					users[i] = users[i + 1]
+					users[i + 1] = first
+					var count := _find_crossings(_route_all(routing)).size()
+					if count < best:
+						best = count
+						improved = true
+					else:
+						users[i + 1] = users[i]
+						users[i] = first
+		if not improved:
+			return
+
+
+# Gruppi di linee che possono scambiarsi il punto di attacco: ["out" | "in", indici...] per ogni lato di riquadro e per
+# ogni metà (sopra / sotto il centro). Il centro (linea dritta o prima a gomito dalla stessa riga) non si scambia.
+func _attach_groups(routing: Dictionary) -> Array:
+	var by_key: Dictionary = {}
+	for side: String in ["out", "in"]:
+		var card_key := "from_id" if side == "out" else "to_id"
+		var offsets: Dictionary = routing[side]
+		for edge_index in (routing["raw"] as Array).size():
+			var offset: float = offsets[edge_index]
+			if is_zero_approx(offset):
+				continue
+			var key := "%s|%s|%s" % [side, routing["raw"][edge_index][card_key], "up" if offset < 0.0 else "down"]
+			if not by_key.has(key):
+				by_key[key] = [side]
+			(by_key[key] as Array).append(edge_index)
+	var groups: Array = []
+	for key in by_key:
+		if (by_key[key] as Array).size() > 2:
+			groups.append(by_key[key])
+	return groups
+
+
+# Percorsi di tutte le linee (stesso indice di routing["raw"]) con l'ordine attuale di canali e corsie.
+func _route_all(routing: Dictionary) -> Array[PackedVector2Array]:
+	var routes: Array[PackedVector2Array] = []
+	for edge_index in (routing["raw"] as Array).size():
+		routes.append(_route_edge(routing, edge_index))
+	return routes
+
+
+func _route_edge(routing: Dictionary, edge_index: int) -> PackedVector2Array:
+	var step_x := CARD_SIZE.x + COLUMN_GAP
+	var step_y := CARD_SIZE.y + ROW_GAP
+	var edge: Dictionary = routing["raw"][edge_index]
+	var channel_users: Dictionary = routing["channels"]
+	var lane_users: Dictionary = routing["lanes"]
+	var source: Vector2i = edge["source"]
+	var target: Vector2i = edge["target"]
+	var source_right := CANVAS_MARGIN + source.x * step_x + CARD_SIZE.x
+	var target_left := CANVAS_MARGIN + target.x * step_x
+	var y_out: float = CANVAS_MARGIN + BAND_HEADER_HEIGHT + source.y * step_y + CARD_SIZE.y * 0.5 + routing["out"][edge_index]
+	var y_in: float = CANVAS_MARGIN + BAND_HEADER_HEIGHT + target.y * step_y + CARD_SIZE.y * 0.5 + routing["in"][edge_index]
+	var points := PackedVector2Array()
+	if edge["straight"]:
+		points.append(Vector2(source_right, y_out))
+		points.append(Vector2(target_left, y_out))
+		return points
+	var channel_out := _slot_position(source_right, COLUMN_GAP, channel_users[source.x], edge_index)
+	points.append(Vector2(source_right, y_out))
+	points.append(Vector2(channel_out, y_out))
+	if target.x == source.x + 1:
+		points.append(Vector2(channel_out, y_in))
+	else:
+		var lane_key := _lane_key(source, target)
+		var lane_top: float = CANVAS_MARGIN + BAND_HEADER_HEIGHT + lane_key * step_y - ROW_GAP
+		var lane_y := _slot_position(lane_top, ROW_GAP, lane_users[lane_key], edge_index)
+		var channel_in := _slot_position(target_left - COLUMN_GAP, COLUMN_GAP, channel_users[target.x - 1], edge_index)
+		points.append(Vector2(channel_out, lane_y))
+		points.append(Vector2(channel_in, lane_y))
+		points.append(Vector2(channel_in, y_in))
+	points.append(Vector2(target_left, y_in))
+	return points
+
+
+# Incroci tra linee diverse: un tratto verticale che attraversa un tratto orizzontale (interni a entrambi, non i punti
+# in cui una linea tocca solo l'estremo dell'altra). {"point": Vector2, "over": indice della linea verticale, "under":
+# indice di quella orizzontale}: per regola la verticale passa sopra (vedi _draw_crossing_gaps).
+func _find_crossings(routes: Array[PackedVector2Array]) -> Array[Dictionary]:
+	var horizontals: Array = []  # [edge, y, x_min, x_max]
+	var verticals: Array = []    # [edge, x, y_min, y_max]
+	for edge_index in routes.size():
+		var points: PackedVector2Array = routes[edge_index]
+		for i in points.size() - 1:
+			var a := points[i]
+			var b := points[i + 1]
+			if is_equal_approx(a.y, b.y) and not is_equal_approx(a.x, b.x):
+				horizontals.append([edge_index, a.y, minf(a.x, b.x), maxf(a.x, b.x)])
+			elif is_equal_approx(a.x, b.x) and not is_equal_approx(a.y, b.y):
+				verticals.append([edge_index, a.x, minf(a.y, b.y), maxf(a.y, b.y)])
+	var crossings: Array[Dictionary] = []
+	const EPS := 0.5
+	for v in verticals:
+		for h in horizontals:
+			if v[0] == h[0]:
+				continue
+			if v[1] > h[2] + EPS and v[1] < h[3] - EPS and h[1] > v[2] + EPS and h[1] < v[3] - EPS:
+				crossings.append({"point": Vector2(v[1], h[1]), "over": v[0], "under": h[0]})
+	return crossings
 
 
 # Corsia orizzontale di una linea che salta colonne (indice = riga subito sotto lo spazio tra righe): dalla parte da cui
@@ -815,9 +933,37 @@ func _on_tree_canvas_draw() -> void:
 				continue
 			color.a = LINE_DIMMED_ALPHA
 		tree_canvas.draw_polyline(edge["points"], color, LINE_WIDTH, true)
+	_draw_crossing_gaps()
 	for edge in highlighted:
 		var color: Color = (LINE_COLOR_MET if edge["met"] else LINE_COLOR_UNMET).lightened(0.25)
 		tree_canvas.draw_polyline(edge["points"], color, LINE_WIDTH_HIGHLIGHT, true)
+
+
+# Incroci su piani diversi (2026-11-10, richiesta utente): la linea orizzontale si interrompe per 2 × CROSSING_GAP attorno
+# all'incrocio (rettangolo del colore della fascia sotto) e la verticale ci passa sopra continua. Disegnati dopo le linee
+# normali e prima di quelle evidenziate, che restano intere sopra a tutto.
+func _draw_crossing_gaps() -> void:
+	var gap_height := LINE_WIDTH_HIGHLIGHT + 2.0
+	for crossing in _crossings:
+		var point: Vector2 = crossing["point"]
+		tree_canvas.draw_rect(
+			Rect2(point.x - CROSSING_GAP, point.y - gap_height * 0.5, CROSSING_GAP * 2.0, gap_height), _band_color_at(point.x)
+		)
+		var over: Dictionary = _edges[int(crossing["over"])]
+		var color: Color = LINE_COLOR_MET if over["met"] else LINE_COLOR_UNMET
+		if _hovered_idea_id != "" and over["from_id"] != _hovered_idea_id and over["to_id"] != _hovered_idea_id:
+			color.a = LINE_DIMMED_ALPHA
+		tree_canvas.draw_line(
+			point - Vector2(0.0, gap_height), point + Vector2(0.0, gap_height), color, LINE_WIDTH, true
+		)
+
+
+# Colore della fascia d'era che contiene la x (sfondo dietro le linee); la prima fascia se nessuna.
+func _band_color_at(x: float) -> Color:
+	for band in _bands:
+		if x >= float(band["x0"]) and x <= float(band["x1"]):
+			return band["color"]
+	return BAND_COLORS[0]
 
 
 # La rotella scorre in orizzontale (l'albero cresce verso destra) finché il contenuto non

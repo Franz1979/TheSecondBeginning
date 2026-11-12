@@ -28,6 +28,8 @@ func _ready() -> void:
 		game_scene.social_rite_effect_shown.connect(_on_social_rite_effect_shown)
 	if game_scene.has_signal(&"star_vigil_called"):
 		game_scene.star_vigil_called.connect(_on_star_vigil_called)
+	if game_scene.has_signal(&"hunt_called"):
+		game_scene.hunt_called.connect(_on_hunt_called)
 	if game_scene.has_signal(&"wild_animal_arrived"):
 		game_scene.wild_animal_arrived.connect(_on_wild_animal_arrived)
 	if game_scene.has_signal(&"wild_animal_charged"):
@@ -74,6 +76,11 @@ func _on_social_rite_effect_shown(global_pos: Vector2, sound_id: StringName) -> 
 # Chiamata della Veglia delle stelle (2026-10-29): richiamo posizionale della guida.
 func _on_star_vigil_called(global_pos: Vector2) -> void:
 	AudioManager.play_event(&"star_vigil_call", global_pos)
+
+
+# Richiamo di caccia (2026-11-11): fischio con le dita di chi chiama aiuto su una preda grossa ferita.
+func _on_hunt_called(global_pos: Vector2) -> void:
+	AudioManager.play_event(&"hunt_call", global_pos)
 
 
 # Arrivo di un gruppo di animali selvatici in visita (2026-10-28, lupi L1): suono della specie, evento

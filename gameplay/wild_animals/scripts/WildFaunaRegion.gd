@@ -21,9 +21,12 @@ var status: Status = Status.NEVER
 var age_counts: Dictionary = {}
 # Macrocella del riquadro in cui sta la mandria, (-1, -1) se è altrove.
 var current_cell: Vector2i = Vector2i(-1, -1)
-# Macrocella da cui è arrivata (passo 7c, il bordo da cui entra), (-1, -1) se da nessuna del riquadro. Non salvata: serve
-# solo il giorno dello spostamento.
+# Macrocella da cui è arrivata (passo 7c, il bordo da cui entra), (-1, -1) se da nessuna del riquadro. Salvata dal
+# 2026-11-11: chi segue la mandria la ritrova vicino al bordo da cui è entrata.
 var previous_cell: Vector2i = Vector2i(-1, -1)
+# Attraversamento (2026-11-11, richiesta utente): lato (una delle 4 direzioni) da cui la mandria uscirà da current_cell
+# per entrare nella cella accanto, ZERO se nessuna cella accanto del riquadro le va bene (allora resta e vaga).
+var exit_side: Vector2i = Vector2i.ZERO
 # Giorni che restano alla mandria in current_cell, e ultimo giorno (assoluto) in cui il conto è stato fatto: più vecchio
 # di ieri = nessuno guardava il riquadro, la mandria si rimette in una cella a caso (WildFaunaService).
 var stay_remaining: int = 0
@@ -46,6 +49,8 @@ func to_save_data() -> Dictionary:
 		"age_counts": [int(age_counts.get(GameTypes.AgeBand.YOUNG, 0)), int(age_counts.get(GameTypes.AgeBand.ADULT, 0)),
 			int(age_counts.get(GameTypes.AgeBand.OLD, 0))],
 		"current_cell": [current_cell.x, current_cell.y],
+		"previous_cell": [previous_cell.x, previous_cell.y],
+		"exit_side": [exit_side.x, exit_side.y],
 		"stay_remaining": stay_remaining,
 		"last_move_day": last_move_day,
 		"last_update_day": last_update_day,
@@ -69,6 +74,10 @@ static func from_save_data(data: Dictionary) -> WildFaunaRegion:
 	}
 	var cell: Array = data.get("current_cell", [-1, -1])
 	entry.current_cell = Vector2i(int(cell[0]), int(cell[1]))
+	var previous: Array = data.get("previous_cell", [-1, -1])
+	entry.previous_cell = Vector2i(int(previous[0]), int(previous[1]))
+	var exit: Array = data.get("exit_side", [0, 0])
+	entry.exit_side = Vector2i(int(exit[0]), int(exit[1]))
 	entry.stay_remaining = int(data.get("stay_remaining", 0))
 	entry.last_move_day = int(data.get("last_move_day", 0))
 	entry.last_update_day = int(data.get("last_update_day", 0))

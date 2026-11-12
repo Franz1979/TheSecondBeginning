@@ -29,6 +29,8 @@ extends Node2D
 signal idea_bulb_shown(global_pos: Vector2)
 # Richiamo del coordinatore (2026-10-09, CoordinatorService): suono "hey" alla sua posizione (AudioEventListener).
 signal coordinator_called(global_pos: Vector2)
+# Fischio di un cacciatore che chiama aiuto su una preda grossa ferita (2026-11-11, HuntCallService, finger_whistle).
+signal hunt_called(global_pos: Vector2)
 # Talk (2026-10-13): suono alla posizione di un pipottino — evento di SoundEventMap "talk_call" (chi chiama), "talk_answer"
 # (chi risponde), "talk_caller"/"talk_partner" (inizio della conversazione). Ascoltato da AudioEventListener.
 signal talk_sound_requested(global_pos: Vector2, event: StringName)
@@ -862,6 +864,8 @@ func _ready() -> void:
 	CoordinatorService.scene_ready_checker = _is_coordinator_scene_ready
 	# Richiamo (2026-10-09): suono alla posizione del coordinatore e conteggio dei lavori prendibili.
 	CoordinatorService.call_sound_emitter = _emit_coordinator_called
+	# Richiamo di caccia (2026-11-11): fischio e cacce dirette a chi è libero vicino.
+	HuntCallService.call_emitter = _on_hunt_call
 	# Veglia delle stelle (2026-10-29): richiamo della guida alla chiamata, icona e coro all'inizio.
 	StarVigilService.call_sound_emitter = _emit_star_vigil_called
 	DomesticAnimalSlaughterService.kill_sound_emitter = _emit_domestic_animal_slaughtered
@@ -7225,6 +7229,13 @@ func _on_butcher_after_hunt_requested(hunter: HumanIndividual, carcass: Dictiona
 	_apply_effects(effects)
 
 
+# Compagni di caccia al mucchio dopo la macellazione (2026-11-11, WorkFollowUpService.butcher_helpers).
+func _on_butcher_helpers_requested(butcher: HumanIndividual, request: Dictionary) -> void:
+	var effects := GameEffects.new()
+	WorkFollowUpService.butcher_helpers(_game_context(), butcher, request, effects)
+	_apply_effects(effects)
+
+
 # Voci "<edificio>: danneggiato" della campanella (2026-10-10): una per edificio con Building.is_damaged, centra
 # sull'edificio. Sparisce da sola quando l'Integrità risale al 30% o l'edificio non c'è più (la lista è ricostruita ogni
 # secondo); resta anche durante la riparazione.
@@ -7931,7 +7942,7 @@ func _trap_catch_display_name(trap: PlacedTrap, rules: SecondaryResourceRules) -
 			return tr("trap_pickup_catch_birds")
 		TrapService.QUARRY_FISH:
 			return tr("trap_pickup_catch_fish")
-		TrapService.QUARRY_SMALL_GAME:
+		TrapService.QUARRY_SMALL_GAME, TrapService.QUARRY_BIG_GAME:
 			var counts := {}
 			for species in trap.catch_species:
 				counts[species] = int(counts.get(species, 0)) + 1
@@ -8964,6 +8975,10 @@ func _assign_trap_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var task := TrapJobProvider.build_task(ctx, worker, job)
 	if task == null:
 		return
+	# Fossa con pali (2026-11-12): i viaggi al mucchio accanto alla fossa aggiungono Walk + PickUp + scarichi come la
+	# macellazione dopo la caccia (ButcherAction.CONTEXT_PILE_TRIPS, scritto da EmptyTrapAction): stessi segnali.
+	if TrapService.is_empty_task(task):
+		_connect_butcher_step_appended(task, worker)
 	# Svuotamento (2026-11-09): il coltello da prendere in deposito, se serve, prima di partire.
 	var tools := TrapJobProvider.job_tool_categories(job)
 	var fetch_plan: Array[Dictionary] = []
@@ -9203,6 +9218,25 @@ func _emit_coordinator_called(member: HumanIndividual) -> void:
 		return
 	var cell_container: Node2D = live_cells[member.home_macro_coords].container
 	coordinator_called.emit(cell_container.to_global(member.position * MicroCellRenderer.CELL_SIZE))
+
+
+# Richiamo di caccia (2026-11-11, HuntCallService): fischio alla posizione di chi chiama, poi una caccia diretta su
+# `animal` a ognuna delle persone libere vicine (HuntCallService.helpers_for), al massimo `slots`. Ritorna quante.
+func _on_hunt_call(caller: HumanIndividual, animal: AnimalVisualGroup, slots: int) -> int:
+	if live_cells.has(caller.home_macro_coords):
+		var cell_container: Node2D = live_cells[caller.home_macro_coords].container
+		hunt_called.emit(cell_container.to_global(caller.position * MicroCellRenderer.CELL_SIZE))
+	var ctx := _game_context()
+	var sent := 0
+	for member in HuntCallService.helpers_for(ctx, caller, slots):
+		var effects := GameEffects.new()
+		HuntCommandService.assign_prey_hunt(ctx, member, animal, animal.species_name, effects)
+		_apply_effects(effects)
+		var task := member.current_task
+		if HuntService.is_hunt_task(task) and int(task.context.get(HuntZoneService.CONTEXT_PREY_ID, -1)) == animal.id:
+			sent += 1
+			HuntService.log_event(member, "sente il fischio di #%d %s e va su %s #%d." % [caller.id, caller.name, animal.species_name, animal.id])
+	return sent
 
 
 # Macella (2026-11-04): suono dell'uccisione nel punto dell'animale, prima che il corpo sparisca.
@@ -12522,28 +12556,6 @@ func _refresh_debug_summaries() -> void:
 	_refresh_debug_live_cells()
 	if game_data != null:
 		debug_bar.set_playtime(game_data.real_seconds_in_game, game_data.real_seconds_playing)
-	_refresh_debug_domestication()
-
-
-# DEBUG — branco di lupi sul pulsante 🐺 della DebugBar, con i punti del cane in cima al tooltip (dal 2026-10-30, lupi
-# L3, i punti arrivano solo dalle visite: tolto il pulsante 🐕+100).
-func _refresh_debug_domestication() -> void:
-	var rules := DomesticAnimalCalculator.get_rules("dog")
-	if game_data == null or rules == null:
-		return
-	var wolves := WildAnimalGroupService.find_group(game_data, "wolf")
-	var wolf_lines := WildAnimalGroupService.debug_lines(game_data, wolves) if wolves != null else PackedStringArray()
-	if wolves != null:
-		wolf_lines.insert(0, "Punti cane: %d/%d (resto %.1f)" % [DomesticationPointsService.get_points(game_data, "dog"),
-			rules.domestication_points_required, wolves.pending_domestication_points])
-		wolf_lines.insert(1, "Scacciati: %d volte%s" % [wolves.driven_off_count,
-			", l'ultima %d giorni fa" % (game_data.get_absolute_day() - wolves.last_driven_off_day)
-			if wolves.last_driven_off_day >= 0 else ""])
-		wolf_lines.insert(2, WildAnimalVisitService.debug_dice_line(game_data, macro_world, wolves, human_individuals.size()))
-	var wolf_visit := WildAnimalVisitService.find_visit(game_data, wolves.id) if wolves != null else null
-	if wolf_visit != null:
-		wolf_lines.append(WildAnimalVisitService.debug_line(wolf_visit))
-	debug_bar.set_wolf_pack(wolves.animals.size() if wolves != null else -1, wolf_lines)
 
 
 # Barra riaperta: riepiloghi aggiornati subito invece di mostrare quelli di quando era stata chiusa.
@@ -13756,6 +13768,13 @@ func _refresh_animal_individuals(cell: LiveMacroCell, herd_walks: bool = false) 
 			var entry_point: Variant = WildFaunaService.herd_entry_point(macro_world, game_data, String(species), this_cell)
 			if entry_point != null:
 				herd_renderer.start_herd_walk_in(bodies_before, entry_point)
+		elif is_arrival and bodies_before == 0:
+			# Attraversamento (2026-11-11): cella appena accesa con dentro una mandria venuta dalla cella accanto (chi la
+			# segue): la si trova vicino al bordo da cui è entrata.
+			var arrival_point: Variant = WildFaunaService.herd_arrival_point(macro_world, game_data, String(species), this_cell)
+			if arrival_point != null:
+				herd_renderer.place_herd_near_border(arrival_point)
+		herd_renderer.set_herd_exit_side(WildFaunaService.herd_exit_side(macro_world, game_data, String(species), this_cell))
 
 
 # La mandria non è più in questa cella: gli animali vanno al bordo a piedi, e il renderer rimasto vuoto si toglie al giro
@@ -13928,7 +13947,21 @@ func _ensure_animal_renderer(cell: LiveMacroCell, species: String) -> AnimalGrou
 	var r := _build_animal_renderer(cell.container, configs[species])
 	_setup_animal_renderer(cell, r)
 	cell.animal_renderers[species] = r
+	r.herd_exit_reached.connect(_on_herd_exit_reached.bind(cell.coords(), species))
 	return r
+
+
+# Attraversamento (2026-11-11): la mandria di `species` è arrivata al bordo d'uscita di `coords`. Passa nella cella
+# accanto (WildFaunaService.herd_reached_exit) e le celle vive si riconciliano: qui esce a piedi, là (se accesa) entra.
+# Se la cella accanto non va più bene, nuovo lato d'uscita.
+func _on_herd_exit_reached(coords: Vector2i, species: String) -> void:
+	if game_data == null or macro_world == null:
+		return
+	if WildFaunaService.herd_reached_exit(macro_world, game_data, species, coords):
+		for cell in live_cells.values():
+			_refresh_animal_individuals(cell, true)
+	elif live_cells.has(coords):
+		_refresh_animal_individuals(live_cells[coords])
 
 
 # Collegamenti di un renderer alla sua cella — un solo punto per tutti (prima sparsi in
@@ -14351,16 +14384,18 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 		&"toggle_sick":
 			_debug_toggle_sick()
 		# Lupi passo L1 (2026-10-28): visita del branco a comando.
-		&"dog_points":
+		&"spawn_herd":
+			# Mandrietta di prede grosse nella cella centrale, vicino al centro del villaggio se è lì (debug).
 			if game_data != null:
-				_on_domestication_debug_add_points("dog")
-		&"wolf_visit":
-			var wolf_group := WildAnimalGroupService.find_group(game_data, "wolf")
-			if wolf_group == null:
-				DebugLogging.log_wild_animal("[WILD ANIMAL VISITS] nessun branco di lupi (serve un magazzino)")
-			else:
-				WildAnimalVisitService.start_visit(game_data, macro_world, wolf_group)
-			_refresh_debug_domestication()
+				var herd_coords := center_macro_coords
+				var herd_species := WildFaunaService.debug_spawn_small_herd(macro_world, game_data, herd_coords)
+				if herd_species != "" and live_cells.has(herd_coords):
+					var herd_cell: LiveMacroCell = live_cells[herd_coords]
+					_refresh_animal_individuals(herd_cell)
+					var village_center := VisitorService.find_village_center(macro_world)
+					if village_center != null and herd_cell.animal_renderers.has(herd_species) \
+							and Vector2i(village_center.macro_x, village_center.macro_y) == herd_coords:
+						herd_cell.animal_renderers[herd_species].debug_move_herd_near(VisitorService.get_building_point(village_center))
 
 
 # Pulsante 🤒 della barra di debug (2026-10-24, richiesta utente): l'individuo selezionato, se sano, scende a
@@ -14970,13 +15005,12 @@ func _refresh_domestication_button() -> void:
 		domestication_panel.hide()
 
 
-# "+100" di debug del pannello delle Addomesticazioni: stesso percorso del 🐺 della DebugBar (eventuale scoperta).
+# "+100" di debug del pannello delle Addomesticazioni: con l'eventuale scoperta.
 func _on_domestication_debug_add_points(species: String) -> void:
 	var domestication_effects := GameEffects.new()
 	DomesticationPointsService.add_points(game_data, human_folk, species, DomesticationPanel.DEBUG_POINTS, domestication_effects)
 	_apply_effects(domestication_effects)
 	domestication_panel.refresh_content()
-	_refresh_debug_domestication()
 
 
 # "+1" di debug del pannello delle Addomesticazioni: un animale nato 3 anni fa, finché non esistono gli arrivi veri.
@@ -17649,6 +17683,7 @@ func _setup_clock() -> void:
 	# sopra — vedi _on_building_material_blocked.
 	# Macellazione automatica dopo la caccia (2026-09-26) — vedi _on_butcher_after_hunt_requested.
 	individual_action_service.butcher_after_hunt_requested.connect(_on_butcher_after_hunt_requested)
+	individual_action_service.butcher_helpers_requested.connect(_on_butcher_helpers_requested)
 	# Trasporto di un mucchio a terra al magazzino (2026-09-27, oggi dopo la demolizione) — vedi _on_ground_pile_haul_requested.
 	individual_action_service.ground_pile_haul_requested.connect(_on_ground_pile_haul_requested)
 	individual_action_service.hunt_ended_with_message.connect(_on_hunt_ended_with_message)
