@@ -12,6 +12,8 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 	var game_data := ctx.game_data
 	var today := game_data.get_absolute_day()
 	var species_present: Dictionary = {}
+	# Animali tenuti negli edifici, ancora vivi oggi: building_id -> Array[DomesticAnimal] (cucciolate in cattività).
+	var kept_by_building: Dictionary = {}
 	for animal in game_data.domestic_animals.duplicate():
 		var rules := DomesticAnimalCalculator.get_rules(animal.species)
 		if rules == null:
@@ -19,10 +21,26 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 		if rules.max_age_years > 0 and today - animal.birth_day >= _death_age_days(animal, rules):
 			_kill(game_data, animal, "vecchiaia")
 			continue
+		# Selvatico in cattività (2026-11-12, richiesta utente): vive dalla cattura la vita da domestico × punti / soglia,
+		# ricalcolata ogni giorno (più il villaggio impara, più durano). Muore senza carcassa: non si mangia.
+		if animal.is_wild and animal.captured_day >= 0 and today - animal.captured_day >= captivity_life_days(game_data, rules):
+			_kill(game_data, animal, "cattività dopo %d giorni (%d/%d punti)" % [today - animal.captured_day,
+				DomesticationPointsService.get_points(game_data, rules.species_name), rules.domestication_points_required])
+			continue
+		# Tenuti in un edificio (2026-11-12): invecchiano, guariscono e fanno cucciolate nell'edificio; niente partenze.
+		if animal.building_id >= 0:
+			if rules.health_recovery_days > 0 and animal.health_ratio < 1.0:
+				_set_health_ratio(animal, animal.health_ratio + 1.0 / float(rules.health_recovery_days))
+			if not kept_by_building.has(animal.building_id):
+				kept_by_building[animal.building_id] = []
+			kept_by_building[animal.building_id].append(animal)
+			continue
 		species_present[animal.species] = rules
 		if rules.health_recovery_days > 0 and animal.health_ratio < 1.0:
 			_set_health_ratio(animal, animal.health_ratio + 1.0 / float(rules.health_recovery_days))
 		_refresh_body_age_band(animal, today)
+	for building_id: int in kept_by_building:
+		_give_birth_in_building(ctx, building_id, kept_by_building[building_id], today, effects)
 	var is_departure_day: bool = game_data.current_day == SeasonCalculator.get_season_day_range(GameTypes.Season.AUTUMN).x
 	for species: String in species_present:
 		var rules: DomesticAnimalRules = species_present[species]
@@ -127,6 +145,15 @@ static func _starve_one_adult(game_data: GameData, rules: DomesticAnimalRules, t
 	return true
 
 
+# Giorni di vita dalla cattura di un selvatico in cattività: età massima da domestico × punti / soglia (senza minimo).
+static func captivity_life_days(game_data: GameData, rules: DomesticAnimalRules) -> int:
+	if rules.max_age_years <= 0 or rules.domestication_points_required <= 0:
+		return 1 << 30
+	var progress := clampf(float(DomesticationPointsService.get_points(game_data, rules.species_name))
+		/ float(rules.domestication_points_required), 0.0, 1.0)
+	return int(float(rules.max_age_years * GameData.DAYS_PER_YEAR) * progress)
+
+
 # Età di morte in giorni, propria di ogni animale: dipende solo dall'id, quindi resta uguale dopo un caricamento e non si salva.
 static func _death_age_days(animal: DomesticAnimal, rules: DomesticAnimalRules) -> int:
 	var spread := rules.max_age_variation_years * GameData.DAYS_PER_YEAR
@@ -166,6 +193,68 @@ static func _give_birth_if_season(game_data: GameData, rules: DomesticAnimalRule
 				puppy.macro_coords = mother.macro_coords
 				puppy.position = mother.position
 		print("[DOMESTIC] %s %d: nati %d cuccioli" % [rules.species_name, mother.id, litter])
+
+
+# Cucciolate in cattività (2026-11-12, richiesta utente): il primo giorno della stagione delle nascite della selvatica, in
+# ogni edificio con almeno un maschio adulto, ogni femmina adulta partorisce. Una specie per edificio.
+# - Specie non ancora addomesticata: p = punti / soglia. La femmina partorisce con probabilità p; se partorisce fa almeno un
+#   piccolo, e ogni altro fino a litter_size_max arriva con probabilità p. Il piccolo è selvatico e vive come un catturato
+#   (captivity_life_days, da oggi).
+# - Specie addomesticata: partorisce sempre, piccoli a caso tra litter_size_min e litter_size_max, domestici.
+# Edificio pieno: chi non ci sta nasce e muore subito, senza carcassa e fuori dalle statistiche. Ogni nato vivo conta tra
+# i "nati" e dà captivity_birth_points punti addomesticazione.
+static func _give_birth_in_building(ctx: GameContext, building_id: int, animals: Array, today: int, effects: GameEffects) -> void:
+	var game_data := ctx.game_data
+	var species: String = animals[0].species
+	var rules := DomesticAnimalCalculator.get_rules(species)
+	var wild_rules := DomesticAnimalCalculator.get_wild_rules(species)
+	if rules == null or wild_rules == null or rules.litter_size_max <= 0 \
+			or game_data.current_day != SeasonCalculator.get_season_day_range(wild_rules.birth_season).x:
+		return
+	var has_father := false
+	for animal: DomesticAnimal in animals:
+		if animal.is_male and animal.get_age_band(today, wild_rules) == GameTypes.AgeBand.ADULT:
+			has_father = true
+			break
+	if not has_father:
+		return
+	var building := WarehouseManagerService.find_building(ctx.world, building_id)
+	var room := KeptAnimalService.capacity(building) - animals.size()
+	var is_wild := not DomesticAnimalService.is_domesticated(game_data, species)
+	var progress := DomesticationPointsService.get_progress(game_data, species) if is_wild else 1.0
+	var born := 0
+	var lost := 0
+	for mother: DomesticAnimal in animals:
+		if mother.is_male or mother.get_age_band(today, wild_rules) != GameTypes.AgeBand.ADULT:
+			continue
+		var litter := 0
+		if is_wild:
+			if randf() >= progress:
+				continue
+			litter = 1
+			for i in range(rules.litter_size_max - 1):
+				if randf() < progress:
+					litter += 1
+		else:
+			litter = randi_range(maxi(rules.litter_size_min, 1), rules.litter_size_max)
+		for i in range(litter):
+			if room <= 0:
+				lost += 1
+				continue
+			var young := DomesticAnimalService.add_kept_animal(game_data, species, randf() < 0.5, today, building_id, is_wild)
+			if young == null:
+				continue
+			if is_wild:
+				young.captured_day = today
+			room -= 1
+			born += 1
+			KeptAnimalService.count_stat(game_data, species, "born")
+	if born == 0 and lost == 0:
+		return
+	print("[DOMESTIC] %s nell'edificio %d: nati %d, morti subito %d (edificio pieno), progresso %.2f" % [species, building_id,
+		born, lost, progress])
+	if born > 0 and rules.captivity_birth_points > 0:
+		DomesticationPointsService.add_points(game_data, ctx.folk, species, born * rules.captivity_birth_points, effects)
 
 
 # Oltre il tetto (abitanti / inhabitants_per_animal, mai sotto min_population_cap) se ne va chi dice _pick_leaver. Un messaggio
@@ -219,6 +308,8 @@ static func _pick_leaver(animals: Array[DomesticAnimal], rules: DomesticAnimalRu
 
 static func _kill(game_data: GameData, animal: DomesticAnimal, reason: String) -> void:
 	_remove(game_data, animal)
+	if animal.building_id >= 0:
+		KeptAnimalService.count_stat(game_data, animal.species, "died")
 	# Mai stato sulla mappa (posizione -1): nessun punto dove lasciare la carcassa.
 	if animal.macro_coords.x >= 0 and animal.position.x >= 0.0:
 		var band := animal.get_age_band(game_data.get_absolute_day(), DomesticAnimalCalculator.get_wild_rules(animal.species))

@@ -126,6 +126,8 @@ const RESOURCE_ICON_NODES := {
 	"snare": preload("res://simulation/scripts/ui/SnareIcon.gd"),
 	# Pali per fossa (2026-11-11): fascio di pali appuntiti legati.
 	"stake_pit": preload("res://simulation/scripts/ui/StakePitIcon.gd"),
+	# Cesto a caduta (2026-11-12, cattura viva): cesto rovesciato sollevato su un bastoncino.
+	"drop_basket": preload("res://simulation/scripts/ui/DropBasketIcon.gd"),
 	"fish_meat": preload("res://simulation/scripts/ui/FishMeatIcon.gd"),
 	# Pesce cotto, essiccato e affumicato (2026-10-31): la sagoma del pesce crudo con i propri colori e dettagli.
 	"cooked_fish": preload("res://simulation/scripts/ui/CookedFishIcon.gd"),
@@ -202,6 +204,11 @@ const BUILDING_ICONS := {
 	"water_shelter": "💧",
 	# Capanna del trappoliere (2026-11-07) — emoji di riserva, la barra usa TrapperHutIcon.
 	"trapper_hut": "🪤",
+	# Tettoia delle gabbie (2026-11-12) — emoji di riserva, la barra usa CageShelterIcon.
+	"cage_shelter": "🐇",
+	# Conigliera e pollaio (2026-11-13, segnaposto) — emoji di riserva, la barra usa RabbitHutchIcon / ChickenCoopIcon.
+	"rabbit_hutch": "🐰",
+	"chicken_coop": "🐔",
 }
 
 
@@ -263,6 +270,11 @@ const BUILDING_ICON_NODES := {
 	"water_shelter": preload("res://simulation/scripts/ui/WaterShelterIcon.gd"),
 	# Capanna del trappoliere (2026-11-07): lo stesso disegno della mappa (TrapperHutShape).
 	"trapper_hut": preload("res://simulation/scripts/ui/TrapperHutIcon.gd"),
+	# Tettoia delle gabbie (2026-11-12): lo stesso disegno della mappa (CageShelterShape).
+	"cage_shelter": preload("res://simulation/scripts/ui/CageShelterIcon.gd"),
+	# Conigliera e pollaio (2026-11-13, segnaposto): lo stesso disegno della mappa (PlaceholderBuildingShapes).
+	"rabbit_hutch": preload("res://simulation/scripts/ui/RabbitHutchIcon.gd"),
+	"chicken_coop": preload("res://simulation/scripts/ui/ChickenCoopIcon.gd"),
 	# Macerie (2026-10-10, richiesta utente — crollo): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rubble": preload("res://simulation/scripts/ui/RubbleIcon.gd"),
 	# Ceppo dell'insegnamento (2026-10-16, richiesta utente): stesso disegno della mappa (PlaceholderBuildingShapes).
@@ -397,6 +409,7 @@ const BUILDING_CATEGORY_ICONS := {
 	BuildingTypes.Category.MILITARY: "⚔️",
 	BuildingTypes.Category.MOVEMENT: "🛤️",
 	BuildingTypes.Category.OTHER: "➕",
+	BuildingTypes.Category.HUSBANDRY: "🐑",
 }
 
 

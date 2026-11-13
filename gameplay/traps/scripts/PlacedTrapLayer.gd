@@ -25,6 +25,12 @@ const PIT_COLOR := Color(0.16, 0.11, 0.06, 0.9)
 const PIT_COVER_COLOR := Color(0.62, 0.50, 0.30, 0.9)
 const PIT_STAKE_COLOR := Color(0.80, 0.66, 0.42, 1.0)
 const PIT_BROKEN_COLOR := Color(0.40, 0.34, 0.26, 0.6)
+# Cesto a caduta (2026-11-12): disco di vimini color paglia con l'intreccio scuro, il bastoncino d'appoggio e la cordicella.
+const BASKET_COLOR := Color(0.84, 0.70, 0.44, 1.0)
+const BASKET_WEAVE_COLOR := Color(0.52, 0.38, 0.20, 1.0)
+const BASKET_SHADOW_COLOR := Color(0.0, 0.0, 0.0, 0.30)
+const BASKET_STICK_COLOR := Color(0.36, 0.24, 0.12, 1.0)
+const BASKET_BROKEN_COLOR := Color(0.62, 0.54, 0.40, 0.75)
 
 var _macro_coords: Vector2i = Vector2i.ZERO
 var _drawn_revision: int = -1
@@ -58,6 +64,8 @@ func _draw() -> void:
 			_draw_snare(top_left, trap.id, false)
 		elif rules != null and rules.trap_quarry == TrapService.QUARRY_BIG_GAME:
 			_draw_stake_pit(top_left, trap.id, false)
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_LIVE_SMALL_GAME:
+			_draw_drop_basket(top_left, trap.id, trap.get_caught() > 0, false)
 		else:
 			_draw_symbol(top_left)
 	for broken in TrapService.broken_in_macro_cell(game_data, _macro_coords):
@@ -71,6 +79,8 @@ func _draw() -> void:
 			_draw_snare(top_left, int(broken.get("id", 0)), true)
 		elif rules != null and rules.trap_quarry == TrapService.QUARRY_BIG_GAME:
 			_draw_stake_pit(top_left, int(broken.get("id", 0)), true)
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_LIVE_SMALL_GAME:
+			_draw_drop_basket(top_left, int(broken.get("id", 0)), false, true)
 
 
 # Rete rotta (posto a riposo, TrapService.broken_traps): stessi paletti, uno storto, e la rete strappata a metà che pende
@@ -165,6 +175,51 @@ func _draw_stake_pit(top_left: Vector2, trap_id: int, broken: bool) -> void:
 		draw_line(mid - along * radius * 0.85, mid + along * radius * 0.85, PIT_COVER_COLOR, CELL_SIZE * 0.035, true)
 	for point in [Vector2(-0.12, -0.10), Vector2(0.13, -0.04), Vector2(-0.02, 0.14)]:
 		draw_circle(center + (point as Vector2) * CELL_SIZE, CELL_SIZE * 0.035, PIT_STAKE_COLOR)
+
+
+# Cesto a caduta visto dall'alto (2026-11-12), grande come il laccio; verso stabile per trappola (dal suo id).
+#   - armato: disco di vimini sollevato da un lato (mezzaluna d'ombra spostata), bastoncino sotto il bordo sollevato e
+#     cordicella fino a un paletto;
+#   - chiuso (una preda dentro, viva o morta): disco piatto a terra con un alone d'ombra sottile, bastoncino caduto di
+#     fianco, cordicella allentata;
+#   - rotto (posto a riposo): arco di vimini aperto e spento, due raggi sparsi accanto.
+func _draw_drop_basket(top_left: Vector2, trap_id: int, closed: bool, broken: bool) -> void:
+	var center := top_left + Vector2.ONE * CELL_SIZE * 0.5
+	var angle := deg_to_rad(40.0 if trap_id % 2 == 0 else -35.0)
+	var along := Vector2(cos(angle), sin(angle))
+	var across := Vector2(-along.y, along.x)
+	var radius := CELL_SIZE * 0.13
+	if broken:
+		draw_arc(center, radius, angle + 0.6, angle + 0.6 + TAU * 0.65, 14, BASKET_BROKEN_COLOR, CELL_SIZE * 0.035, true)
+		for spoke in [[0.25, 0.9], [-0.35, 1.6]]:
+			var base: Vector2 = center + along * radius * 1.35 + across * radius * float(spoke[0])
+			var direction := along.rotated(float(spoke[1]))
+			draw_line(base, base + direction * radius * 0.7, BASKET_BROKEN_COLOR, CELL_SIZE * 0.025, true)
+		return
+	# Lato sollevato: verso `along`. Armato, l'ombra cade dall'altra parte, allungata; chiuso, un alone appena più largo.
+	if closed:
+		draw_circle(center + Vector2(0.01, 0.015) * CELL_SIZE, radius * 1.1, BASKET_SHADOW_COLOR)
+	else:
+		draw_circle(center - along * radius * 0.35 + Vector2(0.01, 0.015) * CELL_SIZE, radius * 1.05, BASKET_SHADOW_COLOR)
+	draw_circle(center, radius, BASKET_COLOR)
+	for ring in [0.68, 0.36]:
+		draw_arc(center, radius * float(ring), 0.0, TAU, 14, BASKET_WEAVE_COLOR, CELL_SIZE * 0.018, true)
+	for i in range(6):
+		var spoke_direction := along.rotated(TAU * float(i) / 6.0)
+		draw_line(center + spoke_direction * radius * 0.36, center + spoke_direction * radius * 0.95, BASKET_WEAVE_COLOR, CELL_SIZE * 0.014, true)
+	draw_arc(center, radius, 0.0, TAU, 18, BASKET_WEAVE_COLOR, CELL_SIZE * 0.022, true)
+	var peg := center + along * radius * 2.1 + across * radius * 0.45
+	if closed:
+		var stick_start := center + across * radius * 1.25 - along * radius * 0.3
+		draw_line(stick_start, stick_start + along * radius * 0.9, BASKET_STICK_COLOR, CELL_SIZE * 0.03, true)
+		var slack := stick_start.lerp(peg, 0.5) + along * radius * 0.35
+		draw_polyline(PackedVector2Array([stick_start, slack, peg]), SNARE_CORD_COLOR, CELL_SIZE * 0.018, true)
+	else:
+		var stick_top := center + along * radius * 0.7
+		var stick_foot := center + along * radius * 1.25
+		draw_line(stick_top, stick_foot, BASKET_STICK_COLOR, CELL_SIZE * 0.035, true)
+		draw_line(stick_foot, peg, SNARE_CORD_COLOR, CELL_SIZE * 0.018, true)
+	draw_circle(peg, CELL_SIZE * 0.03, POLE_COLOR)
 
 
 # Simbolino generico: un piccolo cerchio chiaro con una croce.

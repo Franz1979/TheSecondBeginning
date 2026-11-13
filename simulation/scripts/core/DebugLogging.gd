@@ -294,7 +294,7 @@ const SHOW_UNLOAD_PROGRESS_LOGS := false
 # RecoverWeaponAction), quale Task/step la consuma, la ricezione in GameScene (e il rifiuto se la carcassa ha già
 # una macellazione in corso o in coda), l'accodamento, e [BUTCHER] a macellazione compiuta. Ogni riga ha anno,
 # giorno e frame del motore (HuntService.describe_now).
-const SHOW_HUNT_LOGS := true
+const SHOW_HUNT_LOGS := false
 # Intervallo tra due righe di avvicinamento, in GIORNI DI GIOCO (1 giorno = 8 s reali a 1x): 0.125 =
 # circa una riga al secondo a velocità 1x.
 const HUNT_APPROACH_LOG_INTERVAL_DAYS := 0.125
@@ -451,4 +451,13 @@ const SHOW_SOCIAL_RITE_LOGS := false
 
 # Trappole (2026-11-07, TrapService — rete per uccelli): una riga [TRAP] quando cambia il posto scelto in una zona (o non
 # ce n'è), alla presa della trappola all'edificio e al montaggio (dove, usi, indice). Acceso per le prime prove.
-const SHOW_TRAP_LOGS := false
+const SHOW_TRAP_LOGS := true
+
+# Guardia dei cani (DomesticAnimalGuardService): righe [DOMESTIC GUARD] (abbaia, va incontro, morde, torna dal branco).
+const SHOW_DOMESTIC_GUARD_LOGS := false
+
+# Caccia col cane (DomesticAnimalHuntService, HuntZoneService): righe [DOMESTIC HUNT]. Spente il 2026-11-13.
+const SHOW_DOMESTIC_HUNT_LOGS := false
+
+# Animali selvatici fermi sul percorso (AnimalGroupRenderer): righe [ANIMAL GO_TO]. Spente il 2026-11-13.
+const SHOW_ANIMAL_GO_TO_LOGS := false

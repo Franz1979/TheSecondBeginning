@@ -11,7 +11,7 @@ building_name = "building_hide_tent"
 required_idea_id = "paleolithic_constructions"
 required_labor = 2200
 required_materials = {
-"dried_hide": 20,
+"dried_hide": 12,
 "fiber_rope": 5,
 "pebble": 20,
 "plant_fiber": 20,

@@ -30,6 +30,12 @@ const ABSENT_SINCE_MAX_YEARS := 3
 const SPLIT_DAY := 265
 const BIRTH_DAY := 96
 const OLD_AGE_DEATH_DAY := 359
+# Rinforzo di inizio anno (2026-11-13, richiesta utente — tutte le specie): il primo giorno dell'anno una mandria presente
+# sotto REINFORCE_BELOW_RATIO del suo massimo riceve REINFORCE_AMOUNT_RATIO del massimo, con le età della specie. Il
+# ritorno dopo l'estinzione resta RECOLONIZE_START_RATIO.
+const NEW_YEAR_DAY := 0
+const REINFORCE_BELOW_RATIO := 0.2
+const REINFORCE_AMOUNT_RATIO := 0.2
 # Dopo lo split la mandria torna tra queste quote del suo massimo (herd_size_max).
 const SPLIT_TARGET_MIN_RATIO := 0.75
 const SPLIT_TARGET_MAX_RATIO := 0.9
@@ -166,12 +172,30 @@ static func _roll_herd(game_data: GameData, rules: AnimalRules, entry: WildFauna
 	if ratio < 0.0:
 		ratio = herd_start_ratio(game_data)
 	var total := maxi(1, roundi(rules.herd_size_max * ratio))
+	var split := _split_by_species_ages(rules, total)
+	for age_band in [GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD]:
+		entry.age_counts[age_band] = int(split.get(age_band, 0))
+
+
+# `total` capi divisi per fascia d'età con le quote della specie (initial_age_ratio, vuote = uguali).
+static func _split_by_species_ages(rules: AnimalRules, total: int) -> Dictionary:
 	var weights := rules.initial_age_ratio
 	if weights.is_empty():
 		weights = {GameTypes.AgeBand.YOUNG: 1.0, GameTypes.AgeBand.ADULT: 1.0, GameTypes.AgeBand.OLD: 1.0}
-	var split := MacroCellState._split_by_weight(weights, total)
+	return MacroCellState._split_by_weight(weights, total)
+
+
+# Primo giorno dell'anno (2026-11-13, richiesta utente): una mandria sotto REINFORCE_BELOW_RATIO del massimo ne riceve
+# REINFORCE_AMOUNT_RATIO del massimo (almeno 1), con le età della specie. "" se non è sotto la soglia.
+static func _apply_reinforcement(rules: AnimalRules, entry: WildFaunaRegion) -> String:
+	var cap := maxi(1, rules.herd_size_max)
+	if entry.get_total() >= roundi(cap * REINFORCE_BELOW_RATIO):
+		return ""
+	var amount := maxi(1, roundi(cap * REINFORCE_AMOUNT_RATIO))
+	var split := _split_by_species_ages(rules, amount)
 	for age_band in [GameTypes.AgeBand.YOUNG, GameTypes.AgeBand.ADULT, GameTypes.AgeBand.OLD]:
-		entry.age_counts[age_band] = int(split.get(age_band, 0))
+		entry.age_counts[age_band] = _count(entry, age_band) + int(split.get(age_band, 0))
+	return "rinforzo di inizio anno, arrivati %d" % amount
 
 
 # Mandrie che in questo momento stanno in `coords`: specie -> conteggi per fascia d'età (GameTypes.AgeBand -> int).
@@ -465,7 +489,7 @@ static func _catch_up(world: World, game_data: GameData, rules: AnimalRules, ent
 	var recovering := today - from_day > 1
 	var changed := recolonized
 	for year in range(from_day / GameData.DAYS_PER_YEAR, today / GameData.DAYS_PER_YEAR + 1):
-		for moment in [BIRTH_DAY, SPLIT_DAY, OLD_AGE_DEATH_DAY]:
+		for moment in [NEW_YEAR_DAY, BIRTH_DAY, SPLIT_DAY, OLD_AGE_DEATH_DAY]:
 			var day: int = year * GameData.DAYS_PER_YEAR + moment
 			if day <= from_day or day > today:
 				continue
@@ -473,6 +497,8 @@ static func _catch_up(world: World, game_data: GameData, rules: AnimalRules, ent
 				return true
 			var note := ""
 			match moment:
+				NEW_YEAR_DAY:
+					note = _apply_reinforcement(rules, entry)
 				SPLIT_DAY:
 					note = _apply_split(rules, entry)
 				BIRTH_DAY:

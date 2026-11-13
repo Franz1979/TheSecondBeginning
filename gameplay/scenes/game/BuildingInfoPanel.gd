@@ -114,6 +114,10 @@ signal cancel_empty_pit_requested(building: Building)
 signal waste_closed_toggle_requested(building: Building)
 # Tettoia dell'acqua (2026-11-07): livello d'acqua voluto della singola tettoia (-1 = regola generale, 0 = esclusa).
 signal water_target_changed(building: Building, level: int)
+# Specie tenuta (2026-11-12, tettoia delle gabbie — KeptAnimalService): "" = Qualunque.
+signal kept_species_changed(building: Building, species: String)
+# Pulsante "Addomesticazioni" della tettoia delle gabbie (2026-11-12): GameScene apre il pannello delle Addomesticazioni.
+signal domestication_panel_requested
 # Cancello (2026-10-23): Apri/Chiudi.
 signal gate_toggle_requested(building: Building)
 # Sposta qui il centro del villaggio (2026-10-26, cerchio del consiglio): GameScene apre la conferma (irreversibile, nome).
@@ -354,6 +358,8 @@ var _toolkit_grid: HFlowContainer = null
 const BURIED_FONT_SIZE: int = 10
 const BURIED_ROW_INDENT: int = 8
 var _buried_box: VBoxContainer = null
+# Animali tenuti (2026-11-12, tettoia delle gabbie): specie scelta e elenco, sotto i sepolti.
+var _kept_box: VBoxContainer = null
 
 # Sacralità (2026-10-04, richiesta utente): punti di influenza religiosa nel corpo del pannello, sotto lo stato e sopra
 # l'elenco dei sepolti, per gli edifici completi con raggio religioso — "Sacralità: 20 / 100" (punti e soglia
@@ -439,6 +445,10 @@ func _ready() -> void:
 	_buried_box.add_theme_constant_override("separation", 0)
 	add_child(_buried_box)
 	move_child(_buried_box, _sacredness_box.get_index() + 1)
+	_kept_box = VBoxContainer.new()
+	_kept_box.add_theme_constant_override("separation", 0)
+	add_child(_kept_box)
+	move_child(_kept_box, _buried_box.get_index() + 1)
 	# In fondo ai dati dell'edificio, subito prima delle impostazioni (2026-10-25, richiesta utente).
 	_shared_links_box = VBoxContainer.new()
 	_shared_links_box.add_theme_constant_override("separation", 0)
@@ -546,6 +556,7 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_influence_buttons(building)
 	_refresh_sacredness(building)
 	_refresh_buried_list(building)
+	_refresh_kept_animals(building)
 	_refresh_info(building)
 	_refresh_command_icon_row(building, demolition_started)
 	# Riparazione richiesta e non ancora assegnata (2026-10-10, coda dei lavori): "Riparazione in attesa di assegnazione".
@@ -1667,6 +1678,106 @@ func _refresh_buried_list(building: Building) -> void:
 		}), BURIED_ROW_INDENT))
 
 
+# Pulsante "Addomesticazioni" sulla riga di "Costruito" (2026-11-13, richiesta utente): creato al primo uso, mettendo
+# BuiltYearLabel in una riga orizzontale (dopo la costruzione del pannello, che usa ancora il suo indice per l'Integrità).
+var _domestication_button: Button = null
+
+
+func _ensure_domestication_button() -> void:
+	if _domestication_button != null:
+		return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	var index := built_year_label.get_index()
+	remove_child(built_year_label)
+	row.add_child(built_year_label)
+	built_year_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	add_child(row)
+	move_child(row, index)
+	_domestication_button = Button.new()
+	_domestication_button.text = tr("building_kept_open_domestication")
+	_domestication_button.focus_mode = Control.FOCUS_NONE
+	_domestication_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_domestication_button.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	_domestication_button.tooltip_text = TooltipText.wrap(tr("building_kept_open_domestication_tooltip"))
+	# Bordo per sembrare un pulsante.
+	for state in ["normal", "hover", "pressed"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.45, 0.68, 0.95, 0.35 if state == "hover" else 0.2)
+		style.border_color = Color(0.45, 0.68, 0.95)
+		style.set_border_width_all(1)
+		style.set_corner_radius_all(4)
+		style.content_margin_left = 6.0
+		style.content_margin_right = 6.0
+		_domestication_button.add_theme_stylebox_override(state, style)
+	_domestication_button.pressed.connect(func() -> void: domestication_panel_requested.emit())
+	row.add_child(_domestication_button)
+
+
+# Animali tenuti (2026-11-12, tettoia delle gabbie — KeptAnimalService): "Animali: 3/20", la specie (Qualunque o una
+# scelta, cambiabile solo a edificio vuoto) e una riga per animale: nome (la selvatica finché non è addomesticato), sesso,
+# età. Solo per gli edifici con animal_capacity e finiti.
+func _refresh_kept_animals(building: Building) -> void:
+	if _domestication_button != null:
+		_domestication_button.visible = false
+	for child in _kept_box.get_children():
+		_kept_box.remove_child(child)
+		child.queue_free()
+	var game_data: GameData = GameSettings.active_game_data
+	_kept_box.visible = game_data != null and building != null and building.is_complete and KeptAnimalService.capacity(building) > 0
+	if not _kept_box.visible:
+		return
+	var animals := DomesticAnimalService.get_kept_animals(game_data, building.id)
+	_kept_box.add_child(_build_buried_label(tr("building_kept_animals").format({
+		"count": animals.size(), "max": KeptAnimalService.capacity(building),
+	}), 0))
+	var species_row := HBoxContainer.new()
+	species_row.add_theme_constant_override("separation", 6)
+	# Etichetta senza taglio (_build_buried_label con clip_text sparisce in una riga orizzontale).
+	var species_label := Label.new()
+	species_label.text = tr("building_kept_species")
+	species_label.tooltip_text = TooltipText.wrap(tr("building_kept_species_tooltip"))
+	species_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	species_label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	var species_margin := MarginContainer.new()
+	species_margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
+	species_margin.add_child(species_label)
+	species_row.add_child(species_margin)
+	var picker := OptionButton.new()
+	picker.focus_mode = Control.FOCUS_NONE
+	picker.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	var choices: Array[String] = [""]
+	choices.append_array(KeptAnimalService.selectable_species(building))
+	var current := KeptAnimalService.current_species(game_data, building)
+	for i in range(choices.size()):
+		var species := choices[i]
+		var text := tr("building_kept_species_any") if species == "" else KeptAnimalService.species_display_name(species, true)
+		# Qualunque con un animale dentro: dice quale specie l'ha fissata.
+		if species == "" and building.kept_species == "" and current != "":
+			text = tr("building_kept_species_any_fixed").format({"species": KeptAnimalService.species_display_name(current, true)})
+		picker.add_item(text, i)
+		if species == building.kept_species:
+			picker.select(i)
+	picker.disabled = not animals.is_empty()
+	picker.tooltip_text = TooltipText.wrap(tr("building_kept_species_locked_tooltip") if picker.disabled else tr("building_kept_species_tooltip"))
+	var target := building
+	picker.item_selected.connect(func(index: int) -> void:
+		kept_species_changed.emit(target, choices[index])
+	)
+	species_row.add_child(picker)
+	_kept_box.add_child(species_row)
+	# Pulsante "Addomesticazioni" (2026-11-13, richiesta utente): sulla riga di "Costruito", a fianco del menu non ci stava.
+	_ensure_domestication_button()
+	_domestication_button.visible = true
+	var today := game_data.get_absolute_day()
+	for animal in animals:
+		_kept_box.add_child(_build_buried_label(tr("building_kept_animal_row").format({
+			"name": KeptAnimalService.display_name(animal),
+			"sex": tr("domestic_animal_male" if animal.is_male else "domestic_animal_female"),
+			"age": animal.get_age_years(today),
+		}), BURIED_ROW_INDENT))
+
+
 func _build_buried_label(text: String, indent: int) -> Control:
 	var label := Label.new()
 	label.text = text
@@ -1690,6 +1801,10 @@ func clear() -> void:
 		_waste_bar_margin.visible = false
 	if _buried_box != null:
 		_buried_box.visible = false
+	if _kept_box != null:
+		_kept_box.visible = false
+	if _domestication_button != null:
+		_domestication_button.visible = false
 	if _toolkit_box != null:
 		_toolkit_box.visible = false
 	if _sacredness_box != null:

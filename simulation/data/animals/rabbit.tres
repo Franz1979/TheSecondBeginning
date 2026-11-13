@@ -29,7 +29,7 @@ track_age_bands = true
 youth_duration_years = 1
 adult_duration_years = 2
 old_duration_years = 2
-base_birth_rate = 1.5
+base_birth_rate = 2.0
 initial_age_ratio = {
 0: 0.45,
 1: 0.45,
@@ -38,7 +38,7 @@ initial_age_ratio = {
 dispersal_share_by_age = Array[float]([0.4, 0.4, 0.2])
 herd_region_side = 1
 herd_size_min = 50
-herd_size_max = 100
+herd_size_max = 150
 herd_stay_days_min = 1
 herd_stay_days_max = 3
 recolonization_years = 1

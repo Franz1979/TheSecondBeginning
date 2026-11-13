@@ -68,7 +68,8 @@ const SKILL_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "
 # dentro il Taglio prima i cantieri (PRIORITY_FIRST_KINDS).
 const PRIORITY_KIND_BY_KIND := {"pile": "gather", "output": "transport", "site_cut": "cut"}
 # Dentro la stessa categoria della priorità, questi tipi passano prima degli altri (poi il più vecchio): i tagli dei
-# cantieri bloccano una costruzione.
+# cantieri bloccano una costruzione. Un singolo lavoro può chiederlo anche con "priority_first": true (2026-11-12: il giro
+# delle trappole con un animale vivo in un cesto, che dopo pochi giorni muore). Vedi is_priority_first.
 const PRIORITY_FIRST_KINDS: Array[String] = ["site_cut"]
 # Tipo di lavoro -> icona di comando (IconRegistry) che lampeggia sull'edificio durante l'attesa per l'assegnazione a mano.
 const ICON_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt", "fish": "fish", "repair": "build", "inventory": "transport", "rite": "rite", "site_cut": "cut", "heal": "heal", "trap": "trap", "transport": "transport"}
@@ -341,7 +342,7 @@ static func pick_job(game_data: GameData, individual: HumanIndividual, jobs: Arr
 			for kind in get_kind_order(game_data):
 				var of_kind: Array = jobs.filter(func(job: Dictionary) -> bool: return priority_kind(String(job["kind"])) == kind)
 				if not of_kind.is_empty():
-					var first: Array = of_kind.filter(func(job: Dictionary) -> bool: return PRIORITY_FIRST_KINDS.has(String(job["kind"])))
+					var first: Array = of_kind.filter(func(job: Dictionary) -> bool: return is_priority_first(job))
 					return {"job": _oldest(game_data, first if not first.is_empty() else of_kind), "reason": "%s, %s" % [mode_name, get_kind_name(kind)]}
 			return {"job": _oldest(game_data, jobs), "reason": mode_name}
 	var best: Dictionary = {}
@@ -353,6 +354,11 @@ static func pick_job(game_data: GameData, individual: HumanIndividual, jobs: Arr
 			best = job
 			best_skill = skill
 	return {"job": best, "reason": "%s, skill %s" % [mode_name, str(snappedf(best_skill, 0.01))]}
+
+
+# true se il lavoro passa prima degli altri della sua categoria (PRIORITY_FIRST_KINDS o "priority_first").
+static func is_priority_first(job: Dictionary) -> bool:
+	return PRIORITY_FIRST_KINDS.has(String(job["kind"])) or bool(job.get("priority_first", false))
 
 
 # Ordine delle righe "In coda" del cassetto secondo il modo attivo (in place): "Più adatto" e "Prima i più vecchi" dal
@@ -369,8 +375,8 @@ static func sort_for_display(game_data: GameData, jobs: Array) -> void:
 			var index_b := order.find(priority_kind(String(b["kind"])))
 			if index_a != index_b:
 				return index_a < index_b
-			var first_a := PRIORITY_FIRST_KINDS.has(String(a["kind"]))
-			if first_a != PRIORITY_FIRST_KINDS.has(String(b["kind"])):
+			var first_a := is_priority_first(a)
+			if first_a != is_priority_first(b):
 				return first_a
 			return _is_older(game_data, a, b)
 		)

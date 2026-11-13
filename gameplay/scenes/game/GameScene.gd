@@ -49,6 +49,8 @@ signal wild_animal_charged(global_pos: Vector2, species: String)
 signal wild_animal_driven_off(global_pos: Vector2)
 # Animale domestico cliccato o entrato nell'inquadratura (2026-11-03, cane passo 3): verso della specie (AudioEventListener).
 signal domestic_animal_called(global_pos: Vector2, species: String)
+# Edificio con animali tenuti cliccato (2026-11-12, tettoia delle gabbie): verso della specie (AudioEventListener).
+signal kept_animals_called(global_pos: Vector2, species: String)
 # Macella (2026-11-04): uccisione ordinata dal giocatore, per il suono (AudioEventListener).
 signal domestic_animal_slaughtered(global_pos: Vector2, species: String)
 # Abbaio d'allarme di un animale di guardia (cane, passo 8.1, 2026-11-06).
@@ -903,6 +905,11 @@ func _ready() -> void:
 	building_info_panel.cancel_empty_pit_requested.connect(_on_cancel_empty_pit_requested)
 	building_info_panel.waste_closed_toggle_requested.connect(_on_waste_closed_toggle_requested)
 	building_info_panel.water_target_changed.connect(_on_water_target_changed)
+	building_info_panel.kept_species_changed.connect(_on_kept_species_changed)
+	building_info_panel.domestication_panel_requested.connect(func() -> void:
+		if DomesticationPanel.is_available(human_folk, game_data):
+			domestication_panel.open_dialog(human_folk, game_data)
+	)
 	building_info_panel.gate_toggle_requested.connect(_on_gate_toggle_requested)
 	building_info_panel.village_center_move_requested.connect(_on_village_center_move_requested)
 	building_info_panel.village_naming_requested.connect(_on_village_naming_requested)
@@ -1569,6 +1576,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_select_vegetation(map_hit)
 			SelectionKind.BUILDING:
 				_select_building(map_hit)
+				var kept := DomesticAnimalService.get_kept_animals(game_data, int(map_hit["building_id"]))
+				if not kept.is_empty():
+					kept_animals_called.emit(get_global_mouse_position(), kept[0].species)
 			SelectionKind.DEAD_BODY:
 				_select_dead_body(map_hit)
 			SelectionKind.STONE:
@@ -2498,10 +2508,22 @@ func _right_click_trap(targets: RightClickTargets) -> bool:
 				text = tr("trap_place_item_fish").format({"trap": text, "level": tr(STREAM_FISH_LEVEL_KEYS[level])})
 			elif level >= 0:
 				text = tr("trap_place_item_birds").format({"trap": text, "level": tr(BIRD_PRESENCE_LEVEL_KEYS[level])})
-			items.append({"key": trap_name, "text": text, "enabled": true, "icon": trap_name})
+			# Vincolo di piazzamento (2026-11-12, cesto senza tettoia delle gabbie): voce spenta, con l'edificio che manca.
+			var blocked_reason := String(option.get("blocked_reason", ""))
+			if blocked_reason != "":
+				text = tr("trap_place_item_blocked").format({
+					"trap": text, "building": tr("building_" + TrapService.LIVE_CATCH_BUILDING_TYPE),
+				})
+			items.append({"key": trap_name, "text": text, "enabled": blocked_reason == "", "icon": trap_name})
 		rows[EXTRACTION_CHOICE_TRAP] = 1
 		overrides[EXTRACTION_CHOICE_TRAP] = {"text": tr("trap_choice_place"), "confirm_text": tr("trap_choice_place_confirm"), "icon": IconRegistry.get_command_icon("trap")}
-		row_options[EXTRACTION_CHOICE_TRAP] = {"type": "list", "items": items, "selected": String(options[0]["trap_name"])}
+		# Prima voce accesa come scelta (2026-11-12: il cesto può essere spento).
+		var selected_trap := ""
+		for item in items:
+			if bool(item["enabled"]):
+				selected_trap = String(item["key"])
+				break
+		row_options[EXTRACTION_CHOICE_TRAP] = {"type": "list", "items": items, "selected": selected_trap}
 	extraction_choice_dialog.open_choice_only_dialog(
 		tr("trap_choice_dialog_title"), tr("trap_choice_dialog_message"), rows, overrides, row_options, true
 	)
@@ -7942,7 +7964,7 @@ func _trap_catch_display_name(trap: PlacedTrap, rules: SecondaryResourceRules) -
 			return tr("trap_pickup_catch_birds")
 		TrapService.QUARRY_FISH:
 			return tr("trap_pickup_catch_fish")
-		TrapService.QUARRY_SMALL_GAME, TrapService.QUARRY_BIG_GAME:
+		TrapService.QUARRY_SMALL_GAME, TrapService.QUARRY_BIG_GAME, TrapService.QUARRY_LIVE_SMALL_GAME:
 			var counts := {}
 			for species in trap.catch_species:
 				counts[species] = int(counts.get(species, 0)) + 1
@@ -14533,6 +14555,14 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Capanna del trappoliere (2026-11-07) — azione cablata in BuildBar._ready.
 		&"build_trapper_hut":
 			return "trapper_hut"
+		# Tettoia delle gabbie (2026-11-12) — azione cablata in BuildBar._ready.
+		&"build_cage_shelter":
+			return "cage_shelter"
+		# Conigliera e pollaio (2026-11-13) — azioni cablate in BuildBar._ready.
+		&"build_rabbit_hutch":
+			return "rabbit_hutch"
+		&"build_chicken_coop":
+			return "chicken_coop"
 		_:
 			return ""
 
@@ -14901,6 +14931,12 @@ func _on_water_target_changed(building: Building, level: int) -> void:
 	_refresh_selected_building_panel()
 
 
+# Specie tenuta della tettoia delle gabbie (2026-11-12, KeptAnimalService): solo a edificio vuoto.
+func _on_kept_species_changed(building: Building, species: String) -> void:
+	KeptAnimalService.set_kept_species(game_data, building, species)
+	_refresh_selected_building_panel()
+
+
 func _on_waste_closed_toggle_requested(building: Building) -> void:
 	if building == null or building.waste_emptying or not WasteDisposalService.is_pit(building):
 		return
@@ -15005,9 +15041,23 @@ func _refresh_domestication_button() -> void:
 		domestication_panel.hide()
 
 
+# Punti addomesticazione degli animali catturati vivi arrivati in tettoia (2026-11-12): con l'eventuale scoperta.
+func _on_domestication_points_earned(_individual: HumanIndividual, points: Dictionary) -> void:
+	var domestication_effects := GameEffects.new()
+	for species in points:
+		# Passo C (2026-11-12): il primo animale vivo in tettoia scopre la specie, con la notifica.
+		DomesticationPointsService.discover_species(game_data, String(species), domestication_effects)
+		if int(points[species]) > 0:
+			DomesticationPointsService.add_points(game_data, human_folk, String(species), int(points[species]), domestication_effects)
+	_apply_effects(domestication_effects)
+	if domestication_panel != null and domestication_panel.visible:
+		domestication_panel.refresh_content()
+
+
 # "+100" di debug del pannello delle Addomesticazioni: con l'eventuale scoperta.
 func _on_domestication_debug_add_points(species: String) -> void:
 	var domestication_effects := GameEffects.new()
+	DomesticationPointsService.discover_species(game_data, species, domestication_effects)
 	DomesticationPointsService.add_points(game_data, human_folk, species, DomesticationPanel.DEBUG_POINTS, domestication_effects)
 	_apply_effects(domestication_effects)
 	domestication_panel.refresh_content()
@@ -15832,6 +15882,14 @@ func _building_type_availability(rules: BuildingRules, building_type_name: Strin
 		return {
 			"is_buildable": false,
 			"disabled_tooltip": tr("build_bar_requires_idea_tooltip").format({"idea": required_idea_display_name}),
+		}
+	# Specie addomesticata (2026-11-13, idea Allevamento): l'edificio della specie solo quando è addomesticata.
+	var required_species := rules.required_domesticated_species
+	if required_species != "" and (game_data == null or not game_data.domesticated_species.has(required_species)):
+		return {
+			"is_buildable": false,
+			"disabled_tooltip": tr("build_bar_requires_domesticated_tooltip").format({
+				"species": KeptAnimalService.species_display_name(required_species, false)}),
 		}
 	return {"is_buildable": true, "disabled_tooltip": ""}
 
@@ -17347,6 +17405,9 @@ func _apply_effects(effects: GameEffects) -> void:
 	# Prima addomesticazione di una specie (2026-10-26): scoperta, ed eventuale idea regalata, nel popup.
 	for domesticated_species in effects.animals_domesticated:
 		_trigger_discoveries(DiscoveryTypes.TriggerType.ANIMAL_DOMESTICATED, {"species": domesticated_species})
+	# Edifici della specie (2026-11-13, BuildingRules.required_domesticated_species): si accendono subito.
+	if not effects.animals_domesticated.is_empty():
+		_refresh_building_slots_buildable()
 	for job_key in effects.forgotten_job_board_waits:
 		_free_job_board_wait_icon(job_key)
 	for entry in effects.command_icons:
@@ -17686,6 +17747,7 @@ func _setup_clock() -> void:
 	individual_action_service.butcher_helpers_requested.connect(_on_butcher_helpers_requested)
 	# Trasporto di un mucchio a terra al magazzino (2026-09-27, oggi dopo la demolizione) — vedi _on_ground_pile_haul_requested.
 	individual_action_service.ground_pile_haul_requested.connect(_on_ground_pile_haul_requested)
+	individual_action_service.domestication_points_earned.connect(_on_domestication_points_earned)
 	individual_action_service.hunt_ended_with_message.connect(_on_hunt_ended_with_message)
 	# Task chiusa con un messaggio per il giocatore (2026-10-04: raccolta da un mucchio senza deposito con posto).
 	individual_action_service.task_message_requested.connect(_on_hunt_ended_with_message)
@@ -17725,21 +17787,6 @@ func _update_play_pause_button() -> void:
 		play_pause_button.text = "▶"
 		play_pause_button.tooltip_text = TooltipText.wrap(tr("play"))
 
-# Specie selvatiche incontrate (addomesticazione passo 3a, 2026-10-26): una specie non ancora incontrata lo diventa
-# quando un suo animale è visibile (fuori dalla nebbia) in una cella viva. Solo le specie mancanti, primo visibile.
-func _check_encountered_wild_species() -> void:
-	if game_data == null:
-		return
-	for cell in live_cells.values():
-		for species in cell.animal_renderers:
-			if DomesticationEncounterService.is_encountered(game_data, species):
-				continue
-			# Non tipizzata: un renderer già liberato darebbe errore all'assegnazione (come _refresh_debug_animal_summary).
-			var renderer_node = cell.animal_renderers[species]
-			if is_instance_valid(renderer_node) and renderer_node.has_visible_individual():
-				DomesticationEncounterService.mark_encountered(game_data, species)
-
-
 func _on_day_advanced(checkpoint_ran: bool) -> void:
 	# Giro giornaliero della simulazione: anche riallineamento della produzione e cantieri maturati (blocco 5e).
 	_tick_simulation_day()
@@ -17761,8 +17808,6 @@ func _on_day_advanced(checkpoint_ran: bool) -> void:
 	# dopo il caricamento): passato un giorno il "salva e ricarica identico" non ha più senso, una
 	# visita futura genera individui nuovi dalla popolazione come sempre.
 	_pending_saved_animal_individuals.clear()
-	# Specie selvatiche incontrate (addomesticazione, 2026-10-26): anche nei giorni "vuoti".
-	_check_encountered_wild_species()
 	# Pulsante 🐾 visibile dalla prima visita del branco (2026-11-07, DomesticationPanel.is_available).
 	_refresh_domestication_button()
 	# Refresh giornaliero del pannello individuo selezionato (2026-09-06, richiesta utente) — PRIMA

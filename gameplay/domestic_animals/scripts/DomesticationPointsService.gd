@@ -9,20 +9,17 @@ extends RefCounted
 
 
 # amount può essere negativo (lupi feriti o uccisi, passi futuri). Punti interi, mai sotto zero e senza tetto:
-# l'eccedenza oltre la soglia porterà altri animali. false = nulla cambiato (specie inesistente, idea non nota o selvatica
-# non incontrata).
+# l'eccedenza oltre la soglia porterà altri animali. false = nulla cambiato (specie inesistente o idea non nota).
 # effects null = nessuna scoperta (il superamento resta comunque registrato).
 static func add_points(game_data: GameData, folk: Folk, species: String, amount: int, effects: GameEffects = null) -> bool:
 	var rules := DomesticAnimalCalculator.get_rules(species)
 	if rules == null:
 		push_warning("DomesticationPointsService: specie domestica '%s' inesistente" % species)
 		return false
-	# Specie con idea richiesta (passo 3a): servono l'idea e l'incontro con la selvatica. Il cane (nessuna idea) accumula
-	# sempre: è addomesticando il lupo che nasce l'idea.
+	# Specie con idea richiesta (passo 3a): serve l'idea. Il cane (nessuna idea) accumula sempre: è addomesticando il lupo
+	# che nasce l'idea. Regola del primo incontro tolta il 2026-11-12 (sarà la prima cattura viva a sbloccare la specie).
 	if rules.required_idea_id != "":
 		if folk == null or not folk.completed_ideas.has(rules.required_idea_id):
-			return false
-		if not DomesticationEncounterService.is_encountered(game_data, rules.wild_species_name):
 			return false
 	var points := maxi(get_points(game_data, species) + amount, 0)
 	game_data.domestication_points[species] = points
@@ -33,6 +30,32 @@ static func add_points(game_data: GameData, folk: Folk, species: String, amount:
 		print("[DOMESTICATION] %s addomesticato per la prima volta" % species)
 		if effects != null:
 			effects.animal_domesticated(species)
+	return true
+
+
+# Specie scoperta (2026-11-12, passo C): visibile nel pannello. Il cane (nessuna idea richiesta) sempre; le altre dal
+# primo animale vivo in tettoia (discover_species), o se già addomesticate.
+static func is_discovered(game_data: GameData, species: String) -> bool:
+	var rules := DomesticAnimalCalculator.get_rules(species)
+	if rules == null:
+		return false
+	return rules.required_idea_id == "" or game_data.discovered_domestic_species.has(species) \
+		or game_data.domesticated_species.has(species)
+
+
+# Scopre la specie (primo animale vivo in tettoia, o "+100" di debug) con una notifica. true se è nuova.
+static func discover_species(game_data: GameData, species: String, effects: GameEffects = null) -> bool:
+	if is_discovered(game_data, species):
+		return false
+	var rules := DomesticAnimalCalculator.get_rules(species)
+	game_data.discovered_domestic_species.append(species)
+	print("[DOMESTICATION] specie scoperta: %s" % species)
+	if effects != null:
+		effects.notify(NotificationTypes.NotificationPopupType.DOMESTIC_SPECIES_DISCOVERED,
+			GameContext.tr_text("domestication_species_discovered").format({
+				"species": GameContext.tr_text("animal_species_" + rules.wild_species_name),
+				"domestic": GameContext.tr_text(rules.display_name),
+			}), true)
 	return true
 
 

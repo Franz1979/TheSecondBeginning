@@ -633,6 +633,18 @@ static func _get_best_cost() -> float:
 
 
 # Regioni delle microcelle libere tra `position` stessa (se libera) e, se bloccata, i suoi 4 vicini liberi.
+# true se a `microcell` ci si può avvicinare (2026-11-13, bersagli degli ordini "Raccogli"): libera o con un lato libero, in
+# una regione che non sia una sacca (in una sacca entra solo chi è già dentro). Senza griglia: true.
+static func is_approachable(cell: LiveMacroCell, microcell: Vector2i) -> bool:
+	if cell == null or cell.path_grid == null or not _in_bounds(microcell):
+		return true
+	_ensure_regions(cell)
+	for region in _regions_around(cell, microcell):
+		if not _is_pocket(cell, region):
+			return true
+	return false
+
+
 static func _regions_around(cell: LiveMacroCell, position: Vector2i) -> Array[int]:
 	var regions: Array[int] = []
 	var index := _index(position)

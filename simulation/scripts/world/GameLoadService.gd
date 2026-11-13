@@ -148,9 +148,18 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	var saved_domestication_years: Dictionary = data["game"].get("domestication_years", {})
 	for species in saved_domestication_years:
 		game_data.domestication_years[String(species)] = int(saved_domestication_years[species])
-	game_data.encountered_wild_species.clear()
-	for species in data["game"].get("encountered_wild_species", []):
-		game_data.encountered_wild_species.append(String(species))
+	# Specie scoperte (2026-11-12) — .get() per i save precedenti: nessuna.
+	game_data.discovered_domestic_species.clear()
+	for species in data["game"].get("discovered_domestic_species", []):
+		game_data.discovered_domestic_species.append(String(species))
+	# Statistiche della cattività (2026-11-12) — JSON rende i numeri float.
+	game_data.domestication_stats.clear()
+	var saved_domestication_stats: Dictionary = data["game"].get("domestication_stats", {})
+	for species in saved_domestication_stats:
+		var counts := {}
+		for stat in saved_domestication_stats[species]:
+			counts[String(stat)] = int(saved_domestication_stats[species][stat])
+		game_data.domestication_stats[String(species)] = counts
 	# Animali domestici (2026-11-03) — .get() per i save precedenti: nessun animale.
 	game_data.domestic_animals.clear()
 	for saved_animal in data["game"].get("domestic_animals", []):
@@ -754,6 +763,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for buried_entry in building_data.get("buried", []):
 				if buried_entry is Dictionary:
 					building.buried.append(buried_entry)
+			# Specie tenuta (2026-11-12, tettoia delle gabbie): "" (Qualunque) nei salvataggi precedenti.
+			building.kept_species = String(building_data.get("kept_species", ""))
 			# Rifiuti (2026-10-18, Fossa dei rifiuti): 0 nei salvataggi precedenti.
 			building.waste_stored = int(building_data.get("waste_stored", 0))
 			building.waste_reserved = int(building_data.get("waste_reserved", 0))

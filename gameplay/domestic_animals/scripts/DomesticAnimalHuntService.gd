@@ -48,7 +48,7 @@ static func assign(game_data: GameData, world: World, individuals: Array[HumanIn
 		animal.hunt_center = Vector2(-1.0, -1.0)
 		animal.hunt_catching_up = false
 		taken[member.id] = true
-		print("[DOMESTIC HUNT] %s #%d va a caccia con #%d %s (a %.1f microcelle)" % [
+		log_line("[DOMESTIC HUNT] %s #%d va a caccia con #%d %s (a %.1f microcelle)" % [
 			animal.species, animal.id, member.id, member.name, animal.position.distance_to(member.position)])
 
 
@@ -103,7 +103,7 @@ static func _update_chase(animal: DomesticAnimal, person: HumanIndividual, rules
 		animal.hunt_chase_point = Vector2(-1.0, -1.0)
 		animal.hunt_catching_up = false
 		animal.hunt_center = Vector2(-1.0, -1.0)
-		print("[DOMESTIC HUNT] %s #%d insegue %s #%d (a %.1f microcelle)" % [
+		log_line("[DOMESTIC HUNT] %s #%d insegue %s #%d (a %.1f microcelle)" % [
 			animal.species, animal.id, prey.species_name, prey.id, animal.position.distance_to(prey.position)])
 	if animal.position.distance_to(person.position) > rules.hunt_chase_max_distance:
 		_end_chase(animal, "troppo lontano dal cacciatore")
@@ -113,7 +113,7 @@ static func _update_chase(animal: DomesticAnimal, person: HumanIndividual, rules
 		if prey.flee_timer > 0.0:
 			animal.hunt_hold_hours_left = 0.0
 			animal.hunt_chase_point = Vector2(-1.0, -1.0)
-			print("[DOMESTIC HUNT] %s #%d: %s #%d scappa di nuovo" % [animal.species, animal.id, prey.species_name, prey.id])
+			log_line("[DOMESTIC HUNT] %s #%d: %s #%d scappa di nuovo" % [animal.species, animal.id, prey.species_name, prey.id])
 		else:
 			animal.hunt_hold_hours_left -= game_delta * 24.0
 			if animal.hunt_hold_hours_left <= 0.0:
@@ -148,7 +148,7 @@ static func _hold(animal: DomesticAnimal, prey: AnimalVisualGroup, rules: Domest
 	AnimalGroupRenderer.set_live_behavior(prey.id, AnimalVisualGroup.Behavior.STAND_AROUND, prey.position, 0.0, 0.4, 0.3)
 	AnimalGroupRenderer.set_live_behavior(animal.body_id, AnimalVisualGroup.Behavior.STAND_AROUND, prey.position,
 		1.0, 2.0, 1.0)
-	print("[DOMESTIC HUNT] %s #%d tiene a bada %s #%d per %.0f ore" % [
+	log_line("[DOMESTIC HUNT] %s #%d tiene a bada %s #%d per %.0f ore" % [
 		animal.species, animal.id, prey.species_name, prey.id, rules.hunt_hold_hours])
 
 
@@ -160,7 +160,7 @@ static func _end_chase(animal: DomesticAnimal, reason: String) -> void:
 		var prey := AnimalGroupRenderer.find_live_individual(animal.hunt_chase_prey_id)
 		if prey != null and prey.behavior == AnimalVisualGroup.Behavior.STAND_AROUND:
 			AnimalGroupRenderer.set_live_behavior(prey.id, AnimalVisualGroup.Behavior.WANDER)
-	print("[DOMESTIC HUNT] %s #%d smette di inseguire #%d (%s)" % [animal.species, animal.id, animal.hunt_chase_prey_id, reason])
+	log_line("[DOMESTIC HUNT] %s #%d smette di inseguire #%d (%s)" % [animal.species, animal.id, animal.hunt_chase_prey_id, reason])
 	animal.hunt_chase_prey_id = -1
 	animal.hunt_hold_hours_left = 0.0
 	animal.hunt_chase_point = Vector2(-1.0, -1.0)
@@ -185,7 +185,7 @@ static func scenting_animal_for(hunter: HumanIndividual) -> DomesticAnimal:
 
 static func _release(animal: DomesticAnimal, world: World, reason: String) -> void:
 	_end_chase(animal, reason)
-	print("[DOMESTIC HUNT] %s #%d torna dalla caccia con #%d (%s)" % [animal.species, animal.id, animal.hunt_person_id, reason])
+	log_line("[DOMESTIC HUNT] %s #%d torna dalla caccia con #%d (%s)" % [animal.species, animal.id, animal.hunt_person_id, reason])
 	animal.hunt_person_id = -1
 	animal.hunt_catching_up = false
 	if animal.guard_running:
@@ -221,3 +221,9 @@ static func _find_person(individuals: Array[HumanIndividual], person_id: int) ->
 		if member.id == person_id:
 			return member
 	return null
+
+
+# Righe [DOMESTIC HUNT], dietro DebugLogging.SHOW_DOMESTIC_HUNT_LOGS.
+static func log_line(text: String) -> void:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_DOMESTIC_HUNT_LOGS:
+		print(text)

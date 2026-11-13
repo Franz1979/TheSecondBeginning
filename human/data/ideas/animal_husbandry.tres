@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_animal_husbandry"]
+
+; Allevamento (2026-11-13, richiesta utente): deriva dalle Trappole avanzate. Sblocca la categoria degli edifici per gli
+; animali addomesticati; ogni edificio si costruisce solo quando la sua specie è addomesticata
+; (BuildingRules.required_domesticated_species). Per ora conigliera e pollaio, segnaposto.
+[resource]
+script = ExtResource("1_animal_husbandry")
+id = "animal_husbandry"
+display_name = "idea_animal_husbandry"
+summary = "idea_animal_husbandry_summary"
+description = "idea_animal_husbandry_description"
+thoughts_cost = 80
+prerequisites = Array[String](["advanced_traps"])
+era = "paleolithic"

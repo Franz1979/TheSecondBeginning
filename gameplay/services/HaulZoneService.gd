@@ -524,22 +524,27 @@ static func _count_available_capped(area: WorkArea, macro_state: MacroCellState,
 # Letta direttamente e fermandosi alla prima (2026-10-24, richiesta utente — scatti della lista del cassetto: prima rifaceva
 # tutto _area_cell_totals, la cui memoria scade ogni CELL_TOTALS_MAX_AGE_MSEC e a ogni raccolta da terra); stesso ordine
 # di scansione, quindi la stessa cella di prima.
-static func first_available_cell(area: WorkArea, macro_state: MacroCellState, names: Array[String]) -> Variant:
+# Con `live_cell` (2026-11-13, richiesta utente — sassi sotto ostacoli: ordine fermo per sempre) salta le celle a cui non ci
+# si può avvicinare (PathfindingService.is_approachable).
+static func first_available_cell(area: WorkArea, macro_state: MacroCellState, names: Array[String],
+		live_cell: LiveMacroCell = null) -> Variant:
 	if area == null or macro_state == null or names.is_empty():
 		return null
 	for y in range(area.rect.position.y, area.rect.end.y):
 		for x in range(area.rect.position.x, area.rect.end.x):
 			var cell := Vector2i(x, y)
-			if _cell_has_any(macro_state, cell, names):
+			if _cell_has_any(macro_state, cell, names) and (live_cell == null or PathfindingService.is_approachable(live_cell, cell)):
 				return cell
 	return null
 
 
 # true se la cella `cell` della zona ha ancora qualcosa tra `names` (letta direttamente, solo quella cella).
-static func is_cell_available(area: WorkArea, macro_state: MacroCellState, names: Array[String], cell: Vector2i) -> bool:
+# Con `live_cell` (2026-11-13) anche avvicinabile, come in first_available_cell.
+static func is_cell_available(area: WorkArea, macro_state: MacroCellState, names: Array[String], cell: Vector2i,
+		live_cell: LiveMacroCell = null) -> bool:
 	if area == null or macro_state == null or names.is_empty() or not area.rect.has_point(cell):
 		return false
-	return _cell_has_any(macro_state, cell, names)
+	return _cell_has_any(macro_state, cell, names) and (live_cell == null or PathfindingService.is_approachable(live_cell, cell))
 
 
 static func _cell_has_any(macro_state: MacroCellState, cell: Vector2i, names: Array[String]) -> bool:

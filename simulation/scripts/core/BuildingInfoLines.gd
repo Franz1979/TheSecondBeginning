@@ -33,6 +33,9 @@ static func build(rules: BuildingRules) -> Array[Dictionary]:
 	# (BuildingInfoPanel._refresh_buried_list).
 	if rules.max_buried > 0:
 		add_row.call(_tr("building_info_burial_capacity").format({"max": rules.max_buried}), false)
+	# Posti per animali (2026-11-12, tettoia delle gabbie): "Posti per animali: 20, una sola specie".
+	if rules.animal_capacity > 0:
+		add_row.call(_tr("building_info_animal_capacity").format({"capacity": rules.animal_capacity}), false)
 	# Capienza della Fossa dei rifiuti (2026-10-18): "Capienza rifiuti: 1000". Il riempimento sta nel corpo del pannello
 	# (BuildingInfoPanel._refresh_waste).
 	if rules.waste_capacity > 0:

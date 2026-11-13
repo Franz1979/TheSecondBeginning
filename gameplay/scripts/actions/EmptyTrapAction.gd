@@ -22,6 +22,10 @@ extends Action
 # nello zaino vanno carne, pelle, tendini e ossa; un uso del coltello per preda (la rete: uno per rete).
 # Giro a tappe decise strada facendo (2026-11-09): finita una tappa, la prossima è la trappola della zona più vicina con
 # prede, non nel giro di un altro, la cui resa entra nello zaino (TrapJobProvider.next_round_trap); nessuna = consegna.
+#
+# Cesti a caduta (2026-11-12, passo B2): un animale ancora vivo con un posto in una tettoia delle gabbie va in braccio
+# (TrapService.take_live_catches, context TrapService.CONTEXT_LIVE_ANIMALS: posto prenotato, spazio = la sua carne); gli
+# altri si macellano come ai lacci. A fine giro, prima della consegna della carne, una tappa per tettoia (KeepAnimalAction).
 
 const STAMINA_DRAIN_PER_DAY: float = 150.0
 
@@ -96,18 +100,32 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	var trap := TrapService.find_trap(game_data, current_id)
 	var is_last := not _has_later_stop(individual) and not _plan_next_stop(individual, context, current_id)
 	if _round_cut_short:
-		_queue_delivery(context)
+		_queue_delivery(individual, context)
 		return
 	if trap == null:
 		var catch_so_far: Dictionary = context.get(TrapService.CONTEXT_ROUND_CATCH, {})
-		if is_last and catch_so_far.is_empty():
+		if is_last and catch_so_far.is_empty() and Array(context.get(TrapService.CONTEXT_LIVE_ANIMALS, [])).is_empty():
 			context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = GameContext.tr_text("trap_fail_gone").format({"name": individual.name})
 			return
 		TrapService.log_line("#%d %s: trappola #%d non c'è più, saltata" % [individual.id, individual.name, current_id])
 		if is_last:
-			_queue_delivery(context)
+			_queue_delivery(individual, context)
 		return
 	var rules := TrapService.get_rules(trap.trap_name)
+	# Animali vivi con un posto in tettoia: in braccio (i posti prenotati da tutti, questo giro compreso, contano già).
+	var live := TrapService.take_live_catches(game_data, GameSettings.active_world, trap,
+		KeptAnimalService.reservations(GameSettings.active_human_individuals))
+	if not live.is_empty():
+		var carried_live: Array = context.get(TrapService.CONTEXT_LIVE_ANIMALS, [])
+		carried_live.append_array(live)
+		context[TrapService.CONTEXT_LIVE_ANIMALS] = carried_live
+		for entry in live:
+			TrapService.log_line("#%d %s svuota %s #%d: %s vivo in braccio, verso la tettoia #%d" % [individual.id, individual.name,
+				trap.trap_name, current_id, entry["wild_species"], int(entry["building_id"])])
+		if trap.catch_days.is_empty():
+			if is_last:
+				_queue_delivery(individual, context)
+			return
 	var result := TrapService.empty(game_data, trap)
 	var preys := int(result["preys"])
 	# Coltello: un uso per preda macellata (lacci) o uno per trappola svuotata (rete).
@@ -157,11 +175,13 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if not catch.is_empty():
 		context[TrapService.CONTEXT_ROUND_CATCH] = catch
 	if is_last:
-		_queue_delivery(context)
+		_queue_delivery(individual, context)
 
 
-# Consegna di tutte le prede raccolte nel giro (una ricerca per risorsa), dopo l'ultima tappa.
-func _queue_delivery(context: Dictionary) -> void:
+# Consegna di tutte le prede raccolte nel giro (una ricerca per risorsa), dopo l'ultima tappa. Prima, gli animali in
+# braccio alle loro tettoie (_queue_live_delivery: tappe subito dopo questa, la consegna si accoda in fondo).
+func _queue_delivery(individual: Variant, context: Dictionary) -> void:
+	_queue_live_delivery(individual, context)
 	var catch: Dictionary = context.get(TrapService.CONTEXT_ROUND_CATCH, {})
 	context.erase(TrapService.CONTEXT_ROUND_CATCH)
 	var searches: Array = []
@@ -170,6 +190,32 @@ func _queue_delivery(context: Dictionary) -> void:
 			searches.append({"resource_name": String(resource_name), "quantity": int(catch[resource_name])})
 	if not searches.is_empty():
 		context["pending_warehouse_search"] = {"searches": searches, "excluded_building_ids": []}
+
+
+# Una tappa (cammino + KeepAnimalAction) per ogni tettoia degli animali in braccio. Tettoia sparita: la KeepAnimalAction
+# cerca subito un'altra tettoia o macella sul posto.
+func _queue_live_delivery(individual: Variant, context: Dictionary) -> void:
+	var entries: Array = context.get(TrapService.CONTEXT_LIVE_ANIMALS, [])
+	context.erase(TrapService.CONTEXT_LIVE_ANIMALS)
+	var task: Task = individual.current_task if individual != null else null
+	if entries.is_empty() or task == null:
+		return
+	var groups := {}
+	for entry in entries:
+		var building_id := int(entry.get("building_id", -1))
+		if not groups.has(building_id):
+			groups[building_id] = []
+		groups[building_id].append(entry)
+	var steps: Array[Action] = []
+	var descriptions: Array[String] = []
+	for building_id in groups:
+		var shelter := WarehouseManagerService.find_building(GameSettings.active_world, building_id)
+		if shelter != null:
+			steps.append(WalkAction.new(KeepAnimalAction.walk_point(individual, shelter)))
+			descriptions.append("task_empty_trap_step_walk_shelter")
+		steps.append(KeepAnimalAction.new(shelter, groups[building_id]))
+		descriptions.append("task_empty_trap_step_keep_animal")
+	task.insert_steps_after_current(steps, descriptions)
 
 
 # Giro: aggiunge dopo questa tappa il cammino e lo svuotamento della prossima trappola (TrapJobProvider.next_round_trap).
@@ -186,7 +232,8 @@ func _plan_next_stop(individual: Variant, context: Dictionary, current_id: int) 
 	var exclude: Array[int] = [current_id]
 	# Spazio dopo aver messo nello zaino la resa di questa tappa (non ancora svuotata).
 	var free_space: float = individual.max_carry_capacity - individual.get_carried_space() \
-		- (TrapJobProvider.catch_space(current) if current != null else 0.0)
+		- (TrapJobProvider.catch_space(current) if current != null else 0.0) \
+		- KeptAnimalService.entries_space(context.get(TrapService.CONTEXT_LIVE_ANIMALS, []))
 	var next := TrapJobProvider.next_round_trap(game_data, GameSettings.active_human_individuals, individual,
 		int(context.get(TrapService.CONTEXT_AREA_ID, 0)), String(context.get(TrapService.CONTEXT_ROUND_JOB, "hunt")), from, free_space, exclude)
 	if next == null:

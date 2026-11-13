@@ -1683,6 +1683,19 @@ domestication_pack_none,No pack nearby
 domestication_state_in_progress,Domestication in progress
 domestication_wild_group,Wild {species}
 domestication_wild_group_dog,Wild wolf pack
+domestication_species_unknown,"Species not yet discovered: catch an animal alive and bring it to a cage shelter to learn about it."
+domestication_species_discovered,"New species to domesticate: {species}. It will become: {domestic}.
+domestication_stats_line,"Caught {captured} · died {died} · born {born} · in shelter {kept}"
+domestication_stats_life,"An animal caught today lives about {days} days"
+building_kept_open_domestication,Domestication
+building_kept_open_domestication_tooltip,"Opens the Domestication panel: points, caught, dead and born animals per species."
+Every animal caught alive and brought to the cages earns points: adult females more than males, young ones little, old ones nothing.
+At first we don't know how to keep them yet: in captivity they will live very briefly, sometimes only a few days, and die without leaving any meat. Don't lose heart: every point is experience, and the more you gather the longer they will survive."
+domestication_capture_hint,"Every animal caught alive and brought to a cage shelter earns points: adult females more than males, young ones little, old ones nothing."
+domestication_no_method_hint,There is no way to catch it alive yet.
+domestication_wild_group_chicken,{species}
+domestication_wild_group_donkey,{species}
+domestication_wild_group_goat,{species}
 domestication_will_become,It will become: {species}
 domestication_done,"From: {species}, domesticated in year {year}"
 domestication_done_no_year,From: {species}
@@ -1877,6 +1890,8 @@ building_info_shelter_target_default_tooltip,"D = the village default applies (S
 task_empty_trap_name,Emptying a trap
 task_empty_trap_step_walk,Going to the trap
 task_empty_trap_step_empty,Emptying the trap
+task_empty_trap_step_walk_shelter,Going to the cage shelter
+task_empty_trap_step_keep_animal,Putting the animal in the cages
 task_empty_trap_job_name,"Empty {trap} ({caught}/{capacity})"
 task_empty_trap_job_tooltip,"Go to the {trap}, take the catch ({caught}/{capacity}) and bring it where the meat of the WM hunts goes."
 trap_fail_gone,"{name}: the trap is gone."
@@ -1917,3 +1932,32 @@ carried_resource_tooltip_snare,Bundle of snares
 carried_resource_tooltip_stake_pit,Stake pit
 pending_trap_no_site,"{area}: no suitable spot for {trap}"
 trap_pickup_catch_prey,"Prey: {detail}"
+building_category_husbandry,Husbandry
+building_cage_shelter,Cage shelter
+build_bar_cage_shelter_tooltip,Cage shelter
+build_bar_cage_shelter_description,"Brushwood shelter with rope-tied cages beneath: small animals caught alive will be kept here, twenty places, one species only. Catching them alive will also require the Advanced traps idea."
+building_info_animal_capacity,"Animal places: {capacity}, one species only"
+carried_resource_tooltip_drop_basket,Drop basket
+trap_live_catch_needs_cage_shelter,"{trap}: it can be made, but setting it needs a finished {building} to keep the animals caught alive."
+trap_live_catch_note,"Catches animals alive: it is set only if the village has at least one finished {building} (even a full one). Without it, the job stays queued with the red X."
+trap_place_item_blocked,"{trap} (needs a finished {building})"
+warehouse_rule_traps_group,Traps per zone
+warehouse_rule_traps_edit_tooltip,"How many traps of each type to keep set in every work zone"
+warehouse_rule_traps_empty,No traps known yet.
+building_kept_animals,Animals: {count}/{max}
+building_kept_species,Animals kept:
+building_kept_species_any,Any
+building_kept_species_any_fixed,Any (now {species})
+building_kept_species_tooltip,"Species kept here, one only. Any: the first animal to enter decides it, until the shelter is empty again. Catches of other species are butchered on the spot."
+building_kept_species_locked_tooltip,"With animals inside the species can't be changed: the shelter must be empty first."
+building_kept_animal_row,"{name}, {sex}, age {age}"
+idea_animal_husbandry,Animal Husbandry
+idea_animal_husbandry_summary,"Buildings to keep and raise domesticated animals, one for each species."
+idea_animal_husbandry_description,"Those who have learned to catch animals alive and keep them in cages realize that, with the right shelter and steady care, they can live and multiply beside the village. Each domesticated species will have its own building."
+building_rabbit_hutch,Rabbit hutch
+build_bar_rabbit_hutch_tooltip,Rabbit hutch
+build_bar_rabbit_hutch_description,"A wooden box with a straw roof where domestic rabbits will live. It can be built once the rabbit is domesticated."
+building_chicken_coop,Chicken coop
+build_bar_chicken_coop_tooltip,Chicken coop
+build_bar_chicken_coop_description,"A covered little house with a fence of stakes where chickens will live. It can be built once the chicken is domesticated."
+build_bar_requires_domesticated_tooltip,Requires: {species} domesticated

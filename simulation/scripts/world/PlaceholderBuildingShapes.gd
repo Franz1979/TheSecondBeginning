@@ -15,7 +15,16 @@ extends RefCounted
 # di draw() resta per la sola icona della barra (ClothingHutIcon, vista di fronte). Lo stesso per "smokehouse" (2026-10-23):
 # mappa e anteprima con SmokehouseShape, qui solo l'icona (SmokehouseIcon).
 # Lo stesso per "drying_rack" (2026-10-31): mappa e anteprima con DryingRackShape, qui solo l'icona (DryingRackIcon).
-const TYPES: Array[String] = ["burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford"]
+const TYPES: Array[String] = ["burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford",
+	"rabbit_hutch", "chicken_coop"]
+
+# Conigliera e pollaio (2026-11-13, idea Allevamento — segnaposto), viste dall'alto.
+const HUTCH_RECT := Rect2(-3.6, -2.6, 7.2, 5.2)
+const STRAW := Color(0.80, 0.70, 0.42, 1.0)
+const STRAW_DARK := Color(0.62, 0.52, 0.30, 1.0)
+const COOP_PEN_RADIUS: float = 4.3
+const COOP_ROOF_RECT := Rect2(-2.2, -3.4, 4.4, 3.0)
+const COOP_GRAIN: Array[Vector2] = [Vector2(-1.4, 1.6), Vector2(0.6, 2.2), Vector2(1.8, 0.9), Vector2(-0.3, 0.8)]
 
 # Guado di pietre (stone_ford, 2026-10-31, richiesta utente): pietre piatte in fila sul ruscello, vista dall'alto, ognuna
 # col suo bordo scuro d'ombra sotto (come i banchi del ceppo dell'insegnamento). La fila va lungo Y (attraversa un ruscello
@@ -259,6 +268,27 @@ static func draw(
 				var stone_outline := stone.duplicate()
 				stone_outline.append(stone[0])
 				canvas.draw_polyline(stone_outline, tint.call(RUBBLE_OUTLINE), rw.call(0.2), true)
+		"rabbit_hutch":
+			# Cassone di legno con il tetto di paglia e le stecche della gabbia sul davanti.
+			var hutch := Rect2(p.call(HUTCH_RECT.position.x, HUTCH_RECT.position.y), HUTCH_RECT.size * scale)
+			canvas.draw_rect(hutch, tint.call(WOOD_DARK))
+			canvas.draw_rect(hutch.grow(-w.call(0.5)), tint.call(STRAW))
+			for i in range(5):
+				var x: float = HUTCH_RECT.position.x + 1.2 + float(i) * 1.2
+				canvas.draw_line(p.call(x, 0.6), p.call(x, HUTCH_RECT.end.y), tint.call(WOOD_DARK), w.call(0.3), true)
+			canvas.draw_line(p.call(HUTCH_RECT.position.x, 0.6), p.call(HUTCH_RECT.end.x, 0.6), tint.call(WOOD_DARK), w.call(0.4), true)
+			canvas.draw_line(p.call(-3.0, -1.2), p.call(3.0, -1.2), tint.call(STRAW_DARK), w.call(0.25), true)
+		"chicken_coop":
+			# Recinto di terra battuta coi paletti, la casetta coperta e qualche chicco a terra.
+			canvas.draw_circle(center, w.call(COOP_PEN_RADIUS), tint.call(EARTH))
+			for i in range(12):
+				var angle := TAU * float(i) / 12.0
+				canvas.draw_circle(center + Vector2(cos(angle), sin(angle)) * w.call(COOP_PEN_RADIUS), w.call(0.4), tint.call(WOOD_DARK))
+			var roof := Rect2(p.call(COOP_ROOF_RECT.position.x, COOP_ROOF_RECT.position.y), COOP_ROOF_RECT.size * scale)
+			canvas.draw_rect(roof, tint.call(STRAW_DARK))
+			canvas.draw_line(p.call(COOP_ROOF_RECT.position.x, -1.9), p.call(COOP_ROOF_RECT.end.x, -1.9), tint.call(WOOD_DARK), w.call(0.35), true)
+			for grain in COOP_GRAIN:
+				canvas.draw_circle(p.call(grain.x, grain.y), w.call(0.25), tint.call(STRAW))
 		"waste_pit":
 			# Bordo di terra, fondo scuro, poi gli scarti sopra il fondo.
 			canvas.draw_colored_polygon(_blob_polygon(center, w.call(WASTE_PIT_RIM_RADIUS), 500, 12, 0.9, 1.06), tint.call(WASTE_PIT_RIM))

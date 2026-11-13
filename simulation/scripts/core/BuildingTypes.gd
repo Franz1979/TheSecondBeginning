@@ -43,4 +43,7 @@ enum Category {
 	# Altro (2026-10-18, richiesta utente — Fossa dei rifiuti): edifici di servizio senza una categoria propria.
 	# Aggiunta IN FONDO.
 	OTHER,
+	# Allevamento (2026-11-12, richiesta utente — addomesticazione per cattura viva): tettoia delle gabbie, poi recinto con
+	# riparo, pollaio, conigliera, stalle, fienile. Aggiunta IN FONDO.
+	HUSBANDRY,
 }

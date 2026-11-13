@@ -15,7 +15,7 @@ signal debug_add_points_requested(species: String)
 # "+1" di debug su una specie con animali veri (cane passo 1): GameScene crea l'animale e aggiorna la scheda 🦌.
 signal debug_add_animal_requested(species: String)
 
-enum CardState { DOMESTICATED, IN_PROGRESS }
+enum CardState { DOMESTICATED, IN_PROGRESS, HIDDEN }
 
 const ANIMALS_TAB := 0
 const PLANTS_TAB := 1
@@ -27,10 +27,12 @@ const DEBUG_POINTS := 100
 const STATE_BG_COLORS := {
 	CardState.DOMESTICATED: Color(0.14, 0.32, 0.18),
 	CardState.IN_PROGRESS: Color(0.14, 0.24, 0.38),
+	CardState.HIDDEN: Color(0.16, 0.16, 0.18),
 }
 const STATE_BORDER_COLORS := {
 	CardState.DOMESTICATED: Color(0.40, 0.80, 0.46),
 	CardState.IN_PROGRESS: Color(0.45, 0.68, 0.95),
+	CardState.HIDDEN: Color(0.35, 0.35, 0.38),
 }
 
 @onready var title_label: Label = $Root/MarginContainer/VBoxContainer/HeaderRow/TitleLabel
@@ -115,10 +117,9 @@ func _fill_animals() -> void:
 		var rules := DomesticAnimalCalculator.get_rules(species)
 		if rules == null:
 			continue
-		# Il cane (nessuna idea richiesta) sempre; le altre solo con l'idea nota e la selvatica incontrata: prima non si
-		# rivelano (2026-11-03, richiesta utente).
-		if rules.required_idea_id != "" and (not _human_folk.completed_ideas.has(rules.required_idea_id)
-				or not DomesticationEncounterService.is_encountered(_game_data, rules.wild_species_name)):
+		# Il cane (nessuna idea richiesta) sempre; le altre solo con l'idea nota: prima non si rivelano (2026-11-03,
+		# richiesta utente). Regola del primo incontro tolta il 2026-11-12.
+		if rules.required_idea_id != "" and not _human_folk.completed_ideas.has(rules.required_idea_id):
 			continue
 		cards.add_child(_build_card(rules))
 
@@ -136,6 +137,9 @@ func _fill_plants() -> void:
 func _state_of(rules: DomesticAnimalRules) -> CardState:
 	if _game_data.domesticated_species.has(rules.species_name):
 		return CardState.DOMESTICATED
+	# Passo C (2026-11-12): specie non ancora scoperta = scheda "?" al suo posto (ordine fisso).
+	if not DomesticationPointsService.is_discovered(_game_data, rules.species_name):
+		return CardState.HIDDEN
 	return CardState.IN_PROGRESS
 
 
@@ -158,6 +162,11 @@ func _build_card(rules: DomesticAnimalRules) -> PanelContainer:
 	# selvatica (branco, aggressività, punti, cosa ne deriverà); addomesticata, solo la specie domestica e l'anno.
 	if state == CardState.DOMESTICATED:
 		_add_domesticated_rows(box, rules)
+	elif state == CardState.HIDDEN:
+		box.add_child(_title_label("?"))
+		var hidden_label := _plain_label(tr("domestication_species_unknown"))
+		hidden_label.add_theme_color_override("font_color", Color(0.7, 0.72, 0.78))
+		box.add_child(hidden_label)
 	else:
 		_add_in_progress_rows(box, rules)
 
@@ -197,8 +206,13 @@ func _add_domesticated_rows(box: VBoxContainer, rules: DomesticAnimalRules) -> v
 func _add_in_progress_rows(box: VBoxContainer, rules: DomesticAnimalRules) -> void:
 	box.add_child(_title_label(_species_text("domestication_wild_group", rules).format({
 		"species": tr("animal_species_" + rules.wild_species_name)})))
-	var group := WildAnimalGroupService.find_group(_game_data, rules.wild_species_name)
-	if group == null or group.animals.is_empty():
+	# Branco e aggressività: solo per le specie che avanzano con le visite (il cane, dal lupo). Le altre (2026-11-12) con
+	# le catture vive (DomesticAnimalRules.capture_points_*) o, per ora, con nessun modo.
+	var by_visits := rules.required_idea_id == ""
+	var group := WildAnimalGroupService.find_group(_game_data, rules.wild_species_name) if by_visits else null
+	if not by_visits:
+		pass
+	elif group == null or group.animals.is_empty():
 		box.add_child(_plain_label(tr("domestication_pack_none")))
 	else:
 		var total := 0.0
@@ -215,10 +229,37 @@ func _add_in_progress_rows(box: VBoxContainer, rules: DomesticAnimalRules) -> vo
 	box.add_child(_bar(rules.domestication_points_required, points))
 	box.add_child(_plain_label("%d / %d" % [points, rules.domestication_points_required]))
 	box.add_child(_plain_label(tr("domestication_will_become").format({"species": tr(rules.display_name)})))
+	if not by_visits and _uses_capture_points(rules):
+		_add_captivity_stats(box, rules)
 
-	var hint_label := _plain_label(tr("domestication_pack_hint"))
+	var hint_key := "domestication_pack_hint"
+	if not by_visits:
+		hint_key = "domestication_capture_hint" if _uses_capture_points(rules) else "domestication_no_method_hint"
+	var hint_label := _plain_label(tr(hint_key))
 	hint_label.add_theme_color_override("font_color", Color(0.7, 0.72, 0.78))
 	box.add_child(hint_label)
+
+
+# Statistiche della cattività (2026-11-12): catturati, morti, nati, in tettoia adesso e vita di un animale catturato oggi.
+func _add_captivity_stats(box: VBoxContainer, rules: DomesticAnimalRules) -> void:
+	var species := rules.species_name
+	var kept_now := 0
+	for animal in _game_data.domestic_animals:
+		if animal.species == species and animal.building_id >= 0:
+			kept_now += 1
+	box.add_child(_plain_label(tr("domestication_stats_line").format({
+		"captured": KeptAnimalService.get_stat(_game_data, species, "captured"),
+		"died": KeptAnimalService.get_stat(_game_data, species, "died"),
+		"born": KeptAnimalService.get_stat(_game_data, species, "born"),
+		"kept": kept_now,
+	})))
+	box.add_child(_plain_label(tr("domestication_stats_life").format({
+		"days": DomesticAnimalLifeService.captivity_life_days(_game_data, rules)})))
+
+
+static func _uses_capture_points(rules: DomesticAnimalRules) -> bool:
+	return rules.capture_points_adult_male > 0 or rules.capture_points_adult_female > 0 or rules.capture_points_young > 0 \
+		or rules.capture_points_old > 0
 
 
 # Testo per specie se c'è (es. domestication_done_dog, per il genere e il plurale giusti), altrimenti quello generico.

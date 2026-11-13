@@ -26,6 +26,10 @@ extends Resource
 # has(required_idea_id)) vive altrove, quando esisterà un vero consumatore: qui è solo il dato, non
 # ancora consultato da nessuna logica.
 @export var required_idea_id: String = ""
+# Specie domestica che deve essere addomesticata (GameData.domesticated_species) perché l'edificio si possa costruire
+# (2026-11-13, idea Allevamento: conigliera col coniglio domestico, pollaio con la gallina). "" = nessun vincolo. Con
+# l'idea completa ma la specie non ancora addomesticata lo slot si vede spento, col motivo nel tooltip.
+@export var required_domesticated_species: String = ""
 
 # Tempo minimo di processo, indipendente dalla forza lavoro sotto — anche con manodopera
 # sufficiente a completare il lavoro in un solo giorno, la costruzione non può comunque finire
@@ -142,6 +146,11 @@ extends Resource
 # accogliere; 0 = non è un luogo di sepoltura. I sepolti stanno in Building.buried; il trasporto dei corpi e il funerale
 # arriveranno nei passi successivi.
 @export var max_buried: int = 0
+
+# Animali tenuti (2026-11-12, richiesta utente — tettoia delle gabbie, addomesticazione per cattura viva): posti per animali
+# vivi, una sola specie per edificio; 0 = l'edificio non tiene animali. Per ora solo il dato e la riga Info: gli animali
+# arriveranno con la cattura viva.
+@export var animal_capacity: int = 0
 
 # Rifiuti (2026-10-18, richiesta utente — Fossa dei rifiuti, passo 1): spazio totale per i rifiuti, come lo spazio di un
 # magazzino ma senza slot e senza mai riprendere nulla; 0 = non è una fossa. Occupato e prenotato stanno in

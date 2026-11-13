@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_rabbit_hutch"]
+
+; Conigliera (2026-11-13, richiesta utente — segnaposto): richiede l'idea Allevamento e la specie domestic_rabbit addomesticata. Per ora
+; solo l'edificio, senza funzioni: nessun animale ci entra ancora.
+[resource]
+script = ExtResource("1_rabbit_hutch")
+building_name = "building_rabbit_hutch"
+category = 11
+required_idea_id = "animal_husbandry"
+required_domesticated_species = "domestic_rabbit"
+min_construction_days = 4
+required_labor = 3500
+max_builders = 2
+lifespan_years = 10
+max_durability = 100
+defense = 10
+required_materials = {
+"fiber_rope": 20,
+"plant_fiber": 20,
+"stick": 60,
+"wood": 10
+}
+required_space = 1
+has_door = false
+visibility_radius = 2

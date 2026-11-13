@@ -74,7 +74,8 @@ func save_game_to_json(
 			"domestication_points": game_data.domestication_points,
 			"domesticated_species": game_data.domesticated_species,
 			"domestication_years": game_data.domestication_years,
-			"encountered_wild_species": game_data.encountered_wild_species,
+			"discovered_domestic_species": game_data.discovered_domestic_species,
+			"domestication_stats": game_data.domestication_stats,
 			# Animali domestici (vedi GameData, DomesticAnimal.to_save_data).
 			"domestic_animals": game_data.domestic_animals.map(
 				func(animal: DomesticAnimal) -> Dictionary: return animal.to_save_data()
@@ -468,6 +469,8 @@ func save_game_to_json(
 			"influence_last_gain_day": building.influence_last_gain_day,
 			# Sepolti (2026-10-04, cumulo sepolcrale): elenco di Dictionary JSON-nativi.
 			"buried": building.buried,
+			# Specie tenuta (2026-11-12, tettoia delle gabbie): "" = Qualunque.
+			"kept_species": building.kept_species,
 			# Rifiuti (2026-10-18, Fossa dei rifiuti): spazio occupato e prenotato.
 			"waste_stored": building.waste_stored,
 			"waste_reserved": building.waste_reserved,

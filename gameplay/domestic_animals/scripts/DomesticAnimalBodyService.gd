@@ -19,6 +19,9 @@ static func sync_bodies(game_data: GameData, world: World, renderers: Dictionary
 	# Cacciatori e loro animale (2026-11-07, DomesticAnimalHuntService): prima del giro, chi è a caccia non segue la gente.
 	DomesticAnimalHuntService.assign(game_data, world, individuals)
 	for animal in game_data.domestic_animals:
+		# Tenuti in un edificio (2026-11-12): nessun corpo sulla mappa.
+		if animal.building_id >= 0:
+			continue
 		var body := AnimalGroupRenderer.find_live_individual(animal.body_id) if animal.body_id != 0 else null
 		if body != null:
 			animal.position = body.position

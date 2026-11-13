@@ -20,6 +20,16 @@ var position: Vector2 = Vector2(-1.0, -1.0)
 var health_ratio: float = 1.0
 # Macella (passo 7): ordine in lista dei lavori.
 var slaughter_requested: bool = false
+# Animali tenuti (2026-11-12, addomesticazione per cattura viva): edificio in cui vive (Building.id: tettoia delle gabbie,
+# poi recinto, stalla, pollaio); -1 = libero come il cane. Un animale tenuto non ha corpo sulla mappa, non segue, non fa la
+# guardia né parte in autunno; invecchia e muore di vecchiaia (DomesticAnimalLifeService).
+var building_id: int = -1
+# Non ancora addomesticato (2026-11-12): preso vivo prima che la specie arrivi alla soglia. `species` è già quella domestica
+# di arrivo (domestic_rabbit), ma tutto ciò che si vede usa la selvatica d'origine (DomesticAnimalRules.wild_species_name).
+var is_wild: bool = false
+# Giorno in cui è arrivato in cattività (2026-11-12, KeptAnimalService.keep_animal); -1 = mai catturato (nato o arrivato
+# domestico). Per il selvatico conta la vita in cattività (DomesticAnimalLifeService.captivity_life_days).
+var captured_day: int = -1
 # Corpo nel renderer (AnimalVisualGroup.id), 0 = nessuno: mai creato o cella non viva. Mai salvato.
 var body_id: int = 0
 # Era nell'inquadratura al giro prima e ultimo verso per questo motivo (Time.get_ticks_msec, DomesticAnimalBodyService). Mai
@@ -67,7 +77,7 @@ func get_age_band(absolute_day: int, wild_rules: AnimalRules) -> GameTypes.AgeBa
 func to_save_data() -> Dictionary:
 	return {"id": id, "species": species, "is_male": is_male, "birth_day": birth_day, "village_id": village_id,
 		"macro_x": macro_coords.x, "macro_y": macro_coords.y, "x": position.x, "y": position.y, "health_ratio": health_ratio,
-		"slaughter_requested": slaughter_requested}
+		"slaughter_requested": slaughter_requested, "building_id": building_id, "is_wild": is_wild, "captured_day": captured_day}
 
 
 static func from_save_data(data: Dictionary) -> DomesticAnimal:
@@ -81,4 +91,8 @@ static func from_save_data(data: Dictionary) -> DomesticAnimal:
 	animal.position = Vector2(float(data.get("x", -1.0)), float(data.get("y", -1.0)))
 	animal.health_ratio = float(data.get("health_ratio", 1.0))
 	animal.slaughter_requested = bool(data.get("slaughter_requested", false))
+	# Animali tenuti (2026-11-12): salvataggi precedenti, tutti liberi e addomesticati.
+	animal.building_id = int(data.get("building_id", -1))
+	animal.is_wild = bool(data.get("is_wild", false))
+	animal.captured_day = int(data.get("captured_day", -1))
 	return animal

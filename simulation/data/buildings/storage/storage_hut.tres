@@ -15,7 +15,7 @@ storage_slot_count = 12
 storage_space_per_slot = 300
 durability_multiplier_by_category = Array[float]([1.5, 1.4, 1.4, 1.4, 1.4, 1.6])
 required_materials = {
-"dried_hide": 20,
+"dried_hide": 12,
 "fiber_rope": 20,
 "pebble": 40,
 "stick": 100,

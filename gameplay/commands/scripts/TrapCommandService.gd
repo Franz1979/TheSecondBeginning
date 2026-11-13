@@ -12,12 +12,18 @@ static func assign_place(ctx: GameContext, worker: HumanIndividual, trap_name: S
 	if worker == null:
 		return
 	var placeable := false
+	var blocked_reason := ""
 	for option in TrapService.placeable_traps(ctx.game_data, ctx.world, ctx.individuals, macro_coords, lot):
 		if String(option["trap_name"]) == trap_name:
 			placeable = true
+			blocked_reason = String(option.get("blocked_reason", ""))
 			break
 	if not placeable:
 		_reject(worker, macro_coords, lot, GameContext.tr_text("trap_place_reject_unavailable"), effects)
+		return
+	# Vincolo di piazzamento (2026-11-12, cesto a caduta senza tettoia delle gabbie): X e motivo.
+	if blocked_reason != "":
+		_reject(worker, macro_coords, lot, blocked_reason, effects)
 		return
 	if not worker.can_carry_one_unit_when_empty(trap_name):
 		_reject(worker, macro_coords, lot, HumanIndividualActionService.no_room_message(worker, [trap_name] as Array[String]), effects)

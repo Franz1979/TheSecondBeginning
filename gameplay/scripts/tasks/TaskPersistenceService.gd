@@ -293,6 +293,8 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.SET_TRAP
 	if step is EmptyTrapAction:
 		return TaskTypes.ActionType.EMPTY_TRAP
+	if step is KeepAnimalAction:
+		return TaskTypes.ActionType.KEEP_ANIMAL
 	# TAKE_SOUP_INGREDIENTS / COOK_SOUP (2026-11-07, zuppa di casa), aggiunte insieme ai propri case in _build_step.
 	if step is TakeSoupIngredientsAction:
 		return TaskTypes.ActionType.TAKE_SOUP_INGREDIENTS
@@ -608,6 +610,10 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 		TaskTypes.ActionType.EMPTY_TRAP:
 			# La trappola della tappa (giro delle trappole, 2026-11-07) nel costruttore: load_save_data vale solo per lo step corrente.
 			step = EmptyTrapAction.new(int(step_data.get("trap_id", 0)))
+		TaskTypes.ActionType.KEEP_ANIMAL:
+			# Tettoia per id e animali in braccio nel costruttore (servono anche agli step non correnti, per i posti prenotati).
+			step = KeepAnimalAction.new(_find_building_by_id(world, int(step_data.get("keep_building_id", -1))),
+				step_data.get("keep_entries", []))
 		TaskTypes.ActionType.TAKE_SOUP_INGREDIENTS:
 			# Magazzino per id (quello che manca è nel context della Task); il tempo da load_save_data.
 			step = TakeSoupIngredientsAction.new(_find_building_by_id(world, int(step_data.get("soup_building_id", -1))))

@@ -290,7 +290,7 @@ static func choose_prey(area: WorkArea, hunter: HumanIndividual, live_cells: Dic
 		var radius := get_hunter_visibility_radius(hunter, live_cells, area.macro_coords)
 		if best_distance_sq > radius * radius:
 			var dog := DomesticAnimalHuntService.scenting_animal_for(hunter)
-			print("[DOMESTIC HUNT] %s #%d fiuta %s a %.1f microcelle da #%d %s (vista %.1f)" % [
+			DomesticAnimalHuntService.log_line("[DOMESTIC HUNT] %s #%d fiuta %s a %.1f microcelle da #%d %s (vista %.1f)" % [
 				dog.species if dog != null else "?", dog.id if dog != null else -1, best.species_name,
 				sqrt(best_distance_sq), hunter.id, hunter.name, radius])
 	return best

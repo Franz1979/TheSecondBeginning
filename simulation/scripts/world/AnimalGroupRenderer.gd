@@ -743,14 +743,6 @@ func get_individual_count() -> int:
 	return _groups.size()
 
 
-# Almeno un individuo fuori dalla nebbia (stesso test del disegno) — specie incontrate, vedi
-# DomesticationEncounterService. Si ferma al primo visibile.
-func has_visible_individual() -> bool:
-	for group in _groups:
-		if _is_visible_now(group.position):
-			return true
-	return false
-
 
 # --- Selezione (AnimalSelectorController / GameScene) ---
 # Gli individui restano posseduti da questo renderer: chi li legge da fuori non li modifica mai.
@@ -1489,7 +1481,15 @@ func _push_cluster_out_of_rects(cluster: AnimalVisualGroup, delta: float) -> voi
 		return
 
 
-# Posizioni dei centri dei gruppetti (in microcelle), per i passaggi dei lacci (SnareService).
+# true se almeno un animale disegnato sta dentro `rect` (in microcelle): passaggi delle trappole a mandria (SnareService).
+func has_individual_in_rect(rect: Rect2) -> bool:
+	for group in _groups:
+		if rect.has_point((group as AnimalVisualGroup).position):
+			return true
+	return false
+
+
+# Posizioni dei centri dei gruppetti (in microcelle), per la misura temporanea dei lacci (SnareService).
 func get_cluster_positions() -> Array[Vector2]:
 	var positions: Array[Vector2] = []
 	for cluster in _clusters:
@@ -1984,8 +1984,9 @@ func _check_go_to_progress(group: AnimalVisualGroup, goal: Vector2, distance_bef
 	group.behavior_blocked_time = 0.0
 	group.behavior_path_planned = false
 	group.behavior_replan_via_center = true
-	print("[ANIMAL GO_TO] corpo %d fermo in %s verso %s: percorso ricalcolato passando dal centro della microcella." % [
-		group.id, Vector2i(group.position.floor()), Vector2i(goal.floor())])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_ANIMAL_GO_TO_LOGS:
+		print("[ANIMAL GO_TO] corpo %d fermo in %s verso %s: percorso ricalcolato passando dal centro della microcella." % [
+			group.id, Vector2i(group.position.floor()), Vector2i(goal.floor())])
 
 
 # CHASE: dritto verso il bersaglio (behavior_point, aggiornato dal copione), a balzi e pause, con la collisione; a

@@ -88,7 +88,7 @@ static func start_run(visit: WildAnimalVisit, game_data: GameData, target_positi
 		animal.guard_confront_group_id = -1
 		support.append({"position": animal.position, "helper": rules.guard_helper_weight,
 			"threats": rules.guard_threats_per_dog})
-		print("[DOMESTIC GUARD] %s #%d corre contro %s (a %.1f microcelle dal caricato)" % [
+		_log("[DOMESTIC GUARD] %s #%d corre contro %s (a %.1f microcelle dal caricato)" % [
 			animal.species, animal.id, visit.species, animal.position.distance_to(target_position)])
 	return support
 
@@ -147,7 +147,7 @@ static func _bite(visit: WildAnimalVisit, index: int, animal: DomesticAnimal, ru
 	if body == null:
 		return false
 	body.health = maxf(body.health - rules.guard_bite_damage, 0.0)
-	print("[DOMESTIC GUARD] %s #%d morde %s #%d: salute %.1f" % [animal.species, animal.id, visit.species, body.wild_animal_id, body.health])
+	_log("[DOMESTIC GUARD] %s #%d morde %s #%d: salute %.1f" % [animal.species, animal.id, visit.species, body.wild_animal_id, body.health])
 	if body.health > 0.0:
 		return false
 	GroundPileService.drop_carcass(game_data, visit.macro_coords, body.position, body.species_name, int(body.age_band))
@@ -159,9 +159,9 @@ static func _wound_dog(animal: DomesticAnimal, rules: DomesticAnimalRules, visit
 		effects: GameEffects) -> void:
 	DomesticAnimalLifeService.wound(game_data, animal, rules.guard_wound_health_ratio)
 	if DomesticAnimalService.find_animal(game_data, animal.id) != null:
-		print("[DOMESTIC GUARD] %s #%d ferito da %s: salute %d%%" % [animal.species, animal.id, visit.species, roundi(animal.health_ratio * 100.0)])
+		_log("[DOMESTIC GUARD] %s #%d ferito da %s: salute %d%%" % [animal.species, animal.id, visit.species, roundi(animal.health_ratio * 100.0)])
 		return
-	print("[DOMESTIC GUARD] %s #%d ucciso da %s" % [animal.species, animal.id, visit.species])
+	_log("[DOMESTIC GUARD] %s #%d ucciso da %s" % [animal.species, animal.id, visit.species])
 	if effects != null:
 		effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_ATTACK,
 			GameContext.tr_text("notification_domestic_guard_died_%s" % animal.species))
@@ -216,7 +216,7 @@ static func _update_confront(visit: WildAnimalVisit, animal: DomesticAnimal, rul
 		animal.guard_post = animal.position
 		animal.guard_confront_point = Vector2(-1.0, -1.0)
 		animal.guard_confront_running = false
-		print("[DOMESTIC GUARD] %s #%d va incontro a %s (a %.1f microcelle)" % [
+		_log("[DOMESTIC GUARD] %s #%d va incontro a %s (a %.1f microcelle)" % [
 			animal.species, animal.id, visit.species, nearest.distance_to(animal.position)])
 	var to_pack := nearest - animal.guard_post
 	var advance := clampf(to_pack.length() - rules.guard_confront_distance, 0.0, rules.guard_confront_max_advance)
@@ -254,7 +254,7 @@ static func update_confront_animal(animal: DomesticAnimal, game_data: GameData) 
 
 
 static func _end_confront(animal: DomesticAnimal, reason: String) -> void:
-	print("[DOMESTIC GUARD] %s #%d torna dal branco (%s)" % [animal.species, animal.id, reason])
+	_log("[DOMESTIC GUARD] %s #%d torna dal branco (%s)" % [animal.species, animal.id, reason])
 	animal.guard_confront_group_id = -1
 	animal.guard_confront_running = false
 	# Sceglie di nuovo chi seguire al prossimo fotogramma.
@@ -277,7 +277,7 @@ static func _update_alarm(visit: WildAnimalVisit, animal: DomesticAnimal, rules:
 	visit.guard_bark_hours_left[animal.id] = rules.guard_bark_interval_hours
 	if not visit.guard_alarm_logged:
 		visit.guard_alarm_logged = true
-		print("[DOMESTIC GUARD] %s #%d abbaia: %s a %.1f microcelle" % [animal.species, animal.id, visit.species, nearest])
+		_log("[DOMESTIC GUARD] %s #%d abbaia: %s a %.1f microcelle" % [animal.species, animal.id, visit.species, nearest])
 	if bark_emitter.is_valid():
 		bark_emitter.call(animal)
 
@@ -306,3 +306,9 @@ static func _nearest_visitor_index(visit: WildAnimalVisit, point: Vector2) -> in
 			best = distance
 			nearest = i
 	return nearest
+
+
+# Righe [DOMESTIC GUARD], dietro DebugLogging.SHOW_DOMESTIC_GUARD_LOGS.
+static func _log(text: String) -> void:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_DOMESTIC_GUARD_LOGS:
+		print(text)

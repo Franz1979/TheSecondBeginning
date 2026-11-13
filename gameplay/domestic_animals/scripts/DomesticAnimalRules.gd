@@ -23,6 +23,15 @@ extends Resource
 # Idea da conoscere perché i punti si accumulino. Vuoto = sempre (il cane: è proprio addomesticando il lupo che si
 # scopre l'idea dell'addomesticazione).
 @export var required_idea_id: String = ""
+# Punti per ogni animale selvatico catturato vivo che arriva in una tettoia (2026-11-12, cattura viva: KeepAnimalAction),
+# per fascia d'età e sesso. 0 = nessun punto. Il cane non li usa (i suoi punti vengono dalle visite dei lupi).
+@export var capture_points_adult_male: int = 0
+@export var capture_points_adult_female: int = 0
+@export var capture_points_young: int = 0
+@export var capture_points_old: int = 0
+# Punti per ogni piccolo nato vivo in un edificio (2026-11-12, cucciolate in cattività). Chi nasce e muore subito perché
+# l'edificio è pieno non conta. 0 = nessun punto.
+@export var captivity_birth_points: int = 0
 
 @export_group("Arrivals")
 # Superata la soglia, arrivano insieme gli animali che mancano per questi numeri di maschi e femmine (cane, passo 2).

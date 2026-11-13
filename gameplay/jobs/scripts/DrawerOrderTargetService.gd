@@ -246,8 +246,10 @@ static func _choose_target(ctx: GameContext, order: Dictionary, order_type: Stri
 		_store(order, area, area.macro_coords, area.rect.position + area.rect.size / 2, 0, 0)
 		return true
 	if order_type == DrawerOrderService.TYPE_GATHER:
+		# Celle chiuse da ostacoli saltate (2026-11-13): un bersaglio irraggiungibile bloccava l'ordine per sempre.
 		var gather_cell: Variant = HaulZoneService.first_available_cell(
-			area, ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y), _gather_names(order, area)
+			area, ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y), _gather_names(order, area),
+			ctx.live_cells.get(area.macro_coords)
 		)
 		if gather_cell == null:
 			return false
@@ -298,8 +300,9 @@ static func _refresh_gather_cell(ctx: GameContext, order: Dictionary, area: Work
 	var macro_state: MacroCellState = ctx.world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
 	var names := _gather_names(order, area)
 	var good_cell: Variant = cell
-	if not HaulZoneService.is_cell_available(area, macro_state, names, cell):
-		good_cell = HaulZoneService.first_available_cell(area, macro_state, names)
+	var live_cell: LiveMacroCell = ctx.live_cells.get(area.macro_coords)
+	if not HaulZoneService.is_cell_available(area, macro_state, names, cell, live_cell):
+		good_cell = HaulZoneService.first_available_cell(area, macro_state, names, live_cell)
 		if good_cell == null:
 			_gather_checks.erase(order_id)
 			return false

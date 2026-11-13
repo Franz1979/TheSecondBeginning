@@ -355,6 +355,9 @@ extends Resource
 @export var trap_disturbance_days: int = 0
 # Laccio piazzato fuori da una zona: i passaggi si contano in un quadrato di questo raggio attorno a lui.
 @export var trap_passage_radius: int = 5
+# Cattura viva (2026-11-12, cesto a caduta — TrapService.QUARRY_LIVE_SMALL_GAME): giorni che l'animale preso resta vivo
+# nella trappola senza che nessuno venga a prenderlo; poi muore e da lì contano i trap_catch_spoil_days come per i lacci.
+@export var trap_live_survival_days: int = 3
 
 @export_group("Apparel")
 # Campi del vestiario (2026-10-11, richiesta utente — vestiti, scarpe, monili; category APPAREL). La durata di un capo

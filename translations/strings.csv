@@ -1737,6 +1737,19 @@ domestication_pack_none,Nessun branco nei dintorni
 domestication_state_in_progress,Addomesticazione in corso
 domestication_wild_group,{species} selvatico
 domestication_wild_group_dog,Branco selvatico di lupi
+domestication_species_unknown,"Specie non ancora scoperta: cattura vivo un animale e portalo in una tettoia delle gabbie per conoscerla."
+domestication_species_discovered,"Nuova specie da addomesticare: {species}. Ne deriverà: {domestic}.
+Ogni animale catturato vivo e portato nelle gabbie porta punti: le femmine adulte più dei maschi, i giovani poco, gli anziani niente.
+All'inizio non sappiamo ancora come tenerli: in cattività vivranno pochissimo, a volte solo qualche giorno, e moriranno senza lasciare carne. Non scoraggiarti: ogni punto è esperienza, e più ne accumuli più a lungo sopravvivranno."
+domestication_stats_line,"Catturati {captured} · morti {died} · nati {born} · in tettoia {kept}"
+domestication_stats_life,"Un animale catturato oggi vive circa {days} giorni"
+building_kept_open_domestication,Addomesticazioni
+building_kept_open_domestication_tooltip,"Apre il pannello delle Addomesticazioni: punti, catturati, morti e nati per specie."
+domestication_capture_hint,"Ogni animale catturato vivo e portato in una tettoia delle gabbie porta punti: le femmine adulte più dei maschi, i giovani poco, gli anziani niente."
+domestication_no_method_hint,Non c'è ancora un modo per catturarlo vivo.
+domestication_wild_group_chicken,{species}
+domestication_wild_group_donkey,{species}
+domestication_wild_group_goat,{species}
 domestication_will_become,Ne deriverà: {species}
 domestication_done,"Da: {species}, addomesticazione nell'anno {year}"
 domestication_done_no_year,Da: {species}
@@ -1931,6 +1944,8 @@ building_info_shelter_target_default_tooltip,"D = vale il default del villaggio 
 task_empty_trap_name,Svuotare una trappola
 task_empty_trap_step_walk,Andando alla trappola
 task_empty_trap_step_empty,Svuotando la trappola
+task_empty_trap_step_walk_shelter,Verso la tettoia delle gabbie
+task_empty_trap_step_keep_animal,Sistemando l'animale nelle gabbie
 task_empty_trap_job_name,"Svuota {trap} ({caught}/{capacity})"
 task_empty_trap_job_tooltip,"Andare a {trap}, prendere le prede ({caught}/{capacity}) e portarle dove va la carne delle cacce del WM."
 trap_fail_gone,"{name}: la trappola non c'è più."
@@ -1971,3 +1986,32 @@ carried_resource_tooltip_snare,Mazzo di lacci
 carried_resource_tooltip_stake_pit,Fossa con pali
 pending_trap_no_site,"{area}: nessun posto adatto per {trap}"
 trap_pickup_catch_prey,"Prede: {detail}"
+building_category_husbandry,Allevamento
+building_cage_shelter,Tettoia delle gabbie
+build_bar_cage_shelter_tooltip,Tettoia delle gabbie
+build_bar_cage_shelter_description,"Tettoia di frasche con sotto le gabbie legate con la corda: qui si terranno gli animali piccoli presi vivi, venti posti, una specie sola. Per catturarli vivi servirà anche l'idea Trappole avanzate."
+building_info_animal_capacity,"Posti per animali: {capacity}, una sola specie"
+carried_resource_tooltip_drop_basket,Cesto a caduta
+trap_live_catch_needs_cage_shelter,"{trap}: si può fabbricare, ma per piazzarlo serve una {building} finita, dove tenere gli animali presi vivi."
+trap_live_catch_note,"Cattura gli animali vivi: si piazza solo se nel villaggio c'è almeno una {building} finita (anche piena). Senza, il lavoro resta in coda con la X rossa."
+trap_place_item_blocked,"{trap} (serve una {building} finita)"
+warehouse_rule_traps_group,Trappole per zona
+warehouse_rule_traps_edit_tooltip,"Quante trappole di ogni tipo tenere montate in ogni zona di lavoro"
+warehouse_rule_traps_empty,Nessuna trappola ancora nota.
+building_kept_animals,Animali: {count}/{max}
+building_kept_species,Animali ospitati:
+building_kept_species_any,Qualunque
+building_kept_species_any_fixed,Qualunque (ora {species})
+building_kept_species_tooltip,"Specie tenuta qui, una sola. Qualunque: la decide il primo animale che entra, finché la tettoia non torna vuota. Le catture di altre specie si macellano sul posto."
+building_kept_species_locked_tooltip,"Con animali dentro la specie non si cambia: prima la tettoia deve tornare vuota."
+building_kept_animal_row,"{name}, {sex}, età {age}"
+idea_animal_husbandry,Allevamento
+idea_animal_husbandry_summary,"Edifici per tenere e far crescere gli animali addomesticati, uno per ogni specie."
+idea_animal_husbandry_description,"Chi ha imparato a prendere gli animali vivi e a tenerli nelle gabbie capisce che, con il riparo giusto e cure costanti, possono vivere e moltiplicarsi accanto al villaggio. Ogni specie addomesticata avrà il suo edificio."
+building_rabbit_hutch,Conigliera
+build_bar_rabbit_hutch_tooltip,Conigliera
+build_bar_rabbit_hutch_description,"Cassone di legno con il tetto di paglia dove vivranno i conigli domestici. Si costruisce quando il coniglio è addomesticato."
+building_chicken_coop,Pollaio
+build_bar_chicken_coop_tooltip,Pollaio
+build_bar_chicken_coop_description,"Casetta coperta con un recinto di paletti dove vivranno le galline. Si costruisce quando la gallina è addomesticata."
+build_bar_requires_domesticated_tooltip,Richiede: {species} addomesticato

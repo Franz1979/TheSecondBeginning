@@ -33,6 +33,8 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 		return jobs
 	for trap_name in TrapService.list_trap_names():
 		var has_source := WarehouseSelectionService.has_retrieval_source(ctx.world, trap_name)
+		# Vincolo di piazzamento (2026-11-12, cesto a caduta senza tettoia delle gabbie): il lavoro si vede, con la X rossa.
+		var placement_blocked := TrapService.placement_blocked_reason(ctx.world, trap_name)
 		for area in ctx.game_data.work_areas:
 			var job := {"area_id": area.id, "trap_name": trap_name}
 			var is_assigned := not workers(ctx, job).is_empty()
@@ -50,6 +52,8 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 			# Attrezzi per montarla (2026-11-11, fossa col piccone): come lo svuotamento, presi in deposito.
 			var setup_tools := TrapService.setup_tool_categories(trap_name)
 			var place_blocked := "" if is_assigned or setup_tools.is_empty() else ToolFetchService.blocked_reason(ctx, setup_tools, EMPTY_AGE_KIND)
+			if not is_assigned and placement_blocked != "":
+				place_blocked = placement_blocked
 			jobs.append({
 				"key": "trap:%d:%s" % [area.id, trap_name], "kind": "trap",
 				"name": GameContext.tr_text("task_place_trap_job_name").format({"trap": display_name, "area": area.name}),
@@ -69,12 +73,15 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 			var round_assigned := not workers(ctx, round_job).is_empty()
 			var due := 0
 			var with_catch := 0
+			var with_live := 0
 			var first_lot := TrapService.NO_SITE
 			var round_macro := area.macro_coords
 			for trap in ctx.game_data.placed_traps:
 				if trap.work_area_id != area.id or trap.get_caught() <= 0 or busy.has(trap.id) or _zone_job_of(trap) != zone_job:
 					continue
 				with_catch += 1
+				if _has_live_catch(trap):
+					with_live += 1
 				if TrapService.needs_emptying(ctx.game_data, trap):
 					due += 1
 					if first_lot == TrapService.NO_SITE:
@@ -96,6 +103,8 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 				"entry_kind": "work_area", "id": area.id, "sort": 0.0,
 				"assigned": round_assigned, "hidden": false, "blocked_reason": round_blocked,
 				"area_id": area.id, "zone_job": zone_job, "provider": provider, "job_type": JOB_ROUND,
+				# Animale vivo in un cesto (2026-11-12, passo B2): dentro le Trappole questo giro passa prima.
+				"priority_first": with_live > 0,
 			})
 	for trap in ctx.game_data.placed_traps:
 		if WorkAreaService.find_by_id(ctx.game_data, trap.work_area_id) != null:
@@ -129,6 +138,10 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary
 	var trap_name := String(job.get("trap_name", ""))
 	if String(job.get("job_type", JOB_PLACE)) == JOB_PLACE and not worker.can_carry_one_unit_when_empty(trap_name):
 		return HumanIndividualActionService.no_room_message(worker, [trap_name] as Array[String])
+	if String(job.get("job_type", JOB_PLACE)) == JOB_PLACE:
+		var placement_blocked := TrapService.placement_blocked_reason(ctx.world, trap_name)
+		if placement_blocked != "":
+			return placement_blocked
 	# Svuotamento (2026-11-09): gli attrezzi addosso o da prendere in deposito, come la macellazione.
 	var tools := job_tool_categories(job)
 	if not tools.is_empty():
@@ -242,6 +255,16 @@ static func next_round_trap(game_data: GameData, individuals: Array[HumanIndivid
 			best_distance = distance
 			best = trap
 	return best
+
+
+# true se nel cesto c'è un animale ancora vivo (cattura viva).
+static func _has_live_catch(trap: PlacedTrap) -> bool:
+	if not TrapService.is_live_catch(TrapService.get_rules(trap.trap_name)):
+		return false
+	for i in range(trap.get_caught()):
+		if trap.is_catch_alive(i):
+			return true
+	return false
 
 
 static func _zone_job_of(trap: PlacedTrap) -> String:

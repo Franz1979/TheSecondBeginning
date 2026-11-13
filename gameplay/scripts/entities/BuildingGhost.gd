@@ -353,6 +353,10 @@ func _draw_shape() -> void:
 	if building_type_name == TrapperHutShape.TYPE:
 		TrapperHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
 		return
+	# Tettoia delle gabbie (2026-11-12): lo stesso disegno della mappa, semitrasparente, gabbie vuote.
+	if building_type_name == CageShelterShape.TYPE:
+		CageShelterShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)
+		return
 	# Capanna del vasellaio (2026-11-03): lo stesso disegno della mappa, semitrasparente.
 	if building_type_name == PotterHutShape.TYPE:
 		PotterHutShape.draw(self, Vector2.ZERO, rotation_dir, not is_buildable, COLOR.a)

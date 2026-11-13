@@ -20,6 +20,13 @@ extends RefCounted
 
 const HOURS_PER_DAY := 24
 
+# TEMPORANEO (misura 2026-11-12, con _log_day_measure): per area e specie, {"min", "sum", "n"} della distanza oraria dal
+# rettangolo del centro di gruppetto più vicino, e "building" = distanza dall'edificio non stradale più vicino, "avoid" = raggio
+# da cui i centri stanno lontani. Azzerata a fine giornata.
+static var _measure := {}
+# Righe MISURA delle mandrie (passaggi, distanze): spente il 2026-11-13, i passaggi sono verificati.
+const _MEASURE_LOGS := false
+
 
 # Ora di gioco nuova: conta i passaggi nelle celle accese con lacci e aggiorna le aree da evitare dei gruppetti.
 static func sample_hour(game_data: GameData, live_cells: Dictionary, day_progress: float) -> void:
@@ -41,7 +48,12 @@ static func sample_hour(game_data: GameData, live_cells: Dictionary, day_progres
 		var area := passage_area(game_data, trap, rules)
 		if not areas_by_cell.has(trap.macro_coords):
 			areas_by_cell[trap.macro_coords] = {}
-		areas_by_cell[trap.macro_coords][area["key"]] = {"rect": area["rect"], "species": TrapService.prey_species(rules)}
+		# Più trappole nella stessa area (lacci, cesto, fossa): si uniscono le loro prede, senza sovrascriverle.
+		var entry: Dictionary = areas_by_cell[trap.macro_coords].get(area["key"], {"rect": area["rect"], "species": []})
+		for species in TrapService.prey_species(rules):
+			if not entry["species"].has(species):
+				entry["species"].append(species)
+		areas_by_cell[trap.macro_coords][area["key"]] = entry
 	for coords in areas_by_cell:
 		var cell: LiveMacroCell = live_cells[coords]
 		var areas: Dictionary = areas_by_cell[coords]
@@ -51,11 +63,13 @@ static func sample_hour(game_data: GameData, live_cells: Dictionary, day_progres
 				var renderer: AnimalGroupRenderer = cell.animal_renderers.get(species)
 				if renderer == null or is_disturbed(game_data, area_key, species, day):
 					continue
-				for center in renderer.get_cluster_positions():
-					if rect.has_point(center):
-						var key := _key(area_key, species)
-						game_data.snare_passages[key] = int(game_data.snare_passages.get(key, 0)) + 1
-						break
+				if _MEASURE_LOGS:
+					_measure_hour(_key(area_key, species), rect, renderer)
+				# Passaggio (2026-11-12, richiesta utente): basta un animale qualunque della mandria dentro l'area, non il
+				# centro del suo gruppetto. Vale per tutte le trappole a mandria: lacci, cesti e fosse.
+				if renderer.has_individual_in_rect(rect):
+					var key := _key(area_key, species)
+					game_data.snare_passages[key] = int(game_data.snare_passages.get(key, 0)) + 1
 
 
 # Area dei passaggi del laccio: la sua zona di caccia, o (piazzato fuori zona) un quadrato di lato 2×trap_passage_radius+1
@@ -125,7 +139,77 @@ static func take_prey(game_data: GameData, trap: PlacedTrap, rules: SecondaryRes
 # Fine giornata (dopo i tiri): i passaggi ricominciano da zero.
 static func end_day(game_data: GameData) -> void:
 	if game_data != null:
+		if _MEASURE_LOGS:
+			_log_day_measure(game_data)
+		_measure.clear()
 		game_data.snare_passages.clear()
+
+
+# TEMPORANEO (2026-11-12, misura: lacci e cesti non prendono niente): a fine giornata, per ogni area di lacci/cesti e
+# specie preda, i passaggi contati, se la mandria risulta presente nella macrocella e se l'area è disturbata. Da togliere
+# appena trovata la causa.
+static func _log_day_measure(game_data: GameData) -> void:
+	var day := game_data.get_absolute_day()
+	var seen := {}
+	for trap in game_data.placed_traps:
+		var rules := TrapService.get_rules(trap.trap_name)
+		if rules == null or not TrapService.is_herd_quarry(rules):
+			continue
+		var area_key := String(passage_area(game_data, trap, rules)["key"])
+		var herds := WildFaunaService.get_herds_in_cell(game_data, trap.macro_coords)
+		for species in TrapService.prey_species(rules):
+			var key := _key(area_key, species)
+			if seen.has(key):
+				continue
+			seen[key] = true
+			TrapService.log_line("MISURA %s %s (%s): passaggi %d, mandria presente %s, disturbata %s" % [area_key, species,
+				trap.trap_name, int(game_data.snare_passages.get(key, 0)), herds.has(species), is_disturbed(game_data, area_key, species, day)])
+			var entry: Dictionary = _measure.get(key, {})
+			if entry.is_empty() or int(entry.get("n", 0)) == 0:
+				TrapService.log_line("MISURA %s %s: nessun gruppetto misurato (cella spenta o mandria senza renderer)" % [area_key, species])
+			else:
+				TrapService.log_line("MISURA %s %s: gruppetto più vicino al rettangolo min %.1f media %.1f (%d ore); edificio più vicino %.1f, i centri ne stanno a %.1f" % [
+					area_key, species, float(entry["min"]), float(entry["sum"]) / float(entry["n"]), int(entry["n"]),
+					float(entry["building"]), float(entry["avoid"])])
+				var at: Vector2 = entry.get("at", Vector2.ZERO)
+				var r: Rect2 = entry.get("rect", Rect2())
+				TrapService.log_line("MISURA %s %s: al minimo il centro era in (%.1f, %.1f), a %.1f dall'edificio più vicino; rettangolo (%.0f, %.0f)-(%.0f, %.0f)" % [
+					area_key, species, at.x, at.y, float(entry.get("at_building", INF)), r.position.x, r.position.y, r.end.x, r.end.y])
+
+
+# TEMPORANEO (misura): distanza oraria del centro più vicino dal rettangolo, ed edificio non stradale più vicino al rettangolo.
+static func _measure_hour(key: String, rect: Rect2, renderer: AnimalGroupRenderer) -> void:
+	var nearest := INF
+	var nearest_center := Vector2.ZERO
+	for center in renderer.get_cluster_positions():
+		var d := _distance_to_rect(center, rect)
+		if d < nearest:
+			nearest = d
+			nearest_center = center
+	if nearest == INF:
+		return
+	# Il centro più vicino al rettangolo: quanto dista dall'edificio più vicino (ciò che lo spinge via).
+	var center_to_building := INF
+	for building_position: Vector2 in renderer._cluster_avoid_buildings:
+		center_to_building = minf(center_to_building, nearest_center.distance_to(building_position))
+	var building := INF
+	for building_position: Vector2 in renderer._cluster_avoid_buildings:
+		building = minf(building, _distance_to_rect(building_position, rect))
+	var entry: Dictionary = _measure.get(key, {"min": INF, "sum": 0.0, "n": 0})
+	if nearest < float(entry["min"]):
+		entry["at"] = nearest_center
+		entry["at_building"] = center_to_building
+	entry["min"] = minf(float(entry["min"]), nearest)
+	entry["rect"] = rect
+	entry["sum"] = float(entry["sum"]) + nearest
+	entry["n"] = int(entry["n"]) + 1
+	entry["building"] = building
+	entry["avoid"] = renderer._cluster_building_avoid_distance()
+	_measure[key] = entry
+
+
+static func _distance_to_rect(point: Vector2, rect: Rect2) -> float:
+	return point.distance_to(Vector2(clampf(point.x, rect.position.x, rect.end.x), clampf(point.y, rect.position.y, rect.end.y)))
 
 
 static func _key(area_key: String, species: String) -> String:

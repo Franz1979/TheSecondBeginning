@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_cage_shelter"]
+
+; Tettoia delle gabbie (2026-11-12, richiesta utente — addomesticazione per cattura viva, primo edificio): tettoia di
+; frasche con sotto le gabbie dove si tengono gli animali piccoli catturati vivi (pernice, coniglio). 20 posti, una sola
+; specie. Per ora solo l'edificio: gli animali arriveranno con le trappole vive (advanced_traps).
+[resource]
+script = ExtResource("1_cage_shelter")
+building_name = "building_cage_shelter"
+category = 11
+required_idea_id = "animal_domestication"
+min_construction_days = 4
+required_labor = 3500
+max_builders = 2
+lifespan_years = 10
+max_durability = 100
+defense = 10
+required_materials = {
+"fiber_rope": 30,
+"plant_fiber": 20,
+"stick": 70,
+"wood": 8
+}
+required_space = 1
+visibility_radius = 2
+animal_capacity = 20

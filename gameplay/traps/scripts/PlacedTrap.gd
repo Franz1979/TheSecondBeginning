@@ -23,6 +23,11 @@ var catch_days: Array[int] = []
 var catch_species: Array[String] = []
 # Fascia d'età di ogni preda (GameTypes.AgeBand), stesso ordine: la resa della macellazione la segue come nella caccia.
 var catch_ages: Array[int] = []
+# Cattura viva (2026-11-12, cesto a caduta): per ogni preda, stesso ordine, il sesso (1 = maschio, 0 = femmina, -1 = non
+# segnato: le trappole che uccidono) e il giorno assoluto della morte (-1 = ancora viva). Un animale vivo resta nella
+# trappola SecondaryResourceRules.trap_live_survival_days giorni, poi muore e si svuota come la preda di un laccio.
+var catch_sexes: Array[int] = []
+var catch_death_days: Array[int] = []
 # Giorno assoluto dell'ultimo uso consumato (montaggio, svuotamento o usura a riposo): da qui contano i
 # trap_idle_wear_days dell'usura a riposo (TrapService.advance_daily), 2026-11-07.
 var last_wear_day: int = 0
@@ -30,6 +35,26 @@ var last_wear_day: int = 0
 
 func get_caught() -> int:
 	return catch_days.size()
+
+
+# Preda viva in posizione `index` (cesto a caduta): ha un giorno di morte e vale -1.
+func is_catch_alive(index: int) -> bool:
+	return index < catch_death_days.size() and catch_death_days[index] < 0
+
+
+# Giorno da cui conta la marcitura della preda `index`: la morte per le prese vive, la cattura per le altre.
+func get_catch_spoil_start(index: int) -> int:
+	if index < catch_death_days.size() and catch_death_days[index] >= 0:
+		return catch_death_days[index]
+	return catch_days[index]
+
+
+func clear_catches() -> void:
+	catch_days.clear()
+	catch_species.clear()
+	catch_ages.clear()
+	catch_sexes.clear()
+	catch_death_days.clear()
 
 
 func get_remaining_uses() -> int:
@@ -51,6 +76,8 @@ func to_save_data() -> Dictionary:
 		"catch_days": Array(catch_days),
 		"catch_species": Array(catch_species),
 		"catch_ages": Array(catch_ages),
+		"catch_sexes": Array(catch_sexes),
+		"catch_death_days": Array(catch_death_days),
 		"last_wear_day": last_wear_day,
 	}
 
@@ -73,4 +100,9 @@ static func from_save_data(data: Dictionary) -> PlacedTrap:
 		trap.catch_species.append(String(species))
 	for age_band in data.get("catch_ages", []):
 		trap.catch_ages.append(int(age_band))
+	# Cattura viva (2026-11-12): salvataggi più vecchi senza le chiavi, nessuna preda viva.
+	for sex in data.get("catch_sexes", []):
+		trap.catch_sexes.append(int(sex))
+	for death_day in data.get("catch_death_days", []):
+		trap.catch_death_days.append(int(death_day))
 	return trap

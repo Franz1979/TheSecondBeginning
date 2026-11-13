@@ -79,4 +79,6 @@ enum NotificationPopupType {
 	# Edificio dei pensieri troppo lontano dall'acqua, senza otre (2026-11-01, ThirstService.check_thought_building_water).
 	# Stile "alert" giallo. Aggiunto IN CODA.
 	THOUGHT_BUILDING_FAR_FROM_WATER,
+	# Specie da addomesticare scoperta (2026-11-12, primo animale vivo in tettoia): stile di default. Aggiunto IN CODA.
+	DOMESTIC_SPECIES_DISCOVERED,
 }

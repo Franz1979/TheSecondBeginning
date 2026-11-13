@@ -300,28 +300,59 @@ func set_trap_rule(rows: Array[Dictionary]) -> void:
 
 # Regola "Trappole per zona": una riga per tipo di trappola, nome e campo compatto a destra (0 = nessuna).
 func _build_trap_rule_rows() -> Control:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 2)
+	# Una riga sola con "Modifica…" (2026-11-12, richiesta utente: le trappole cominciavano a essere tante), come
+	# Attrezzerie e combustibile: nel popup una riga per trappola col numero per zona.
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_traps_tooltip"))
+	var label := Label.new()
+	label.text = tr("warehouse_rule_traps_group")
+	label.tooltip_text = TooltipText.wrap(row.tooltip_text)
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.clip_text = true
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	var edit_button := Button.new()
+	edit_button.text = tr("warehouse_rule_toolkit_edit")
+	edit_button.tooltip_text = TooltipText.wrap(tr("warehouse_rule_traps_edit_tooltip"))
+	edit_button.focus_mode = Control.FOCUS_NONE
+	edit_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	edit_button.pressed.connect(func() -> void:
+		_open_rule_popup(edit_button, "warehouse_rule_traps_group", "warehouse_rule_traps_empty", func() -> Array: return _trap_rows, _fill_trap_popup)
+	)
+	row.add_child(edit_button)
+	return row
+
+
+# Righe del popup delle trappole: per ogni tipo icona, nome e campo del numero per zona. Il tooltip aggiunge l'eventuale
+# vincolo di piazzamento (TrapService.placement_note: il cesto a caduta vuole una tettoia delle gabbie).
+func _fill_trap_popup(box: VBoxContainer) -> void:
 	for entry in _trap_rows:
 		var trap_name := String(entry["trap"])
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 6)
-		row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_traps_tooltip"))
-		var label := Label.new()
-		label.text = tr("warehouse_rule_traps").format({"trap": IconRegistry.get_resource_display_name(trap_name)})
-		label.tooltip_text = TooltipText.wrap(row.tooltip_text)
+		var note := TrapService.placement_note(trap_name)
+		row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_traps_tooltip") + ("\n\n" + note if note != "" else ""))
+		var icon_box := Control.new()
+		icon_box.custom_minimum_size = Vector2(LIST_ICON_SIDE, LIST_ICON_SIDE)
+		icon_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var icon_node := IconRegistry.get_resource_icon_node(trap_name)
+		if icon_node != null:
+			icon_node.set_anchors_preset(Control.PRESET_FULL_RECT)
+			icon_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			icon_box.add_child(icon_node)
+		row.add_child(icon_box)
+		var label := _toolkit_popup_label(IconRegistry.get_resource_display_name(trap_name))
+		label.tooltip_text = row.tooltip_text
 		label.mouse_filter = Control.MOUSE_FILTER_PASS
-		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		row.add_child(label)
 		row.add_child(build_level_field(int(entry["level"]), func(level: int) -> void:
 			entry["level"] = level
 			trap_per_zone_changed.emit(trap_name, level)
 		, "warehouse_rule_traps_tooltip", 1, 0, true, LEVEL_NONE_TEXT, TRAP_LEVEL_MAX))
 		box.add_child(row)
-	return box
 
 
 # Regola "Acqua per tettoia": titolo con il campo compatto a destra (+ e − uno sopra l'altro, a passi di 100, 0 = spenta).

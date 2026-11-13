@@ -1,0 +1,54 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_drop_basket"]
+
+; Cesto a caduta (2026-11-12, richiesta utente — addomesticazione per cattura viva): cesto rovesciato di bastoni intrecciati,
+; tenuto su da un bastoncino col laccio; l'animale entra per l'esca, il cesto cade e lo chiude dentro VIVO. Un animale alla
+; volta (trap_capacity 1), 5 catture prima di rovinarsi. Ricetta alla capanna del trappoliere.
+; Piazzamento (2026-11-12): come i lacci, nella zona di caccia, fuori da bosco, ruscello, argilla e pietre, ma solo se nel
+; villaggio c'è una tettoia delle gabbie completata (TrapService.placement_blocked_reason). Numero generale del WM a 0: lo
+; si decide zona per zona.
+; Cattura (2026-11-12, passo A): come i lacci (SnareService, passaggi, tiro a fine giornata, disturbo), coniglio 0,6 e
+; pernice 0,4, ma l'animale resta VIVO (sesso a caso). Lasciato lì trap_live_survival_days (5) giorni muore; morto, marcisce
+; dopo trap_catch_spoil_days e allo svuotamento si macella come la preda di un laccio. Portarlo alla tettoia: passo B.
+[resource]
+script = ExtResource("1_drop_basket")
+secondary_resource_name = "drop_basket"
+calories_per_unit = 0.0
+category = 4
+panel_group = "traps_fishing"
+generation_source = 2
+required_idea_id = "advanced_traps"
+space_per_unit = 25.0
+recipe_inputs = {
+"fiber_rope": 3,
+"plant_fiber": 4,
+"stick": 10
+}
+recipe_labor = 300.0
+recipe_workstation_types = Array[String](["trapper_hut"])
+recipe_required_tool_categories = Array[int]([1, 6])
+tool_categories = Array[int]([14])
+max_uses = 5
+trap_zone_job = "hunt"
+trap_quarry = "live_small_game"
+trap_min_spacing = 4
+trap_setup_days = 0.1
+trap_capacity = 1
+trap_daily_catch_chance = 0.5
+trap_catch_spoil_days = 5
+trap_empty_after_days = 1
+trap_empty_days = 0.04
+trap_catch_resource = "meat"
+trap_catch_yield = 1
+trap_prey_weights = {
+"partridge": 0.4,
+"rabbit": 0.6
+}
+trap_full_passage_hours = 6
+trap_disturbance_days = 3
+trap_passage_radius = 5
+trap_rest_days = 60
+trap_idle_wear_days = 40
+trap_empty_tool_categories = Array[int]([4])
+trap_live_survival_days = 5

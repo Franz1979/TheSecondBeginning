@@ -44,6 +44,15 @@ const QUARRY_SMALL_GAME := "small_game"
 # Fossa con pali (2026-11-11, richiesta utente): come i lacci, ma prende le prede grosse. Lacci = specie delle mandrie con
 # AnimalRules.max_hunters == 1, fossa = con max_hunters > 1 (prey_species).
 const QUARRY_BIG_GAME := "big_game"
+# Cesto a caduta (2026-11-12, richiesta utente — addomesticazione per cattura viva): conigli e pernici presi VIVI. Si monta
+# come i lacci, ma solo se c'è una tettoia delle gabbie completata (placement_blocked_reason). Per ora non cattura niente.
+const QUARRY_LIVE_SMALL_GAME := "live_small_game"
+# Edificio senza il quale le trappole a cattura viva non si piazzano (almeno uno completato, pieno o vuoto).
+const LIVE_CATCH_BUILDING_TYPE := "cage_shelter"
+# Animali vivi presi dai cesti nel giro (2026-11-12, passo B2): [{"wild_species", "species", "is_male", "age_band",
+# "building_id", "space", "trap_name"}] (KeptAnimalService.make_entry). Contano come posto prenotato nella tettoia e come
+# spazio nello zaino; a fine giro diventano tappe KeepAnimalAction.
+const CONTEXT_LIVE_ANIMALS := "trap_live_animals"
 const NO_SITE := Vector2i(-1, -1)
 
 static var _trap_names: Array[String] = []
@@ -63,9 +72,47 @@ static func list_trap_names() -> Array[String]:
 	return _trap_names
 
 
-# Lacci e fossa: prendono animali veri delle mandrie (SnareService), stessa logica.
+# Lacci, fossa e cesto a caduta (2026-11-12): prendono animali veri delle mandrie (SnareService), stessa logica; stesso
+# terreno (niente alberi né pietre) e posti sparsi.
 static func is_herd_quarry(rules: SecondaryResourceRules) -> bool:
-	return rules != null and (rules.trap_quarry == QUARRY_SMALL_GAME or rules.trap_quarry == QUARRY_BIG_GAME)
+	return rules != null and rules.trap_quarry in [QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME]
+
+
+# Trappole a cattura viva (2026-11-12): oggi il cesto a caduta.
+static func is_live_catch(rules: SecondaryResourceRules) -> bool:
+	return rules != null and rules.trap_quarry == QUARRY_LIVE_SMALL_GAME
+
+
+# true se nel mondo c'è almeno una tettoia delle gabbie completata (piena o vuota).
+static func has_live_catch_building(world: World) -> bool:
+	if world == null:
+		return false
+	for building in world.buildings:
+		if building != null and building.is_complete and building.building_type_name == LIVE_CATCH_BUILDING_TYPE:
+			return true
+	return false
+
+
+# Motivo per cui `trap_name` non si può piazzare adesso, già tradotto; "" se si può. Unico punto del vincolo (2026-11-12):
+# le trappole a cattura viva vogliono una tettoia delle gabbie completata. Letto dal lavoro di zona (X rossa), dal clic
+# destro e dall'ordine diretto.
+static func placement_blocked_reason(world: World, trap_name: String) -> String:
+	var rules := get_rules(trap_name)
+	if is_live_catch(rules) and not has_live_catch_building(world):
+		return GameContext.tr_text("trap_live_catch_needs_cage_shelter").format({
+			"trap": IconRegistry.get_resource_display_name(trap_name),
+			"building": GameContext.tr_text("building_" + LIVE_CATCH_BUILDING_TYPE),
+		})
+	return ""
+
+
+# Nota fissa da aggiungere ai tooltip del numero di trappole (WM, zona), già tradotta; "" se il tipo non ha vincoli.
+static func placement_note(trap_name: String) -> String:
+	if is_live_catch(get_rules(trap_name)):
+		return GameContext.tr_text("trap_live_catch_note").format({
+			"building": GameContext.tr_text("building_" + LIVE_CATCH_BUILDING_TYPE),
+		})
+	return ""
 
 
 # Specie delle mandrie che la trappola prende: lacci max_hunters == 1, fossa max_hunters > 1. Vuoto per le altre.
@@ -204,9 +251,7 @@ static func empty(game_data: GameData, trap: PlacedTrap) -> Dictionary:
 		result["products"] = catch_products(trap, day)
 		for product in result["products"]:
 			result["quantity"] = int(result["quantity"]) + int(product["quantity"])
-		trap.catch_days.clear()
-		trap.catch_species.clear()
-		trap.catch_ages.clear()
+		trap.clear_catches()
 		_consume_use(game_data, trap, rules, day, "ultimo svuotamento")
 		game_data.placed_traps_revision += 1
 		return result
@@ -220,9 +265,7 @@ static func empty(game_data: GameData, trap: PlacedTrap) -> Dictionary:
 		result["decay_fraction"] = clampf(float(total_age) / float(caught) / durability, 0.0, 1.0)
 	result["quantity"] = caught * maxi(rules.trap_catch_yield, 0)
 	result["products"] = [{"resource": result["resource"], "quantity": result["quantity"], "decay_fraction": result["decay_fraction"]}]
-	trap.catch_days.clear()
-	trap.catch_species.clear()
-	trap.catch_ages.clear()
+	trap.clear_catches()
 	_consume_use(game_data, trap, rules, day, "ultimo svuotamento")
 	game_data.placed_traps_revision += 1
 	return result
@@ -247,13 +290,59 @@ static func catch_products(trap: PlacedTrap, day: int) -> Array:
 	return products
 
 
-# Giorni di macellazione sul posto delle prede di un laccio (ritmo di ButcherAction); 0 per le altre trappole.
+# Spazio nello zaino dei prodotti della macellazione di una preda (ButcherAction.compute_yields): anche lo spazio che
+# occupa un animale vivo portato in braccio (passo B2, 2026-11-12, "spazio = sua carne").
+static func prey_space(species: String, age_band: int) -> float:
+	var space := 0.0
+	var yields := ButcherAction.compute_yields(species, age_band)
+	for resource_name in yields:
+		var product_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
+		space += float(yields[resource_name]) * (product_rules.space_per_unit if product_rules != null else 0.0)
+	return space
+
+
+# Cattura viva allo svuotamento (2026-11-12, passo B2): toglie dal cesto gli animali ancora vivi che hanno un posto in una
+# tettoia (KeptAnimalService.find_building_with_room, contando i posti già prenotati da `reserved` e da quelli presi qui) e
+# li restituisce come voci da portare in braccio (KeptAnimalService.make_entry). Quelli senza posto e i morti restano: li
+# macella empty(). Se il cesto resta vuoto, l'uso lo toglie qui (empty() senza prede non lo toglie).
+static func take_live_catches(game_data: GameData, world: World, trap: PlacedTrap, reserved: Array) -> Array:
+	var taken: Array = []
+	var rules := get_rules(trap.trap_name)
+	if not is_live_catch(rules) or trap.catch_days.is_empty():
+		return taken
+	for i in range(trap.catch_days.size() - 1, -1, -1):
+		if not trap.is_catch_alive(i):
+			continue
+		var wild_species := trap.catch_species[i] if i < trap.catch_species.size() else ""
+		var species := KeptAnimalService.domestic_species_for_wild(wild_species)
+		if species == "":
+			continue
+		var building := KeptAnimalService.find_building_with_room(game_data, world, species, trap.macro_coords, reserved + taken)
+		if building == null:
+			log_line("%s #%d: %s vivo ma nessuna tettoia con posto, si macella" % [trap.trap_name, trap.id, wild_species])
+			continue
+		var age_band := trap.catch_ages[i] if i < trap.catch_ages.size() else int(GameTypes.AgeBand.ADULT)
+		var is_male := i < trap.catch_sexes.size() and trap.catch_sexes[i] == 1
+		taken.append(KeptAnimalService.make_entry(wild_species, species, is_male, age_band, building.id, trap.trap_name))
+		_remove_catch(trap, i)
+	if taken.is_empty():
+		return taken
+	if trap.catch_days.is_empty():
+		_consume_use(game_data, trap, rules, game_data.get_absolute_day(), "ultimo svuotamento")
+	game_data.placed_traps_revision += 1
+	return taken
+
+
+# Giorni di macellazione sul posto delle prede di un laccio (ritmo di ButcherAction); 0 per le altre trappole. Gli animali
+# vivi dei cesti non contano: vanno alla tettoia (take_live_catches).
 static func butcher_days(trap: PlacedTrap) -> float:
 	var rules := get_rules(trap.trap_name)
 	if rules == null or not is_herd_quarry(rules):
 		return 0.0
 	var days := 0.0
 	for i in range(trap.catch_days.size()):
+		if trap.is_catch_alive(i):
+			continue
 		var species := trap.catch_species[i] if i < trap.catch_species.size() else ""
 		var age_band := trap.catch_ages[i] if i < trap.catch_ages.size() else int(GameTypes.AgeBand.ADULT)
 		var meat := float(ButcherAction.compute_yields(species, age_band)["meat"])
@@ -324,7 +413,7 @@ static func site_index(trap_name: String, world: World, macro_coords: Vector2i, 
 			var fish := StreamFishService.get_fish_in_reach(state, StreamMicrocellService.get_positions(world, cell),
 				macro_coords.x, macro_coords.y, lot, game_data.get_absolute_day())
 			return clampf(float(fish) / float(StreamFishService.TRAP_FULL_FISH), 0.0, 1.0)
-		QUARRY_SMALL_GAME, QUARRY_BIG_GAME:
+		QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME:
 			return 1.0
 	return 0.0
 
@@ -337,7 +426,7 @@ static func current_index(trap_name: String, p_site_index: float, season: GameTy
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.apply_season(p_site_index, season)
-		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME:
+		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME:
 			return p_site_index
 	return 0.0
 
@@ -350,7 +439,7 @@ static func is_worth_setting(trap_name: String, index: float) -> bool:
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.level_for_index(index) != BirdPresenceService.Level.NONE
-		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME:
+		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME:
 			return index > 0.0
 	return false
 
@@ -493,7 +582,9 @@ static func placeable_traps(game_data: GameData, world: World, individuals: Arra
 				continue
 			if rules.trap_quarry == QUARRY_BIRDS:
 				level = int(BirdPresenceService.level_for_index(index))
-		result.append({"trap_name": trap_name, "index": index, "level": level, "quarry": rules.trap_quarry})
+		# Vincolo di piazzamento (2026-11-12, cesto senza tettoia delle gabbie): la voce resta, spenta, col motivo.
+		result.append({"trap_name": trap_name, "index": index, "level": level, "quarry": rules.trap_quarry,
+			"blocked_reason": placement_blocked_reason(world, trap_name)})
 	return result
 
 
@@ -544,6 +635,8 @@ static func advance_daily(game_data: GameData, world: World) -> void:
 		var rules := get_rules(trap.trap_name)
 		if rules == null:
 			continue
+		if _kill_live_catches(trap, rules, day):
+			changed = true
 		if _spoil_old_catches(trap, rules, day):
 			changed = true
 		# Usura a riposo (2026-11-07): trap_idle_wear_days senza svuotamenti = un uso in meno.
@@ -563,8 +656,13 @@ static func advance_daily(game_data: GameData, world: World) -> void:
 			trap.catch_days.append(day)
 			trap.catch_species.append(species)
 			trap.catch_ages.append(age_band)
+			# Cattura viva (2026-11-12, cesto a caduta): l'animale resta vivo, col suo sesso tirato a caso.
+			var alive := is_live_catch(rules)
+			trap.catch_sexes.append((1 if randf() < 0.5 else 0) if alive else -1)
+			trap.catch_death_days.append(-1 if alive else day)
 			changed = true
-			log_line("%s #%d in %s %s: preso %s (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, species, trap.get_caught(), rules.trap_capacity])
+			log_line("%s #%d in %s %s: preso %s%s (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, species,
+				(" vivo, %s" % ("maschio" if trap.catch_sexes[-1] == 1 else "femmina")) if alive else "", trap.get_caught(), rules.trap_capacity])
 			continue
 		# Nassa: i pesci a portata si contano ogni giorno, e il pescato esce davvero dal ruscello.
 		var index_now: float = site_index(trap.trap_name, world, trap.macro_coords, trap.lot) if rules.trap_quarry == QUARRY_FISH else trap.site_index
@@ -576,6 +674,7 @@ static func advance_daily(game_data: GameData, world: World) -> void:
 			continue
 		for i in range(caught):
 			trap.catch_days.append(day)
+			trap.catch_death_days.append(day)
 		changed = true
 		log_line("%s #%d in %s %s: prese %d (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, caught, trap.get_caught(), rules.trap_capacity])
 	SnareService.end_day(game_data)
@@ -694,24 +793,40 @@ static func roll_catch(rules: SecondaryResourceRules, index: float, roll: float)
 static func _spoil_old_catches(trap: PlacedTrap, rules: SecondaryResourceRules, day: int) -> bool:
 	if rules.trap_catch_spoil_days <= 0 or trap.catch_days.is_empty():
 		return false
-	var kept: Array[int] = []
-	var kept_species: Array[String] = []
-	var kept_ages: Array[int] = []
-	for i in range(trap.catch_days.size()):
-		if day - trap.catch_days[i] < rules.trap_catch_spoil_days:
-			kept.append(trap.catch_days[i])
-			if i < trap.catch_species.size():
-				kept_species.append(trap.catch_species[i])
-			if i < trap.catch_ages.size():
-				kept_ages.append(trap.catch_ages[i])
-	var lost := trap.catch_days.size() - kept.size()
+	var lost := 0
+	# Dalla fine, così gli indici delle prede rimaste non cambiano. Le prede vive non marciscono (2026-11-12): prima muoiono
+	# (_kill_live_catches), poi contano dal giorno della morte.
+	for i in range(trap.catch_days.size() - 1, -1, -1):
+		if trap.is_catch_alive(i) or day - trap.get_catch_spoil_start(i) < rules.trap_catch_spoil_days:
+			continue
+		_remove_catch(trap, i)
+		lost += 1
 	if lost <= 0:
 		return false
-	trap.catch_days = kept
-	trap.catch_species = kept_species
-	trap.catch_ages = kept_ages
 	log_line("%s #%d in %s %s: %d marcite o portate via (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, lost, trap.get_caught(), rules.trap_capacity])
 	return true
+
+
+# Cattura viva (2026-11-12, cesto a caduta): un animale lasciato vivo nella trappola per trap_live_survival_days giorni
+# muore; da lì è una preda come quella di un laccio (marcisce, si macella allo svuotamento). true se ne è morto almeno uno.
+static func _kill_live_catches(trap: PlacedTrap, rules: SecondaryResourceRules, day: int) -> bool:
+	if not is_live_catch(rules):
+		return false
+	var died := false
+	for i in range(trap.catch_days.size()):
+		if trap.is_catch_alive(i) and day - trap.catch_days[i] >= rules.trap_live_survival_days:
+			trap.catch_death_days[i] = day
+			died = true
+			log_line("%s #%d in %s %s: %s morto nel cesto dopo %d giorni" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot,
+				trap.catch_species[i] if i < trap.catch_species.size() else "?", day - trap.catch_days[i]])
+	return died
+
+
+# Toglie la preda `index` da tutti gli elenchi paralleli della trappola.
+static func _remove_catch(trap: PlacedTrap, index: int) -> void:
+	for list in [trap.catch_days, trap.catch_species, trap.catch_ages, trap.catch_sexes, trap.catch_death_days]:
+		if index < list.size():
+			list.remove_at(index)
 
 
 # Trappole montate sulla microcella (per l'ispezione e il disegno).

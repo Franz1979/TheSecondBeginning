@@ -41,6 +41,8 @@ signal butcher_helpers_requested(individual: HumanIndividual, request: Dictionar
 # schema della macellazione dopo la caccia: segnale, e la Task la costruisce chi ascolta
 # (GameScene._on_ground_pile_haul_requested).
 signal ground_pile_haul_requested(individual: HumanIndividual, pile_ref: Dictionary)
+# Punti addomesticazione da assegnare (CONTEXT_PENDING_DOMESTICATION_POINTS): {specie domestica: punti}.
+signal domestication_points_earned(individual: HumanIndividual, points: Dictionary)
 # Caccia (diretta o in zona) interrotta per un motivo da mostrare al giocatore (2026-10-01: nessuna arma da caccia
 # rimasta). `message` già tradotto; GameScene lo mostra come i rifiuti dei comandi.
 signal hunt_ended_with_message(individual: HumanIndividual, message: String)
@@ -73,6 +75,9 @@ signal processing_station_full(individual: HumanIndividual, resource_name: Strin
 # Stessa chiave di quando valeva solo per l'essiccatoio, così le Task salvate allora la ritrovano.
 const CONTEXT_PROCESSING_FULL_NOTIFIED := "drying_full_notified"
 const CONTEXT_PENDING_GROUND_PILE_HAUL := "pending_ground_pile_haul"
+# Punti addomesticazione guadagnati nello step (2026-11-12, animali catturati vivi arrivati in tettoia, KeepAnimalAction):
+# {specie domestica: punti}. Li assegna GameScene (domestication_points_earned), con la scoperta al superamento della soglia.
+const CONTEXT_PENDING_DOMESTICATION_POINTS := "pending_domestication_points"
 # Messaggio da mostrare al giocatore quando la Task si chiude per CONTEXT_PENDING_TASK_ABORT (2026-10-04 — raccolta da un
 # mucchio senza deposito con posto): testo già tradotto, consumato insieme all'abort e mostrato con task_message_requested.
 const CONTEXT_PENDING_PLAYER_MESSAGE := "pending_player_message"
@@ -361,6 +366,10 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 	_handle_pending_butcher_helpers(individual, task)
 	_handle_pending_hunt_zone_prey(individual, task)
 	_handle_pending_ground_pile_haul(individual, task)
+	if task.context.has(CONTEXT_PENDING_DOMESTICATION_POINTS):
+		var earned: Dictionary = task.context[CONTEXT_PENDING_DOMESTICATION_POINTS]
+		task.context.erase(CONTEXT_PENDING_DOMESTICATION_POINTS)
+		domestication_points_earned.emit(individual, earned)
 	# Riempimento delle giare (2026-11-06): giara riposta e altre da riempire -> il viaggio successivo in coda allo stesso
 	# compito, prima che l'indice avanzi.
 	if task.context.has(WaterJarService.CONTEXT_PENDING_NEXT_TRIP):

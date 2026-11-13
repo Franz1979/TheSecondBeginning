@@ -1636,6 +1636,10 @@ func _draw_buildings() -> void:
 		if building_type_name == TrapperHutShape.TYPE:
 			TrapperHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
+		# Tettoia delle gabbie (2026-11-12): vista dall'alto, ruota con l'apertura (CageShelterShape).
+		if building_type_name == CageShelterShape.TYPE:
+			CageShelterShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			continue
 		# Capanna del vasellaio (2026-11-03): vista dall'alto, ruota con la porta; fumo solo mentre cuoce (PotterHutShape).
 		if building_type_name == PotterHutShape.TYPE:
 			PotterHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
@@ -2024,6 +2028,8 @@ const GROUND_UNDER_BUILDING_TYPES: Array[String] = [
 	"water_shelter",
 	# Capanna del trappoliere (2026-11-07).
 	"trapper_hut",
+	# Tettoia delle gabbie (2026-11-12).
+	"cage_shelter",
 	# Ceppo dell'insegnamento (2026-10-16).
 	"teaching_stump",
 	# Spiazzo delle feste (2026-10-17): un tile per microcella del rettangolo ("dirt_cells"), sotto il cerchio di sassi.

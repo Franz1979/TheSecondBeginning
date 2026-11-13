@@ -125,9 +125,14 @@ var domesticated_species: Array[String] = []
 # Anno (GameData.year) della prima addomesticazione per specie (2026-11-07, richiesta utente: la carta del pannello lo
 # mostra). Salvataggi più vecchi: chiave assente, la carta non dice l'anno. Scritto solo da DomesticationPointsService.
 var domestication_years: Dictionary = {}
-# Specie selvatiche (AnimalRules.species_name) già viste nel mondo: un'addomesticazione con idea richiesta parte solo
-# per queste. Scritte solo da DomesticationEncounterService.
-var encountered_wild_species: Array[String] = []
+# Specie domestiche scoperte (2026-11-12, addomesticazione per cattura viva, passo C): il primo animale vivo arrivato in
+# una tettoia rivela la specie nel pannello delle Addomesticazioni (prima è una scheda "?"). Il cane non ne ha bisogno.
+# Scritto solo da DomesticationPointsService.discover_species.
+var discovered_domestic_species: Array[String] = []
+# Statistiche della cattività per specie domestica (2026-11-12, pannello delle Addomesticazioni):
+# {specie: {"captured": arrivati vivi in tettoia, "died": morti in un edificio, "born": nati in cattività}}.
+# Scritte solo da KeptAnimalService.count_stat.
+var domestication_stats: Dictionary = {}
 # Animali domestici seguiti uno per uno (cane, passo 1, 2026-11-03 — DomesticAnimalService). Salvati da GameSaveService
 # ("domestic_animals"), insieme al prossimo id da assegnare.
 var domestic_animals: Array[DomesticAnimal] = []

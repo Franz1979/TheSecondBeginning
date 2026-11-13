@@ -38,6 +38,8 @@ func _ready() -> void:
 		game_scene.wild_animal_driven_off.connect(_on_wild_animal_driven_off)
 	if game_scene.has_signal(&"domestic_animal_called"):
 		game_scene.domestic_animal_called.connect(_on_domestic_animal_called)
+	if game_scene.has_signal(&"kept_animals_called"):
+		game_scene.kept_animals_called.connect(_on_kept_animals_called)
 	if game_scene.has_signal(&"domestic_animal_slaughtered"):
 		game_scene.domestic_animal_slaughtered.connect(_on_domestic_animal_slaughtered)
 	if game_scene.has_signal(&"domestic_animal_alarmed"):
@@ -102,6 +104,13 @@ func _on_wild_animal_driven_off(global_pos: Vector2) -> void:
 # Animale domestico cliccato o inquadrato (2026-11-03, cane passo 3): verso della specie (il cane abbaia).
 func _on_domestic_animal_called(global_pos: Vector2, species: String) -> void:
 	AudioManager.play_event(StringName("domestic_animal_call:" + species), global_pos)
+
+
+# Edificio con animali tenuti cliccato (2026-11-12, tettoia delle gabbie): il verso della specie, se ne ha uno.
+func _on_kept_animals_called(global_pos: Vector2, species: String) -> void:
+	var cry := StringName("kept_animals_call:" + species)
+	if SoundEventMap.get_sound_id(cry) != &"":
+		AudioManager.play_event(cry, global_pos)
 
 
 # Uccisione ordinata con Macella (2026-11-04): il verso della specie, se ne ha uno in SoundEventMap.

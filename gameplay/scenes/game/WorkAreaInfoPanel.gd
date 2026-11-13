@@ -639,6 +639,11 @@ func _build_trap_rows(job_id: String) -> void:
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.clip_text = true
 		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		# Vincolo di piazzamento (2026-11-12, cesto a caduta): spiegato nel tooltip del nome.
+		var note := TrapService.placement_note(trap_name)
+		if note != "":
+			label.tooltip_text = TooltipText.wrap(note)
+			label.mouse_filter = Control.MOUSE_FILTER_STOP
 		row.add_child(label)
 		# Montate ora nella zona, prima del campo delle volute (come Qtà / Min del WM, senza scritte).
 		var mounted := 0

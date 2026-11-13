@@ -254,6 +254,10 @@ var influence_last_gain_day: Dictionary = {}
 # lo riempirà la task di sepoltura. Un Dictionary JSON-nativo per defunto, salvato così com'è da GameSaveService.
 # Capienza: BuildingRules.max_buried.
 var buried: Array = []
+# Specie tenuta (2026-11-12, tettoia delle gabbie — KeptAnimalService): specie domestica scelta nel pannello
+# (DomesticAnimalRules.species_name, es. "domestic_rabbit"); "" = Qualunque, decide il primo animale che entra. Si cambia
+# solo a edificio vuoto. Gli animali tenuti stanno in GameData.domestic_animals con building_id = id.
+var kept_species: String = ""
 # Rifiuti (2026-10-18, richiesta utente — Fossa dei rifiuti, passo 1): spazio occupato e spazio prenotato da trasporti
 # in viaggio verso la fossa (così due portatori non contano sullo stesso posto libero). Capienza:
 # BuildingRules.waste_capacity. Per ora sempre 0: chi ci butta dentro arriverà nei passi successivi.

@@ -148,6 +148,9 @@ enum ActionType {
 	SET_TRAP,
 	# EMPTY_TRAP (2026-11-07, svuotamento delle trappole — EmptyTrapAction, empty_trap.tres) — IN CODA (47).
 	EMPTY_TRAP,
+	# KEEP_ANIMAL (2026-11-12, animali vivi dei cesti nella tettoia delle gabbie — KeepAnimalAction, solo tappa aggiunta
+	# a fine giro) — IN CODA (48).
+	KEEP_ANIMAL,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,
