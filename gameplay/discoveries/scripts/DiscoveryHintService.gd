@@ -16,6 +16,14 @@ static var _rules_cache: Array[DiscoveryHintRules] = []
 static var _rules_loaded: bool = false
 
 
+# Scoperta per id (2026-11-13, regali in attesa: Folk.earned_idea_grants). null se non esiste.
+static func find_by_id(hint_id: String) -> DiscoveryHintRules:
+	for rules in list_rules():
+		if rules.id == hint_id:
+			return rules
+	return null
+
+
 static func list_rules() -> Array[DiscoveryHintRules]:
 	if _rules_loaded:
 		return _rules_cache

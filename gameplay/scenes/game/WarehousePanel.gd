@@ -43,9 +43,10 @@ const FILL_RED := Color(0.85, 0.25, 0.25, 1.0)
 
 # Ordine delle linguette, da sinistra a destra (2026-10-10, richiesta utente).
 const TAB_ORDER: Array[int] = [
-	SecondaryResourceTypes.Category.FOOD, SecondaryResourceTypes.Category.RAW_MATERIAL,
-	SecondaryResourceTypes.Category.SEMI_FINISHED, SecondaryResourceTypes.Category.TOOL,
-	SecondaryResourceTypes.Category.MEDICINAL, SecondaryResourceTypes.Category.APPAREL,
+	SecondaryResourceTypes.Category.FOOD, SecondaryResourceTypes.Category.GRAIN,
+	SecondaryResourceTypes.Category.RAW_MATERIAL, SecondaryResourceTypes.Category.SEMI_FINISHED,
+	SecondaryResourceTypes.Category.TOOL, SecondaryResourceTypes.Category.MEDICINAL,
+	SecondaryResourceTypes.Category.APPAREL,
 ]
 
 # Livello minimo (2026-10-10, richiesta utente): campo − [numero] + a destra della quantità, passo 1,
@@ -83,9 +84,17 @@ signal fuel_min_changed(type_name: String, level: int)
 # Regola "Acqua per tettoia" (2026-11-07, giare passo 3): valore da GameScene (set_water_rule, prima di _ready); i cambi
 # escono con water_per_shelter_changed. L'acqua di ogni tettoia si legge nel pannello della tettoia, non qui.
 signal water_per_shelter_changed(level: int)
+# Regola "Rifornisci le mangiatoie" (2026-11-14, FeederStockService): giorni di cibo, valore da GameScene (set_feeder_rule).
+signal feeder_days_changed(days: int)
 # Regola "Trappole per zona" (2026-11-07, TrapService): numero voluto in ogni zona per tipo di trappola; una zona può avere
 # il proprio numero (pannello della zona). Valori da GameScene (set_trap_rule), i cambi escono con trap_per_zone_changed.
 signal trap_per_zone_changed(trap_name: String, level: int)
+# Regola "Semi nei campi" (2026-11-15, FieldSeedStockService): once da tenere nel capanno di ogni campo, per seme
+# domestico. Valori da GameScene (set_field_seed_rule), i cambi escono con field_seed_level_changed.
+signal field_seed_level_changed(seed_name: String, level: int)
+# Regola "Cura dei campi" (2026-11-15, FieldFertilityService): rimedio e soglia di fertilità generali.
+signal field_care_remedy_changed(remedy: int)
+signal field_care_threshold_changed(threshold: int)
 # Regola "Rifornisci le Attrezzerie" (2026-10-18, ToolkitStockService): accesa/spenta e pezzi voluti per tipo e attrezzo.
 signal toolkit_rule_toggled(enabled: bool)
 signal toolkit_target_changed(type_name: String, tool_name: String, level: int)
@@ -97,8 +106,12 @@ var _fuel_rule_enabled: bool = false
 var _water_per_shelter: int = 0
 var _water_max: int = 0
 var _water_missing: int = 0
+var _feeder_days: int = 0
 # [{"trap": nome, "level": int}], una riga per tipo di trappola.
 var _trap_rows: Array[Dictionary] = []
+var _field_seed_rows: Array[Dictionary] = []
+var _field_care_remedy: int = FieldFertilityService.DEFAULT_REMEDY
+var _field_care_threshold: int = FieldFertilityService.DEFAULT_THRESHOLD
 # Massimo del campo delle trappole per zona.
 const TRAP_LEVEL_MAX: int = 20
 const WATER_MISSING_COLOR := Color(0.95, 0.35, 0.30, 1.0)
@@ -119,6 +132,10 @@ var _banquet_safe_only: bool = true
 # casella. Stato da GameScene (set_workstation_food_rule, prima di _ready); i cambi escono con workstation_food_rule_toggled.
 signal workstation_food_rule_toggled(enabled: bool)
 var _workstation_food_rule_enabled: bool = true
+# Regola "Coltiva in automatico tutti i terreni" (2026-11-15, GameData.stock_cultivation_auto): una casella. Stato da
+# GameScene (set_cultivation_rule, prima di _ready); i cambi escono con cultivation_rule_toggled.
+signal cultivation_rule_toggled(enabled: bool)
+var _cultivation_rule_enabled: bool = true
 const INVENTORY_INTERVAL_OPTIONS: Array[int] = [6, 12, 24, 48, 72, 120]
 var _inventory_label: Label = null
 var _inventory_info: Array = []
@@ -134,13 +151,17 @@ const ABOVE_MAX_COLOR := Color(0.95, 0.72, 0.25, 1.0)
 const LEVEL_NONE_TEXT := "—"
 # Righe compatte (2026-10-18, richiesta utente): campi Min/Max stretti con + e − piccoli impilati a destra, rotella per
 # cambiarli; massimo vuoto = ∞. Stili propri (margini minimi) perché il tema di base allarga campo e bottoni.
-# Stretti (2026-10-25, richiesta utente: più spazio al nome): 22 px bastano per tre cifre; il LineEdit non si allarga più
-# alla larghezza minima del tema (minimum_character_width a 0 in _style_compact_edit).
-const LEVEL_COMPACT_EDIT_WIDTH: float = 22.0
+# Stretti (2026-10-25, richiesta utente: più spazio al nome); il LineEdit non si allarga più alla larghezza minima del tema
+# (minimum_character_width a 0 in _style_compact_edit). Dal 2026-11-15 (richiesta utente) 29 px, quattro cifre: tettoia
+# dell'acqua fino a 4000, semi dei campi oltre 1000.
+const LEVEL_COMPACT_EDIT_WIDTH: float = 29.0
+# Campo compatto con un massimo fissato a quattro cifre (2026-11-14, richiesta utente: "Acqua per tettoia" mostrava 110
+# per 1100): un po' più largo. Il massimo libero (LEVEL_MAX) resta stretto.
+const LEVEL_COMPACT_WIDE_EDIT_WIDTH: float = 38.0
 const LEVEL_COMPACT_BUTTON_SIZE := Vector2(10.0, 9.0)
 # Larghezza fissa della colonna di un campo compatto (campo + bottoni), uguale nelle righe e nell'intestazione "Min"/"Max"
 # (2026-10-18: prima l'intestazione misurava un campo di prova fuori dalla scena, senza tema, e le etichette scivolavano).
-const LEVEL_COMPACT_COLUMN_WIDTH: float = 33.0
+const LEVEL_COMPACT_COLUMN_WIDTH: float = 40.0
 const LEVEL_COMPACT_FONT_SIZE: int = 10
 const LEVEL_COMPACT_BUTTON_FONT_SIZE: int = 9
 const LEVEL_COMPACT_BG := Color(0.10, 0.11, 0.14, 1.0)
@@ -288,6 +309,10 @@ func set_fuel_rule(enabled: bool, rows: Array[Dictionary]) -> void:
 
 
 # `max_level`: capienza d'acqua di una tettoia; `missing`: giare che mancano nei magazzini (riga rossa), all'ultimo Inventario.
+func set_feeder_rule(days: int) -> void:
+	_feeder_days = days
+
+
 func set_water_rule(level: int, max_level: int, missing: int = 0) -> void:
 	_water_per_shelter = level
 	_water_max = max_level
@@ -296,6 +321,117 @@ func set_water_rule(level: int, max_level: int, missing: int = 0) -> void:
 
 func set_trap_rule(rows: Array[Dictionary]) -> void:
 	_trap_rows = rows.duplicate(true)
+
+
+func set_field_care_rule(remedy: int, threshold: int) -> void:
+	_field_care_remedy = remedy
+	_field_care_threshold = threshold
+
+
+# Regola "Cura dei campi": rimedio a tendina e, sotto, la soglia di fertilità (a passi di 5).
+func _build_field_care_rule_rows() -> Control:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.tooltip_text = TooltipText.wrap(tr("field_care_tooltip"))
+	var label := Label.new()
+	label.text = tr("warehouse_rule_field_care")
+	label.tooltip_text = TooltipText.wrap(row.tooltip_text)
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	var picker := OptionButton.new()
+	picker.focus_mode = Control.FOCUS_NONE
+	picker.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	picker.tooltip_text = TooltipText.wrap(row.tooltip_text)
+	for remedy in FieldFertilityService.SELECTABLE_REMEDIES:
+		picker.add_item(tr(FieldFertilityService.remedy_key(remedy)), remedy)
+	picker.select(maxi(picker.get_item_index(_field_care_remedy), 0))
+	picker.item_selected.connect(func(index: int) -> void:
+		_field_care_remedy = picker.get_item_id(index)
+		field_care_remedy_changed.emit(_field_care_remedy)
+	)
+	row.add_child(picker)
+	box.add_child(row)
+	var threshold_row := HBoxContainer.new()
+	threshold_row.add_theme_constant_override("separation", 6)
+	threshold_row.tooltip_text = TooltipText.wrap(tr("field_care_threshold_tooltip"))
+	var threshold_label := Label.new()
+	threshold_label.text = tr("warehouse_rule_field_care_threshold")
+	threshold_label.tooltip_text = TooltipText.wrap(threshold_row.tooltip_text)
+	threshold_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	threshold_label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	threshold_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	threshold_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	threshold_row.add_child(threshold_label)
+	threshold_row.add_child(build_level_field(_field_care_threshold, func(threshold: int) -> void:
+		_field_care_threshold = threshold
+		field_care_threshold_changed.emit(threshold)
+	, "field_care_threshold_tooltip", 5, 0, true, LEVEL_NONE_TEXT, 100))
+	box.add_child(threshold_row)
+	return box
+
+
+func set_field_seed_rule(rows: Array[Dictionary]) -> void:
+	_field_seed_rows = rows.duplicate(true)
+
+
+# Regola "Semi nei campi" (2026-11-15): una riga con "Modifica…", nel popup un seme domestico per riga, come le trappole.
+func _build_field_seed_rule_rows() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_field_seeds_tooltip"))
+	var label := Label.new()
+	label.text = tr("warehouse_rule_field_seeds")
+	label.tooltip_text = TooltipText.wrap(row.tooltip_text)
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.clip_text = true
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	var edit_button := Button.new()
+	edit_button.text = tr("warehouse_rule_toolkit_edit")
+	edit_button.tooltip_text = TooltipText.wrap(tr("warehouse_rule_field_seeds_tooltip"))
+	edit_button.focus_mode = Control.FOCUS_NONE
+	edit_button.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	edit_button.pressed.connect(func() -> void:
+		_open_rule_popup(edit_button, "warehouse_rule_field_seeds", "warehouse_rule_field_seeds_empty", func() -> Array: return _field_seed_rows, _fill_field_seed_popup)
+	)
+	row.add_child(edit_button)
+	return row
+
+
+# Righe del popup dei semi: icona, nome e campo delle once per campo (a passi di 10, fino ai vasi del capanno).
+func _fill_field_seed_popup(box: VBoxContainer) -> void:
+	for entry in _field_seed_rows:
+		var seed_name := String(entry["resource"])
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_field_seeds_tooltip"))
+		var icon_box := Control.new()
+		icon_box.custom_minimum_size = Vector2(LIST_ICON_SIDE, LIST_ICON_SIDE)
+		icon_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var icon_node := IconRegistry.get_resource_icon_node(seed_name)
+		if icon_node != null:
+			icon_node.set_anchors_preset(Control.PRESET_FULL_RECT)
+			icon_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			icon_box.add_child(icon_node)
+		row.add_child(icon_box)
+		var label := _toolkit_popup_label(IconRegistry.get_resource_display_name(seed_name))
+		label.tooltip_text = row.tooltip_text
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_child(label)
+		var max_level := maxi(int(entry.get("max", 0)), 1)
+		row.add_child(build_level_field(mini(int(entry["level"]), max_level), func(level: int) -> void:
+			entry["level"] = level
+			field_seed_level_changed.emit(seed_name, level)
+		, "warehouse_rule_field_seeds_tooltip", 10, 0, true, LEVEL_NONE_TEXT, max_level))
+		box.add_child(row)
 
 
 # Regola "Trappole per zona": una riga per tipo di trappola, nome e campo compatto a destra (0 = nessuna).
@@ -380,6 +516,27 @@ func _build_water_rule_rows() -> Control:
 	return row
 
 
+# Regola "Rifornisci le mangiatoie": titolo con il campo compatto dei giorni (0 = spenta).
+func _build_feeder_rule_rows() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_feeder_tooltip"))
+	var label := Label.new()
+	label.text = tr("warehouse_rule_feeder")
+	label.tooltip_text = TooltipText.wrap(row.tooltip_text)
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	row.add_child(label)
+	row.add_child(build_level_field(_feeder_days, func(days: int) -> void:
+		_feeder_days = days
+		feeder_days_changed.emit(days)
+	, "warehouse_rule_feeder_tooltip", 1, 0, true, LEVEL_NONE_TEXT, FEEDER_DAYS_MAX))
+	return row
+
+
 func set_banquet_rule(safe_only: bool) -> void:
 	_banquet_safe_only = safe_only
 
@@ -392,17 +549,30 @@ const RULE_WATER := "water"
 const RULE_TOOLKIT := "toolkit"
 # "Trappole per zona" (2026-11-07): con almeno un edificio finito che fabbrica una trappola (capanna del trappoliere).
 const RULE_TRAPS := "traps"
+# "Rifornisci le mangiatoie" (2026-11-14): con almeno un edificio finito con mangiatoia (AnimalFeederService).
+const RULE_FEEDER := "feeder"
+# "Coltiva in automatico tutti i terreni" (2026-11-15): con almeno un terreno coltivato finito (CultivationService).
+const RULE_CULTIVATION := "cultivation"
+# "Semi nei campi" (2026-11-15): con almeno un campo finito che tiene i semi (FieldSeedStoreService).
+const RULE_FIELD_SEEDS := "field_seeds"
+const FEEDER_DAYS_MAX := 60
 const BANQUET_BUILDING_TYPE := "feast_ground"
-var _available_rules: Dictionary = {RULE_BANQUET: true, RULE_WATER: true, RULE_TOOLKIT: true, RULE_TRAPS: true}
+var _available_rules: Dictionary = {RULE_BANQUET: true, RULE_WATER: true, RULE_TOOLKIT: true, RULE_TRAPS: true, RULE_FEEDER: true,
+	RULE_CULTIVATION: true, RULE_FIELD_SEEDS: true}
 
 
 func set_available_rules(available: Dictionary) -> void:
 	_available_rules = available.duplicate()
 
 
+func get_available_rules() -> Dictionary:
+	return _available_rules
+
+
 # {RULE_*: bool} dagli edifici finiti e non demoliti di `world`.
 static func available_rules_for(world: World) -> Dictionary:
-	var result := {RULE_BANQUET: false, RULE_WATER: false, RULE_TOOLKIT: false, RULE_TRAPS: false}
+	var result := {RULE_BANQUET: false, RULE_WATER: false, RULE_TOOLKIT: false, RULE_TRAPS: false, RULE_FEEDER: false,
+		RULE_CULTIVATION: false, RULE_FIELD_SEEDS: false}
 	if world == null:
 		return result
 	var trap_workstations: Array[String] = []
@@ -420,6 +590,12 @@ static func available_rules_for(world: World) -> Dictionary:
 			result[RULE_TOOLKIT] = true
 		if trap_workstations.has(building.building_type_name):
 			result[RULE_TRAPS] = true
+		if AnimalFeederService.has_feeder(building):
+			result[RULE_FEEDER] = true
+		if CultivationService.is_cultivated(building):
+			result[RULE_CULTIVATION] = true
+		if FieldSeedStoreService.is_seed_store(building):
+			result[RULE_FIELD_SEEDS] = true
 	return result
 
 
@@ -449,6 +625,26 @@ func _build_banquet_rule_rows() -> Control:
 
 func set_workstation_food_rule(enabled: bool) -> void:
 	_workstation_food_rule_enabled = enabled
+
+
+func set_cultivation_rule(enabled: bool) -> void:
+	_cultivation_rule_enabled = enabled
+
+
+# Regola della coltivazione automatica: una casella, con la spiegazione nel tooltip.
+func _build_cultivation_rule_row() -> Control:
+	var toggle := CheckBox.new()
+	toggle.text = tr("warehouse_rule_cultivation")
+	toggle.tooltip_text = TooltipText.wrap(tr("warehouse_rule_cultivation_tooltip"))
+	toggle.button_pressed = _cultivation_rule_enabled
+	toggle.focus_mode = Control.FOCUS_NONE
+	toggle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	toggle.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	toggle.toggled.connect(func(pressed: bool) -> void:
+		_cultivation_rule_enabled = pressed
+		cultivation_rule_toggled.emit(pressed)
+	)
+	return toggle
 
 
 # Regola della carne lasciata nelle postazioni: una casella, con la spiegazione nel tooltip.
@@ -571,7 +767,8 @@ func _fill_toolkit_popup(box: VBoxContainer) -> void:
 				var clamped := mini(level, max_units)
 				tool_entry["level"] = clamped
 				toolkit_target_changed.emit(type_name, tool_name, clamped)
-			, "warehouse_rule_toolkit_tool_tooltip", 1, 0, true))
+			# Massimo dell'Attrezzeria anche nel campo (2026-11-13, bugfix: mostrava il numero scritto oltre il massimo).
+			, "warehouse_rule_toolkit_tool_tooltip", 1, 0, true, LEVEL_NONE_TEXT, max_units))
 			box.add_child(row)
 
 
@@ -785,6 +982,13 @@ func _build_rules_section() -> void:
 		DashedSeparator.add_item(_rules_box, _build_toolkit_rule_rows())
 	if bool(_available_rules.get(RULE_WATER, true)):
 		DashedSeparator.add_item(_rules_box, _build_water_rule_rows())
+	if bool(_available_rules.get(RULE_FEEDER, true)):
+		DashedSeparator.add_item(_rules_box, _build_feeder_rule_rows())
+	if bool(_available_rules.get(RULE_CULTIVATION, true)):
+		DashedSeparator.add_item(_rules_box, _build_cultivation_rule_row())
+	if bool(_available_rules.get(RULE_FIELD_SEEDS, true)):
+		DashedSeparator.add_item(_rules_box, _build_field_seed_rule_rows())
+		DashedSeparator.add_item(_rules_box, _build_field_care_rule_rows())
 	if bool(_available_rules.get(RULE_TRAPS, true)) and not _trap_rows.is_empty():
 		DashedSeparator.add_item(_rules_box, _build_trap_rule_rows())
 	if bool(_available_rules.get(RULE_BANQUET, true)):
@@ -908,7 +1112,8 @@ static func build_level_field(
 	var edit := LineEdit.new()
 	var minus := _level_button("−", tooltip)
 	var plus := _level_button("+", tooltip)
-	edit.custom_minimum_size = Vector2(LEVEL_COMPACT_EDIT_WIDTH if compact else LEVEL_EDIT_WIDTH, 0.0)
+	var compact_width := LEVEL_COMPACT_WIDE_EDIT_WIDTH if max_value >= 1000 and max_value < LEVEL_MAX else LEVEL_COMPACT_EDIT_WIDTH
+	edit.custom_minimum_size = Vector2(compact_width if compact else LEVEL_EDIT_WIDTH, 0.0)
 	edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	edit.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 	edit.tooltip_text = TooltipText.wrap(tooltip)
@@ -1196,6 +1401,15 @@ func _rebuild_rows(names: Array[String]) -> void:
 				continue
 			if rules != null and rules.category == category:
 				category_names.append(resource_name)
+		if category == SecondaryResourceTypes.Category.GRAIN:
+			# Riserva per la semina (2026-11-15, StockReserveService): cosa vuol dire il minimo delle granaglie.
+			var grain_note := Label.new()
+			grain_note.text = tr("warehouse_grain_reserve_note")
+			grain_note.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 1)
+			grain_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			grain_note.custom_minimum_size.x = 0.0
+			grain_note.modulate = ZERO_QUANTITY_COLOR
+			box.add_child(grain_note)
 		var groups := _panel_groups(category_names)
 		if groups.is_empty():
 			box.add_child(_build_column_header())

@@ -15,6 +15,7 @@ const SECONDARY_RESOURCE_FOLDER_CATEGORIES := {
 	"semi_finished": SecondaryResourceTypes.Category.SEMI_FINISHED,
 	"tools": SecondaryResourceTypes.Category.TOOL,
 	"apparel": SecondaryResourceTypes.Category.APPAREL,
+	"grains": SecondaryResourceTypes.Category.GRAIN,
 }
 
 # Nessun vero registro di fonti a stock persistente esiste ancora (nessuna scansione automatica

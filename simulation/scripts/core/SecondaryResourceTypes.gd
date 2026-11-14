@@ -33,6 +33,10 @@ class_name SecondaryResourceTypes
 # APPAREL (2026-10-11, richiesta utente — vestiario: vestiti, scarpe, monili) aggiunto IN FONDO per lo stesso
 # motivo. Segue il modello a istanze degli attrezzi (ToolInstance.uses_instances) e si indossa negli slot vestiario
 # del pipottino (HumanIndividual.ApparelSlot), ognuno dei quali accetta un solo ApparelKind (sotto).
+#
+# GRAIN (2026-11-15, richiesta utente — ramo piante, prima del piccolo granaio) aggiunto IN FONDO per lo stesso motivo:
+# semi e cereali ("Granaglie"), prima Materiali grezzi; conservazione propria in ogni magazzino
+# (BuildingRules.durability_multiplier_by_category) e categoria unica del granaio.
 enum Category {
 	FOOD,
 	RAW_MATERIAL,
@@ -40,6 +44,7 @@ enum Category {
 	SEMI_FINISHED,
 	TOOL,
 	APPAREL,
+	GRAIN,
 }
 
 # Dove si indossa un capo di vestiario (2026-10-11, richiesta utente) — SecondaryResourceRules.apparel_kind.

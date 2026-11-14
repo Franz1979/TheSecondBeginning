@@ -34,6 +34,8 @@ extends Resource
 @export var building_flag: String = ""
 # Specie domestica (DomesticAnimalRules.species_name, es. "dog") per ANIMAL_DOMESTICATED.
 @export var species: String = ""
+# Risorsa raccolta da terra (SecondaryResourceRules.secondary_resource_name, es. "wild_wheat") per RESOURCE_FIRST_COLLECTED.
+@export var collected_resource: String = ""
 
 
 func matches(trigger: DiscoveryTypes.TriggerType, data: Dictionary) -> bool:
@@ -55,4 +57,6 @@ func matches(trigger: DiscoveryTypes.TriggerType, data: Dictionary) -> bool:
 			return true
 		DiscoveryTypes.TriggerType.ANIMAL_DOMESTICATED:
 			return species == "" or String(data.get("species", "")) == species
+		DiscoveryTypes.TriggerType.RESOURCE_FIRST_COLLECTED:
+			return collected_resource == "" or String(data.get("resource_name", "")) == collected_resource
 	return false

@@ -132,7 +132,7 @@ static func evict_damaged_house_overflow(ctx: GameContext, effects: GameEffects)
 			)
 		for member in evicted:
 			member.house_id = -1
-			print("[EVICTION] #%d %s sfrattato da %s #%d: casa danneggiata, posti effettivi %d." % [
+			DebugLogging.print_event("[EVICTION] #%d %s sfrattato da %s #%d: casa danneggiata, posti effettivi %d." % [
 				member.id, member.name, building.get_display_name(), building.id, AssignHouseService.get_max_residents(building)
 			])
 		evicted_any = true
@@ -162,7 +162,7 @@ static func mark_for_demolition(world: World, building: Building, effects: GameE
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
 	effects.refresh_marker(building)
-	print("[DEMOLISH] Edificio #%d (%s) segnato da demolire (pianificata: funziona fino all'inizio del lavoro)." % [
+	DebugLogging.print_event("[DEMOLISH] Edificio #%d (%s) segnato da demolire (pianificata: funziona fino all'inizio del lavoro)." % [
 		building.id, building.get_display_name()
 	])
 	return true
@@ -181,7 +181,7 @@ static func start_demolition(ctx: GameContext, building: Building, effects: Game
 	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
-	print("[DEMOLISH] Demolizione dell'edificio #%d (%s) iniziata: inagibile." % [building.id, building.get_display_name()])
+	DebugLogging.print_event("[DEMOLISH] Demolizione dell'edificio #%d (%s) iniziata: inagibile." % [building.id, building.get_display_name()])
 
 
 # Demolizione annullata (2026-09-27): il flag "da demolire" si toglie e l'edificio torna a funzionare. I residenti liberati
@@ -196,7 +196,7 @@ static func cancel_demolition(ctx: GameContext, building: Building, effects: Gam
 	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_BUILDING)
 	effects.refresh_marker(building)
-	print("[DEMOLISH] Demolizione dell'edificio #%d (%s) annullata." % [building.id, building.get_display_name()])
+	DebugLogging.print_event("[DEMOLISH] Demolizione dell'edificio #%d (%s) annullata." % [building.id, building.get_display_name()])
 
 
 # "Annulla demolizione" (2026-09-27): solo finché il lavoro non è iniziato. Chiude le Demolish Task su questo edificio di
@@ -257,7 +257,7 @@ static func complete_demolition(ctx: GameContext, building: Building, demolisher
 			effects.wire_storage_task(clearing, demolisher)
 	BuildingMaintenanceService.request_rubble_check(ctx.game_data)
 	effects.refresh_pending()
-	print("[DEMOLISH] Macerie lasciate dalla demolizione di %s: %d detriti su %d microcelle." % [source_type, debris, rubbles.size()])
+	DebugLogging.print_event("[DEMOLISH] Macerie lasciate dalla demolizione di %s: %d detriti su %d microcelle." % [source_type, debris, rubbles.size()])
 	return rubbles
 
 
@@ -337,7 +337,7 @@ static func demolish(ctx: GameContext, building: Building, effects: GameEffects,
 	effects.refresh_neighbors(building)
 	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
 	effects.refresh_panel(GameEffects.PanelKind.BUILD_BAR)
-	print("[DEMOLISH] Edificio #%d (%s) demolito — %s." % [
+	DebugLogging.print_event("[DEMOLISH] Edificio #%d (%s) demolito — %s." % [
 		building.id, building.get_display_name(),
 		("mucchio a terra #%d, microcella %s" % [pile.id, str(pile.microcell)]) if pile != null else "nulla a terra"
 	])
@@ -397,7 +397,7 @@ static func collapse(ctx: GameContext, building: Building, effects: GameEffects)
 			HumanVitalsInteractionService.apply_happiness_event(
 				ctx.individuals, -collapse_rules.collapse_village_happiness_loss, {}, 0.0, -1, "crollo di %s" % display_name
 			)
-	print("[COLLAPSE] Edificio #%d (%s) crollato a Integrità zero — %s." % [
+	DebugLogging.print_event("[COLLAPSE] Edificio #%d (%s) crollato a Integrità zero — %s." % [
 		building.id, display_name, ("macerie %s, una per microcella" % str(rubble_ids)) if not rubble_ids.is_empty() else "nessuna maceria, celle libere"
 	])
 	effects.notify(
@@ -435,7 +435,7 @@ static func settle_ground_debris(ctx: GameContext, effects: GameEffects) -> void
 		if leftover > 0:
 			GroundPileService.drop_entries(ctx.game_data, pile.macro_coords, Vector2(pile.microcell) + Vector2(0.5, 0.5),
 				{WasteDisposalService.DEBRIS_RESOURCE: {"quantity": leftover, "decay_fraction": 0.0}}, ctx.world)
-		print("[DEBRIS] %d detriti a terra in %s %s -> %d macerie (senza posto: %d)." % [quantity, pile.macro_coords, pile.microcell, (placed["rubbles"] as Array).size(), leftover])
+		DebugLogging.print_event("[DEBRIS] %d detriti a terra in %s %s -> %d macerie (senza posto: %d)." % [quantity, pile.macro_coords, pile.microcell, (placed["rubbles"] as Array).size(), leftover])
 		changed = true
 	if changed:
 		BuildingMaintenanceService.request_rubble_check(ctx.game_data)
@@ -509,7 +509,7 @@ static func settle_site_stump_debris(ctx: GameContext, site: Building, builder: 
 	if (placed["rubbles"] as Array).is_empty():
 		return
 	var rubble: Building = placed["rubbles"][0]
-	print("[DEBRIS] %d detriti dei ceppi del cantiere #%d -> macerie #%d." % [debris, site.id, rubble.id])
+	DebugLogging.print_event("[DEBRIS] %d detriti dei ceppi del cantiere #%d -> macerie #%d." % [debris, site.id, rubble.id])
 	if builder != null and builder.task_queue.size() < TaskQueueService.MAX_QUEUE_SIZE:
 		var clearing := WasteDisposalService.build_debris_clearing_task(ctx.world, builder, rubble)
 		if clearing != null:
@@ -656,7 +656,7 @@ static func start_upgrade(ctx: GameContext, building: Building, chosen_rotation:
 	var contents_pile := GroundPileService.drop_building_contents(ctx.game_data, building, ctx.world)
 	GroundPileService.drop_repair_materials(ctx.game_data, building, ctx.world)
 	if contents_pile != null:
-		print("[UPGRADE] Edificio #%d: scorte a terra nel mucchio #%d, microcella %s." % [building.id, contents_pile.id, str(contents_pile.microcell)])
+		DebugLogging.print_event("[UPGRADE] Edificio #%d: scorte a terra nel mucchio #%d, microcella %s." % [building.id, contents_pile.id, str(contents_pile.microcell)])
 	building.construction_progress = {
 		"space_reserved": true,
 		BuildingUpgradeService.UPGRADE_FROM_TYPE_KEY: from_type,
@@ -695,7 +695,7 @@ static func start_upgrade(ctx: GameContext, building: Building, chosen_rotation:
 	)
 	_refresh_upgraded_building_views(building, effects)
 	effects.spawn_site_placeholders(building)
-	print("[UPGRADE] Edificio #%d: %s -> %s, materiale recuperato %s." % [
+	DebugLogging.print_event("[UPGRADE] Edificio #%d: %s -> %s, materiale recuperato %s." % [
 		building.id, from_name, building.get_display_name(),
 		("a terra nel mucchio #%d" % pile.id) if pile != null else "nessuno"
 	])
@@ -741,7 +741,7 @@ static func cancel_upgrade(ctx: GameContext, building: Building, effects: GameEf
 	# Il ridisegno della cella toglie anche i rametti del cantiere (edificio di nuovo completo).
 	_refresh_upgraded_building_views(building, effects)
 	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
-	print("[UPGRADE] Miglioramento dell'edificio #%d annullato: torna %s, materiale %s." % [
+	DebugLogging.print_event("[UPGRADE] Miglioramento dell'edificio #%d annullato: torna %s, materiale %s." % [
 		building.id, building.get_display_name(), ("a terra nel mucchio #%d" % pile.id) if pile != null else "nessuno a terra"
 	])
 
@@ -960,5 +960,5 @@ static func name_village(ctx: GameContext, building: Building, village_name: Str
 
 
 static func _notify_village_center_changed(text: String, effects: GameEffects) -> void:
-	print("[VILLAGE] %s" % text)
+	DebugLogging.print_event("[VILLAGE] %s" % text)
 	effects.notify(NotificationTypes.NotificationPopupType.VILLAGE_CENTER_CHANGED, text)

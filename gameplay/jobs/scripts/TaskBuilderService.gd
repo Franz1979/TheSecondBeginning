@@ -112,6 +112,11 @@ static func transport_trip_target(destination_building: Building, resource_name:
 		return 0
 	if destination_building.is_demolished:
 		return 0
+	# Mangiatoia (2026-11-14, AnimalFeederService): i cibi della specie tenuta, fin dove ci stanno in spazio.
+	if AnimalFeederService.has_feeder(destination_building):
+		var feeder_room := AnimalFeederService.max_depositable(GameSettings.active_game_data, destination_building, resource_name)
+		if feeder_room > 0:
+			return mini(remaining_quantity, feeder_room)
 	# Fossa dei rifiuti (2026-10-18): tutto ciò che ci sta ancora, qualunque merce (WasteDisposalService).
 	if WasteDisposalService.is_waste_pit(destination_building):
 		return mini(remaining_quantity, WasteDisposalService.get_max_disposable(destination_building, resource_name))
@@ -421,6 +426,14 @@ static func build_slaughter_task(
 	})
 	if task != null:
 		task.context[ButcherDestinationService.CONTEXT_KEY] = butcher_destination
+		# In tettoia (2026-11-14, pezzo 3): prima il cammino fino alla tettoia, poi l'uccisione.
+		if animal.building_id >= 0:
+			var shelter := WarehouseManagerService.find_building(GameSettings.active_world, animal.building_id)
+			if shelter == null:
+				return null
+			var walk: Array[Action] = [WalkAction.new(KeepAnimalAction.walk_point(worker, shelter))]
+			var descriptions: Array[String] = ["task_slaughter_step_walk_shelter"]
+			task.insert_steps_before_current(walk, descriptions)
 	return task
 
 

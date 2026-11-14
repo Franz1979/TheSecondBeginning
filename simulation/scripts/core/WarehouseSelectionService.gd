@@ -188,8 +188,12 @@ static func find_best(
 
 	# Deposito dedicato (2026-10-23, l'appoggio per travois): un edificio che accetta la risorsa per nome
 	# (BuildingRules.storage_accepted_resources) viene prima di ogni magazzino.
+	# Capanno del campo (2026-11-15, passo 3a — FieldSeedStoreService): il suo seme va prima lì, fino al livello; il resto
+	# al granaio.
 	var dedicated_predicate := func(building: Building) -> bool:
-		return building.rules != null and building.rules.storage_accepted_resources.has(resource_name) and has_capacity.call(building)
+		return building.rules != null and (building.rules.storage_accepted_resources.has(resource_name)
+			or (FieldSeedStoreService.is_seed_store(building) and FieldSeedStoreService.accepts(building, resource_name))) \
+			and has_capacity.call(building)
 	var candidate: Variant = SpatialSelectionService.find_nearest(
 		world.buildings, origin_position, origin_macro_coords, dedicated_predicate, excluded_building_ids, reachable
 	)
@@ -368,11 +372,19 @@ static func _get_matching_stock(building: Building, criterion: Variant, min_quan
 	# focolare); il suo magazzino mai. Workstation senza Prodotti finiti (0 posti, es. il graticcio): il magazzino, ma solo
 	# per ciò che non è ingrediente né combustibile delle sue ricette. Stessa quantità che
 	# BuildingStorageService.withdraw_auto può davvero prelevare (get_auto_available_quantity decide i due casi).
+	# Una risorsa precisa (2026-11-14, scattini — trappole cercate 12 volte al secondo su tutti gli edifici): si guarda solo
+	# lei, stesso risultato senza calcolare la scorta di tutto il resto dell'edificio.
+	var single_name := ""
+	if (criterion is String or criterion is StringName) and String(criterion) != "" and String(criterion) != FUEL_CRITERION:
+		single_name = String(criterion)
+		if not building.stored_resources.has(single_name) and not building.production_output.has(single_name):
+			return matching_stock
 	var auto_rules := workstation_products_only and BuildingStorageService.is_workstation_source(building)
-	var candidate_names: Array = building.stored_resources.keys()
-	for output_name in building.production_output.keys():
-		if not candidate_names.has(output_name):
-			candidate_names.append(output_name)
+	var candidate_names: Array = [single_name] if single_name != "" else building.stored_resources.keys()
+	if single_name == "":
+		for output_name in building.production_output.keys():
+			if not candidate_names.has(output_name):
+				candidate_names.append(output_name)
 	for resource_name in candidate_names:
 		var quantity: int = BuildingStorageService.get_auto_available_quantity(building, String(resource_name)) if auto_rules \
 			else BuildingStorageService.get_available_quantity(building, String(resource_name))
@@ -380,7 +392,8 @@ static func _get_matching_stock(building: Building, criterion: Variant, min_quan
 		# casa di nucleo abitata: riservato ai suoi abitanti, che lo prendono direttamente da casa (HouseWardrobeService).
 		if HouseHeatingService.is_fuel_reserved(building, String(resource_name)) \
 				or HouseWardrobeService.is_apparel_reserved(building, String(resource_name)) \
-				or HouseWardrobeService.is_bowl_reserved(building, String(resource_name)):
+				or HouseWardrobeService.is_bowl_reserved(building, String(resource_name)) \
+				or FieldSeedStoreService.is_seed_reserved(building, String(resource_name)):
 			continue
 		if quantity < minimum:
 			continue

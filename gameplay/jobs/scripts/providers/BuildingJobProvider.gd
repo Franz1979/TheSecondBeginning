@@ -19,6 +19,7 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 		var text := ""
 		var is_assigned := false
 		var open_slots := 0
+		var blocked_reason := ""
 		if building.is_marked_for_demolition:
 			kind = "demolish"
 			# Sgombero delle macerie (2026-10-10): stesso tipo delle demolizioni, "Sgombero (Macerie)".
@@ -60,6 +61,11 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 			if is_assigned and limit > 1:
 				text = "%s · %d/%d" % [text, builders, limit]
 				building_name = "%s · %d/%d" % [building_name, builders, limit]
+			# Attrezzi per costruire (2026-11-15, orto col piccone): nessuno può averli -> visibile ma non prendibile.
+			if not is_assigned:
+				var tools := construction_tool_categories(building)
+				if not tools.is_empty():
+					blocked_reason = ToolFetchService.blocked_reason(ctx, tools, DrawerOrderService.TYPE_PRODUCE)
 		else:
 			continue
 		jobs.append({
@@ -70,6 +76,7 @@ static func collect(ctx: GameContext, provider: Dictionary, assigned: Dictionary
 			"macro": Vector2i(building.macro_x, building.macro_y), "microcell": Vector2i(building.micro_x, building.micro_y),
 			"reach_target": building, "entry_kind": "building", "id": building.id, "sort": float(building.id),
 			"assigned": is_assigned, "open_slots": open_slots, "hidden": false,
+			"blocked_reason": blocked_reason,
 			"target": building, "provider": provider,
 		})
 		# Rimandato per materiale (2026-10-16): resta assegnato (nessun altro ci va) ma la riga va in "In coda" col motivo.
@@ -118,7 +125,20 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary
 		probe_context["macro_state"] = ctx.world.get_cell_state_at(building.macro_x, building.macro_y)
 		probe_context["is_currently_grass"] = false
 	var probe := TaskFactory.build_task(definition, probe_context)
-	return worker.get_assign_rejection_reason(probe, ctx.age_band_of(worker))
+	var assign_rejection := worker.get_assign_rejection_reason(probe, ctx.age_band_of(worker))
+	if assign_rejection != HumanIndividual.ASSIGN_OK:
+		return assign_rejection
+	# Attrezzi per costruire (2026-11-15): li ha addosso o può prenderli in deposito (stessa regola della produzione).
+	var tool_rejection := ToolFetchService.rejection(ctx, worker, construction_tool_categories(building), DrawerOrderService.TYPE_PRODUCE)
+	return tool_rejection if tool_rejection != "" else HumanIndividual.ASSIGN_OK
+
+
+# Attrezzi obbligatori per costruire `building` (BuildingRules.construction_tool_categories, 2026-11-15): solo per un
+# cantiere da costruire, mai per demolizioni o sgomberi.
+static func construction_tool_categories(building: Building) -> Array:
+	if building == null or building.rules == null or building.is_complete or building.is_marked_for_demolition:
+		return []
+	return building.rules.construction_tool_categories.duplicate()
 
 
 # Chi ci lavora: task Costruisci o Demolisci sull'edificio, in corso o in coda.

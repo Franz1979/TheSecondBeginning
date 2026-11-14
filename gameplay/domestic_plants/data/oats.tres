@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="DomesticPlantRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/domestic_plants/scripts/DomesticPlantRules.gd" id="1_oats"]
+
+; Avena (2026-11-15, richiesta utente — ramo piante, cereali): dall'avena selvatica (wild_oats), all'inizio rara (solo
+; alla Fossa). Raccolta (1 punto ogni 10 once) e zuppa (5) fino a 600 punti (30%), poi solo l'orto delle prove: semina in
+; primavera, raccolto in estate (50 once, punti 1/1/2, resa a regime 5, TrialGardenService). Soglia 2000.
+[resource]
+script = ExtResource("1_oats")
+species_name = "oats"
+display_name = "domestic_plant_oats"
+wild_display_name = "wild_plant_oats"
+domestication_points_required = 2000
+harvest_resource_name = "wild_oats"
+harvested_units_per_point = 10
+points_per_meal = 5
+wild_points_cap = 600
+sowing_season = 1
+harvest_season = 2
+sown_units_per_lot = 50
+yield_per_unit = 5.0
+points_per_sown_unit = 1
+points_per_sprout = 1
+points_per_mature_plant = 2
+points_per_rotten_plant = 1
+crop_color = Color(0.9, 0.85, 0.6, 1)

@@ -17,6 +17,9 @@ const JOB_EMPTY := "empty"
 # svuotata; chi lo prende passa da tutte quelle della zona con prede (le più vicine prima, finché la resa sta nello zaino)
 # e consegna una volta sola. Le trappole fuori zona (piazzate a mano) restano col lavoro di una sola (JOB_EMPTY).
 const JOB_ROUND := "round"
+# Spinta verso le fosse (2026-11-14, PitDriveService): "trap:drive:<id zona>", un lavoratore, nessun attrezzo.
+const JOB_DRIVE := "drive"
+const PIT_DRIVE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/pit_drive.tres"
 # Età per lo svuotamento col coltello (2026-11-09): come la macellazione, niente neonati né bambini.
 const EMPTY_AGE_KIND := DrawerOrderService.TYPE_CUT
 const ROUND_ZONE_JOBS: Array[String] = ["hunt", "fish"]
@@ -26,25 +29,42 @@ const ROUND_TEXT_KEYS := {
 	"fish": ["task_empty_fish_trap_round_job_name", "task_empty_fish_trap_round_job_tooltip"],
 }
 
+# Zone senza posto dall'ultimo collect (2026-11-14, scattini — collect_no_site_entries rifaceva choose_site ogni secondo,
+# 4-5 ms): [{"area_id", "trap_name", "count", "target"}]. Riempito da collect, che fa già la stessa ricerca; finché collect
+# non è mai girato vale _no_site_ready = false e il pannello ricalcola da sé.
+static var _no_site_last: Array[Dictionary] = []
+static var _no_site_ready := false
+
 
 static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionary) -> Array[Dictionary]:
 	var jobs: Array[Dictionary] = []
 	if ctx.game_data == null:
 		return jobs
+	var taken := _taken_trap_jobs(ctx)
+	var no_site: Array[Dictionary] = []
 	for trap_name in TrapService.list_trap_names():
 		var has_source := WarehouseSelectionService.has_retrieval_source(ctx.world, trap_name)
 		# Vincolo di piazzamento (2026-11-12, cesto a caduta senza tettoia delle gabbie): il lavoro si vede, con la X rossa.
 		var placement_blocked := TrapService.placement_blocked_reason(ctx.world, trap_name)
 		for area in ctx.game_data.work_areas:
-			var job := {"area_id": area.id, "trap_name": trap_name}
-			var is_assigned := not workers(ctx, job).is_empty()
+			var is_assigned: bool = (taken["place"] as Dictionary).has("%d:%s" % [area.id, trap_name])
+			var target := -1
+			var count := -1
 			if not is_assigned:
-				var target := TrapService.target_for(ctx.game_data, area, trap_name)
+				target = TrapService.target_for(ctx.game_data, area, trap_name)
 				if target <= 0 or not has_source:
 					continue
-				if TrapService.count_for_area(ctx.game_data, ctx.individuals, area, trap_name) >= target:
+				count = TrapService.count_for_area(ctx.game_data, ctx.individuals, area, trap_name)
+				if count >= target:
 					continue
 			var site := TrapService.choose_site(ctx.game_data, ctx.world, ctx.individuals, area, trap_name)
+			if site == TrapService.NO_SITE:
+				# Per "In sospeso" (collect_no_site_entries): stesse condizioni di prima (fonte, voluta, mancante).
+				if is_assigned and has_source:
+					target = TrapService.target_for(ctx.game_data, area, trap_name)
+					count = TrapService.count_for_area(ctx.game_data, ctx.individuals, area, trap_name)
+				if has_source and target > 0 and count < target:
+					no_site.append({"area_id": area.id, "trap_name": trap_name, "count": count, "target": target})
 			if site == TrapService.NO_SITE and not is_assigned:
 				continue
 			var display_name := IconRegistry.get_resource_display_name(trap_name)
@@ -69,8 +89,7 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 	for area in ctx.game_data.work_areas:
 		# Un giro per lavoro di zona (2026-11-08): reti con la caccia, nasse con la pesca.
 		for zone_job in ROUND_ZONE_JOBS:
-			var round_job := {"job_type": JOB_ROUND, "area_id": area.id, "zone_job": zone_job}
-			var round_assigned := not workers(ctx, round_job).is_empty()
+			var round_assigned: bool = (taken["round"] as Dictionary).has("%d:%s" % [area.id, zone_job])
 			var due := 0
 			var with_catch := 0
 			var with_live := 0
@@ -109,8 +128,7 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 	for trap in ctx.game_data.placed_traps:
 		if WorkAreaService.find_by_id(ctx.game_data, trap.work_area_id) != null:
 			continue
-		var job := {"job_type": JOB_EMPTY, "trap_id": trap.id}
-		var is_assigned := not workers(ctx, job).is_empty()
+		var is_assigned: bool = (taken["empty"] as Dictionary).has(trap.id)
 		if not is_assigned and not TrapService.needs_emptying(ctx.game_data, trap):
 			continue
 		var display_name := IconRegistry.get_resource_display_name(trap.trap_name)
@@ -129,7 +147,41 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 			"assigned": is_assigned, "hidden": false, "blocked_reason": empty_blocked,
 			"trap_id": trap.id, "trap_name": trap.trap_name, "provider": provider, "job_type": JOB_EMPTY,
 		})
+	_append_drive_jobs(ctx, provider, taken["drive"], jobs)
+	_no_site_last = no_site
+	_no_site_ready = true
 	return jobs
+
+
+# Spinta verso le fosse: una voce per zona con una mandria da spingere (PitDriveService.refresh, ogni ora), o già presa.
+static func _append_drive_jobs(ctx: GameContext, provider: Dictionary, taken_drive: Dictionary, jobs: Array[Dictionary]) -> void:
+	var area_ids := {}
+	if ctx.game_data.pit_drive_enabled:
+		for area_id in ctx.game_data.pit_drive_candidates:
+			area_ids[int(area_id)] = true
+	for area_id in taken_drive:
+		area_ids[int(area_id)] = true
+	for area_id in area_ids:
+		var area := WorkAreaService.find_by_id(ctx.game_data, area_id)
+		if area == null:
+			continue
+		var is_assigned := taken_drive.has(area_id)
+		var candidate: Dictionary = ctx.game_data.pit_drive_candidates.get(area_id, {})
+		var species := String(candidate.get("species", taken_drive.get(area_id, "")))
+		var stand := PitDriveService.stand_point(ctx.game_data, area_id, species) if species != "" else Vector2.INF
+		var microcell := Vector2i(stand.floor()) if stand != Vector2.INF else area.rect.get_center()
+		var species_name := GameContext.tr_text("animal_species_%s" % species) if species != "" else ""
+		jobs.append({
+			"key": "trap:drive:%d" % area_id, "kind": "trap",
+			"name": GameContext.tr_text("task_pit_drive_job_name").format({"area": area.name, "animal": species_name}),
+			"text": GameContext.tr_text("task_pit_drive_job_tooltip").format({"area": area.name, "animal": species_name}),
+			"log_name": "spingi %s verso le fosse della zona #%d" % [species, area_id],
+			"icon": {"text": IconRegistry.get_command_icon("trap")}, "macro": area.macro_coords, "microcell": microcell,
+			"reach_target": {"macro_x": area.macro_coords.x, "macro_y": area.macro_coords.y, "micro_x": microcell.x, "micro_y": microcell.y},
+			"entry_kind": "work_area", "id": area_id, "sort": 0.0,
+			"assigned": is_assigned, "hidden": false, "blocked_reason": "",
+			"area_id": area_id, "species": species, "provider": provider, "job_type": JOB_DRIVE,
+		})
 
 
 # Motivo per cui `worker` non potrebbe prendere il lavoro (HumanIndividual.ASSIGN_OK se può).
@@ -158,6 +210,8 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary
 # piazzamento = quelli per montarla (2026-11-11, vuoto salvo la fossa).
 static func job_tool_categories(job: Dictionary) -> Array[TaskTypes.ToolCategory]:
 	match String(job.get("job_type", JOB_PLACE)):
+		JOB_DRIVE:
+			return []
 		JOB_ROUND:
 			return TrapService.round_tool_categories(String(job.get("zone_job", "hunt")))
 		JOB_EMPTY:
@@ -171,6 +225,8 @@ static func build_task(ctx: GameContext, worker: HumanIndividual, job: Dictionar
 		return _build_empty_task(ctx, worker, job)
 	if String(job.get("job_type", JOB_PLACE)) == JOB_ROUND:
 		return build_round_task(ctx, worker, int(job.get("area_id", 0)), String(job.get("zone_job", "hunt")))
+	if String(job.get("job_type", JOB_PLACE)) == JOB_DRIVE:
+		return build_drive_task(ctx, worker, int(job.get("area_id", 0)), String(job.get("species", "")))
 	var area := WorkAreaService.find_by_id(ctx.game_data, int(job.get("area_id", 0)))
 	var site: Vector2i = job.get("site", TrapService.NO_SITE)
 	if area == null or site == TrapService.NO_SITE:
@@ -210,6 +266,37 @@ static func build_place_task(ctx: GameContext, worker: HumanIndividual, trap_nam
 	if task != null and rules != null and rules.trap_quarry == TrapService.QUARRY_FISH:
 		task.task_name = TrapService.FISH_TASK_NAME
 	return task
+
+
+# Spinta verso le fosse: cammino fino al punto dietro il gruppetto e PitDriveAction. null se la mandria non c'è più.
+static func build_drive_task(ctx: GameContext, worker: HumanIndividual, area_id: int, species: String) -> Task:
+	var area := WorkAreaService.find_by_id(ctx.game_data, area_id)
+	if area == null or species == "":
+		return null
+	var stand := PitDriveService.stand_point(ctx.game_data, area_id, species)
+	if stand == Vector2.INF:
+		return null
+	var definition := TaskDefinitionCache.get_definition(PIT_DRIVE_TASK_DEFINITION_PATH)
+	if definition == null:
+		return null
+	var stand_in_worker := stand + TaskBuilderService.macro_offset(worker, area.macro_coords)
+	TrapService.log_line("#%d %s prende la spinta di %s verso la zona #%d: punto %s, a %.1f da lui, %.1f dalla zona" % [
+		worker.id, worker.name, species, area_id, Vector2i(stand.floor()), worker.position.distance_to(stand_in_worker),
+		SnareService._distance_to_rect(stand, Rect2(area.rect))])
+	# LOG TEMPORANEO (2026-11-14, richiesta utente): da dove parte e chi ha chiesto la task (la riga sopra usciva due volte).
+	var stack := get_stack()
+	TrapService.log_line("#%d %s: posizione %s, casa %s, zona nella macrocella %s; chiamata da %s" % [
+		worker.id, worker.name, Vector2i(worker.position.floor()), worker.home_macro_coords, area.macro_coords,
+		" <- ".join(stack.slice(1, 4).map(func(frame: Dictionary) -> String: return "%s:%d" % [String(frame["function"]), int(frame["line"])]))])
+	return TaskFactory.build_task(definition, {
+		PitDriveAction.CONTEXT_AREA_ID: area_id,
+		PitDriveAction.CONTEXT_SPECIES: species,
+		PitDriveAction.CONTEXT_POSITION: stand + TaskBuilderService.macro_offset(worker, area.macro_coords),
+	})
+
+
+static func is_drive_task(task: Task) -> bool:
+	return task != null and task.context.has(PitDriveAction.CONTEXT_AREA_ID)
 
 
 # Svuotamento: cammino fino alla trappola e EmptyTrapAction; destinazione delle prede nel context. null se la trappola
@@ -354,26 +441,71 @@ static func collect_no_site_entries(ctx: GameContext) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	if ctx.game_data == null or ctx.world == null:
 		return entries
+	if _no_site_ready:
+		for found in _no_site_last:
+			var found_area := WorkAreaService.find_by_id(ctx.game_data, int(found["area_id"]))
+			if found_area != null:
+				entries.append(_no_site_entry(found_area, String(found["trap_name"]), int(found["count"]), int(found["target"])))
+		return entries
 	for trap_name in TrapService.list_trap_names():
 		if not WarehouseSelectionService.has_retrieval_source(ctx.world, trap_name):
 			continue
 		for area in ctx.game_data.work_areas:
 			var target := TrapService.target_for(ctx.game_data, area, trap_name)
-			if target <= 0 or TrapService.count_for_area(ctx.game_data, ctx.individuals, area, trap_name) >= target:
+			var count := TrapService.count_for_area(ctx.game_data, ctx.individuals, area, trap_name)
+			if target <= 0 or count >= target:
 				continue
 			if TrapService.choose_site(ctx.game_data, ctx.world, ctx.individuals, area, trap_name) != TrapService.NO_SITE:
 				continue
-			var text := GameContext.tr_text("pending_trap_no_site").format({
-				"area": area.name, "trap": IconRegistry.get_resource_display_name(trap_name),
-			})
-			entries.append(PendingEntryService.make_entry("trap_no_site:%d:%s" % [area.id, trap_name], text, {
-				"kind": "work_area", "id": area.id, "macro": area.macro_coords, "sort": float(area.id), "name": text,
-			}, true))
+			entries.append(_no_site_entry(area, trap_name, count, target))
 	return entries
+
+
+# Voce "In sospeso" di una zona senza posto per `trap_name`. Con almeno una già nella zona (2026-11-14, richiesta utente):
+# "nessun altro posto … (1 di 2)", per non far credere che non ce ne sia nessuna.
+static func _no_site_entry(area: WorkArea, trap_name: String, count: int, target: int) -> Dictionary:
+	var text := GameContext.tr_text("pending_trap_no_other_site" if count > 0 else "pending_trap_no_site").format({
+		"area": area.name, "trap": IconRegistry.get_resource_display_name(trap_name), "count": count, "target": target,
+	})
+	return PendingEntryService.make_entry("trap_no_site:%d:%s" % [area.id, trap_name], text, {
+		"kind": "work_area", "id": area.id, "macro": area.macro_coords, "sort": float(area.id), "name": text,
+	}, true)
+
+
+# Lavori delle trappole già presi da qualcuno (2026-11-14, scattini — workers() chiamata 53 volte a giro, ognuna su tutte le
+# task di tutti i pipottini): un solo passaggio, stesse condizioni di workers(). {"place": {"area:trappola"}, "round":
+# {"area:lavoro"}, "empty": {id trappola}}.
+static func _taken_trap_jobs(ctx: GameContext) -> Dictionary:
+	var place: Dictionary = {}
+	var round_jobs: Dictionary = {}
+	var empty: Dictionary = {}
+	var drive: Dictionary = {}
+	for member in ctx.individuals:
+		for task in JobWorkScanService.open_tasks(member):
+			if is_drive_task(task):
+				drive[int(task.context[PitDriveAction.CONTEXT_AREA_ID])] = String(task.context.get(PitDriveAction.CONTEXT_SPECIES, ""))
+			if TrapService.is_empty_task(task):
+				for trap_id in TrapService.task_trap_ids(task):
+					empty[int(trap_id)] = true
+				if task.context.get(TrapService.CONTEXT_ROUND, false):
+					round_jobs["%d:%s" % [int(task.context.get(TrapService.CONTEXT_AREA_ID, 0)),
+						String(task.context.get(TrapService.CONTEXT_ROUND_JOB, "hunt"))]] = true
+			if TrapService.is_place_task(task) and not task.context.get(TrapService.CONTEXT_MANUAL, false):
+				place["%d:%s" % [int(task.context.get(TrapService.CONTEXT_AREA_ID, 0)),
+					String(task.context[TrapService.CONTEXT_TRAP_NAME])]] = true
+	return {"place": place, "round": round_jobs, "empty": empty, "drive": drive}
 
 
 static func workers(ctx: GameContext, job: Dictionary) -> Array[HumanIndividual]:
 	var result: Array[HumanIndividual] = []
+	if String(job.get("job_type", JOB_PLACE)) == JOB_DRIVE:
+		var drive_area_id := int(job.get("area_id", 0))
+		for member in ctx.individuals:
+			for task in JobWorkScanService.open_tasks(member):
+				if is_drive_task(task) and int(task.context[PitDriveAction.CONTEXT_AREA_ID]) == drive_area_id:
+					result.append(member)
+					break
+		return result
 	if String(job.get("job_type", JOB_PLACE)) == JOB_EMPTY:
 		var trap_id := int(job.get("trap_id", 0))
 		for member in ctx.individuals:

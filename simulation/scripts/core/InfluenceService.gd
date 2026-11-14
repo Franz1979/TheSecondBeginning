@@ -29,7 +29,8 @@ enum InfluenceType { POLITICAL, CULTURAL, RELIGIOUS, DISCOMFORT }
 # (advance_daily_neglected_rites, tick giornaliero). Quando il raggio effettivo cambia si alza GameData.buildings_revision
 # (copertura delle case e layer si aggiornano) e GameSettings emette influence_level_changed (popup in GameScene).
 const NEGLECTED_RITES_INTERVAL_DAYS: int = 365
-const NEGLECTED_RITES_LOSS_FRACTION: float = 0.1
+# 0.1 → 0.02 il 2026-11-14 (richiesta utente): un cumulo con 4 funerali era tornato a 0 in pochi anni senza riti.
+const NEGLECTED_RITES_LOSS_FRACTION: float = 0.02
 
 
 # Raggio effettivo in microcelle dell'influenza `influence_type` di `building`: base + soglie raggiunte, tra la base e

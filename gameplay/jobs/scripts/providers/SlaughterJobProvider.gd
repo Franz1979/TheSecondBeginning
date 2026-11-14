@@ -18,17 +18,22 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 		return jobs
 	var tool_blocked := ToolFetchService.blocked_reason(ctx, CarcassJobProvider.TOOL_CATEGORIES, CarcassJobProvider.AGE_KIND)
 	for animal in ctx.game_data.domestic_animals:
-		if not animal.slaughter_requested or not ctx.live_cells.has(animal.macro_coords):
+		if not animal.slaughter_requested:
 			continue
+		# In tettoia (2026-11-14, pezzo 3): il lavoro sta alla tettoia.
+		var where := DomesticAnimalSlaughterService.spot(ctx.world, animal)
+		if where.is_empty() or not ctx.live_cells.has(where["macro"]):
+			continue
+		var macro: Vector2i = where["macro"]
 		var claimers := _workers_of(ctx, animal.id)
-		var name := GameContext.tr_text("job_butcher").format({"species": GameContext.tr_text("animal_species_%s" % animal.species)})
-		var microcell := Vector2i(animal.position.floor())
+		var name := GameContext.tr_text("job_butcher").format({"species": KeptAnimalService.display_name(animal)})
+		var microcell := Vector2i((where["position"] as Vector2).floor())
 		jobs.append({
 			"key": job_key(animal.id), "kind": "butcher", "name": name, "text": name,
 			"log_name": "macellazione di %s %d" % [animal.species, animal.id],
-			"icon": {"command": "butcher"}, "macro": animal.macro_coords, "microcell": microcell,
+			"icon": {"command": "butcher"}, "macro": macro, "microcell": microcell,
 			"reach_target": {
-				"macro_x": animal.macro_coords.x, "macro_y": animal.macro_coords.y, "micro_x": microcell.x, "micro_y": microcell.y,
+				"macro_x": macro.x, "macro_y": macro.y, "micro_x": microcell.x, "micro_y": microcell.y,
 			},
 			"entry_kind": "domestic_animal", "id": animal.id, "sort": float(animal.id) + SORT_OFFSET,
 			"assigned": not claimers.is_empty(), "hidden": false,

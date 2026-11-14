@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="DomesticPlantRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/domestic_plants/scripts/DomesticPlantRules.gd" id="1_wheat"]
+
+; Grano (2026-11-15, richiesta utente — ramo piante, grano passo 2): dal grano selvatico (wild_wheat). Raccolta (1 punto
+; ogni 10 once) e zuppa (5) fino a 900 punti (30%), poi solo l'orto delle prove: semina in autunno fino a 50 once (1
+; punto l'una), piantine nate 1 punto, piante mature 2, resa a regime 5 once per pianta (TrialGardenService). Soglia 3000
+; (il cereale più difficile; miglio 2500, avena 2000).
+[resource]
+script = ExtResource("1_wheat")
+species_name = "wheat"
+display_name = "domestic_plant_wheat"
+wild_display_name = "wild_plant_wheat"
+domestication_points_required = 3000
+harvest_resource_name = "wild_wheat"
+harvested_units_per_point = 10
+points_per_meal = 5
+wild_points_cap = 900
+sowing_season = 3
+harvest_season = 2
+sown_units_per_lot = 50
+yield_per_unit = 5.0
+points_per_sown_unit = 1
+points_per_sprout = 1
+points_per_mature_plant = 2
+points_per_rotten_plant = 1
+crop_color = Color(0.86, 0.7, 0.32, 1)

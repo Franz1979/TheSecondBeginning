@@ -152,6 +152,13 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_farming_fill"]
+bg_color = Color(0.75, 0.65, 0.25, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fishing_fill"]
 bg_color = Color(0.3, 0.55, 0.8, 1)
 corner_radius_top_left = 4
@@ -515,7 +522,7 @@ theme_override_constants/margin_top = 2
 
 [node name="SkillsRow" type="HBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin"]
 layout_mode = 2
-theme_override_constants/separation = 3
+theme_override_constants/separation = 2
 alignment = 1
 
 [node name="BuilderColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
@@ -523,7 +530,7 @@ layout_mode = 2
 
 [node name="BuilderBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/BuilderColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_builder_fill")
@@ -550,7 +557,7 @@ layout_mode = 2
 
 [node name="TransporterBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/TransporterColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_transporter_fill")
@@ -577,7 +584,7 @@ layout_mode = 2
 
 [node name="GatheringBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/GatheringColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_gathering_fill")
@@ -604,7 +611,7 @@ layout_mode = 2
 
 [node name="HuntingBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HuntingColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_hunting_fill")
@@ -631,7 +638,7 @@ layout_mode = 2
 
 [node name="FishingBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FishingColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_fishing_fill")
@@ -653,12 +660,39 @@ theme_override_font_sizes/font_size = 9
 horizontal_alignment = 2
 vertical_alignment = 1
 
+[node name="FarmingColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="FarmingBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FarmingColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(14, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_farming_fill")
+show_percentage = false
+
+[node name="FarmingCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FarmingColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 70)
+
+[node name="FarmingCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FarmingColumn/FarmingCaptionWrapper"]
+layout_mode = 0
+offset_left = -25.0
+offset_top = 25.0
+offset_right = 43.0
+offset_bottom = 45.0
+pivot_offset = Vector2(34, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 2
+vertical_alignment = 1
+
 [node name="CraftingColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
 layout_mode = 2
 
 [node name="CraftingBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CraftingColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_crafting_fill")
@@ -685,7 +719,7 @@ layout_mode = 2
 
 [node name="MedicineBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/MedicineColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_medicine_fill")
@@ -712,7 +746,7 @@ layout_mode = 2
 
 [node name="CognitionBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/CognitionColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_cognition_fill")
@@ -739,7 +773,7 @@ layout_mode = 2
 
 [node name="ManagementBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/ManagementColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_management_fill")
@@ -766,7 +800,7 @@ layout_mode = 2
 
 [node name="LeadershipBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/LeadershipColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_leadership_fill")
@@ -793,7 +827,7 @@ layout_mode = 2
 
 [node name="SocialBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/SocialColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_social_fill")
@@ -820,7 +854,7 @@ layout_mode = 2
 
 [node name="RitualBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/RitualColumn"]
 layout_mode = 2
-custom_minimum_size = Vector2(16, 70)
+custom_minimum_size = Vector2(14, 70)
 fill_mode = 3
 theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
 theme_override_styles/fill = SubResource("StyleBoxFlat_ritual_fill")

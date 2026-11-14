@@ -202,13 +202,103 @@ static func blocked_reason(ctx: GameContext, categories: Array, age_kind: String
 
 
 static func _compute_blocked_reason(ctx: GameContext, categories: Array, age_kind: String) -> String:
-	if categories.is_empty() or ctx.world == null or has_equipped_member(ctx, categories, age_kind):
+	_snap_refresh()
+	_snap_scope = true
+	var reason := _blocked_reason_with_snapshot(ctx, categories, age_kind)
+	_snap_scope = false
+	return reason
+
+
+# Foto dei pipottini per il motivo "mancano attrezzi" (2026-11-14, scatti col cassetto aperto: blocked_reason rifaceva per
+# ogni tipo di ordine e ogni ricetta gli stessi giri su tutti i pipottini e sui loro compiti, circa 1,5 ms a tipo, più le
+# prenotazioni ricalcolate per ogni categoria). Tenuta per il fotogramma: chi ha addosso cosa, chi sta andando a prendere
+# cosa, le prenotazioni dei prelievi. Usata SOLO dentro il calcolo del motivo (_snap_scope): l'assegnazione dei lavori legge
+# sempre lo stato fresco, perché un prelievo assegnato nello stesso fotogramma cambia prenotazioni e "sta andando a
+# prendere" (con la foto due pipottini potrebbero puntare allo stesso attrezzo).
+static var _snap_scope := false
+static var _snap_frame := -1
+static var _snap_covers: Dictionary = {}  # [id pipottino, categoria] -> bool (member_covers_tool)
+static var _snap_fetching: Dictionary = {}  # id pipottino -> {categoria: true} (member_fetching_tool)
+static var _snap_reserved_total: Dictionary = {}  # _fetch_key -> quanti, TOOL_FETCH_SOURCE_KEY di tutti
+static var _snap_reserved_own: Dictionary = {}  # id pipottino -> {_fetch_key: quanti}, i suoi
+
+
+static func _snap_refresh() -> void:
+	var frame := Engine.get_process_frames()
+	if frame == _snap_frame:
+		return
+	_snap_frame = frame
+	_snap_covers.clear()
+	_snap_fetching.clear()
+	_snap_reserved_total.clear()
+	_snap_reserved_own.clear()
+	# Un solo giro sui compiti aperti per "sta andando a prendere" e prenotazioni (prima uno a pipottino per categoria).
+	for member in GameSettings.active_human_individuals:
+		var fetching: Dictionary = {}
+		var own: Dictionary = {}
+		for task in JobWorkScanService.open_tasks(member):
+			var category: Variant = task.context.get(ZONE_ORDER_TOOL_FETCH_KEY, null)
+			if category != null:
+				fetching[int(category)] = true
+			var key: Variant = task.context.get(TOOL_FETCH_SOURCE_KEY, null)
+			if key != null:
+				own[key] = int(own.get(key, 0)) + 1
+				_snap_reserved_total[key] = int(_snap_reserved_total.get(key, 0)) + 1
+		_snap_fetching[member.get_instance_id()] = fetching
+		_snap_reserved_own[member.get_instance_id()] = own
+
+
+# member_covers_tool dalla foto.
+static func _snap_covers_tool(member: HumanIndividual, category: int) -> bool:
+	var key := [member.get_instance_id(), category]
+	if not _snap_covers.has(key):
+		_snap_covers[key] = member_covers_tool(member, category)
+	return _snap_covers[key]
+
+
+# member_missing_categories dalla foto (un pipottino fuori dalla foto: "sta andando a prendere" calcolato com'era).
+static func _snap_missing(member: HumanIndividual, categories: Array) -> Array:
+	var fetching: Variant = _snap_fetching.get(member.get_instance_id(), null)
+	var missing: Array = []
+	for category in categories:
+		var c := int(category)
+		if _snap_covers_tool(member, c):
+			continue
+		if fetching != null:
+			if (fetching as Dictionary).has(c):
+				continue
+		elif member_fetching_tool(member, c):
+			continue
+		missing.append(c)
+	return missing
+
+
+# _reserved_fetches(except, TOOL_FETCH_SOURCE_KEY) dalla foto: tutte le prenotazioni meno quelle di `except`.
+static func _snap_reserved(except: HumanIndividual) -> Dictionary:
+	var reserved := _snap_reserved_total.duplicate()
+	if except == null:
+		return reserved
+	var own: Dictionary = _snap_reserved_own.get(except.get_instance_id(), {})
+	for key in own:
+		var left := int(reserved.get(key, 0)) - int(own[key])
+		if left > 0:
+			reserved[key] = left
+		else:
+			reserved.erase(key)
+	return reserved
+
+
+static func _blocked_reason_with_snapshot(ctx: GameContext, categories: Array, age_kind: String) -> String:
+	if categories.is_empty() or ctx.world == null:
 		return ""
+	for member in ctx.individuals:
+		if age_ok(ctx, member, age_kind) and _snap_missing(member, categories).is_empty():
+			return ""
 	var nowhere: Array = []
 	for category in categories:
 		var someone_has := false
 		for member in ctx.individuals:
-			if age_ok(ctx, member, age_kind) and member_covers_tool(member, int(category)):
+			if age_ok(ctx, member, age_kind) and _snap_covers_tool(member, int(category)):
 				someone_has = true
 				break
 		if not someone_has and category_fetch_option(ctx.world, null, int(category)).is_empty():
@@ -225,7 +315,7 @@ static func _compute_blocked_reason(ctx: GameContext, categories: Array, age_kin
 	for member in ctx.individuals:
 		if not age_ok(ctx, member, age_kind):
 			continue
-		var missing := member_missing_categories(member, categories)
+		var missing := _snap_missing(member, categories)
 		if missing_tools_in_storage(ctx.world, member, missing):
 			return ""
 		for category in missing:
@@ -290,7 +380,8 @@ static func category_fetch_option(world: World, worker: HumanIndividual, categor
 	if frame != _storage_tool_frame:
 		_storage_tool_cache.clear()
 		_storage_tool_frame = frame
-	var cache_key := ["option", worker.get_instance_id() if worker != null else 0, category, max_slots]
+	# _snap_scope nella chiave: un'opzione calcolata con le prenotazioni della foto non si riusa mai per assegnare.
+	var cache_key := ["option", worker.get_instance_id() if worker != null else 0, category, max_slots, _snap_scope]
 	if not _storage_tool_cache.has(cache_key):
 		_storage_tool_cache[cache_key] = _compute_fetch_option(world, worker, category, max_slots)
 	return _storage_tool_cache[cache_key]
@@ -307,7 +398,7 @@ static func _compute_fetch_option(world: World, worker: HumanIndividual, categor
 	var reachability := PathfindingService.reachability_for(worker) if worker != null else Callable()
 	if timing:
 		JobBoardTimingService.add("deposito: raggiungibilità", started)
-	var reserved := _reserved_fetches(worker, TOOL_FETCH_SOURCE_KEY)
+	var reserved := _snap_reserved(worker) if _snap_scope else _reserved_fetches(worker, TOOL_FETCH_SOURCE_KEY)
 	var ranking := _weapon_ranking(world, category)
 	var index := 0
 	while index < ranking.size():
@@ -693,7 +784,8 @@ static func retry_waiting_fetches(ctx: GameContext) -> Array[Dictionary]:
 				continue
 			waiting = produce.tool_wait_missing_categories
 			label = "produrre %s (ritentato)" % produce.resource_name
-		elif action is SetTrapAction or action is EmptyTrapAction or action is ButcherAction:
+		elif action is SetTrapAction or action is EmptyTrapAction or action is ButcherAction or action is SowAction or action is ReapAction \
+				or action is RetillAction:
 			# Montaggio e svuotamento delle trappole, macellazione (2026-11-12, richiesta utente — Nessa ferma sullo scavo
 			# col piccone in magazzino): aspettano allo stesso modo (ensure_required_tools), stesso ripescaggio.
 			var required := ToolGateService.get_action_required_categories(action)
@@ -1028,6 +1120,23 @@ static func try_return_towed(individual: HumanIndividual, age_band: HumanTypes.A
 	return true
 
 
+# Spazio per il prodotto di un lavoro con attrezzi (2026-11-07 per cava e taglio, comune dal 2026-11-15 anche per la
+# Semina): chi, con gli attrezzi di `categories` in cintura, non porta nemmeno un'unità di `product` non prende il lavoro.
+# La capacità conta gli attrezzi ancora da prendere (ognuno occupa un posto della cintura e ne toglie il bonus); un travois
+# ancora da prendere non conta. "" = idoneo (anche senza prodotto o con prodotto senza ingombro).
+static func carry_rejection(worker: HumanIndividual, categories: Array, product: String) -> String:
+	if product == "":
+		return ""
+	var rules := CaloricCalculator.get_caloric_source_rules(product)
+	if rules == null or rules.space_per_unit <= 0.0:
+		return ""
+	var tools_to_fetch := member_missing_categories(worker, categories).size()
+	var capacity := worker.max_carry_capacity - float(tools_to_fetch) * worker._carry_bonus_per_empty_tool_slot()
+	if int(floor(capacity / rules.space_per_unit + FoodSelectionService.UNIT_FIT_EPSILON)) >= 1:
+		return ""
+	return "non riesce a portare nemmeno un'unità di %s con gli attrezzi in cintura" % IconRegistry.get_resource_display_name(product)
+
+
 # Regola "Riponi gli attrezzi presi per un lavoro" spenta (2026-10-23): i prestiti segnati si cancellano, gli attrezzi
 # diventano di chi li ha. Riaccendendola si ripone solo quello preso da quel momento.
 static func forget_borrowed_tools(individuals: Array[HumanIndividual]) -> void:
@@ -1310,7 +1419,7 @@ static func try_swap_seasonal_apparel(individual: HumanIndividual, age_band: Hum
 
 
 static func _apparel_choice_log(individual: HumanIndividual, text: String) -> void:
-	print("[APPAREL CHOICE] #%d %s: %s" % [individual.id, individual.name, text])
+	DebugLogging.print_event("[APPAREL CHOICE] #%d %s: %s" % [individual.id, individual.name, text])
 
 
 # "nome punteggio" per ogni voce di `candidates` ({"name", "score"}), per i log.

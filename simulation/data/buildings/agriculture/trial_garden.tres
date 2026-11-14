@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_trial_garden"]
+
+; Orto delle prove (2026-11-15, richiesta utente — ramo piante): una microcella di terra smossa dentro un recinto alla buona,
+; sbloccata da plant_domestication. Una sola specie per orto, come le tettoie degli animali: i semi portati daranno punti
+; finché la pianta non si riproduce da sola (addomesticata). Per ora solo l'edificio, senza funzioni. Lavoro alto: il
+; terreno va dissodato (2026-11-15, richiesta utente).
+[resource]
+script = ExtResource("1_trial_garden")
+building_name = "building_trial_garden"
+category = 12
+required_idea_id = "plant_domestication"
+min_construction_days = 1
+required_labor = 2000
+max_builders = 2
+construction_tool_categories = Array[int]([2])
+cultivation_lots = 1
+cultivation_labor_multiplier = 2.0
+cultivation_yield_cap = 3.0
+lifespan_years = 5
+max_durability = 60
+defense = 5
+required_materials = {
+"fiber_rope": 10,
+"stick": 20
+}
+required_space = 1
+has_door = false
+visibility_radius = 2
+people_path_weight_scale = 8.0
+closed_to_animals = true

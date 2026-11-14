@@ -13,21 +13,26 @@ extends RefCounted
 # effects null = nessuna scoperta (il superamento resta comunque registrato).
 static func add_points(game_data: GameData, folk: Folk, species: String, amount: int, effects: GameEffects = null) -> bool:
 	var rules := DomesticAnimalCalculator.get_rules(species)
-	if rules == null:
+	# Pianta (2026-11-13, ramo delle piante: l'orzo): stesso registro, nessuna idea richiesta, niente punti dopo la soglia.
+	var plant_rules := DomesticPlantCalculator.get_rules(species) if rules == null else null
+	if rules == null and plant_rules == null:
 		push_warning("DomesticationPointsService: specie domestica '%s' inesistente" % species)
+		return false
+	if plant_rules != null and game_data.domesticated_species.has(species):
 		return false
 	# Specie con idea richiesta (passo 3a): serve l'idea. Il cane (nessuna idea) accumula sempre: è addomesticando il lupo
 	# che nasce l'idea. Regola del primo incontro tolta il 2026-11-12 (sarà la prima cattura viva a sbloccare la specie).
-	if rules.required_idea_id != "":
+	if rules != null and rules.required_idea_id != "":
 		if folk == null or not folk.completed_ideas.has(rules.required_idea_id):
 			return false
+	var required := rules.domestication_points_required if rules != null else plant_rules.domestication_points_required
 	var points := maxi(get_points(game_data, species) + amount, 0)
 	game_data.domestication_points[species] = points
-	print("[DOMESTICATION] %s %d/%d (%+d)" % [species, points, rules.domestication_points_required, amount])
-	if points >= rules.domestication_points_required and not game_data.domesticated_species.has(species):
+	DebugLogging.print_event("[DOMESTICATION] %s %d/%d (%+d)" % [species, points, required, amount])
+	if points >= required and not game_data.domesticated_species.has(species):
 		game_data.domesticated_species.append(species)
 		game_data.domestication_years[species] = game_data.year
-		print("[DOMESTICATION] %s addomesticato per la prima volta" % species)
+		DebugLogging.print_event("[DOMESTICATION] %s addomesticato per la prima volta" % species)
 		if effects != null:
 			effects.animal_domesticated(species)
 	return true
@@ -38,7 +43,8 @@ static func add_points(game_data: GameData, folk: Folk, species: String, amount:
 static func is_discovered(game_data: GameData, species: String) -> bool:
 	var rules := DomesticAnimalCalculator.get_rules(species)
 	if rules == null:
-		return false
+		# Piante (2026-11-13): sempre note, la carta c'è dal primo punto.
+		return DomesticPlantCalculator.get_rules(species) != null
 	return rules.required_idea_id == "" or game_data.discovered_domestic_species.has(species) \
 		or game_data.domesticated_species.has(species)
 
@@ -49,7 +55,7 @@ static func discover_species(game_data: GameData, species: String, effects: Game
 		return false
 	var rules := DomesticAnimalCalculator.get_rules(species)
 	game_data.discovered_domestic_species.append(species)
-	print("[DOMESTICATION] specie scoperta: %s" % species)
+	DebugLogging.print_event("[DOMESTICATION] specie scoperta: %s" % species)
 	if effects != null:
 		effects.notify(NotificationTypes.NotificationPopupType.DOMESTIC_SPECIES_DISCOVERED,
 			GameContext.tr_text("domestication_species_discovered").format({

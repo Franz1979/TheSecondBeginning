@@ -12,7 +12,7 @@ day_durability = 6000
 space_per_unit = 5.0
 recipe_inputs = {
 "fiber_rope": 1,
-"hide": 3,
+"hide": 2,
 "sinew": 2
 }
 recipe_labor = 400.0

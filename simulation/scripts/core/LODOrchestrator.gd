@@ -78,7 +78,7 @@ static func _print_new_discovery_secondary_stock(coords: Vector2i, state: MacroC
 		{"label": "tree.domesticable_fruit", "type": GameTypes.WorldObjectType.TREE, "subtype": "domesticable_fruit"},
 	]:
 		composition_parts.append("%s=%d" % [entry["label"], state.get_subtype_count(entry["type"], entry["subtype"])])
-	print("[CELL DISCOVERED] %s giorno %s (%d,%d) secondary_resource_stock (REALE, quello che mangiano gli animali): %s | moltiplicatori lotti: %s | subtype_composition (COSMETICO, solo disegno): %s" % [
+	DebugLogging.print_event("[CELL DISCOVERED] %s giorno %s (%d,%d) secondary_resource_stock (REALE, quello che mangiano gli animali): %s | moltiplicatori lotti: %s | subtype_composition (COSMETICO, solo disegno): %s" % [
 		GameTypes.Season.keys()[season], day_text, coords.x, coords.y,
 		", ".join(stock_parts), ", ".join(lot_parts), ", ".join(composition_parts)
 	])

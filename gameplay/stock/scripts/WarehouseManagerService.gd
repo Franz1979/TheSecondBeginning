@@ -267,6 +267,13 @@ static func request_stock(ctx: GameContext, now: float, effects: GameEffects) ->
 		changed = true
 	if _request_water(ctx, now, stock):
 		changed = true
+	if _request_feeders(ctx, now, stock):
+		changed = true
+	if _request_field_seeds(ctx, now, stock):
+		changed = true
+	# Macellazione oltre le soglie "Macella oltre" (2026-11-14, pezzo 2c).
+	if SlaughterStockService.plan(ctx.world, ctx.game_data, ctx.individuals):
+		changed = true
 	if _cancel_stuck_auto_cook_orders(ctx, stock):
 		changed = true
 	if _request_workstation_food(ctx, stock):
@@ -1087,7 +1094,10 @@ static func _waste_traveling(individuals: Array[HumanIndividual], resource_name:
 static func _request_toolkits(ctx: GameContext, now: float) -> bool:
 	var game_data := ctx.game_data
 	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool: return order.has(ToolkitStockService.TOOLKIT_TARGET_KEY))
-	var plan := ToolkitStockService.plan_orders(ctx.world, game_data, open_orders, ToolkitStockService.traveling(ctx.individuals))
+	var in_transit := ToolkitStockService.traveling(ctx.individuals)
+	# Prima i pezzi già nel magazzino dell'edificio stesso (2026-11-13, montaggio sul posto), poi i trasporti dagli altri.
+	var mounted := ToolkitStockService.mount_from_own_storage(ctx.world, game_data, in_transit)
+	var plan := ToolkitStockService.plan_orders(ctx.world, game_data, open_orders, in_transit)
 	game_data.stock_runtime.toolkit_warnings = plan["warnings"]
 	for order_id in plan["remove"]:
 		DrawerOrderService.remove(game_data, int(order_id))
@@ -1108,7 +1118,86 @@ static func _request_toolkits(ctx: GameContext, now: float) -> bool:
 				order_id, int(need["quantity"]), String(need[ToolkitStockService.TOOLKIT_TOOL_KEY]),
 				(need["building"] as Building).building_type_name, int(need[ToolkitStockService.TOOLKIT_TARGET_KEY]),
 			])
+	return mounted > 0 or not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
+
+
+# Regola "Rifornisci le mangiatoie" (2026-11-14, FeederStockService): ordini "transport" deposito → mangiatoia con
+# FEEDER_TARGET_KEY/FEEDER_FOOD_KEY; avvisi in StockRuntimeState.feeder_warnings. true se ha creato o tolto ordini.
+static func _request_feeders(ctx: GameContext, now: float, stock: Dictionary) -> bool:
+	var game_data := ctx.game_data
+	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool: return order.has(FeederStockService.FEEDER_TARGET_KEY))
+	var plan := FeederStockService.plan_orders(ctx.world, game_data, open_orders, FeederStockService.traveling(ctx.individuals),
+		stock, active_min_levels(ctx.world, game_data), average_carry_capacity(ctx))
+	game_data.stock_runtime.feeder_warnings = plan["warnings"]
+	for order_id in plan["remove"]:
+		DrawerOrderService.remove(game_data, int(order_id))
+	for need in plan["create"]:
+		var order_id := game_data.next_drawer_order_id
+		game_data.next_drawer_order_id += 1
+		var food := String(need[FeederStockService.FEEDER_FOOD_KEY])
+		var feeder_order := {
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT,
+			FeederStockService.FEEDER_TARGET_KEY: int(need[FeederStockService.FEEDER_TARGET_KEY]),
+			FeederStockService.FEEDER_FOOD_KEY: food, "resource": food, "quantity": int(need["quantity"]),
+			StockRequestService.CREATED_AT_KEY: now,
+		}
+		mark_inventory_pending(game_data, feeder_order)
+		game_data.drawer_orders.append(feeder_order)
+		DebugLogging.print_event("[FEEDER] Ordine del cassetto #%d: porta %d %s alla mangiatoia di %s #%d." % [
+			order_id, int(need["quantity"]), food, (need["building"] as Building).building_type_name,
+			int(need[FeederStockService.FEEDER_TARGET_KEY]),
+		])
 	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
+
+
+# Regola "Semi nei campi" (2026-11-15, FieldSeedStockService): ordini "transport" magazzino → capanno del campo
+# (SEED_TARGET_KEY) e capanno → magazzino per i semi che il capanno non tiene più (SEED_REMOVE_KEY). true se ha creato o
+# tolto ordini.
+static func _request_field_seeds(ctx: GameContext, now: float, stock: Dictionary) -> bool:
+	var game_data := ctx.game_data
+	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool:
+		return order.has(FieldSeedStockService.SEED_TARGET_KEY) or order.has(FieldSeedStockService.SEED_REMOVE_KEY))
+	var plan := FieldSeedStockService.plan_orders(ctx.world, game_data, open_orders, FieldSeedStockService.traveling(ctx.individuals),
+		stock, active_min_levels(ctx.world, game_data))
+	for order_id in plan["remove"]:
+		DrawerOrderService.remove(game_data, int(order_id))
+	for need in plan["create"]:
+		var order_id := game_data.next_drawer_order_id
+		game_data.next_drawer_order_id += 1
+		var seed_order := {
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT, "resource": String(need["resource"]),
+			"quantity": int(need["quantity"]), StockRequestService.CREATED_AT_KEY: now,
+		}
+		var removing: bool = need.has(FieldSeedStockService.SEED_REMOVE_KEY)
+		var key: String = FieldSeedStockService.SEED_REMOVE_KEY if removing else FieldSeedStockService.SEED_TARGET_KEY
+		seed_order[key] = int(need[key])
+		mark_inventory_pending(game_data, seed_order)
+		game_data.drawer_orders.append(seed_order)
+		DebugLogging.print_event("[SEMI] Ordine del cassetto #%d: %s %d %s %s capanno del campo #%d." % [
+			order_id, "porta via" if removing else "porta", int(need["quantity"]), String(need["resource"]),
+			"dal" if removing else "al", int(need[key]),
+		])
+	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
+
+
+# Avviso in campanella della regola "Rifornisci le mangiatoie": mangiatoie sotto l'obiettivo senza cibo da ricevere.
+static func collect_feeder_entries(ctx: GameContext) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var names: Array[String] = []
+	for building_id in ctx.game_data.stock_runtime.feeder_warnings:
+		var building := find_building(ctx.world, int(building_id))
+		if building != null:
+			names.append(building.get_display_name())
+	if names.is_empty():
+		return entries
+	var row_name := GameContext.tr_text("pending_stock_feeder")
+	var reason := GameContext.tr_text("pending_stock_feeder_missing").format({"buildings": ", ".join(names)})
+	var entry := PendingEntryService.make_entry("stock_feeder", "%s\n%s" % [row_name, reason], {
+		"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": 0.0, "name": row_name, "detail": reason,
+	}, false)
+	entry["disabled_reason"] = GameContext.tr_text("pending_stock_blocked_detail")
+	entries.append(entry)
+	return entries
 
 
 # Cotture automatiche rimaste senza ingredienti (2026-10-22, richiesta utente — carne marcita prima della cottura): a ogni
@@ -1126,7 +1215,7 @@ static func _cancel_stuck_auto_cook_orders(ctx: GameContext, stock: Dictionary) 
 				continue
 			if not order_lacks_ingredients(building, order_key, stock, ctx.individuals):
 				continue
-			print("[FOOD DAYS] Ordine automatico '%s' x%d su %s #%d tolto: ingredienti persi, postazione liberata." % [
+			DebugLogging.print_event("[FOOD DAYS] Ordine automatico '%s' x%d su %s #%d tolto: ingredienti persi, postazione liberata." % [
 				ProductionService.get_order_recipe(building, order_key), ProductionService.get_order_units(building, order_key),
 				building.building_type_name, building.id,
 			])
@@ -1136,7 +1225,7 @@ static func _cancel_stuck_auto_cook_orders(ctx: GameContext, stock: Dictionary) 
 		if not order.has(StockRequestService.FOOD_DAYS_KEY) or bool(order.get("taken", false)):
 			continue
 		if _recipe_lacks_ingredients(String(order.get("recipe", "")), {}, stock):
-			print("[FOOD DAYS] Ordine del cassetto #%d '%s' tolto: ingredienti persi." % [int(order["id"]), String(order.get("recipe", ""))])
+			DebugLogging.print_event("[FOOD DAYS] Ordine del cassetto #%d '%s' tolto: ingredienti persi." % [int(order["id"]), String(order.get("recipe", ""))])
 			DrawerOrderService.remove(ctx.game_data, int(order["id"]))
 			changed = true
 	return changed
@@ -1337,6 +1426,39 @@ static func transport_order_pick(world: World, worker: HumanIndividual, order: D
 		if pit == null or WasteDisposalService.get_max_disposable(pit, waste_resource) <= 0:
 			return {}
 		return {"target": pit, "source": waste_source, "resource": waste_resource, "quantity": int(order.get("quantity", 1))}
+	# Mangiatoia (2026-11-14, regola "Rifornisci le mangiatoie"): magazzino più vicino col cibo → mangiatoia, fin dove ci sta.
+	if order.has(FeederStockService.FEEDER_TARGET_KEY):
+		var feeder := find_building(world, int(order[FeederStockService.FEEDER_TARGET_KEY]))
+		var food := String(order.get(FeederStockService.FEEDER_FOOD_KEY, ""))
+		if feeder == null:
+			return {}
+		var feeder_room := AnimalFeederService.max_depositable(GameSettings.active_game_data, feeder, food)
+		var feeder_source := FeederStockService.pick_source(world, feeder, food, worker)
+		if feeder_room <= 0 or feeder_source == null:
+			return {}
+		return {"target": feeder, "source": feeder_source, "resource": food, "quantity": mini(int(order.get("quantity", 1)), feeder_room)}
+	# Capanno del campo (2026-11-15, regola "Semi nei campi"): magazzino più vicino col seme → capanno, fino al livello.
+	if order.has(FieldSeedStockService.SEED_TARGET_KEY):
+		var shed := find_building(world, int(order[FieldSeedStockService.SEED_TARGET_KEY]))
+		var seed_name := String(order.get("resource", ""))
+		if shed == null or not FieldSeedStockService.is_served(shed):
+			return {}
+		var shed_room := BuildingStorageService.get_max_depositable(shed, seed_name)
+		var seed_source := FieldSeedStockService.pick_source(world, shed, seed_name, worker)
+		if shed_room <= 0 or seed_source == null:
+			return {}
+		return {"target": shed, "source": seed_source, "resource": seed_name, "quantity": mini(int(order.get("quantity", 1)), shed_room)}
+	# Semi che il capanno non tiene più (2026-11-15): capanno → magazzino più vicino che li accetta.
+	if order.has(FieldSeedStockService.SEED_REMOVE_KEY):
+		var old_shed := find_building(world, int(order[FieldSeedStockService.SEED_REMOVE_KEY]))
+		var old_seed := String(order.get("resource", ""))
+		if old_shed == null or old_shed.is_demolished:
+			return {}
+		var old_quantity := mini(int(order.get("quantity", 1)), BuildingStorageService.get_available_quantity(old_shed, old_seed))
+		var destination := FieldSeedStockService.pick_destination(world, old_shed, old_seed, worker)
+		if old_quantity <= 0 or destination == null:
+			return {}
+		return {"target": destination, "source": old_shed, "resource": old_seed, "quantity": old_quantity}
 	# Attrezzeria (2026-10-18, regola "Rifornisci le Attrezzerie"): magazzino più vicino con l'attrezzo → Attrezzeria.
 	if order.has(ToolkitStockService.TOOLKIT_TARGET_KEY):
 		var toolkit_target := find_building(world, int(order[ToolkitStockService.TOOLKIT_TARGET_KEY]))
@@ -1390,6 +1512,13 @@ static func transport_order_task(worker: HumanIndividual, order: Dictionary, pic
 	var task := TaskBuilderService.build_transport_task(worker, pick["source"], target, resource_name, trip_target, quantity, true, 0)
 	if task != null and order.has(FuelStockService.FUEL_TARGET_KEY):
 		task.context[FuelStockService.FUEL_TARGET_KEY] = int(order[FuelStockService.FUEL_TARGET_KEY])
+	elif task != null and order.has(FeederStockService.FEEDER_TARGET_KEY):
+		task.context[FeederStockService.FEEDER_TARGET_KEY] = int(order[FeederStockService.FEEDER_TARGET_KEY])
+		task.context[FeederStockService.FEEDER_FOOD_KEY] = String(order.get(FeederStockService.FEEDER_FOOD_KEY, ""))
+	elif task != null and order.has(FieldSeedStockService.SEED_TARGET_KEY):
+		task.context[FieldSeedStockService.SEED_TARGET_KEY] = int(order[FieldSeedStockService.SEED_TARGET_KEY])
+	elif task != null and order.has(FieldSeedStockService.SEED_REMOVE_KEY):
+		task.context[FieldSeedStockService.SEED_REMOVE_KEY] = int(order[FieldSeedStockService.SEED_REMOVE_KEY])
 	elif task != null and order.has(ToolkitStockService.TOOLKIT_TARGET_KEY):
 		task.context[ToolkitStockService.TOOLKIT_TARGET_KEY] = int(order[ToolkitStockService.TOOLKIT_TARGET_KEY])
 		task.context[ToolkitStockService.TOOLKIT_TOOL_KEY] = String(order.get(ToolkitStockService.TOOLKIT_TOOL_KEY, ""))
@@ -1744,10 +1873,20 @@ static func collect_inventory_entries(ctx: GameContext, now: float) -> Array[Dic
 # Una voce per ogni ordine del magazzino non preso e bloccato, "Magazzino · <risorsa>" con il motivo sotto; nessun posto da
 # centrare (l'ordine sta nella coda delle task). L'essiccatoio ha i suoi avvisi (collect_dry_entries); gli ordini
 # dell'inventario in corso non sono ancora usciti.
-static func collect_blocked_entries(ctx: GameContext) -> Array[Dictionary]:
+# `board_jobs` (2026-11-14, scattini — 3-11 ms a secondo): i lavori del giro (DrawerOrderJobProvider._zone_job ha già
+# calcolato zone_blocked_reason per ogni ordine di zona, in "blocked_reason"); se l'ordine non c'è (nato dopo il giro) si
+# ricalcola come prima.
+static func collect_blocked_entries(ctx: GameContext, board_jobs: Array[Dictionary] = []) -> Array[Dictionary]:
 	var entries: Array[Dictionary] = []
 	if ctx.game_data == null or not JobBoardService.is_enabled(ctx.folk):
 		return entries
+	var round_reasons: Dictionary = {}
+	for job in board_jobs:
+		if job.has("blocked_reason"):
+			round_reasons[String(job["key"])] = String(job["blocked_reason"])
+	# Motivo statico degli ordini "Produci" per ricetta (2026-11-14): uguale per tutti gli ordini della stessa ricetta
+	# nello stesso giro, calcolato una volta sola.
+	var static_by_recipe: Dictionary = {}
 	for order in ctx.game_data.drawer_orders:
 		if not order.has(StockRequestService.ORDER_KEY) or bool(order.get("taken", false)):
 			continue
@@ -1756,9 +1895,18 @@ static func collect_blocked_entries(ctx: GameContext) -> Array[Dictionary]:
 			continue
 		var reason := ""
 		if order_type == DrawerOrderService.TYPE_PRODUCE:
-			reason = produce_order_reason(ctx, order)
+			var recipe := String(order.get("recipe", ""))
+			if not static_by_recipe.has(recipe):
+				static_by_recipe[recipe] = produce_static_reason(ctx, recipe)
+			reason = String(static_by_recipe[recipe])
+			if reason == "":
+				reason = String(order.get(StockRequestService.MISSING_KEY, ""))
 		else:
-			reason = DrawerOrderJobProvider.zone_blocked_reason(ctx, order_type, int(order.get("zone_id", -1)), null, order)
+			var order_key := JobBoardService.drawer_order_key(int(order["id"]))
+			if round_reasons.has(order_key):
+				reason = String(round_reasons[order_key])
+			else:
+				reason = DrawerOrderJobProvider.zone_blocked_reason(ctx, order_type, int(order.get("zone_id", -1)), null, order)
 		if reason == "":
 			continue
 		var row_name := GameContext.tr_text("pending_stock_blocked").format({"resource": order_display_name(order)})

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_wild_flax"]
+
+; Lino selvatico (2026-11-15, richiesta utente — ramo piante): fasci di steli raccolti a mano dall'erba, materia grezza
+; (non Granaglia), su 2 microcelle d'erba su 10, 4-8 per microcella. Solo dopo Filatura (prima "Risorsa sconosciuta");
+; si strappa d'estate, poco a fine primavera e inizio autunno. Serve solo alla corda di lino (filo e tela verranno dal
+; lino domestico) ed è il seme dell'orto delle prove per il Lino (flax.tres).
+[resource]
+script = ExtResource("1_wild_flax")
+secondary_resource_name = "wild_flax"
+calories_per_unit = 0.0
+seasonal_availability_multiplier = Array[float]([0.0, 0.2, 1.0, 0.2])
+category = 1
+required_idea_id = "spinning"
+generation_source = 1
+day_durability = 365
+space_per_unit = 5.0
+patch_probability = 0.2
+patch_capacity_min = 4
+patch_capacity_max = 8
+lot_source = 3

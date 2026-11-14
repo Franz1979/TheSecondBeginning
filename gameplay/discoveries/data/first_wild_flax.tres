@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="DiscoveryHintRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/discoveries/scripts/DiscoveryHintRules.gd" id="1_rules"]
+
+; Lino selvatico (2026-11-15, richiesta utente): la prima volta che qualcuno lo raccoglie da terra.
+[resource]
+script = ExtResource("1_rules")
+id = "first_wild_flax"
+title_key = "discovery_first_wild_flax_title"
+paragraph_keys = Array[String](["discovery_first_wild_flax_p1", "discovery_first_wild_flax_p2"])
+trigger_type = 3
+collected_resource = "wild_flax"

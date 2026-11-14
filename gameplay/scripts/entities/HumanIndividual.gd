@@ -511,6 +511,10 @@ var borrowed_tools: Array = []
 # resolve_idle_individual prende il lavoro dalla lista (o va allo svago), senza ripartire con un'altra "Cerca lavoro".
 # Letto e spento all'inizio di resolve_idle_individual (un bisogno che arriva prima lo fa perdere). Mai salvato.
 var job_seek_arrived: bool = false
+# Idea nata da un evento (2026-11-14, InspirationService — chiacchierata, lezione): al prossimo resolve_idle_individual
+# parte un daydream, dopo i bisogni e prima di coda, attrezzi, lista dei lavori e svago. Letto e spento lì come
+# job_seek_arrived (un bisogno che arriva prima la fa perdere). Mai salvato.
+var inspired: bool = false
 
 
 # Lega il messaggio attuale a `task` (avviso al comando su una task che parte lo stesso): sparisce quando la task non è
@@ -591,6 +595,10 @@ var skill_medicine: float = 0.0
 # nella semina iniziale. Cresce a ogni sessione di pesca completata (task_completion_effects.tres); alza la probabilità di
 # presa (SkillEffectService, chiave "fish"), come la caccia alza quella di colpire.
 var skill_fishing: float = 0.0
+# farming (2026-11-15, richiesta utente — 13a skill, agricoltura): stesso trattamento/default delle altre, inclusa nella
+# semina iniziale e ereditata alle nascite.
+# Crescerà con la Semina e la Mietitura (orto delle prove e campi, CultivationService).
+var skill_farming: float = 0.0
 
 
 # Nomi di TUTTE le property skill_* dell'istanza, raccolti via reflection (2026-09-13, richiesta

@@ -178,7 +178,7 @@ tech_tree_research_button,Ricerca questa idea
 tech_tree_detail_placeholder,Clicca su un'idea per vederne i dettagli
 era_paleolithic,Paleolitico
 era_neolithic,Neolitico
-idea_agriculture,Agricoltura
+idea_agriculture,Agricoltura paleolitica
 idea_agriculture_summary,Coltivare le piante invece di raccoglierle.
 idea_agriculture_description,Il gruppo impara a seminare e a raccogliere nello stesso luogo.
 tech_tree_unknown_idea,Idea sconosciuta
@@ -567,14 +567,14 @@ building_residents_caption,Residenti
 building_influence_received_label,"Influenza ricevuta: {types}"
 building_influence_received_none,nessuna
 building_heating_label,Riscaldamento: {state}
-building_soup_none,Zuppa di midollo: nessuna
-task_cook_soup_name,Cucina la zuppa di midollo
-task_cook_soup_step_walk_source,Va a prendere le ossa
-task_cook_soup_step_take,Prende le ossa
+building_soup_none,Zuppa di midollo e semi tostati: nessuna
+task_cook_soup_name,Cucina la zuppa di midollo e semi tostati
+task_cook_soup_step_walk_source,Va a prendere ossa e semi
+task_cook_soup_step_take,Prende ossa e semi
 task_cook_soup_step_walk_home,Torna a casa
-task_cook_soup_step_cook,Cucina la zuppa di midollo
-building_soup_label,Zuppa di midollo: {left} parti su {total} · buona ancora {days} g
-building_soup_tooltip,"La zuppa di midollo: la cucina un abitante quando è libero, bollendo 5 ossa. Vale 150 calorie, divise in parti uguali tra gli abitanti (i neonati no); ognuno prende la sua in una volta. Col fuoco acceso (casa scaldata) resta buona 10 giorni, col fuoco spento 3."
+task_cook_soup_step_cook,Cucina la zuppa di midollo e semi tostati
+building_soup_label,Zuppa di midollo e semi: {left} parti su {total} · buona ancora {days} g
+building_soup_tooltip,"La zuppa di midollo e semi tostati: la cucina un abitante quando è libero, bollendo 5 ossa con 5 once di semi tostati. Vale 200 calorie, divise in parti uguali tra gli abitanti (i neonati no); ognuno prende la sua in una volta. Col fuoco acceso (casa scaldata) resta buona 10 giorni, col fuoco spento 3."
 building_soup_waiting,Devono ancora prendere la loro parte: {names}
 building_heating_warm,acceso
 building_heating_cold,spento
@@ -937,6 +937,7 @@ task_bury_step_funeral,Celebrando il funerale
 task_bury_activity_funeral,Funerale di {name}
 building_info_burial_capacity,Capienza: {max} sepolti
 building_buried_entry,{name} · anno {year}
+building_info_ossuary,"Ossario: le ossa di {count} defunti, risistemate dopo {years} anni"
 building_sacredness,Sacralità {points} / {next} · raggio {radius} (+{bonus})
 building_sacredness_max,Sacralità {points} · raggio {radius} (+{bonus})
 building_sacredness_radius,Raggio: {radius} (+{bonus})
@@ -977,6 +978,8 @@ toolkit_tooltip_in_use,In uso: {uses} su {max}
 toolkit_tooltip_spare,Di scorta: {count} ({uses})
 toolkit_tooltip_uses_of,{uses} su {max}
 toolkit_click_to_return_spare,Clic: rimetti nel magazzino un pezzo di scorta
+toolkit_container_click_return,Clic: rimetti nel magazzino un vaso vuoto
+toolkit_container_click_blocked,"I vasi sono tutti occupati dai semi: non se ne può togliere nessuno"
 carried_resource_tooltip_dried_hide_bag,Sacca di pelle essiccata
 carried_resource_tooltip_smoked_hide_bag,Sacca di pelle affumicata
 carried_resource_tooltip_waterskin,Otre
@@ -1340,6 +1343,8 @@ building_assign_hint_rubble_locked,Sgombero bloccato in coda. Per sceglierlo tu:
 task_assignment_setting_auto_clear_rubble,Sgombera sempre le macerie
 task_assignment_setting_auto_clear_rubble_tooltip,Con la spunta le macerie entrano in coda da sole.
 pending_building_damaged_to_repair,"{building}: danneggiato, da riparare"
+pending_field_resting,"{building}: a riposo quest'anno (maggese), la fertilità risale"
+pending_field_retill,"{building}: rizollatura, {left} lotti su {total} da fare prima della semina"
 pending_building_damaged_repair_queued,"{building}: danneggiato, riparazione in coda"
 pending_building_damaged_repair_in_progress,"{building}: danneggiato, riparazione in corso"
 pending_material_nobody_can_carry,{building}: nessuno può trasportare {resource}
@@ -1705,9 +1710,6 @@ idea_village_chief_description,"Tra chi siede nel cerchio, uno solo parla per tu
 idea_role_assignment,Assegnazione dei ruoli
 idea_role_assignment_summary,Ognuno ha un compito fisso nel villaggio.
 idea_role_assignment_description,"Il capo affida a ciascuno il suo ruolo: chi coordina il lavoro, chi custodisce le scorte."
-idea_domestication,Addomesticazione
-idea_domestication_summary,"Animali e piante selvatici possono, col tempo, vivere accanto all'uomo."
-idea_domestication_description,"Dal lupo diventato cane il villaggio ha capito che ciò che è selvatico, avvicinato con pazienza per generazioni, può cambiare e vivere al suo fianco. Apre la strada all'addomesticazione degli animali e delle piante."
 idea_animal_domestication,Addomesticazione degli animali
 idea_animal_domestication_summary,Permette di iniziare ad addomesticare le specie animali incontrate.
 idea_animal_domestication_description,"Il villaggio impara che anche altri animali, non solo il lupo, possono abituarsi all'uomo. Ogni specie va prima trovata nel mondo, poi avvicinata con pazienza: ci vorranno generazioni."
@@ -1728,8 +1730,7 @@ domestication_tab_plants,Piante
 domestication_from,da: {species}
 domestication_state_domesticated,Addomesticata
 domestication_state_locked,Serve l'idea «{idea}»
-domestication_animals_locked_notice,"Studia «{idea}» per iniziare ad addomesticare altre specie animali, oltre al lupo."
-domestication_plants_locked_notice,Studia «{idea}» per iniziare ad addomesticare le piante.
+domestication_plants_locked_notice,"«{idea}» non si studia: arriverà addomesticando il cereale selvatico, insieme a «{lore}»."
 domestication_plants_empty,Nessuna specie vegetale ancora conosciuta.
 domestication_pack_aggression,Aggressività media del branco
 domestication_pack_hint,"Ogni visita tranquilla lo calma e porta punti; gli attacchi no, e cacciarlo lo innervosisce."
@@ -1985,6 +1986,7 @@ idea_advanced_traps_description,"Chi sa costruire trappole e ha imparato ad avvi
 carried_resource_tooltip_snare,Mazzo di lacci
 carried_resource_tooltip_stake_pit,Fossa con pali
 pending_trap_no_site,"{area}: nessun posto adatto per {trap}"
+pending_trap_no_other_site,"{area}: nessun altro posto adatto per {trap} ({count} di {target})"
 trap_pickup_catch_prey,"Prede: {detail}"
 building_category_husbandry,Allevamento
 building_cage_shelter,Tettoia delle gabbie
@@ -2015,3 +2017,197 @@ building_chicken_coop,Pollaio
 build_bar_chicken_coop_tooltip,Pollaio
 build_bar_chicken_coop_description,"Casetta coperta con un recinto di paletti dove vivranno le galline. Si costruisce quando la gallina è addomesticata."
 build_bar_requires_domesticated_tooltip,Richiede: {species} addomesticato
+carried_resource_tooltip_seed_jar,Vaso da semi
+building_info_toolkit_seed_jars,"Tiene i vasi da semi: solo quelli montati qui accolgono i semi"
+carried_resource_tooltip_wild_seeds,Orzo selvatico
+toolkit_reject_container_in_use,{tool}: dentro ci sono dei semi che altrove non entrano. Prima prelevali dal magazzino.
+toolkit_reject_container_category,{tool}: questo magazzino non accetta le Granaglie e i semi non potrebbero entrare. Abilita la categoria per montarlo.
+toolkit_storage_tooltip,"Attrezzeria del magazzino: qui si montano i vasi da semi (clic sul vaso nel magazzino, oppure la regola del gestore scorte «Rifornisci le Attrezzerie»). Solo i vasi montati accolgono i semi, 40 once ciascuno, e i semi non occupano altro spazio. Un vaso si monta solo se il magazzino accetta i Materiali grezzi; se li spegni dopo, i semi già dentro restano ma non ne entrano altri. Ogni oncia che entra o esce consuma il vaso: quando si rompe, i semi che non stanno negli altri vasi vanno persi. Un vaso non si smonta se i suoi semi non entrerebbero negli altri."
+discovery_grant_waiting_title,Idea in attesa: {idea}
+discovery_grant_waiting_line,"Il villaggio è pronto per «{idea}», ma serve ancora {missing}. Arriverà da sola appena completata."
+domestic_plant_barley,Orzo
+wild_plant_barley,Orzo selvatico
+domestication_plant_done,"Da: {species}, addomesticazione nell'anno {year}"
+domestication_plant_hint,"Avanza raccogliendo orzo selvatico dall'erba (1 punto ogni {units} once) e cucinando la zuppa coi semi ({meal} punti a pentola)."
+discovery_first_domesticated_barley_title,Un orzo che tiene i chicchi
+discovery_first_domesticated_barley_p1,"Anno dopo anno il villaggio ha raccolto i semi dall'erba e li ha tostati per la zuppa. Senza volerlo, ha scelto ogni volta le spighe che tenevano i chicchi più a lungo."
+discovery_first_domesticated_barley_p2,"Vicino alle capanne, dove i semi cadono, cresce ora un orzo diverso da quello selvatico: la spiga non si sgrana più da sola."
+discovery_first_domesticated_barley_gift_title,Una nuova idea: {idea}
+discovery_first_domesticated_barley_gift_p1,"Se una pianta può cambiare così, forse si possono scegliere i semi migliori e ripiantarli."
+container_no_room_reason,"{resource}: serve un {container} libero, montato nell'attrezzeria di una Capanna di stoccaggio."
+toolkit_container_fill,"Semi nei vasi: {quantity} / {capacity} once"
+carried_resource_tooltip_hay,Fieno
+building_feeder_line,Mangiatoia: {space} / {max} spazio ({calories} calorie)
+building_feeder_choose_species,(scegli la specie per riempirla)
+building_feeder_tooltip,"Mangiatoia per: {species}. Accetta: {foods} (calorie per unità). Il cibo portato occupa il suo spazio, diventa calorie e non si riprende. Cambiando specie la mangiatoia si svuota e il cibo è perso."
+building_feeder_tooltip_no_species,"La mangiatoia accetta solo i cibi della specie tenuta: scegli la specie, o aspetta il primo animale. Cambiando specie la mangiatoia si svuota e il cibo è perso."
+warehouse_rule_feeder,Rifornisci le mangiatoie (giorni di cibo)
+warehouse_rule_feeder_tooltip,"Giorni di cibo da tenere nelle mangiatoie degli animali chiusi. All'inventario il WM calcola quanto mangiano gli animali di ogni mangiatoia e, se sotto, manda cibo dai magazzini: nell'ordine della dieta della specie, mai sotto il livello minimo di quel cibo, e almeno uno zaino pieno a ogni viaggio. 0 = regola spenta."
+drawer_order_feeder_row,"{building}: mangiatoia, porta {quantity} {resource}"
+warehouse_rule_field_seeds,Semi nei campi
+warehouse_rule_field_seeds_tooltip,"Once di ogni seme domestico da tenere nel capanno di ogni campo che lo semina: il WM le porta dal granaio e porta via i semi che il capanno non tiene più. Un campo può avere un valore suo. 0 = nessuno."
+warehouse_rule_field_seeds_empty,Nessuna pianta ancora addomesticata.
+drawer_order_field_seed_row,"{building}: capanno, porta {quantity} {resource}"
+drawer_order_field_seed_remove_row,"{building}: capanno, porta via {quantity} {resource}"
+pending_stock_feeder,Mangiatoie da rifornire
+pending_stock_feeder_missing,"Nessun cibo della dieta sopra il minimo per: {buildings}"
+building_feeder_days_general,Giorni di cibo: regola generale
+building_feeder_days_excluded,Giorni di cibo: esclusa dal WM
+building_feeder_days_own,Giorni di cibo: valore suo
+building_feeder_days_tooltip,"Giorni di cibo che il WM tiene in questa mangiatoia, al posto della regola generale. 0 = esclusa: la riempi a mano."
+building_feeder_days_reset,Torna alla regola generale
+building_feeder_days_default_tooltip,Segue la regola generale del WM.
+building_field_seeds_stored,"Semi nel capanno: {stored}/{level} (vasi: {capacity})"
+building_field_seeds_general,Semi da tenere: regola generale
+building_field_seeds_none,Semi da tenere: nessuno
+building_field_seeds_own,Semi da tenere: valore suo
+building_field_seeds_tooltip,"Once del seme del campo da tenere nel capanno, per la semina. Regola generale: quella del WM "Semi nei campi". Mai oltre i vasi montati. Il resto del raccolto va al granaio."
+building_field_seeds_reset,Torna alla regola generale
+building_field_seeds_default_tooltip,Segue la regola generale.
+building_field_fertility,Fertilità: {percent}%
+building_field_fertility_tooltip,"Quante piantine arrivano a fare i semi. Ogni anno di mietitura cala del 10% (in proporzione ai lotti mietuti); il primo raccolto dopo un cambio di semenza invece la alza del 10%. Un anno senza semina (Coltiva in automatico: sempre no) la alza del 20%. Mai sotto il 30%."
+building_field_resting,A riposo quest'anno (maggese): niente semina.
+building_field_care,Cura del campo:
+building_field_care_rule,Come la regola ({remedy})
+building_field_care_threshold_general,Soglia di fertilità: regola generale
+building_field_care_threshold_own,Soglia di fertilità: valore suo
+field_care_none,Niente
+field_care_fallow,Maggese
+field_care_retill,Rizollatura
+field_care_tooltip,"Cosa fare quando la fertilità del campo, al conto di fine raccolto, è sotto la soglia. Maggese: il campo salta la semina dell'anno che viene e recupera il 20%. Rizollatura: decisa all'inizio della stagione di raccolto; ogni lotto si rizolla col piccone appena mietuto, +30% a campo intero (4 lotti su 8 = +15%). Quando comincia la semina, le rizollature non finite si annullano e non contano."
+field_care_threshold_tooltip,Fertilità (%) sotto la quale scatta la cura del campo.
+warehouse_rule_field_care,Cura dei campi
+warehouse_rule_field_care_threshold,Soglia di fertilità (%)
+building_field_retill,"Rizollatura: {left} lotti su {total} da fare prima della semina."
+task_retill_name,Rizollatura
+task_retill_step_retill,Rizolla
+task_retill_job_name,Rizolla il lotto ({building})
+task_retill_job_tooltip,"Rivoltare col piccone la terra stanca di un lotto di {building}: la fertilità del campo risale. Si fa dopo la mietitura; quando comincia la semina, le rizollature non finite si annullano."
+building_kept_animal_hungry,digiuno da {days} giorni
+building_feeder_days_left,~{days} giorni
+notification_kept_animal_starved,"{animal} è morto di fame in {building}: la mangiatoia era vuota."
+notification_kept_animal_starved_points,(−{points} punti addomesticazione)
+notification_kept_young_escaped,"{building} piena: {count} piccoli di {species} sono scappati nei dintorni."
+building_slaughter_above,Macella oltre:
+building_slaughter_above_tooltip,"Animali oltre i quali il gestore scorte ne fa macellare in questa tettoia: prima i maschi oltre il primo adulto, poi i vecchi, poi i giovani maschi, per ultime le femmine adulte. ∞: nessuna macellazione, i piccoli che non ci stanno scappano nei dintorni. Con un numero i piccoli entrano anche oltre la capienza, e dopo 10 giorni i più giovani in più scappano. Vale la più bassa tra questa e quella della specie."
+building_kept_over_capacity,"Troppo piena: {days} giorni prima che i più giovani in più scappino"
+building_kept_over_capacity_tooltip,"Con una soglia «Macella oltre» i piccoli entrano anche oltre la capienza. Se dopo 10 giorni la tettoia è ancora troppo piena, i più giovani in più scappano nei dintorni."
+notification_kept_animals_escaped,"{building} troppo piena: {count} {species} sono scappati nei dintorni."
+domestic_animals_tab_all,Tutte
+domestic_animals_age_young,Giovani
+domestic_animals_age_adult,Adulti
+domestic_animals_age_old,Vecchi
+domestic_animals_summary,"{name}: {total} (in tettoia {kept}, liberi {free})  ♂ {males}  ♀ {females}"
+domestic_animals_slaughter_above,Macella oltre:
+domestic_animals_slaughter_above_tooltip,"Animali di questa specie chiusi in tutte le tettoie oltre i quali il gestore scorte ne fa macellare, a partire dalla tettoia che ne ha di più. ∞: nessuna macellazione. Vale la più bassa tra questa e quella della tettoia."
+domestic_animals_shelters,Tettoie:
+domestic_animals_shelter_row,{building}: {count} / {max}
+building_kept_animal_to_slaughter,da macellare
+building_kept_animal_slaughter_tooltip,"Macella questo animale: chi ha una lama va alla tettoia, lo uccide e lo macella lì. Prima dell'addomesticazione costa 2 punti."
+task_slaughter_step_walk_shelter,Verso la tettoia
+building_kept_animal_to_slaughter_wm,da macellare (gestore)
+category_name_grain,Granaglie
+pickup_choice_category_grain,Granaglie
+pickup_choice_all_grain,Tutte le granaglie
+building_small_granary,Piccolo granaio
+build_bar_small_granary_tooltip,Piccolo granaio
+build_bar_small_granary_description,"Granaio tondo rialzato su pietre, coi muri d'argilla: tiene fino a 30 vasi da semi e conserva le granaglie due volte e mezzo più a lungo. Accetta solo granaglie."
+building_farmer_hut,Capanna degli attrezzi agricoli
+build_bar_farmer_hut_tooltip,Capanna degli attrezzi agricoli
+build_bar_farmer_hut_description,"Capanna di legno col tetto di paglia dove si fanno gli attrezzi per coltivare. Per ora non ha ancora lavori."
+building_trial_garden,Orto delle prove
+build_bar_trial_garden_tooltip,Orto delle prove
+build_bar_trial_garden_description,"Un fazzoletto di terra smossa dentro un recinto alla buona, dove provare a far crescere una pianta selvatica. Per ora non ha ancora lavori."
+building_category_agriculture,Agricoltura
+carried_resource_tooltip_wild_wheat,Grano selvatico
+discovery_first_wild_wheat_title,Grano selvatico
+discovery_first_wild_wheat_p1,"Tra i semi raccolti dall'erba qualcuno nota che alcuni sono più grossi e pesanti degli altri, con una spiga diversa: non è orzo, è grano selvatico."
+discovery_first_wild_wheat_p2,"Si tiene nei vasi da semi, separato dall'orzo, e si può dare agli animali. Un giorno, nell'orto delle prove, si potrà provare a renderlo domestico."
+discovery_first_domesticated_barley_gift_p2,"L'orzo ora è domestico e apre la strada a idee nuove. Continuate a raccogliere dalle piante selvatiche: in ogni stagione potreste riconoscere semi che prima non distinguevate."
+domestic_plant_wheat,Grano
+wild_plant_wheat,Grano selvatico
+carried_resource_tooltip_wild_millet,Miglio selvatico
+domestic_plant_millet,Miglio
+wild_plant_millet,Miglio selvatico
+discovery_first_wild_millet_title,Miglio selvatico
+discovery_first_wild_millet_p1,"Tra l'erba d'autunno qualcuno raccoglie grappoli di semi minuscoli, tondi e lucidi, diversi dall'orzo e dal grano: è miglio selvatico."
+discovery_first_wild_millet_p2,"Si tiene nei vasi da semi, separato dagli altri, e si può dare agli animali. Cresce in fretta: un giorno, nell'orto delle prove, si potrà seminarlo in primavera e raccoglierlo in autunno."
+carried_resource_tooltip_wild_oats,Avena selvatica
+domestic_plant_oats,Avena
+wild_plant_oats,Avena selvatica
+discovery_first_wild_oats_title,Avena selvatica
+discovery_first_wild_oats_p1,"Vicino alla Fossa, tra l'orzo e le altre erbe nate dai rifiuti, spuntano spighe leggere e pendenti, diverse da tutte le altre: è avena selvatica."
+discovery_first_wild_oats_p2,"Cresce come un'erbaccia dove la terra è stata smossa. Si tiene nei vasi da semi, si mette nella zuppa e piace agli animali. Un giorno, nell'orto delle prove, si potrà seminarla in primavera e raccoglierla in estate."
+idea_spinning,Filatura
+idea_spinning_summary,Certe piante hanno fibre lunghe che si torcono in filo.
+idea_spinning_description,"Osservando gli steli delle piante selvatiche, il gruppo nota che alcuni contengono fibre lunghe e resistenti: battute e torte diventano un filo sottile. Si impara a riconoscere il lino."
+carried_resource_tooltip_wild_flax,Lino selvatico
+carried_resource_tooltip_flax_rope,Corda di lino
+domestic_plant_flax,Lino
+wild_plant_flax,Lino selvatico
+discovery_first_wild_flax_title,Lino selvatico
+discovery_first_wild_flax_p1,"Tra l'erba d'estate qualcuno strappa steli sottili coi fiorellini azzurri: dentro hanno le fibre lunghe di cui parla la Filatura. È lino selvatico."
+discovery_first_wild_flax_p2,"Alla Capanna del vestiario se ne fa una corda di lino, e ogni corda insegna qualcosa sulla pianta. Il filo e la tela verranno solo dal lino domestico, da ottenere nell'orto delle prove."
+domestication_plant_hint_gather,Raccogliendo {resource}: 1 punto ogni {units}.
+domestication_plant_hint_meal,Cucinando la zuppa coi semi: {meal} punti a pentola.
+domestication_plant_hint_product,Facendo {product}: {points} punti l'una.
+domestication_plant_hint_cap,"Così fino a {cap} punti, poi solo nell'orto delle prove."
+building_info_construction_tools,Per costruire serve: {tools}
+carried_resource_tooltip_digging_stick,Bastone da scavo
+carried_resource_tooltip_flint_sickle,Falcetto di selce
+tool_category_sowing,semina
+tool_category_reaping,mietitura
+building_crop_species,Coltura:
+building_crop_species_none,Nessuna
+building_crop_species_tooltip,"Specie da seminare qui, una sola. Si sceglie tra le piante già raccolte almeno una volta, anche senza semi nei vasi: la semina aspetterà i semi."
+building_crop_species_locked_tooltip,"La specie si cambia solo a terreno vuoto, dopo la mietitura."
+building_crop_state,Terreno: {state}
+building_crop_counts,"{phase} (seminate {sown}, piantine {sprouts}, mature {mature})"
+crop_phase_empty,vuoto
+crop_phase_sown,seminato
+crop_phase_sprouted,germogliato
+crop_phase_ready,maturo
+skill_farming_label,Agricoltura
+skill_farming_short,Agr.
+task_pit_drive_name,Spingi verso le fosse
+task_pit_drive_step_walk,Va dietro la mandria
+task_pit_drive_step_shout,Grida e agita le braccia
+task_pit_drive_job_name,Spingi {animal} verso le fosse ({area})
+task_pit_drive_job_tooltip,"Andare dietro la mandria di {animal} vicina alla zona {area} e spaventarla: gli animali corrono verso la fossa più vicina e chi ci passa sopra può caderci. Nessun attrezzo."
+task_assignment_setting_pit_drive,Spingi le prede grosse verso le fosse
+task_assignment_setting_pit_drive_tooltip,"Quando una mandria grossa che si vede passa vicino a una zona con una fossa vuota, compare il lavoro (lista Trappole) di andarle dietro e spingerla verso la fossa. Spenta, nessuno lo fa."
+task_sow_name,Semina
+task_sow_step_walk_source,Va a prendere i semi
+task_sow_step_take,Prende i semi
+task_sow_step_walk_site,Va al terreno
+task_sow_step_sow,Semina
+task_sow_job_name,Semina {species} ({building})
+task_sow_job_tooltip,"Portare i semi di {species} e seminarli col bastone da scavo in {building}. Si semina solo nella sua stagione: a stagione finita conta solo la parte fatta."
+task_assignment_kind_cultivate,Coltivazione
+sow_blocked_no_seeds,Mancano i semi: {seeds}
+sow_fail_no_seeds,{name} non ha trovato semi da portare.
+building_crop_sowing,"semina in corso ({seeds} once, {percent}%)"
+idea_advanced_agriculture,Agricoltura avanzata
+idea_advanced_agriculture_summary,Lavorare la terra con attrezzi più grandi e con l'aiuto degli animali.
+idea_advanced_agriculture_description,"Il gruppo impara a rompere la terra più a fondo e su campi più grandi, con l'aratro e la forza degli animali."
+task_reap_name,Mietitura
+task_reap_step_reap,Miete
+task_reap_job_name,Mieti {species} ({building})
+task_reap_job_tooltip,"Mietere col falcetto le piante mature di {species} in {building}. Il raccolto resta in un mucchio accanto, da portare in magazzino o granaio. Le piante non mietute entro la fine della stagione marciscono."
+building_crop_reaping,"mietitura in corso ({mature} piante, {percent}%)"
+sow_blocked_harvest_pile,Prima va portato via il raccolto
+building_crop_auto,Coltiva in automatico:
+building_crop_auto_tooltip,"Sì: Semina e Mietitura di questo terreno escono da sole nella lista dei lavori, nelle loro stagioni. No: nessuno semina né miete qui (chi sta già lavorando finisce). ""Come la regola"" segue la regola del WM ""Coltiva in automatico tutti i terreni""; ""sempre sì"" e ""sempre no"" vincono sulla regola. Le piante mature non mietute marciscono comunque a fine stagione."
+warehouse_grain_reserve_note,"Il minimo delle granaglie è la riserva per la semina: zuppa e animali usano solo quello che c'è sopra, la semina può prendere tutto."
+building_crop_auto_rule,Come la regola ({state})
+building_crop_auto_yes,sì
+building_crop_auto_no,no
+building_crop_auto_always,Sempre sì
+building_crop_auto_never,Sempre no
+warehouse_rule_cultivation,Coltiva in automatico tutti i terreni
+warehouse_rule_cultivation_tooltip,"Accesa: Semina e Mietitura di orti e campi escono da sole nella lista dei lavori, nelle loro stagioni. Vale per i terreni lasciati su ""come la regola""; quelli con ""sempre sì"" o ""sempre no"" fanno come hanno scelto."
+carried_resource_tooltip_domestic_barley,Orzo
+building_field,Campo con capanno
+build_bar_field_tooltip,Campo con capanno
+build_bar_field_description,"Un campo di 3×3 microcelle: terra dissodata dentro un recinto di pali e rami, con un cancellino e un piccolo capanno in un angolo per i bastoni da scavo e i falcetti. Ruota per scegliere l'angolo del capanno. Serve il piccone per dissodare. Otto lotti, uno per microcella di terra: ognuno si semina e si miete per conto suo, anche in più persone insieme. Solo semi domestici, 100 once per lotto."
+building_crop_lots_summary,"{total} lotti: vuoti {empty}, in semina {sowing}, seminati {sown}, germogliati {sprouted}, maturi {ready}"

@@ -39,8 +39,38 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 		if rules.health_recovery_days > 0 and animal.health_ratio < 1.0:
 			_set_health_ratio(animal, animal.health_ratio + 1.0 / float(rules.health_recovery_days))
 		_refresh_body_age_band(animal, today)
+	# Pasto dalla mangiatoia (2026-11-14, fame): prima delle cucciolate; chi è oltre i giorni senza cibo muore.
 	for building_id: int in kept_by_building:
+		var building := WarehouseManagerService.find_building(ctx.world, building_id)
+		var alive: Array = []
+		var starved := AnimalFeederService.feed_day(game_data, building, kept_by_building[building_id])
+		for animal: DomesticAnimal in kept_by_building[building_id]:
+			if starved.has(animal):
+				_kill(game_data, animal, "fame (%d giorni senza cibo)" % animal.days_without_food)
+				var message := GameContext.tr_text("notification_kept_animal_starved").format({
+					"animal": KeptAnimalService.display_name(animal),
+					"building": building.get_display_name() if building != null else "",
+				})
+				# Punti tolti (2026-11-14): solo prima dell'addomesticazione, mai sotto 0 (add_points).
+				var animal_rules := DomesticAnimalCalculator.get_rules(animal.species)
+				if animal_rules != null and animal_rules.starvation_point_loss > 0 \
+						and not DomesticAnimalService.is_domesticated(game_data, animal.species):
+					DomesticationPointsService.add_points(game_data, ctx.folk, animal.species, -animal_rules.starvation_point_loss, effects)
+					message += " " + GameContext.tr_text("notification_kept_animal_starved_points").format({"points": animal_rules.starvation_point_loss})
+				if effects != null:
+					effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS, message)
+			else:
+				alive.append(animal)
+		kept_by_building[building_id] = alive
+	for building_id: int in kept_by_building:
+		if (kept_by_building[building_id] as Array).is_empty():
+			continue
 		_give_birth_in_building(ctx, building_id, kept_by_building[building_id], today, effects)
+	# Oltre la capienza (2026-11-14, pezzo 2b): con una soglia si aspetta, senza scappano subito.
+	if ctx.world != null:
+		for building in ctx.world.buildings:
+			if KeptAnimalService.capacity(building) > 0:
+				_check_over_capacity(ctx, building, today, effects)
 	var is_departure_day: bool = game_data.current_day == SeasonCalculator.get_season_day_range(GameTypes.Season.AUTUMN).x
 	for species: String in species_present:
 		var rules: DomesticAnimalRules = species_present[species]
@@ -71,7 +101,7 @@ static func _tick_stray_arrival(ctx: GameContext, rules: DomesticAnimalRules, to
 		return
 	if not game_data.domestic_stray_due_day.has(species):
 		game_data.domestic_stray_due_day[species] = today + rules.stray_arrival_wait_years * GameData.DAYS_PER_YEAR
-		print("[DOMESTIC] %s: sotto la soglia, un rimpiazzo arriverà il giorno %d" % [species, game_data.domestic_stray_due_day[species]])
+		DebugLogging.print_event("[DOMESTIC] %s: sotto la soglia, un rimpiazzo arriverà il giorno %d" % [species, game_data.domestic_stray_due_day[species]])
 		return
 	if today < int(game_data.domestic_stray_due_day[species]):
 		return
@@ -86,7 +116,7 @@ static func _tick_stray_arrival(ctx: GameContext, rules: DomesticAnimalRules, to
 	var birth_day := today - wild_rules.youth_duration_years * GameData.DAYS_PER_YEAR
 	if DomesticAnimalService.add_animal(game_data, species, is_male, birth_day, storage.village_id) == null:
 		return
-	print("[DOMESTIC] %s: arrivato da fuori un %s" % [species, "maschio" if is_male else "femmina"])
+	DebugLogging.print_event("[DOMESTIC] %s: arrivato da fuori un %s" % [species, "maschio" if is_male else "femmina"])
 	if effects != null:
 		effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS,
 			GameContext.tr_text("notification_domestic_stray_%s" % species))
@@ -192,7 +222,7 @@ static func _give_birth_if_season(game_data: GameData, rules: DomesticAnimalRule
 			if puppy != null:
 				puppy.macro_coords = mother.macro_coords
 				puppy.position = mother.position
-		print("[DOMESTIC] %s %d: nati %d cuccioli" % [rules.species_name, mother.id, litter])
+		DebugLogging.print_event("[DOMESTIC] %s %d: nati %d cuccioli" % [rules.species_name, mother.id, litter])
 
 
 # Cucciolate in cattività (2026-11-12, richiesta utente): il primo giorno della stagione delle nascite della selvatica, in
@@ -222,8 +252,11 @@ static func _give_birth_in_building(ctx: GameContext, building_id: int, animals:
 	var room := KeptAnimalService.capacity(building) - animals.size()
 	var is_wild := not DomesticAnimalService.is_domesticated(game_data, species)
 	var progress := DomesticationPointsService.get_progress(game_data, species) if is_wild else 1.0
+	# Soglia "Macella oltre" (2026-11-14, pezzo 2b): i piccoli entrano anche oltre la capienza, poi c'è la scadenza.
+	var enter_over := KeptAnimalService.has_slaughter_threshold(game_data, building, species)
 	var born := 0
-	var lost := 0
+	var escaped := 0
+	var reserved := KeptAnimalService.reservations(ctx.individuals)
 	for mother: DomesticAnimal in animals:
 		if mother.is_male or mother.get_age_band(today, wild_rules) != GameTypes.AgeBand.ADULT:
 			continue
@@ -238,21 +271,47 @@ static func _give_birth_in_building(ctx: GameContext, building_id: int, animals:
 		else:
 			litter = randi_range(maxi(rules.litter_size_min, 1), rules.litter_size_max)
 		for i in range(litter):
+			# Piena: prima un'altra tettoia della specie con posto (spostamento istantaneo, 2026-11-14), poi oltre la
+			# capienza con una soglia, altrimenti scappa.
+			var target_id := building_id
 			if room <= 0:
-				lost += 1
-				continue
-			var young := DomesticAnimalService.add_kept_animal(game_data, species, randf() < 0.5, today, building_id, is_wild)
+				var other := KeptAnimalService.find_building_with_room(game_data, ctx.world, species,
+					Vector2i(building.macro_x, building.macro_y) if building != null else Vector2i.ZERO, reserved)
+				if other != null:
+					target_id = other.id
+				elif not enter_over:
+					escaped += 1
+					continue
+			var young := DomesticAnimalService.add_kept_animal(game_data, species, randf() < 0.5, today, target_id, is_wild)
 			if young == null:
 				continue
 			if is_wild:
 				young.captured_day = today
-			room -= 1
+			if target_id == building_id:
+				room -= 1
 			born += 1
 			KeptAnimalService.count_stat(game_data, species, "born")
-	if born == 0 and lost == 0:
+	if born == 0 and escaped == 0:
 		return
-	print("[DOMESTIC] %s nell'edificio %d: nati %d, morti subito %d (edificio pieno), progresso %.2f" % [species, building_id,
-		born, lost, progress])
+	# Tettoia piena (2026-11-14, richiesta utente): i piccoli in più scappano nella mandria selvatica d'origine della
+	# macrocella (anche da addomesticati: si rinselvatichiscono); contano tra i nati, ma senza i punti della nascita.
+	var joined := 0
+	if escaped > 0:
+		for i in range(escaped):
+			KeptAnimalService.count_stat(game_data, species, "born")
+		if building != null:
+			joined = WildFaunaService.release_animals(ctx.world, game_data, rules.wild_species_name,
+				Vector2i(building.macro_x, building.macro_y), escaped)
+		var message := GameContext.tr_text("notification_kept_young_escaped").format({
+			"building": building.get_display_name() if building != null else "",
+			"count": escaped,
+			"species": GameContext.tr_text("animal_species_" + rules.wild_species_name),
+		})
+		message += _escape_points(ctx, rules, escaped, effects)
+		if effects != null:
+			effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS, message)
+	DebugLogging.print_event("[DOMESTIC] %s nell'edificio %d: nati %d, scappati %d (edificio pieno, %d nella mandria), progresso %.2f" % [species,
+		building_id, born, escaped, joined, progress])
 	if born > 0 and rules.captivity_birth_points > 0:
 		DomesticationPointsService.add_points(game_data, ctx.folk, species, born * rules.captivity_birth_points, effects)
 
@@ -275,7 +334,7 @@ static func _leave_over_cap(ctx: GameContext, rules: DomesticAnimalRules, wild_r
 		left += 1
 	if left == 0:
 		return
-	print("[DOMESTIC] %s: se ne vanno in %d, restano %d (tetto %d)" % [rules.species_name, left, animals.size(), cap])
+	DebugLogging.print_event("[DOMESTIC] %s: se ne vanno in %d, restano %d (tetto %d)" % [rules.species_name, left, animals.size(), cap])
 	if effects != null:
 		effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS,
 			GameContext.tr_text("notification_domestic_left_%s" % rules.species_name).format({"count": left}))
@@ -314,7 +373,92 @@ static func _kill(game_data: GameData, animal: DomesticAnimal, reason: String) -
 	if animal.macro_coords.x >= 0 and animal.position.x >= 0.0:
 		var band := animal.get_age_band(game_data.get_absolute_day(), DomesticAnimalCalculator.get_wild_rules(animal.species))
 		GroundPileService.drop_carcass(game_data, animal.macro_coords, animal.position, animal.species, int(band), null, false)
-	print("[DOMESTIC] %s %d morto: %s" % [animal.species, animal.id, reason])
+	DebugLogging.print_event("[DOMESTIC] %s %d morto: %s" % [animal.species, animal.id, reason])
+
+
+# Tettoia oltre la capienza (2026-11-14, pezzo 2b): con una soglia "Macella oltre" parte il conto di
+# OVER_CAPACITY_GRACE_DAYS e, se allo scadere è ancora piena, scappano i più giovani in più; senza soglia (es. tolta mentre
+# era piena) scappano subito. Tornata dentro la capienza, il conto si azzera.
+static func _check_over_capacity(ctx: GameContext, building: Building, today: int, effects: GameEffects) -> void:
+	var game_data := ctx.game_data
+	var animals := DomesticAnimalService.get_kept_animals(game_data, building.id)
+	var extra := animals.size() - KeptAnimalService.capacity(building)
+	if extra <= 0:
+		building.over_capacity_since_day = -1
+		return
+	if KeptAnimalService.has_slaughter_threshold(game_data, building, animals[0].species):
+		if building.over_capacity_since_day < 0:
+			building.over_capacity_since_day = today
+			return
+		if today - building.over_capacity_since_day < KeptAnimalService.OVER_CAPACITY_GRACE_DAYS:
+			return
+	building.over_capacity_since_day = -1
+	_escape_youngest(ctx, building, animals, extra, effects)
+
+
+# I `count` più giovani di `animals` lasciano la tettoia e vanno nella mandria selvatica d'origine (WildFaunaService.
+# release_animals, ciascuno nella sua fascia d'età); un messaggio. Nessuna statistica e nessun punto.
+static func _escape_youngest(ctx: GameContext, building: Building, animals: Array[DomesticAnimal], count: int,
+		effects: GameEffects) -> void:
+	var game_data := ctx.game_data
+	var species := animals[0].species
+	var rules := DomesticAnimalCalculator.get_rules(species)
+	var wild_rules := DomesticAnimalCalculator.get_wild_rules(species)
+	if rules == null:
+		return
+	# Prima i più giovani senza ordine di macellazione, poi (2026-11-14, richiesta utente: oltre la capienza si scappa
+	# comunque) anche quelli con l'ordine, i più giovani prima; chi andava a macellarli trova l'animale sparito.
+	var sorted: Array[DomesticAnimal] = animals.duplicate()
+	sorted.sort_custom(func(a: DomesticAnimal, b: DomesticAnimal) -> bool:
+		if a.slaughter_requested != b.slaughter_requested:
+			return not a.slaughter_requested
+		return a.birth_day > b.birth_day if a.birth_day != b.birth_day else a.id > b.id)
+	var by_band: Dictionary = {}
+	var today := game_data.get_absolute_day()
+	var reserved := KeptAnimalService.reservations(ctx.individuals)
+	var moved := 0
+	var escaped := 0
+	for i in range(mini(count, sorted.size())):
+		var animal: DomesticAnimal = sorted[i]
+		# Prima un'altra tettoia della specie con posto (spostamento istantaneo, senza messaggio).
+		var other := KeptAnimalService.find_building_with_room(game_data, ctx.world, species,
+			Vector2i(building.macro_x, building.macro_y), reserved)
+		if other != null:
+			animal.building_id = other.id
+			moved += 1
+			continue
+		var band := int(animal.get_age_band(today, wild_rules)) if wild_rules != null else int(GameTypes.AgeBand.YOUNG)
+		by_band[band] = int(by_band.get(band, 0)) + 1
+		_remove(game_data, animal)
+		escaped += 1
+	if moved > 0:
+		DebugLogging.print_event("[DOMESTIC] %s nell'edificio %d: troppo piena, spostati %d in altre tettoie" % [species, building.id, moved])
+	if escaped == 0:
+		return
+	var joined := 0
+	for band: int in by_band:
+		joined += WildFaunaService.release_animals(ctx.world, game_data, rules.wild_species_name,
+			Vector2i(building.macro_x, building.macro_y), int(by_band[band]), band)
+	DebugLogging.print_event("[DOMESTIC] %s nell'edificio %d: troppo piena, scappati i %d più giovani (%d nella mandria)" % [species,
+		building.id, escaped, joined])
+	var message := GameContext.tr_text("notification_kept_animals_escaped").format({
+		"building": building.get_display_name(),
+		"count": escaped,
+		"species": GameContext.tr_text("animal_species_" + rules.wild_species_name),
+	})
+	message += _escape_points(ctx, rules, escaped, effects)
+	if effects != null:
+		effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS, message)
+
+
+# Punti persi per `count` animali scappati (2026-11-14, richiesta utente: −1 ciascuno, DomesticAnimalRules.escape_point_loss),
+# solo prima dell'addomesticazione e mai sotto 0. Ritorna il pezzo da aggiungere al messaggio ("" se nessun punto).
+static func _escape_points(ctx: GameContext, rules: DomesticAnimalRules, count: int, effects: GameEffects) -> String:
+	var loss := rules.escape_point_loss * count
+	if loss <= 0 or DomesticAnimalService.is_domesticated(ctx.game_data, rules.species_name):
+		return ""
+	DomesticationPointsService.add_points(ctx.game_data, ctx.folk, rules.species_name, -loss, effects)
+	return " " + GameContext.tr_text("notification_kept_animal_starved_points").format({"points": loss})
 
 
 static func _remove(game_data: GameData, animal: DomesticAnimal) -> void:

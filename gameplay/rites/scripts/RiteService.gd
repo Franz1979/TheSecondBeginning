@@ -60,7 +60,7 @@ static func get_rites_for_building(building: Building) -> Array[RiteRules]:
 	for rules in list_rules():
 		# min_buried (2026-10-04): il ricordo dei defunti richiede almeno un sepolto.
 		if rules.building_types.has(building.building_type_name) and not rules.bury_task_only \
-				and building.buried.size() >= rules.min_buried and not is_scheduled_only(rules):
+				and BodyBurialService.count_dead(building) >= rules.min_buried and not is_scheduled_only(rules):
 			rites.append(rules)
 	return rites
 
@@ -90,7 +90,7 @@ static func get_order_rejection_key(building: Building, rite_id: String, busy_bu
 	var rules := get_rules(rite_id)
 	if rules == null or not is_building_usable(building) or not rules.building_types.has(building.building_type_name) 			or rules.bury_task_only or is_scheduled_only(rules):
 		return "rite_reject_none_available_panel"
-	if building.buried.size() < rules.min_buried:
+	if BodyBurialService.count_dead(building) < rules.min_buried:
 		return "rite_reject_no_buried"
 	if building.requested_rite_id != "" or busy_building_ids.has(building.id):
 		return "rite_reject_building_busy"

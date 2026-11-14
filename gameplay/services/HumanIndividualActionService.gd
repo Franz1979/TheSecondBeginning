@@ -43,6 +43,8 @@ signal butcher_helpers_requested(individual: HumanIndividual, request: Dictionar
 signal ground_pile_haul_requested(individual: HumanIndividual, pile_ref: Dictionary)
 # Punti addomesticazione da assegnare (CONTEXT_PENDING_DOMESTICATION_POINTS): {specie domestica: punti}.
 signal domestication_points_earned(individual: HumanIndividual, points: Dictionary)
+# Risorse raccolte da terra in una tappa (2026-11-15): la scena ne fa scattare la scoperta alla prima raccolta.
+signal terrain_resources_collected(individual: HumanIndividual, resource_names: Array)
 # Caccia (diretta o in zona) interrotta per un motivo da mostrare al giocatore (2026-10-01: nessuna arma da caccia
 # rimasta). `message` già tradotto; GameScene lo mostra come i rifiuti dei comandi.
 signal hunt_ended_with_message(individual: HumanIndividual, message: String)
@@ -366,6 +368,16 @@ func _finish_current_step(individual: HumanIndividual, task: Task, world: World,
 	_handle_pending_butcher_helpers(individual, task)
 	_handle_pending_hunt_zone_prey(individual, task)
 	_handle_pending_ground_pile_haul(individual, task)
+	# Semi raccolti (2026-11-13, piante): unità -> punti col resto in GameData, poi insieme agli altri punti.
+	if task.context.has(DomesticPlantCalculator.CONTEXT_PENDING_HARVEST_UNITS):
+		var harvested: Dictionary = task.context[DomesticPlantCalculator.CONTEXT_PENDING_HARVEST_UNITS]
+		task.context.erase(DomesticPlantCalculator.CONTEXT_PENDING_HARVEST_UNITS)
+		DomesticPlantCalculator.add_pending_points(task.context,
+			DomesticPlantCalculator.units_to_points(GameSettings.active_game_data, harvested))
+	if task.context.has(PickUpAction.CONTEXT_PENDING_TERRAIN_COLLECTED):
+		var gathered: Array = task.context[PickUpAction.CONTEXT_PENDING_TERRAIN_COLLECTED]
+		task.context.erase(PickUpAction.CONTEXT_PENDING_TERRAIN_COLLECTED)
+		terrain_resources_collected.emit(individual, gathered)
 	if task.context.has(CONTEXT_PENDING_DOMESTICATION_POINTS):
 		var earned: Dictionary = task.context[CONTEXT_PENDING_DOMESTICATION_POINTS]
 		task.context.erase(CONTEXT_PENDING_DOMESTICATION_POINTS)
@@ -2584,6 +2596,9 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# "Cerca lavoro" appena finita al punto di assegnazione (2026-10-09): letto e spento qui, prima di tutto.
 	var arrived_at_assignment_point := individual.job_seek_arrived
 	individual.job_seek_arrived = false
+	# Idea nata da un evento (2026-11-14, InspirationService): letta e spenta qui, un bisogno sotto la fa perdere.
+	var inspired := individual.inspired
+	individual.inspired = false
 	var needed_priority := _resolve_active_stamina_need_priority(individual)
 	if needed_priority != -1:
 		if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
@@ -2645,6 +2660,10 @@ static func resolve_idle_individual(individual: HumanIndividual, age_band: Human
 	# Autocura (2026-10-25, richiesta utente — SelfRemedyService): malato o convalescente in piedi con un rimedio
 	# disponibile, prima di riprendere la coda (con la coda sempre piena non ci arriverebbe mai).
 	if SelfRemedyService.try_take_remedy(individual, age_band, world):
+		return
+
+	# Idea nata da un evento (2026-11-14, InspirationService): dopo i bisogni, prima di coda, attrezzi, lavori e svago.
+	if inspired and InspirationService.start_daydream(individual, age_band, world):
 		return
 
 	# Attrezzi in prestito con la coda piena (2026-11-01, richiesta utente): prima di riprendere la coda ripone quelli che

@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_digging_stick"]
+
+; Bastone da scavo (2026-11-15, richiesta utente — ramo piante): bastone appuntito col sasso forato come peso, per
+; seminare nell'orto delle prove e poi nel campo (categoria Semina). Capanna degli attrezzi agricoli, col coltello.
+[resource]
+script = ExtResource("1_digging_stick")
+secondary_resource_name = "digging_stick"
+calories_per_unit = 0.0
+category = 4
+panel_group = "work"
+required_idea_id = "plant_domestication"
+generation_source = 2
+space_per_unit = 5.0
+recipe_inputs = {
+"pebble": 1,
+"stick": 1
+}
+recipe_labor = 200.0
+recipe_workstation_types = Array[String](["farmer_hut"])
+recipe_required_tool_categories = Array[int]([1])
+tool_categories = Array[int]([15])
+max_uses = 40
+work_efficiency = 1.0

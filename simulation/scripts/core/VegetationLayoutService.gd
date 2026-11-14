@@ -45,6 +45,7 @@ static func rebuild(macro_state: MacroCellState, occupied: Dictionary, current_y
 	macro_state.grass_lots.clear()
 	for lot in positions.get(GameTypes.WorldObjectType.GRASS, []):
 		macro_state.grass_lots[lot] = true
+	_add_sown_grass(macro_state, occupied)
 	macro_state.vegetation_layout_ready = true
 	return positions
 
@@ -60,7 +61,8 @@ static func rebuild_from_function(
 	var lot_codes := PackedInt32Array()
 	for y in range(VegetationAtLotService.LOTS_PER_CELL):
 		for x in range(VegetationAtLotService.LOTS_PER_CELL):
-			if not occupied.has(Vector2i(x, y)):
+			# Erba seminata alla Fossa (2026-11-13): niente piante, sotto resta erba (_add_sown_grass).
+			if not occupied.has(Vector2i(x, y)) and not macro_state.sown_grass_lots.has(Vector2i(x, y)):
 				lot_codes.append(y * LOT_CODE_WIDTH + x)
 	var lots: Dictionary = VegetationAtLotService.vegetation_for_lots(profile, macro_cell.x, macro_cell.y, current_year, lot_codes)
 	for object_type in LAYOUT_TYPES:
@@ -70,6 +72,7 @@ static func rebuild_from_function(
 	macro_state.grass_lots.clear()
 	for code in lots["grass"]:
 		macro_state.grass_lots[_decode(code)] = true
+	_add_sown_grass(macro_state, occupied)
 	macro_state.vegetation_revision += 1
 	macro_state.vegetation_layout_ready = true
 	return read(macro_state, occupied, current_year, building_positions)
@@ -167,6 +170,18 @@ static func to_save_data(macro_state: MacroCellState) -> Dictionary:
 	for lot in macro_state.grass_lots.keys():
 		grass.append(_encode(lot))
 	data["grass"] = grass
+	# Erba seminata alla Fossa (2026-11-13): [codice, anno, ...].
+	var sown: Array = []
+	for lot in macro_state.sown_grass_lots.keys():
+		sown.append(_encode(lot))
+		sown.append(int(macro_state.sown_grass_lots[lot]))
+	data["sown_grass"] = sown
+	# Risorse seminate (2026-11-15): [codice, [nomi], ...].
+	var sown_resources: Array = []
+	for lot in macro_state.sown_lot_resources.keys():
+		sown_resources.append(_encode(lot))
+		sown_resources.append(macro_state.sown_lot_resources[lot])
+	data["sown_resources"] = sown_resources
 	data["checkpoint"] = macro_state.vegetation_layout_checkpoint
 	return data
 
@@ -185,6 +200,32 @@ static func load_save_data(macro_state: MacroCellState, data: Dictionary) -> voi
 	macro_state.grass_lots.clear()
 	for code in data.get("grass", []):
 		macro_state.grass_lots[_decode(int(code))] = true
+	macro_state.sown_grass_lots.clear()
+	var sown: Array = data.get("sown_grass", [])
+	for i in range(0, sown.size() - 1, 2):
+		macro_state.sown_grass_lots[_decode(int(sown[i]))] = int(sown[i + 1])
+	macro_state.sown_lot_resources.clear()
+	var sown_resources: Array = data.get("sown_resources", [])
+	for i in range(0, sown_resources.size() - 1, 2):
+		var names: Array = []
+		for resource_name in sown_resources[i + 1]:
+			names.append(String(resource_name))
+		macro_state.sown_lot_resources[_decode(int(sown_resources[i]))] = names
+	# Salvataggi prima del 2026-11-15: ogni lotto seminato era orzo.
+	for lot in macro_state.sown_grass_lots.keys():
+		if not macro_state.sown_lot_resources.has(lot):
+			macro_state.sown_lot_resources[lot] = ["wild_seeds"]
+
+
+# Erba seminata alla Fossa (2026-11-13, PitSowingService) nella disposizione appena rifatta. Un lotto ora occupato
+# (edificio, sentiero, roccia...) perde la semina per sempre.
+static func _add_sown_grass(macro_state: MacroCellState, occupied: Dictionary) -> void:
+	for lot in macro_state.sown_grass_lots.keys():
+		if occupied.has(lot):
+			macro_state.sown_grass_lots.erase(lot)
+			macro_state.sown_lot_resources.erase(lot)
+		else:
+			macro_state.grass_lots[lot] = true
 
 
 # --- Interni ---

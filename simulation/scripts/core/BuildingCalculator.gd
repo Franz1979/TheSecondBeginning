@@ -19,6 +19,7 @@ const BUILDING_FOLDER_CATEGORIES := {
 	"recreational": BuildingTypes.Category.RECREATIONAL,
 	"other": BuildingTypes.Category.OTHER,
 	"husbandry": BuildingTypes.Category.HUSBANDRY,
+	"agriculture": BuildingTypes.Category.AGRICULTURE,
 }
 
 # Cache in-memory (2026-09-19, richiesta utente — correzione prestazioni: get_building_rules è

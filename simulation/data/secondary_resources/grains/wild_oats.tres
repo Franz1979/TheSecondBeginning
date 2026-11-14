@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_wild_oats"]
+
+; Avena selvatica (2026-11-15, richiesta utente — ramo piante, cereali): infestante, mai nell'erba del mondo
+; (patch_probability 0). Spunta alla Fossa con il 40% (pit_weed_chance) quando lì nasce un altro cereale, poi si allarga
+; da sola (pit_sowing_units 500). Solo dopo Addomesticazione delle piante (prima "Risorsa sconosciuta"); estate, poco in
+; autunno; 5-10 once per microcella, nei vasi da semi; zuppa e animali (10 calorie).
+[resource]
+script = ExtResource("1_wild_oats")
+secondary_resource_name = "wild_oats"
+calories_per_unit = 0.0
+seasonal_availability_multiplier = Array[float]([0.0, 0.0, 1.0, 0.3])
+category = 6
+required_idea_id = "plant_domestication"
+generation_source = 1
+day_durability = 365
+space_per_unit = 0.5
+patch_probability = 0.0
+patch_capacity_min = 5
+patch_capacity_max = 10
+pit_sowing_units = 500
+pit_weed_chance = 0.4
+lot_source = 3
+stored_in_container = "seed_jar"
+animal_calories_per_unit = 5.0

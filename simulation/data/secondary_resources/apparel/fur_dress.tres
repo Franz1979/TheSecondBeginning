@@ -12,8 +12,8 @@ day_durability = 5000
 space_per_unit = 10.0
 recipe_inputs = {
 "fiber_rope": 2,
-"hide": 8,
-"sinew": 8
+"hide": 6,
+"sinew": 6
 }
 recipe_labor = 1000.0
 recipe_workstation_types = Array[String](["campfire", "clothing_hut"])

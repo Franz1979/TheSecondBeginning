@@ -36,6 +36,15 @@ static func log_wild_animal(text: String) -> void:
 	if SHOW_WILD_ANIMAL_LOGS:
 		print(text)
 
+# Righe di eventi di gioco che prima uscivano sempre (fughe, mangiatoie, addomesticazione, semina, case, edifici, pulizia
+# dei cantieri, produzione, magazzino, nascite e concepimenti, infezioni, influenza, celle scoperte, misure del
+# salvataggio): spente il 2026-11-14, richiesta utente. Passano tutte da print_event.
+const SHOW_GAME_EVENT_LOGS := false
+
+static func print_event(text: String) -> void:
+	if SHOW_GAME_EVENT_LOGS:
+		print(text)
+
 # Filtro dedicato per [VEG REFRESH TIMING]/[VEG REFRESH TRIGGER]/[DEBUG INDIVIDUI]/[DEBUG SPAZIO]/
 # [DEBUG CELLE VIVE] (GameScene._refresh_resource_visuals e affini) — diagnostica per la Proposta 2
 # (evitare di costruire MultiMesh per individui coperti da FoW pieno): serve a capire se il costo
@@ -349,7 +358,11 @@ const SHOW_PATHFINDING_LOGS := false
 # tempo medio per frame speso nel _process di TUTTI gli AnimalGroupRenderer, e di cui nel controllo
 # periodico di disagio (AnimalGroupRenderer._run_disturbance_check), con numero di renderer e individui.
 # Solo misura, nessun effetto sul comportamento.
-const SHOW_ANIMAL_PROCESS_TIMING := false
+const SHOW_ANIMAL_PROCESS_TIMING := true
+
+# HERD_HABIT — [HERD] (2026-11-14, mete abituali delle mandrie passo 1, TEMPORANEO): mete scelte (HerdHabitService),
+# partenza verso una meta, arrivo e sosta (AnimalGroupRenderer, "Mete abituali").
+const SHOW_HERD_HABIT_LOGS := true
 
 
 # SAFETY — [ZOMBIE GUARD] (TaskQueueService/HumanIndividualActionService/HumanIndividual),
@@ -440,6 +453,10 @@ const SHOW_WARDROBE_LOGS := false
 # d'incontro), nessun partner, inizio e fine della conversazione, chiusura senza effetti con il motivo. Acceso su
 # richiesta per le prime prove.
 const SHOW_TALK_LOGS := false
+
+# Ispirazione (2026-11-14, InspirationService): una riga [ISPIRAZIONE] per tiro (chiacchierata, lezione), idea nata o no,
+# partenza del daydream o idea persa.
+const SHOW_INSPIRATION_LOGS := false
 
 # Coesione (2026-10-14, VillageCohesionService): una riga [COESIONE] a ogni variazione — talk, idea, nuovi arrivati,
 # calo annuale — con valore prima e dopo. Acceso per le prime prove.

@@ -40,6 +40,8 @@ signal social_rite_effect_shown(global_pos: Vector2, sound_id: StringName)
 # Chiamata della Veglia delle stelle (2026-10-29, StarVigilService): richiamo della guida alla sua posizione
 # (AudioEventListener).
 signal star_vigil_called(global_pos: Vector2)
+# Grido di chi spinge una mandria verso le fosse (2026-11-14, PitDriveService.shout_sound_emitter).
+signal pit_drive_shouted(global_pos: Vector2)
 # Arrivo di un gruppo di animali selvatici in visita (2026-10-28, lupi L1), alla meta della visita: suono della specie
 # (AudioEventListener, il lupo ulula). Una volta per visita (WildAnimalVisit.arrival_announced).
 signal wild_animal_arrived(global_pos: Vector2, species: String)
@@ -870,6 +872,7 @@ func _ready() -> void:
 	HuntCallService.call_emitter = _on_hunt_call
 	# Veglia delle stelle (2026-10-29): richiamo della guida alla chiamata, icona e coro all'inizio.
 	StarVigilService.call_sound_emitter = _emit_star_vigil_called
+	PitDriveService.shout_sound_emitter = _emit_pit_drive_shouted
 	DomesticAnimalSlaughterService.kill_sound_emitter = _emit_domestic_animal_slaughtered
 	DomesticAnimalGuardService.bark_emitter = _emit_domestic_animal_alarmed
 	StarVigilService.start_effect_emitter = _spawn_social_rite_started_effect.bind(StarVigilService.RITE_ID)
@@ -905,7 +908,23 @@ func _ready() -> void:
 	building_info_panel.cancel_empty_pit_requested.connect(_on_cancel_empty_pit_requested)
 	building_info_panel.waste_closed_toggle_requested.connect(_on_waste_closed_toggle_requested)
 	building_info_panel.water_target_changed.connect(_on_water_target_changed)
+	building_info_panel.feeder_days_changed.connect(_on_feeder_days_changed)
+	building_info_panel.field_seed_level_changed.connect(_on_field_seed_level_changed)
+	building_info_panel.field_care_remedy_changed.connect(func(building: Building, remedy: int) -> void:
+		if building != null and FieldFertilityService.applies_to(building):
+			building.field_care_remedy = remedy
+			_refresh_selected_building_panel()
+	)
+	building_info_panel.field_care_threshold_changed.connect(func(building: Building, threshold: int) -> void:
+		if building != null and FieldFertilityService.applies_to(building):
+			building.field_care_threshold = threshold
+			_refresh_selected_building_panel()
+	)
 	building_info_panel.kept_species_changed.connect(_on_kept_species_changed)
+	building_info_panel.crop_species_changed.connect(_on_crop_species_changed)
+	building_info_panel.crop_auto_mode_changed.connect(_on_crop_auto_mode_changed)
+	building_info_panel.slaughter_above_changed.connect(_on_slaughter_above_changed)
+	building_info_panel.kept_animal_slaughter_toggled.connect(_on_kept_animal_slaughter_toggled)
 	building_info_panel.domestication_panel_requested.connect(func() -> void:
 		if DomesticationPanel.is_available(human_folk, game_data):
 			domestication_panel.open_dialog(human_folk, game_data)
@@ -1227,8 +1246,11 @@ func _process(delta: float) -> void:
 	# non solo del selezionato — smetteva di avanzare. game_delta serve ora al ciclo su
 	# active_individuals sotto, che deve girare indipendentemente da chi (se qualcuno) è selezionato.
 	var game_delta := clock.get_game_day_delta(delta)
+	# Piantine (2026-11-15): ridisegno dei soli terreni coltivati cambiati (nate, mature, mietute).
+	for crop_building in CultivationService.take_changed():
+		_refresh_building_marker(crop_building)
 	# Lacci (2026-11-09): passaggi delle mandrie nelle celle accese, una volta per ora di gioco.
-	SnareService.sample_hour(game_data, live_cells, clock.get_day_progress())
+	SnareService.sample_hour(game_data, live_cells, clock.get_day_progress(), human_individuals)
 
 	# TEMPORANEO (debug — vedi _debug_panel_refresh_timer sopra per il perché): refresh forzato del
 	# pannello individuo selezionato ogni DEBUG_PANEL_REFRESH_INTERVAL_SEC secondi REALI, con `delta`
@@ -2053,10 +2075,7 @@ func _debug_test_two_walk_task() -> void:
 # 10), sempre diagonale basso/destra) calcolata sotto con Vector2.from_angle(randf() * TAU), questa
 # costante resta solo la DISTANZA (invariata, ~14.1 = lunghezza del vecchio Vector2(10,10)).
 const _DEBUG_DAYDREAM_AROUND_DISTANCE: float = 14.1
-# Durata BASE (giorni di gioco) prima del moltiplicatore Era — valore di partenza ARBITRARIO
-# (2.0, richiesta utente), stesso trattamento "facilmente ritarabile" di ogni altra costante di
-# questo sistema (STAMINA_DRAIN_PER_MICROCELL, STAMINA_REGEN_PER_DAY, ecc.).
-const _DEBUG_DAYDREAM_THINK_BASE_DURATION: float = 2.0
+# Durata del Think: IdleTaskAssignmentService.think_duration_for (2026-11-14, stessa formula dello svago).
 # _DEBUG_DAYDREAM_LEAVE_DISTANCE RIMOSSA (2026-09-10) — la posizione di allontanamento dopo il
 # deposito è ora calcolata da UnloadAction.on_complete stesso (ramo THOUGHT, usando la propria
 # WALK_AWAY_DISTANCE, STESSO valore 5.0 di prima — vedi unload_action.gd), non più da questa
@@ -2095,7 +2114,7 @@ func _debug_test_daydream_task() -> void:
 	# valori già decisi in context — stesso principio già seguito da _assign_pickup_task per il
 	# proprio target).
 	var era_rules := EraCalculator.get_era_rules(game_data.current_era_name)
-	var think_duration: float = _DEBUG_DAYDREAM_THINK_BASE_DURATION * (era_rules.think_duration_multiplier if era_rules != null else 1.0)
+	var think_duration: float = IdleTaskAssignmentService.think_duration_for(individual, era_rules)
 
 	# TaskFactory.build_task (2026-09-10, STEP 5b) — SOSTITUISCE la costruzione manuale a 5 step di
 	# prima: "target_position" (Vector2, letto da WALK — stesso step_walk_to_position.tres già usato
@@ -3556,7 +3575,9 @@ func _on_toolkit_deposit_requested(building: Building, tool_name: String, from_o
 	# Attrezzo che nessuna ricetta dell'edificio usa (2026-10-08, BuildingToolkitService.is_accepted_tool): rifiuto col
 	# suo motivo, distinto da "non c'è posto".
 	if not BuildingToolkitService.is_accepted_tool(building, tool_name):
-		_report_command_rejection(null, tr("toolkit_reject_not_used").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
+		# Contenitore in un magazzino che non accetta il suo contenuto (2026-11-13, vasi da semi): motivo suo.
+		var reject_key := "toolkit_reject_container_category" if building.rules.toolkit_extra_tools.has(tool_name) else "toolkit_reject_not_used"
+		_report_command_rejection(null, tr(reject_key).format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
 		return
 	if not BuildingToolkitService.can_add(building, tool_name):
 		_report_command_rejection(null, tr("toolkit_reject_full").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
@@ -3579,6 +3600,10 @@ func _on_toolkit_deposit_requested(building: Building, tool_name: String, from_o
 # se il magazzino non lo accetta, resta nell'Attrezzeria e il giocatore viene avvisato.
 func _on_toolkit_withdraw_requested(building: Building, tool_name: String) -> void:
 	if building == null:
+		return
+	# Vaso con dentro dei semi (2026-11-13, StorageContainerService): non si toglie finché le misure non ci starebbero.
+	if StorageContainerService.blocks_removal(building, tool_name):
+		_report_command_rejection(null, tr("toolkit_reject_container_in_use").format({"tool": IconRegistry.get_resource_display_name(tool_name)}))
 		return
 	# Il pezzo meno usato (2026-10-04): l'edificio continua a consumare quello già iniziato.
 	var instance := BuildingToolkitService.take_least_used_unit(building, tool_name)
@@ -3973,7 +3998,7 @@ func _enter_slaughter_pick_mode(animal: DomesticAnimal) -> void:
 		_forget_job_board_wait(job_keys)
 		if not selected_animal.is_empty():
 			_refresh_animal_panel()
-	_enter_worker_pick_mode(tr("animal_slaughter_banner_text").format({"species": tr("animal_species_%s" % animal.species)}), on_pick)
+	_enter_worker_pick_mode(tr("animal_slaughter_banner_text").format({"species": KeptAnimalService.display_name(animal)}), on_pick)
 
 
 func _on_animal_slaughter_cancel_requested() -> void:
@@ -3985,6 +4010,7 @@ func _on_animal_slaughter_cancel_requested() -> void:
 # Toglie l'ordine: chi lo stava macellando smette e torna libero.
 func _cancel_animal_slaughter(animal: DomesticAnimal) -> void:
 	animal.slaughter_requested = false
+	animal.slaughter_by_wm = false
 	var job_keys: Array[String] = [SlaughterJobProvider.job_key(animal.id)]
 	_forget_job_board_wait(job_keys)
 	_close_slaughter_tasks(animal, false)
@@ -5813,6 +5839,16 @@ func _on_rock_quarried(macro_coords: Vector2i, rock_position: Vector2i) -> void:
 # Con CATEGORY/ALL _assign_pickup_task vuole comunque un resource_name (TaskFactory lo richiede): si passa la
 # prima risorsa del dialog di quella sorgente e categoria (o la prima della sorgente), che PickUpAction non usa.
 func _on_pickup_choice_made(kind: int, category: int, resource_name: String, quantity: int, repeat: bool, source_kind: int) -> void:
+	# Semi senza vasi (2026-11-13, richiesta utente): niente raccolta a mano né di zona se nessun magazzino ha posto nei
+	# vasi da semi montati (StorageContainerService), con il motivo.
+	if kind == PickUpAction.CriterionKind.NAME and StorageContainerService.is_container_resource(resource_name) 			and not StorageContainerService.village_has_room(resource_name):
+		_pickup_dialog_work_area_workers = []
+		# X rossa sul punto della raccolta (2026-11-14, richiesta utente), come gli altri rifiuti dei comandi.
+		var rejected_entry := _find_pickup_pending_entry(source_kind, -1, resource_name)
+		if not rejected_entry.is_empty() and live_cells.has(rejected_entry["macro_coords"]):
+			_spawn_command_icon_at_microcell(live_cells[rejected_entry["macro_coords"]], rejected_entry["position"], "task_rejected")
+		_report_command_rejection(null, StorageContainerService.no_room_reason(resource_name))
+		return
 	if not _pickup_dialog_work_area_workers.is_empty():
 		var workers := _pickup_dialog_work_area_workers
 		_pickup_dialog_work_area_workers = []
@@ -5883,7 +5919,7 @@ func _find_pickup_pending_entry(source_kind: int, category: int, resource_name: 
 # TREE_INDIVIDUAL con risorse che invece lo richiedono, quindi questo resta un elenco a parte,
 # consultato dai blocchi per-lot_source di _resolve_pickup_candidates con `resource_name in
 # REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES` invece di un terzo parametro hardcoded per chiamata.
-const REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES: Array[String] = ["eggs", "mushroom", "wild_vegetables", "medicinal_herbs"]
+const REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES: Array[String] = ["eggs", "mushroom", "wild_vegetables", "medicinal_herbs", "wild_seeds", "wild_wheat", "wild_millet", "wild_oats", "wild_flax"]
 
 # `include_locked` (2026-10-03, richiesta utente — "Risorsa sconosciuta"): solo l'ispezione microcella lo passa
 # true. Una risorsa bloccata entra allora come candidato marcato "locked" (quantità 0), purché sia davvero presente
@@ -7258,6 +7294,31 @@ func _on_butcher_helpers_requested(butcher: HumanIndividual, request: Dictionary
 	_apply_effects(effects)
 
 
+# Voci della campanella sulla cura dei campi (2026-11-15, rifiniture — FieldFertilityService): "<campo>: a riposo
+# quest'anno (maggese)" e "<campo>: rizollatura, N lotti su M da fare"; centrano sul campo e spariscono da sole a
+# maggese finito o rizollature finite/annullate (la lista si ricostruisce ogni secondo).
+func _collect_field_care_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	if macro_world == null:
+		return entries
+	for building in macro_world.buildings:
+		if building.is_demolished or not FieldFertilityService.applies_to(building):
+			continue
+		var text := ""
+		if FieldFertilityService.is_resting(building):
+			text = tr("pending_field_resting").format({"building": _building_display_name(building)})
+		elif FieldFertilityService.retill_pending(building) > 0:
+			text = tr("pending_field_retill").format({"building": _building_display_name(building),
+				"left": FieldFertilityService.retill_pending(building), "total": CultivationService.lots(building).size()})
+		if text == "":
+			continue
+		entries.append(_pending_entry("field_care:%d" % building.id, text, {
+			"kind": "building", "id": building.id, "macro": Vector2i(building.macro_x, building.macro_y),
+			"sort": float(building.id), "name": text,
+		}))
+	return entries
+
+
 # Voci "<edificio>: danneggiato" della campanella (2026-10-10): una per edificio con Building.is_damaged, centra
 # sull'edificio. Sparisce da sola quando l'Integrità risale al 30% o l'edificio non c'è più (la lista è ricostruita ogni
 # secondo); resta anche durante la riparazione.
@@ -8505,18 +8566,21 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 	# Pipottini senza vestito (2026-10-11, vestiario), esclusi i neonati.
 	entries.append_array(_collect_naked_entries())
 	# Ordini del magazzino bloccati (2026-10-11): nessuno ha l'attrezzo o nessuna zona valida.
-	entries.append_array(WarehouseManagerService.collect_blocked_entries(_game_context()))
+	entries.append_array(WarehouseManagerService.collect_blocked_entries(_game_context(), board_jobs))
 	# Essiccatoio del magazzino (2026-10-11): manca l'ingrediente, essiccatoio pieno o assente.
 	entries.append_array(WarehouseManagerService.collect_dry_entries(game_data))
 	entries.append_array(WarehouseManagerService.collect_toolkit_entries(game_data))
 	# Giare che mancano per le tettoie dell'acqua (2026-11-07).
 	entries.append_array(WarehouseManagerService.collect_water_entries(game_data))
+	# Mangiatoie senza cibo da ricevere (2026-11-14).
+	entries.append_array(WarehouseManagerService.collect_feeder_entries(_game_context()))
 	# Inventario del magazzino scaduto da più di un'ora e nessuno che lo fa (2026-10-11).
 	entries.append_array(WarehouseManagerService.collect_inventory_entries(_game_context(), _job_board_now()))
 	# Ordini di caccia del cassetto senza prede (2026-10-09).
 	entries.append_array(HuntOrderService.collect_no_prey_entries(_game_context(), _job_board_now()))
 	# Edifici danneggiati (2026-10-10, Building.is_damaged).
 	entries.append_array(_collect_damaged_building_entries())
+	entries.append_array(_collect_field_care_entries())
 	# Materiali che nessuno riesce a portare (2026-10-16, MaterialSupplyService.get_materials_nobody_can_carry).
 	entries.append_array(_collect_too_heavy_material_entries())
 	# Trappole che nessuno riesce a portare alla zona (2026-11-07).
@@ -8598,6 +8662,8 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 # Giro "al secondo" della simulazione (GameSimulation.tick_second, 2026-10-17, refactoring GameScene blocco 3): gira dentro
 # _refresh_pending_entries, quindi ogni secondo E a ogni altro refresh di "In sospeso" (comportamento di sempre). La
 # raccolta dei lavori della bacheca resta in _refresh_pending_entries, mescolata alle righe del cassetto.
+
+
 func _tick_simulation_second() -> void:
 	var effects := GameEffects.new()
 	GameSimulation.tick_second(_game_context(), _job_board_now(), effects)
@@ -8986,7 +9052,47 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _trap_job_release,
 		})
+		# Coltivazione (2026-11-15): Semina dell'orto delle prove e dei campi, vedi CultivationJobProvider.
+		_job_board_provider_list.append({
+			"name": "cultivate",
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return CultivationJobProvider.collect(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return CultivationJobProvider.rejection(_game_context(), worker, job),
+			"assign": _assign_cultivation_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return CultivationJobProvider.workers(_game_context(), job),
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": true, "cancel_tooltip": ""},
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _cultivation_job_release,
+		})
 	return _job_board_provider_list
+
+
+# Semina o Mietitura presa dalla lista (2026-11-15): un solo lavoratore per lotto; l'attrezzo (bastone o falcetto) da
+# prendere in deposito, se serve.
+func _assign_cultivation_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var ctx := _game_context()
+	if not CultivationJobProvider.workers(ctx, job).is_empty():
+		return
+	var task := CultivationJobProvider.build_task(ctx, worker, job.get("target"), CultivationJobProvider.job_lot(job))
+	if task == null:
+		return
+	# Attrezzi del capanno (2026-11-15, passo 2c): chi usa quelli del capanno non va a prenderne in deposito.
+	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, CultivationJobProvider.task_tools(task, String(job.get("job_type", ""))))
+	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
+		return
+	if not fetch_plan.is_empty():
+		_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
+# Rimetti in coda / Blocca: semina o mietitura si ferma (il lavoro fatto resta sul terreno, i semi nello zaino tornano al
+# magazzino).
+func _cultivation_job_release(job: Dictionary) -> void:
+	for member in CultivationJobProvider.workers(_game_context(), job):
+		if CultivationJobProvider.is_cultivation_task(member.current_task):
+			member.skip_job_board_once = true
+			_stop_member_task(member)
 
 
 # Piazza trappola presa dalla lista (2026-11-07): un solo lavoratore per zona e trappola.
@@ -9017,7 +9123,8 @@ func _assign_trap_job(worker: HumanIndividual, job: Dictionary) -> void:
 # Rimetti in coda / Blocca: il lavoro si ferma (una trappola già nello zaino torna al magazzino come carico orfano).
 func _trap_job_release(job: Dictionary) -> void:
 	for member in TrapJobProvider.workers(_game_context(), job):
-		if TrapService.is_place_task(member.current_task) or TrapService.is_empty_task(member.current_task):
+		if TrapService.is_place_task(member.current_task) or TrapService.is_empty_task(member.current_task) \
+				or TrapJobProvider.is_drive_task(member.current_task):
 			member.skip_job_board_once = true
 			_stop_member_task(member)
 
@@ -9273,6 +9380,14 @@ func _emit_domestic_animal_alarmed(animal: DomesticAnimal) -> void:
 	var global_pos := DomesticAnimalBodyService.get_global_position(animal, _domestic_animal_renderers)
 	if global_pos != Vector2.ZERO:
 		domestic_animal_alarmed.emit(global_pos, animal.species)
+
+
+# Grido di chi spinge una mandria verso le fosse, alla sua posizione (solo se la sua macrocella è attiva).
+func _emit_pit_drive_shouted(member: HumanIndividual) -> void:
+	if member == null or not live_cells.has(member.home_macro_coords):
+		return
+	var cell_container: Node2D = live_cells[member.home_macro_coords].container
+	pit_drive_shouted.emit(cell_container.to_global(member.position * MicroCellRenderer.CELL_SIZE))
 
 
 # Richiamo della guida della Veglia delle stelle alla sua posizione (solo se la sua macrocella è attiva).
@@ -10109,25 +10224,23 @@ func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
 func _sync_drawer_cut_available() -> void:
 	if _task_assignment_panel == null or not is_instance_valid(_task_assignment_panel):
 		return
+	# Un solo contesto e un solo calcolo del motivo attrezzi per tipo (2026-11-14: prima due giri per tipo, ogni secondo).
+	var ctx := _game_context()
 	for order_type in [DrawerOrderService.TYPE_CUT, DrawerOrderService.TYPE_QUARRY, DrawerOrderService.TYPE_GATHER, DrawerOrderService.TYPE_HUNT, DrawerOrderService.TYPE_FISH]:
-		var is_quarry: bool = order_type == DrawerOrderService.TYPE_QUARRY
 		# Caccia (2026-10-09): una zona con la caccia attiva e qualcuno in età da caccia con il coltello (cintura o zaino).
 		# Pesca (2026-10-31): una zona con la pesca e qualcuno con la lenza (addosso o in deposito).
-		if order_type == DrawerOrderService.TYPE_HUNT or order_type == DrawerOrderService.TYPE_FISH:
-			if DrawerOrderService.zone_areas(game_data, order_type).is_empty():
-				_task_assignment_panel.set_zone_order_available(
-					order_type, false, tr("drawer_fish_no_zone" if order_type == DrawerOrderService.TYPE_FISH else "drawer_hunt_no_zone")
-				)
-			elif _zone_order_tool_blocked_reason(order_type) != "":
-				_task_assignment_panel.set_zone_order_available(order_type, false, _zone_order_tool_blocked_reason(order_type))
-			else:
-				_task_assignment_panel.set_zone_order_available(order_type, true)
-			continue
 		if DrawerOrderService.zone_areas(game_data, order_type).is_empty():
-			var no_zone_key := "drawer_gather_no_zone" if order_type == DrawerOrderService.TYPE_GATHER else ("drawer_quarry_no_zone" if is_quarry else "drawer_cut_no_zone")
+			var no_zone_key := "drawer_cut_no_zone"
+			match order_type:
+				DrawerOrderService.TYPE_HUNT: no_zone_key = "drawer_hunt_no_zone"
+				DrawerOrderService.TYPE_FISH: no_zone_key = "drawer_fish_no_zone"
+				DrawerOrderService.TYPE_GATHER: no_zone_key = "drawer_gather_no_zone"
+				DrawerOrderService.TYPE_QUARRY: no_zone_key = "drawer_quarry_no_zone"
 			_task_assignment_panel.set_zone_order_available(order_type, false, tr(no_zone_key))
-		elif _zone_order_tool_blocked_reason(order_type) != "":
-			_task_assignment_panel.set_zone_order_available(order_type, false, _zone_order_tool_blocked_reason(order_type))
+			continue
+		var tool_reason := ToolFetchService.blocked_reason(ctx, DrawerOrderService.tool_categories(order_type), order_type)
+		if tool_reason != "":
+			_task_assignment_panel.set_zone_order_available(order_type, false, tool_reason)
 		else:
 			_task_assignment_panel.set_zone_order_available(order_type, true)
 	# Pulsante della destinazione dello strato "Caccia": aggiornato anche con la barra dei comandi nascosta.
@@ -10897,7 +11010,7 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		target.skill_leadership, target.skill_builder, target.skill_management,
 		target.skill_transporter, target.skill_gathering, target.skill_cognition,
 		target.skill_hunting, target.skill_crafting, target.skill_ritual, target.skill_social, target.skill_medicine,
-		target.skill_fishing,
+		target.skill_fishing, target.skill_farming,
 		queued_task_descriptions
 	)
 	# Titolo header consolidato (2026-09-13, richiesta utente — "perché la riga del center è
@@ -11096,7 +11209,7 @@ func _on_game_info_tab_changed(tab: int) -> void:
 	if tab == GameInfoTabs.TAB_DEBUG:
 		task_debug_panel.refresh()
 	elif tab == GameInfoTabs.TAB_ANIMALS:
-		domestic_animals_panel.refresh(game_data)
+		domestic_animals_panel.refresh(game_data, macro_world)
 	# Lista della popolazione (2026-10-09): non si aggiorna a scheda nascosta, quindi tornandoci si ricostruisce.
 	elif tab == GameInfoTabs.TAB_POPULATION:
 		_refresh_population_panel()
@@ -11300,6 +11413,7 @@ func _on_idea_completed(idea_id: String, granting_hint: DiscoveryHintRules = nul
 	for cell: LiveMacroCell in live_cells.values():
 		cell.fog_of_war_renderer.refresh_memory_days(human_folk)
 	var hints := _take_discovery_hints(DiscoveryTypes.TriggerType.IDEA_COMPLETED, {"idea_id": idea_id})
+	_release_waiting_grants()
 	_pending_discovery_close_actions[DiscoveryTypes.CloseAction.OPEN_TECH_TREE] = true
 	var completed_idea := IdeaCalculator.get_idea(idea_id)
 	var display_name: String = tr(completed_idea.display_name) if completed_idea != null else idea_id
@@ -11377,12 +11491,51 @@ func _apply_pending_discovery_grants() -> void:
 	while not _pending_discovery_grants.is_empty():
 		var granting_hint: DiscoveryHintRules = _pending_discovery_grants.pop_front()
 		var idea_id := granting_hint.grant_idea_id
+		# Regalo con prerequisiti mancanti (2026-11-13, richiesta utente): resta guadagnato in attesa
+		# (Folk.earned_idea_grants) e arriva da solo col completamento dell'ultimo prerequisito (_on_idea_completed).
+		var granted_idea := IdeaCalculator.get_idea(idea_id)
+		var missing := IdeaProgressService.missing_prerequisites(human_folk, granted_idea)
+		if not missing.is_empty() and not human_folk.completed_ideas.has(idea_id):
+			if not human_folk.earned_idea_grants.has(idea_id):
+				human_folk.earned_idea_grants[idea_id] = granting_hint.id
+				_queue_waiting_grant_section(granted_idea, missing)
+			continue
+		human_folk.earned_idea_grants.erase(idea_id)
 		if not IdeaProgressService.grant_idea(human_folk, idea_id):
 			continue
 		_refresh_building_slots_buildable()
 		_on_idea_completed(idea_id, granting_hint)
 		if tech_tree_panel.visible:
 			tech_tree_panel.refresh_content()
+
+
+# Regali in attesa (2026-11-13, Folk.earned_idea_grants) i cui prerequisiti sono ora tutti completati: tornano tra i
+# regali da applicare, con la scoperta che li aveva guadagnati (i suoi testi). Applicati da _apply_pending_discovery_grants.
+func _release_waiting_grants() -> void:
+	for waiting_id in human_folk.earned_idea_grants.keys():
+		var idea := IdeaCalculator.get_idea(String(waiting_id))
+		if idea == null or not IdeaProgressService.missing_prerequisites(human_folk, idea).is_empty():
+			continue
+		var hint := DiscoveryHintService.find_by_id(String(human_folk.earned_idea_grants[waiting_id]))
+		if hint == null or _pending_discovery_grants.has(hint):
+			continue
+		_pending_discovery_grants.append(hint)
+		_queue_discovery({})
+
+
+# Sezione del popup per un regalo rimasto in attesa: cosa manca ancora.
+func _queue_waiting_grant_section(idea: Idea, missing: Array[String]) -> void:
+	if not UserOptions.show_notification_popups or idea == null:
+		return
+	var names: Array[String] = []
+	for prerequisite_id in missing:
+		var prerequisite := IdeaCalculator.get_idea(prerequisite_id)
+		names.append("«%s»" % (tr(prerequisite.display_name) if prerequisite != null else prerequisite_id))
+	_queue_discovery({
+		"trigger": DiscoveryTypes.TriggerType.IDEA_COMPLETED,
+		"title": tr("discovery_grant_waiting_title").format({"idea": tr(idea.display_name)}),
+		"lines": [tr("discovery_grant_waiting_line").format({"idea": tr(idea.display_name), "missing": ", ".join(names)})],
+	})
 
 
 func _get_discovery_hint_paragraphs(hint: DiscoveryHintRules) -> Array[String]:
@@ -11479,7 +11632,7 @@ func _on_random_event_applied(event_id: String, popup_text: String) -> void:
 # Essiccazione completata (2026-10-03, essiccazione passo 5 — GameSettings.auto_progress_completed): popup con edificio,
 # prodotto e quantità, nomi dalle traduzioni esistenti. Stesso gate degli altri popup.
 func _on_auto_progress_completed(building: Building, _input_name: String, product_name: String, quantity: int) -> void:
-	if building == null or not UserOptions.show_notification_popups:
+	if building == null or not UserOptions.show_notification_popups or _warehouse_manager_active():
 		return
 	notification_popup.enqueue(
 		NotificationTypes.NotificationPopupType.AUTO_PROGRESS_COMPLETED,
@@ -11495,7 +11648,7 @@ func _on_auto_progress_completed(building: Building, _input_name: String, produc
 # processing_station_full): la risorsa di una macellazione ripiega sul magazzino. Nome dell'edificio della destinazione
 # dalle traduzioni. Popup "alert", stesso gate degli altri.
 func _on_processing_station_full(_individual: HumanIndividual, resource_name: String, destination: String) -> void:
-	if not UserOptions.show_notification_popups:
+	if not UserOptions.show_notification_popups or _warehouse_manager_active():
 		return
 	var rules := BuildingCalculator.get_building_rules(String(ButcherDestinationService.BUILDING_TYPES.get(destination, "")))
 	notification_popup.enqueue(
@@ -11518,8 +11671,21 @@ func _on_influence_level_changed(building: Building, influence_type: int, old_ra
 	)
 
 
+# Oltre BODY_RESERVE_POPUP_MAX_POPULATION abitanti (2026-11-14, richiesta utente) l'avviso "ha finito le provviste" non
+# esce più: con tanta gente diventa rumore.
+const BODY_RESERVE_POPUP_MAX_POPULATION := 30
+# Avvisi ridotti (2026-11-14, richiesta utente): risorsa deperita (zaino ed edifici) spenta oltre questi abitanti; prodotto
+# pronto, postazione piena e cantiere senza materiale spenti col gestore del magazzino (_warehouse_manager_active), che
+# se ne occupa lui; il cantiere resta comunque nella campanella.
+const DECAY_POPUP_MAX_POPULATION := 20
+
+
+func _warehouse_manager_active() -> bool:
+	return WarehouseManagerService.is_enabled(_game_context())
+
+
 func _on_individual_started_body_reserve(individual: HumanIndividual) -> void:
-	if not UserOptions.show_notification_popups:
+	if not UserOptions.show_notification_popups or human_individuals.size() > BODY_RESERVE_POPUP_MAX_POPULATION:
 		return
 	notification_popup.enqueue(
 		NotificationTypes.NotificationPopupType.BODY_RESERVE_IN_USE,
@@ -11569,7 +11735,7 @@ func _on_health_condition_changed(individual: HumanIndividual, condition_id: Str
 # usata dal riquadro zaino/griglia storage magazzino (coerenza tra ogni punto che mostra il nome di
 # una risorsa).
 func _on_individual_resource_decayed(individual: HumanIndividual, resource_name: String, quantity: int) -> void:
-	if not UserOptions.show_notification_popups:
+	if not UserOptions.show_notification_popups or human_individuals.size() > DECAY_POPUP_MAX_POPULATION:
 		return
 	notification_popup.enqueue(
 		NotificationTypes.NotificationPopupType.RESOURCE_DECAYED,
@@ -11604,7 +11770,7 @@ func _on_individual_apparel_worn_out(individual: HumanIndividual, resource_name:
 # risolte da BuildingCalculator) — fallback su building_type_name grezzo, stesso trattamento già in
 # uso altrove nel progetto per lo stesso caso limite (es. GameScene._select_building).
 func _on_building_resources_decayed(events: Array) -> void:
-	if not UserOptions.show_notification_popups:
+	if not UserOptions.show_notification_popups or human_individuals.size() > DECAY_POPUP_MAX_POPULATION:
 		return
 	for event in events:
 		var building: Building = event["building"]
@@ -11648,7 +11814,7 @@ func _release_too_heavy_job(individual: HumanIndividual, building: Building) -> 
 # handler notifica qui). Testo GENERICO (richiesta esplicita punto 2: "non specifica su quantità/
 # materiale") — stesso fallback building_display_name di _on_building_resources_decayed sopra.
 func _on_building_material_blocked(building: Building) -> void:
-	if not UserOptions.show_notification_popups:
+	if not UserOptions.show_notification_popups or _warehouse_manager_active():
 		return
 	var building_display_name: String = (
 		tr(building.rules.building_name) if building.rules != null else building.building_type_name
@@ -13040,19 +13206,7 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 	_veg_timings_ms["0b_lot_capacity_refresh"] = _lot_capacity_ms
 	var _veg_refresh_start_usec := Time.get_ticks_usec()
 
-	var occupied: Dictionary = {}
-	# Rocce esaurite (2026-10-08, RockStoneService.is_depleted): non più vietate alla vegetazione, così col tempo ci
-	# nascono piante nuove (alberi/arbusti già nati restano nei loro lotti). Restano in stone_positions per le quote.
-	var depleted_rocks := RockStoneService.get_depleted_positions(cell.macro_state)
-	for pos in cell.macro_state.stone_positions:
-		if not depleted_rocks.has(pos):
-			occupied[pos] = true
-	for pos in cell.river_positions:
-		occupied[pos] = true
-	for pos in cell.stream_positions:
-		occupied[pos] = true
-	for pos in cell.macro_state.clay_positions:
-		occupied[pos] = true
+	var occupied: Dictionary = _ground_blocked_lots(cell)
 	# Le microcelle edificate vanno escluse esattamente come stone/river — GRASS si affida solo a
 	# `occupied` (nessuna memoria persistita, vedi VegetationPositionService), mentre per TREE/SHRUB
 	# questo copre solo i lotti MAI ancora rivendicati (un lotto già noto va bloccato a parte, vedi
@@ -13087,7 +13241,8 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 		# Né a un edificio nuovo (2026-10-28, maceria dei ceppi: ~600 ms), stesso motivo.
 		# Né a un giorno nuovo (2026-11-08, ridisegno del giorno 181: ~9.500 piante ricalcolate, quasi tutte identiche); se
 		# cambia l'anno il renderer svuota da sé (_check_geometry_cache_globals).
-		if cell.renderer != null and reason != "taglio" and reason != "cantiere ripulito" and reason != "edificio" and reason != "giorno nuovo":
+		if cell.renderer != null and reason != "taglio" and reason != "cantiere ripulito" and reason != "edificio" and reason != "giorno nuovo" \
+				and reason != SOWING_REFRESH_REASON:
 			cell.renderer.clear_vegetation_geometry_cache()
 		# Progetto B fase 1 (2026-10-24): il generatore solo quando i numeri della vegetazione possono essere cambiati
 		# (prima attivazione, checkpoint) o la disposizione non c'è ancora; altrimenti la disposizione tenuta.
@@ -13400,19 +13555,88 @@ func _filter_vegetation_positions_by_visibility(cell: LiveMacroCell, positions: 
 		return positions
 	var visible: Dictionary = visible_positions if visible_positions != null else cell.fog_of_war_renderer.compute_visible_positions(game_data.get_absolute_day())
 	var filtered: Dictionary = {}
-	var visible_by_zone: PackedInt32Array = _visible_count_by_zone(visible) if tree_group_starts is Array or shrub_group_starts is Array else PackedInt32Array()
+	# Per zone (2026-11-14, scattini camminando: ~6-9 ms a ogni ridisegno su una cella fitta): con gli stessi elenchi del
+	# filtro precedente si rifanno solo le zone con microcelle entrate o uscite di vista, le altre si copiano. Stesso
+	# risultato del filtro completo.
+	var changed_zones: Variant = _visibility_filter_changed_zones(cell, positions)
+	var memo: Dictionary = cell.visibility_filter_memo
+	var visible_by_zone: PackedInt32Array = PackedInt32Array()
+	if changed_zones == null and (tree_group_starts is Array or shrub_group_starts is Array):
+		visible_by_zone = _visible_count_by_zone(visible)
 	for object_type in positions:
 		var kept: Array = []
-		if object_type == GameTypes.WorldObjectType.TREE and tree_group_starts is Array:
-			_append_zone_group_slices(positions[object_type], visible, visible_by_zone, kept, tree_group_starts)
-		elif object_type == GameTypes.WorldObjectType.SHRUB and shrub_group_starts is Array:
-			_append_zone_group_slices(positions[object_type], visible, visible_by_zone, kept, shrub_group_starts)
+		var starts: Variant = null
+		if object_type == GameTypes.WorldObjectType.TREE:
+			starts = tree_group_starts
+		elif object_type == GameTypes.WorldObjectType.SHRUB:
+			starts = shrub_group_starts
+		if starts is Array and changed_zones != null and (memo["starts"] as Dictionary).has(object_type):
+			_append_changed_zone_slices(positions[object_type], visible, changed_zones, memo["result"][object_type], memo["starts"][object_type], kept, starts)
+		elif starts is Array:
+			_append_zone_group_slices(positions[object_type], visible, visible_by_zone, kept, starts)
 		else:
 			for entry in positions[object_type]:
 				if visible.has(Vector2i(entry.x, entry.y)):
 					kept.append(entry)
 		filtered[object_type] = kept
+	_remember_visibility_filter(cell, positions, filtered, tree_group_starts, shrub_group_starts)
 	return filtered
+
+
+# Zone (Dictionary zona -> true) con microcelle entrate o uscite di vista dall'ultimo filtro di questa cella; null se il
+# filtro precedente non si può riusare (nessuno, elenchi sorgente diversi, cambiamenti della nebbia non ricostruibili).
+func _visibility_filter_changed_zones(cell: LiveMacroCell, positions: Dictionary) -> Variant:
+	var memo: Dictionary = cell.visibility_filter_memo
+	if memo.is_empty() or (memo["sources"] as Dictionary).size() != positions.size():
+		return null
+	for object_type in positions:
+		if not memo["sources"].has(object_type) or not is_same(memo["sources"][object_type], positions[object_type]) \
+				or int(memo["sizes"][object_type]) != (positions[object_type] as Array).size():
+			return null
+	var changes: Variant = cell.fog_of_war_renderer.get_visible_changes_since(int(memo["epoch"]), int(memo["version"]))
+	if changes == null:
+		return null
+	var zones: Dictionary = {}
+	for list in [changes["entered"], changes["exited"]]:
+		for pos in list:
+			zones[MicroCellRenderer.vegetation_zone_of(pos.x, pos.y)] = true
+	return zones
+
+
+# Come _append_zone_group_slices, ma le zone non in `changed_zones` si copiano dal filtro precedente (`previous_kept`,
+# `previous_starts`): stessi elenchi sorgente e stessa visibilità lì, quindi stessa fetta.
+func _append_changed_zone_slices(source: Array, visible: Dictionary, changed_zones: Dictionary, previous_kept: Array, previous_starts: Array, kept: Array, starts: Array) -> void:
+	var bounds := _zone_bounds(source)
+	for zone in range(MicroCellRenderer.VEGETATION_ZONE_COUNT):
+		starts.append(kept.size())
+		if not changed_zones.has(zone):
+			kept.append_array(previous_kept.slice(previous_starts[zone], previous_starts[zone + 1]))
+			continue
+		for entry in source.slice(bounds[zone], bounds[zone + 1]):
+			if visible.has(Vector2i(entry.x, entry.y)):
+				kept.append(entry)
+	starts.append(kept.size())
+
+
+# Filtro appena fatto, per il prossimo (_visibility_filter_changed_zones). Copie di risultato e inizi: chi li riceve
+# (renderer, taglio per lotto) può modificarli.
+func _remember_visibility_filter(cell: LiveMacroCell, positions: Dictionary, filtered: Dictionary, tree_group_starts: Variant, shrub_group_starts: Variant) -> void:
+	var sources: Dictionary = {}
+	var sizes: Dictionary = {}
+	var result: Dictionary = {}
+	var starts: Dictionary = {}
+	for object_type in positions:
+		sources[object_type] = positions[object_type]
+		sizes[object_type] = (positions[object_type] as Array).size()
+		result[object_type] = (filtered[object_type] as Array).duplicate()
+	if tree_group_starts is Array:
+		starts[GameTypes.WorldObjectType.TREE] = (tree_group_starts as Array).duplicate()
+	if shrub_group_starts is Array:
+		starts[GameTypes.WorldObjectType.SHRUB] = (shrub_group_starts as Array).duplicate()
+	cell.visibility_filter_memo = {
+		"sources": sources, "sizes": sizes, "result": result, "starts": starts,
+		"epoch": cell.fog_of_war_renderer.get_newly_visible_epoch(), "version": cell.fog_of_war_renderer.visible_set_version,
+	}
 
 
 # Filtro di un elenco ordinato per zona con gli inizi dei gruppi per zona (2026-10-24, progetto B fase 2b): `kept` riceve
@@ -13797,6 +14021,8 @@ func _refresh_animal_individuals(cell: LiveMacroCell, herd_walks: bool = false) 
 			if arrival_point != null:
 				herd_renderer.place_herd_near_border(arrival_point)
 		herd_renderer.set_herd_exit_side(WildFaunaService.herd_exit_side(macro_world, game_data, String(species), this_cell))
+		# Mete abituali (2026-11-14, passo 1): scelte una volta per renderer, qui dove l'erba della cella è già disposta.
+		HerdHabitService.ensure_goals(macro_world, game_data, cell, herd_renderer)
 
 
 # La mandria non è più in questa cella: gli animali vanno al bordo a piedi, e il renderer rimasto vuoto si toglie al giro
@@ -14563,6 +14789,18 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 			return "rabbit_hutch"
 		&"build_chicken_coop":
 			return "chicken_coop"
+		# Piccolo granaio (2026-11-15) — azione cablata in BuildBar._ready.
+		&"build_small_granary":
+			return "small_granary"
+		# Capanna del contadino (2026-11-15) — azione cablata in BuildBar._ready.
+		&"build_farmer_hut":
+			return "farmer_hut"
+		# Orto delle prove (2026-11-15) — azione cablata in BuildBar._ready.
+		&"build_trial_garden":
+			return "trial_garden"
+		# Campo con capanno (2026-11-15) — azione cablata in BuildBar._ready.
+		&"build_field":
+			return "field"
 		_:
 			return ""
 
@@ -14823,6 +15061,7 @@ func _on_demolition_completed(building: Building, demolisher: Variant, context: 
 	var effects := GameEffects.new()
 	BuildingLifecycleService.complete_demolition(_game_context(), building, demolisher as HumanIndividual, context, effects)
 	_apply_effects(effects)
+	_refresh_warehouse_rules_if_changed()
 
 
 # ============================================================================================
@@ -14931,9 +15170,63 @@ func _on_water_target_changed(building: Building, level: int) -> void:
 	_refresh_selected_building_panel()
 
 
+# Giorni di cibo della singola mangiatoia (2026-11-14, FeederStockService.days_for): -1 = regola generale, 0 = esclusa.
+# Livello dei semi nel capanno del campo (2026-11-15, passo 3a, FieldSeedStoreService).
+func _on_field_seed_level_changed(building: Building, level: int) -> void:
+	if building == null or not FieldSeedStoreService.is_seed_store(building):
+		return
+	building.field_seed_level = level
+	_refresh_selected_building_panel()
+
+
+func _on_feeder_days_changed(building: Building, days: int) -> void:
+	if building == null or not AnimalFeederService.has_feeder(building):
+		return
+	building.feeder_days_override = days
+	_refresh_selected_building_panel()
+
+
+# 🔪 sulla riga di un animale in tettoia (2026-11-14, pezzo 3): ordina la macellazione (come il cane: in lista dei lavori,
+# o scelta di chi la fa se la lista è spenta) o la annulla se è già ordinata o qualcuno ci sta andando.
+func _on_kept_animal_slaughter_toggled(animal_id: int) -> void:
+	var animal := DomesticAnimalService.find_animal(game_data, animal_id)
+	if animal == null:
+		return
+	if animal.slaughter_requested or DomesticAnimalSlaughterService.has_worker(human_individuals, animal.id):
+		_cancel_animal_slaughter(animal)
+	elif JobBoardService.is_enabled(human_folk):
+		animal.slaughter_requested = true
+		_refresh_pending_entries()
+	else:
+		_enter_slaughter_pick_mode(animal)
+	_refresh_selected_building_panel()
+
+
+# Soglia "Macella oltre" della tettoia (2026-11-14, pezzo 2): 0 = ∞, mai oltre la capienza.
+func _on_slaughter_above_changed(building: Building, value: int) -> void:
+	if building == null or KeptAnimalService.capacity(building) <= 0:
+		return
+	building.slaughter_above = clampi(value, 0, KeptAnimalService.capacity(building))
+	_refresh_selected_building_panel()
+
+
 # Specie tenuta della tettoia delle gabbie (2026-11-12, KeptAnimalService): solo a edificio vuoto.
 func _on_kept_species_changed(building: Building, species: String) -> void:
 	KeptAnimalService.set_kept_species(game_data, building, species)
+	_refresh_selected_building_panel()
+
+
+# Specie coltivata (2026-11-15, orto delle prove — CultivationService): solo a terreno vuoto.
+func _on_crop_species_changed(building: Building, species: String) -> void:
+	CultivationService.set_species(building, species)
+	_refresh_selected_building_panel()
+
+
+# "Coltiva in automatico" (2026-11-15): chi sta già seminando o mietendo finisce il suo lavoro.
+func _on_crop_auto_mode_changed(building: Building, mode: int) -> void:
+	if building == null:
+		return
+	building.crop_auto_mode = clampi(mode, 0, 2)
 	_refresh_selected_building_panel()
 
 
@@ -15047,11 +15340,18 @@ func _on_domestication_points_earned(_individual: HumanIndividual, points: Dicti
 	for species in points:
 		# Passo C (2026-11-12): il primo animale vivo in tettoia scopre la specie, con la notifica.
 		DomesticationPointsService.discover_species(game_data, String(species), domestication_effects)
-		if int(points[species]) > 0:
+		# Anche negativi (2026-11-14, macellazione in tettoia: −2).
+		if int(points[species]) != 0:
 			DomesticationPointsService.add_points(game_data, human_folk, String(species), int(points[species]), domestication_effects)
 	_apply_effects(domestication_effects)
 	if domestication_panel != null and domestication_panel.visible:
 		domestication_panel.refresh_content()
+
+
+# Prima raccolta da terra di una risorsa (2026-11-15, grano selvatico): l'eventuale scoperta, una volta per partita.
+func _on_terrain_resources_collected(_individual: HumanIndividual, resource_names: Array) -> void:
+	for resource_name in resource_names:
+		_trigger_discoveries(DiscoveryTypes.TriggerType.RESOURCE_FIRST_COLLECTED, {"resource_name": String(resource_name)})
 
 
 # "+100" di debug del pannello delle Addomesticazioni: con l'eventuale scoperta.
@@ -15068,7 +15368,7 @@ func _on_domestication_debug_add_animal(species: String) -> void:
 	var birth_day := game_data.get_absolute_day() - 3 * GameData.DAYS_PER_YEAR
 	DomesticAnimalService.add_animal(game_data, species, randf() < 0.5, birth_day)
 	if game_info_tabs.current_tab == GameInfoTabs.TAB_ANIMALS:
-		domestic_animals_panel.refresh(game_data)
+		domestic_animals_panel.refresh(game_data, macro_world)
 
 
 # Bottone dell'assegnazione delle task (2026-10-07): sempre visibile; spento finché l'idea
@@ -15112,6 +15412,18 @@ func _refresh_warehouse_button() -> void:
 	if not available and warehouse_drawer != null and warehouse_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID):
 		warehouse_drawer.close()
 	_sync_warehouse_highlight()
+
+
+# Regole legate a un edificio con la Gestione scorte aperta (2026-11-14, richiesta utente): a fine costruzione o
+# demolizione, se cambia quali regole ci sono (WarehousePanel.available_rules_for), il pannello si chiude e si riapre
+# con la stessa strada del bottone, così tutti i valori arrivano come all'apertura. Se non cambia niente non si tocca.
+func _refresh_warehouse_rules_if_changed() -> void:
+	if warehouse_drawer == null or _warehouse_panel == null or not warehouse_drawer.is_showing(WarehousePanel.DRAWER_CONTENT_ID):
+		return
+	if WarehousePanel.available_rules_for(macro_world) == _warehouse_panel.get_available_rules():
+		return
+	warehouse_drawer.close()
+	_toggle_warehouse_drawer()
 
 
 # Bottone "Scorte": apre il cassetto, o lo richiude se lo mostra già. Cassetto proprio (warehouse_drawer, 2026-10-11): può
@@ -15160,6 +15472,9 @@ func _toggle_warehouse_drawer() -> void:
 		# Regola "Acqua per tettoia" (2026-11-07, giare passo 3): dato della partita, ordini da WaterShelterStockService.
 		_warehouse_panel.set_water_rule(game_data.stock_water_per_shelter, WaterShelterStockService.max_water_per_shelter(), game_data.stock_runtime.water_jars_missing)
 		_warehouse_panel.water_per_shelter_changed.connect(func(level: int) -> void: game_data.stock_water_per_shelter = level)
+		# Regola "Rifornisci le mangiatoie" (2026-11-14): dato della partita, ordini da FeederStockService.
+		_warehouse_panel.set_feeder_rule(game_data.stock_feeder_days)
+		_warehouse_panel.feeder_days_changed.connect(func(days: int) -> void: game_data.stock_feeder_days = days)
 		# Regola "Trappole per zona" (2026-11-07): dato della partita per tipo di trappola, lavori da TrapJobProvider.
 		var trap_rows: Array[Dictionary] = []
 		for trap_name in TrapService.list_trap_names():
@@ -15171,6 +15486,15 @@ func _toggle_warehouse_drawer() -> void:
 			else:
 				game_data.stock_traps_per_zone.erase(trap_name)
 		)
+		# Regola "Cura dei campi" (2026-11-15): dati della partita, letti da FieldFertilityService.
+		_warehouse_panel.set_field_care_rule(game_data.stock_field_care_remedy, game_data.stock_field_care_threshold)
+		_warehouse_panel.field_care_remedy_changed.connect(func(remedy: int) -> void: game_data.stock_field_care_remedy = remedy)
+		_warehouse_panel.field_care_threshold_changed.connect(func(threshold: int) -> void: game_data.stock_field_care_threshold = threshold)
+		# Regola "Semi nei campi" (2026-11-15): dato della partita per seme, ordini da FieldSeedStockService.
+		_warehouse_panel.set_field_seed_rule(FieldSeedStockService.get_rule_rows(game_data))
+		_warehouse_panel.field_seed_level_changed.connect(func(seed_name: String, level: int) -> void:
+			FieldSeedStockService.set_level(game_data, seed_name, level)
+		)
 		# Regola "Rifornisci le Attrezzerie" (2026-10-18): dati della partita, per tipo di edificio e attrezzo.
 		_warehouse_panel.set_toolkit_rule(game_data.stock_toolkit_rule_enabled, ToolkitStockService.get_rule_rows(game_data, human_folk.completed_ideas))
 		_warehouse_panel.toolkit_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_toolkit_rule_enabled = enabled)
@@ -15181,6 +15505,7 @@ func _toggle_warehouse_drawer() -> void:
 		_warehouse_panel.rule_rows_refresh_requested.connect(func() -> void:
 			_warehouse_panel.set_fuel_rule(game_data.stock_fuel_rule_enabled, FuelStockService.get_rule_rows(game_data, human_folk.completed_ideas))
 			_warehouse_panel.set_toolkit_rule(game_data.stock_toolkit_rule_enabled, ToolkitStockService.get_rule_rows(game_data, human_folk.completed_ideas))
+			_warehouse_panel.set_field_seed_rule(FieldSeedStockService.get_rule_rows(game_data))
 		)
 		# Regola dei banchetti spontanei (2026-10-17): dati della partita, letti da SocialRiteService.
 		_warehouse_panel.set_banquet_rule(game_data.stock_banquet_safe_only)
@@ -15188,6 +15513,11 @@ func _toggle_warehouse_drawer() -> void:
 		# Carne lasciata nelle postazioni (2026-10-20): dato della partita, letto da WarehouseManagerService.
 		_warehouse_panel.set_workstation_food_rule(game_data.stock_workstation_food_rule_enabled)
 		_warehouse_panel.workstation_food_rule_toggled.connect(func(enabled: bool) -> void: game_data.stock_workstation_food_rule_enabled = enabled)
+		_warehouse_panel.set_cultivation_rule(game_data.stock_cultivation_auto)
+		_warehouse_panel.cultivation_rule_toggled.connect(func(enabled: bool) -> void:
+			game_data.stock_cultivation_auto = enabled
+			_refresh_selected_building_panel()
+		)
 		# Frequenza dell'inventario (2026-10-11): dato della partita.
 		_warehouse_panel.set_inventory_interval(game_data.inventory_interval_hours)
 		_warehouse_panel.inventory_interval_changed.connect(func(hours: int) -> void:
@@ -15461,6 +15791,14 @@ func _toggle_task_assignment_drawer() -> void:
 		_task_assignment_panel.single_builder_changed.connect(func(enabled: bool) -> void:
 			game_data.job_board_single_builder = enabled
 		)
+		# Spingi le prede grosse verso le fosse (2026-11-14, dalle regole di stoccaggio): visibile dopo la prima fossa, lavori
+		# da TrapJobProvider.
+		_task_assignment_panel.set_pit_drive(PitDriveService.has_any_pit(game_data), game_data.pit_drive_enabled)
+		_task_assignment_panel.pit_drive_changed.connect(func(enabled: bool) -> void:
+			game_data.pit_drive_enabled = enabled
+			if not enabled:
+				game_data.pit_drive_candidates.clear()
+		)
 		_task_assignment_panel.auto_clear_rubble_changed.connect(func(enabled: bool) -> void:
 			game_data.job_board_auto_clear_rubble = enabled
 			_refresh_pending_entries()
@@ -15704,13 +16042,13 @@ func _finish_work_area_drag() -> void:
 		if previous_macro_coords != macro_coords:
 			_refresh_work_area_fog_floor(previous_macro_coords)
 		_refresh_work_area_fog_floor(macro_coords)
-		print("[WORK AREA] ridisegnata %s (#%d) in %s, microcelle %s, %d×%d." % [area.name, area.id, macro_coords, rect.position, rect.size.x, rect.size.y])
+		DebugLogging.print_event("[WORK AREA] ridisegnata %s (#%d) in %s, microcelle %s, %d×%d." % [area.name, area.id, macro_coords, rect.position, rect.size.x, rect.size.y])
 	else:
 		area = WorkAreaService.create(game_data, macro_coords, rect)
 		if area == null:
 			return
 		_refresh_work_area_fog_floor(macro_coords)
-		print("[WORK AREA] creata %s (#%d) in %s, microcelle %s, %d×%d." % [area.name, area.id, macro_coords, rect.position, rect.size.x, rect.size.y])
+		DebugLogging.print_event("[WORK AREA] creata %s (#%d) in %s, microcelle %s, %d×%d." % [area.name, area.id, macro_coords, rect.position, rect.size.x, rect.size.y])
 	minimap_panel.refresh_layer()
 	# Dopo aver creato (o ridisegnato) una zona si esce dal disegno (layer di prima ripristinato) e la zona viene
 	# selezionata, con il suo pannello; resta visibile anche a layer spento (_sync_work_area_selection_overlay).
@@ -15796,7 +16134,7 @@ func _on_work_area_delete_requested(area: WorkArea) -> void:
 	if WorkAreaService.delete(game_data, area_id):
 		_refresh_work_area_fog_floor(area_macro_coords)
 		minimap_panel.refresh_layer()
-		print("[WORK AREA] eliminata %s (#%d)." % [area.name, area_id])
+		DebugLogging.print_event("[WORK AREA] eliminata %s (#%d)." % [area.name, area_id])
 
 
 # --- Pavimento della nebbia nelle zone di lavoro (2026-10-01, richiesta utente) ---
@@ -16065,7 +16403,7 @@ func _place_building_at(world_position: Vector2) -> void:
 	target_cell.needs_full_vegetation_recompute = true
 	_refresh_resource_visuals(target_cell, "edificio")
 
-	print("[BUILDING] %s #%d piazzata in (%d,%d) — totale edifici: %d" % [
+	DebugLogging.print_event("[BUILDING] %s #%d piazzata in (%d,%d) — totale edifici: %d" % [
 		_selected_building_type_name, building.id, target_cell.macro_x, target_cell.macro_y, macro_world.buildings.size()
 	])
 
@@ -16741,13 +17079,12 @@ func _grass_without_lots(positions: Array, removed: Dictionary) -> Array:
 # _on_building_construction_completed sopra), quindi qui basta un refresh esplicito della cella —
 # _buildings_for_cell ricalcola slot_breakdown da BuildingStorageService.get_slot_breakdown ogni
 # volta che viene chiamato, quindi il refresh cattura naturalmente il nuovo contenuto dei mucchietti.
+# Solo disegno (2026-11-14, scattini — 21 ms a deposito): un deposito non cambia movimento, percorsi, nebbia o cantieri,
+# quindi niente _refresh_building_visuals; e negli edifici che non mostrano il contenuto non si ridisegna nulla.
 func _on_resource_deposited(building: Building) -> void:
-	if building == null:
+	if not BuildingStorageService.shows_contents_on_map(building):
 		return
-	var macro_coords := Vector2i(building.macro_x, building.macro_y)
-	if not live_cells.has(macro_coords):
-		return
-	_refresh_building_visuals(live_cells[macro_coords])
+	_refresh_building_marker(building)
 
 
 # Stesso refresh di _on_resource_deposited per i prelievi (RetrieveAction.resource_retrieved,
@@ -16890,6 +17227,7 @@ func _on_building_construction_completed(building: Building) -> void:
 	BuildingLifecycleService.complete_construction(_game_context(), building, effects)
 	_trigger_discoveries(DiscoveryTypes.TriggerType.BUILDING_COMPLETED, {"building": building})
 	_apply_effects(effects)
+	_refresh_warehouse_rules_if_changed()
 
 
 # Centro del villaggio completato (BuildingLifecycleService.village_center_completed).
@@ -16944,6 +17282,66 @@ func _live_cell_and_micro_position_at(world_position: Vector2) -> Dictionary:
 # Usata sia per il disegno (_refresh_building_visuals) sia per escludere quelle stesse microcelle
 # dalla rigenerazione di vegetazione (_refresh_resource_visuals) — un solo punto che le calcola,
 # mai due elenchi che potrebbero disallinearsi.
+# Lotti dove la vegetazione non nasce per il suolo (rocce non esaurite, fiume, ruscelli, argilla); gli edifici a parte
+# (_building_positions_for_cell). Rocce esaurite (2026-10-08, RockStoneService.is_depleted): non più vietate alla
+# vegetazione, così col tempo ci nascono piante nuove (alberi/arbusti già nati restano nei loro lotti). Restano in
+# stone_positions per le quote.
+func _ground_blocked_lots(cell: LiveMacroCell) -> Dictionary:
+	var blocked: Dictionary = {}
+	var depleted_rocks := RockStoneService.get_depleted_positions(cell.macro_state)
+	for pos in cell.macro_state.stone_positions:
+		if not depleted_rocks.has(pos):
+			blocked[pos] = true
+	for pos in cell.river_positions:
+		blocked[pos] = true
+	for pos in cell.stream_positions:
+		blocked[pos] = true
+	for pos in cell.macro_state.clay_positions:
+		blocked[pos] = true
+	return blocked
+
+
+# Semina alla Fossa (2026-11-13, PitSowingService): finché ci sono once a sufficienza, una microcella d'erba per volta
+# accanto alla prima Fossa (per vicinanza al centro) con posto, solo su macrocelle accese; poi un ridisegno per cella.
+# L'erba nuova non tocca alberi e arbusti: niente svuotamento della loro geometria (SOWING_REFRESH_REASON).
+const SOWING_REFRESH_REASON := "semina alla fossa"
+
+
+func _sow_grass_by_pits() -> void:
+	if not PitSowingService.has_pending(game_data):
+		return
+	var blocked_by_cell: Dictionary = {}
+	var changed: Dictionary = {}
+	var pits := PitSowingService.pits_in_order(macro_world, human_folk)
+	# Dal 2026-11-15 una risorsa per volta (Fossa generica): a turno, finché almeno una trova posto.
+	while true:
+		var sown := false
+		for resource_name in PitSowingService.pending_resources(game_data):
+			for pit in pits:
+				var coords := Vector2i(pit.macro_x, pit.macro_y)
+				if not live_cells.has(coords):
+					continue
+				var cell: LiveMacroCell = live_cells[coords]
+				if not blocked_by_cell.has(coords):
+					var blocked := _ground_blocked_lots(cell)
+					for pos in _building_positions_for_cell(cell):
+						blocked[pos] = true
+					blocked_by_cell[coords] = blocked
+				var lot: Variant = PitSowingService.find_lot(game_data, cell.macro_state, pit, blocked_by_cell[coords], resource_name)
+				if lot == null:
+					continue
+				PitSowingService.sow(game_data, cell.macro_state, lot, resource_name)
+				changed[coords] = cell
+				sown = true
+				break
+		if not sown:
+			break
+	for coords in changed:
+		var cell: LiveMacroCell = changed[coords]
+		cell.needs_full_vegetation_recompute = true
+		_refresh_resource_visuals(cell, SOWING_REFRESH_REASON)
+
+
 func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
 	var positions: Array = []
 	if macro_world == null:
@@ -17034,6 +17432,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"heated": building.heated_today and building.is_complete,
 				# Affumicatoio e capanna del guaritore al lavoro (2026-10-23/25, ProductionService.refresh_smoking): fumo dal foro.
 				"smoking": building.smoking_now and building.is_complete,
+				# Piantine dei terreni coltivati (2026-11-15, CultivationService.crop_visual): una voce per lotto, [] se niente.
+				"crop": CultivationService.crop_visual(building),
 			}
 			# "slot_breakdown" (2026-09-11, richiesta utente — "sul deposit site... disegna gli
 			# oggetti che ci sono, tipo mucchietti") — SOLO per deposit_site ("solo su questo",
@@ -17459,6 +17859,10 @@ func _apply_effects(effects: GameEffects) -> void:
 					_refresh_dead_body_panel()
 	if UserOptions.show_notification_popups:
 		for entry in effects.notifications:
+			# Sete a zero (2026-11-14, richiesta utente): come la fame, spenta oltre BODY_RESERVE_POPUP_MAX_POPULATION abitanti.
+			if entry["type"] == NotificationTypes.NotificationPopupType.THIRST_ZERO \
+					and human_individuals.size() > BODY_RESERVE_POPUP_MAX_POPULATION:
+				continue
 			notification_popup.enqueue(entry["type"], entry["text"], entry["requires_ack"])
 	# A tappe (2026-10-28, scatto dell'inventario: il ricalcolo intero in un fotogramma costava ~30 ms): un giro già
 	# avviato prima del cambiamento si rifà da capo.
@@ -17748,6 +18152,7 @@ func _setup_clock() -> void:
 	# Trasporto di un mucchio a terra al magazzino (2026-09-27, oggi dopo la demolizione) — vedi _on_ground_pile_haul_requested.
 	individual_action_service.ground_pile_haul_requested.connect(_on_ground_pile_haul_requested)
 	individual_action_service.domestication_points_earned.connect(_on_domestication_points_earned)
+	individual_action_service.terrain_resources_collected.connect(_on_terrain_resources_collected)
 	individual_action_service.hunt_ended_with_message.connect(_on_hunt_ended_with_message)
 	# Task chiusa con un messaggio per il giocatore (2026-10-04: raccolta da un mucchio senza deposito con posto).
 	individual_action_service.task_message_requested.connect(_on_hunt_ended_with_message)
@@ -17790,6 +18195,11 @@ func _update_play_pause_button() -> void:
 func _on_day_advanced(checkpoint_ran: bool) -> void:
 	# Giro giornaliero della simulazione: anche riallineamento della produzione e cantieri maturati (blocco 5e).
 	_tick_simulation_day()
+	_sow_grass_by_pits()
+	# Coltivazione (2026-11-15): semine chiuse dalla fine della stagione e piantine che spuntano, con i loro punti.
+	var cultivation_points := CultivationService.advance_daily(macro_world, game_data)
+	if not cultivation_points.is_empty():
+		_on_domestication_points_earned(null, cultivation_points)
 	# TEMPORANEO (diagnostica lentezza, vedi GameClockController._process/[DAY TOTAL]) — questo
 	# intero handler gira SINCRONO dentro day_advanced.emit(), quindi dentro il cronometro di
 	# [DAY TOTAL]: il ramo sotto (rebuild vegetazione per cella viva, "come individui" — posizioni/
@@ -17852,7 +18262,7 @@ func _on_day_advanced(checkpoint_ran: bool) -> void:
 	if game_info_tabs.current_tab == GameInfoTabs.TAB_DEBUG:
 		task_debug_panel.refresh()
 	elif game_info_tabs.current_tab == GameInfoTabs.TAB_ANIMALS:
-		domestic_animals_panel.refresh(game_data)
+		domestic_animals_panel.refresh(game_data, macro_world)
 	if DebugLogging.ENABLED and DebugLogging.SHOW_SELECTED_PANEL_REFRESH_LOGS:
 		var panel_refresh_elapsed_ms := (Time.get_ticks_usec() - _debug_panel_refresh_start_usec) / 1000.0
 		print("[SELECTED PANEL REFRESH] anno=%d giorno=%d: %.3f ms" % [

@@ -45,6 +45,8 @@ const RESOURCE_ICONS := {
 	# "fiber_rope" (2026-09-23, richiesta utente - corda di fibre, primo prodotto del sistema di produzione): emoji
 	# nodo provvisorio.
 	"fiber_rope": "🪢",
+	# Corda di lino (2026-11-15, richiesta utente): emoji provvisoria, il nome nel tooltip la distingue.
+	"flax_rope": "🪢",
 	# Ciotola di pietra (2026-10-24, richiesta utente): emoji provvisoria.
 	"stone_bowl": "🥣",
 	# Infuso di erbe (2026-10-25, richiesta utente — capanna del guaritore): emoji provvisoria.
@@ -56,6 +58,8 @@ const RESOURCE_ICONS := {
 	"firewood": "🪵",
 	# Detriti (2026-10-18, macerie da portare alla Fossa dei rifiuti): emoji provvisorio.
 	"debris": "🧱",
+	# Vaso da semi (2026-11-13, richiesta utente): emoji provvisoria.
+	"seed_jar": "🏺",
 }
 
 
@@ -93,6 +97,21 @@ const RESOURCE_ICON_NODES := {
 	# propria per lotto dopo pebble/stick/plant_fiber, modello stick): due funghi, cappello+gambo —
 	# vedi MushroomIcon.gd.
 	"mushroom": preload("res://simulation/scripts/ui/MushroomIcon.gd"),
+	# Semi selvatici (2026-11-14, richiesta utente — prima emoji 🌾): spiga selvatica con semi sciolti, vedi WildSeedsIcon.gd.
+	"wild_seeds": preload("res://simulation/scripts/ui/WildSeedsIcon.gd"),
+	# Grano selvatico (2026-11-15): la stessa spiga, colori del grano (WildWheatIcon).
+	"wild_wheat": preload("res://simulation/scripts/ui/WildWheatIcon.gd"),
+	# Orzo domestico (2026-11-15): la stessa spiga, chicchi più pieni e dorati (DomesticBarleyIcon).
+	"domestic_barley": preload("res://simulation/scripts/ui/DomesticBarleyIcon.gd"),
+	# Miglio selvatico (2026-11-15): la stessa spiga, giallo paglia (WildMilletIcon).
+	"wild_millet": preload("res://simulation/scripts/ui/WildMilletIcon.gd"),
+	# Avena selvatica (2026-11-15): la stessa spiga, beige-verdolina (WildOatsIcon).
+	"wild_oats": preload("res://simulation/scripts/ui/WildOatsIcon.gd"),
+	# Lino selvatico (2026-11-15): steli con fiorellino azzurro (WildFlaxIcon).
+	"wild_flax": preload("res://simulation/scripts/ui/WildFlaxIcon.gd"),
+	# Attrezzi agricoli (2026-11-15): bastone da scavo e falcetto di selce, disegnati.
+	"digging_stick": preload("res://simulation/scripts/ui/DiggingStickIcon.gd"),
+	"flint_sickle": preload("res://simulation/scripts/ui/FlintSickleIcon.gd"),
 	# Primi attrezzi (2026-09-24, richiesta utente — gli emoji 🔱/🔪 leggevano come forcone e coltello
 	# moderno): bastone appuntito con punta indurita al fuoco, e scheggia di selce senza manico — vedi
 	# WoodenSpearIcon.gd/StoneKnifeIcon.gd.
@@ -209,6 +228,14 @@ const BUILDING_ICONS := {
 	# Conigliera e pollaio (2026-11-13, segnaposto) — emoji di riserva, la barra usa RabbitHutchIcon / ChickenCoopIcon.
 	"rabbit_hutch": "🐰",
 	"chicken_coop": "🐔",
+	# Piccolo granaio (2026-11-15) — emoji di riserva, la barra usa SmallGranaryIcon.
+	"small_granary": "🌾",
+	# Capanna del contadino (2026-11-15) — emoji di riserva, la barra usa FarmerHutIcon.
+	"farmer_hut": "🧑‍🌾",
+	# Orto delle prove (2026-11-15) — emoji di riserva, la barra usa TrialGardenIcon.
+	"trial_garden": "🌱",
+	# Campo con capanno (2026-11-15) — emoji di riserva, la barra usa FieldIcon.
+	"field": "🌾",
 }
 
 
@@ -275,6 +302,14 @@ const BUILDING_ICON_NODES := {
 	# Conigliera e pollaio (2026-11-13, segnaposto): lo stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rabbit_hutch": preload("res://simulation/scripts/ui/RabbitHutchIcon.gd"),
 	"chicken_coop": preload("res://simulation/scripts/ui/ChickenCoopIcon.gd"),
+	# Piccolo granaio (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
+	"small_granary": preload("res://simulation/scripts/ui/SmallGranaryIcon.gd"),
+	# Capanna del contadino (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
+	"farmer_hut": preload("res://simulation/scripts/ui/FarmerHutIcon.gd"),
+	# Orto delle prove (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
+	"trial_garden": preload("res://simulation/scripts/ui/TrialGardenIcon.gd"),
+	# Campo con capanno (2026-11-15): lo stesso disegno della mappa (FieldShape).
+	"field": preload("res://simulation/scripts/ui/FieldIcon.gd"),
 	# Macerie (2026-10-10, richiesta utente — crollo): stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rubble": preload("res://simulation/scripts/ui/RubbleIcon.gd"),
 	# Ceppo dell'insegnamento (2026-10-16, richiesta utente): stesso disegno della mappa (PlaceholderBuildingShapes).
@@ -357,6 +392,11 @@ const COMMAND_ICONS := {
 	"heal": "🩹",
 	# "trap" (2026-11-07, lavoro "Piazza trappola"): emoji provvisoria.
 	"trap": "🪤",
+	# Semina (2026-11-15, orto delle prove e campi).
+	"sow": "🌱",
+	"reap": "🌾",
+	# Rizollatura del campo (2026-11-15): sulla mappa il piccone disegnato.
+	"retill": "⛏️",
 	"task_rejected": "❌",
 }
 
@@ -410,6 +450,7 @@ const BUILDING_CATEGORY_ICONS := {
 	BuildingTypes.Category.MOVEMENT: "🛤️",
 	BuildingTypes.Category.OTHER: "➕",
 	BuildingTypes.Category.HUSBANDRY: "🐑",
+	BuildingTypes.Category.AGRICULTURE: "🌾",
 }
 
 
@@ -491,6 +532,11 @@ const COMMAND_ICON_NODES := {
 	"cut": preload("res://simulation/scripts/ui/CommandAxeIcon.gd"),
 	# "quarry" (2026-10-05, task Quarry): piccone, lo stesso disegno della demolizione (CommandPickaxeIcon.gd).
 	"quarry": preload("res://simulation/scripts/ui/CommandPickaxeIcon.gd"),
+	# "sow" / "reap" (2026-11-15, Semina e Mietitura della lista): germoglio e falcetto di selce.
+	"sow": preload("res://simulation/scripts/ui/CommandSproutIcon.gd"),
+	"reap": preload("res://simulation/scripts/ui/CommandSickleIcon.gd"),
+	# "retill" (2026-11-15, Rizollatura del campo): il piccone, come la cava.
+	"retill": preload("res://simulation/scripts/ui/CommandPickaxeIcon.gd"),
 	# "fish" (2026-10-31, pesca): pesciolino all'amo, vedi CommandFishIcon.gd.
 	"fish": preload("res://simulation/scripts/ui/CommandFishIcon.gd"),
 	# "drink" (2026-10-30, sete): goccia, vedi CommandDropIcon.gd; sopra la testa di chi beve (HumanIndividualView).

@@ -67,6 +67,28 @@ static func drop_entries(game_data: GameData, macro_coords: Vector2i, position: 
 	return pile
 
 
+# Lascia a terra `entries` ESATTAMENTE nella microcella `microcell` di `macro_coords`, senza cercare un posto libero
+# (2026-11-15, raccolto dell'orto delle prove: il mucchio resta sul terreno coltivato, anche se è un edificio, e finché
+# non si sgombera non si risemina — CultivationService.harvest_pile). Si unisce al mucchio già lì. null se non c'era
+# nulla da lasciare. Scadenza e deperimento come ogni mucchio (advance_daily).
+static func drop_at(game_data: GameData, macro_coords: Vector2i, microcell: Vector2i, entries: Dictionary) -> GroundPile:
+	if game_data == null or entries.is_empty():
+		return null
+	var pile := find_at(game_data, macro_coords, microcell)
+	var created := false
+	if pile == null:
+		pile = _new_pile(game_data, macro_coords, microcell)
+		created = true
+	for resource_name in entries.keys():
+		_merge_entry(pile, String(resource_name), entries[resource_name])
+	if pile.is_empty():
+		return null
+	if created:
+		game_data.ground_piles.append(pile)
+	pile.revision += 1
+	return pile
+
+
 # Svuota a terra un edificio (2026-09-27, richiesta utente — "Svuota tutto", riusabile dalla futura demolizione):
 # deposito (stored_resources) e buffer dei prodotti (production_output) finiscono in UN mucchio posato con la regola
 # di drop_entries a partire dalla microcella dell'edificio (davanti alla porta se ne ha una, altrimenti la prima

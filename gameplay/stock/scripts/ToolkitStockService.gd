@@ -76,6 +76,36 @@ static func traveling(individuals: Array) -> Dictionary:
 	return result
 
 
+# Montaggio sul posto (2026-11-13, richiesta utente — attrezzeria del magazzino): un edificio della regola che ha nel
+# proprio magazzino gli attrezzi che mancano alla sua Attrezzeria li monta subito, come il clic dal pannello, senza
+# viaggio (plan_orders esclude l'edificio stesso dalle sorgenti). Solo quello che manca dopo i pezzi già in viaggio;
+# il resto arriva dagli altri magazzini con i trasporti di plan_orders. Ritorna quanti pezzi ha montato.
+static func mount_from_own_storage(world: World, game_data: GameData, in_transit: Dictionary) -> int:
+	var mounted := 0
+	if world == null or game_data == null or not game_data.stock_toolkit_rule_enabled:
+		return 0
+	for building in world.buildings:
+		if building.is_demolished or not building.is_complete or building.is_out_of_service():
+			continue
+		var targets: Dictionary = game_data.stock_toolkit_targets.get(building.building_type_name, {})
+		for tool_name in targets.keys():
+			var tool := String(tool_name)
+			if not BuildingToolkitService.is_accepted_tool(building, tool):
+				continue
+			var desired := mini(int(targets[tool_name]), BuildingToolkitService.get_units_per_type(building))
+			var missing := desired - BuildingToolkitService.get_quantity(building, tool) - int(in_transit.get(order_key(building.id, tool), 0))
+			while missing > 0 and BuildingToolkitService.can_add(building, tool):
+				var instance := BuildingStorageService.take_stored_tool_unit(building, tool)
+				if instance.is_empty():
+					break
+				if not BuildingToolkitService.add_unit(building, tool, instance):
+					BuildingStorageService.store_tool_instance(building, tool, instance)
+					break
+				missing -= 1
+				mounted += 1
+	return mounted
+
+
 # Ordini da togliere (id), da creare ({TOOLKIT_TARGET_KEY, TOOLKIT_TOOL_KEY, "quantity", "building"}) e avvisi
 # (attrezzo -> pezzi che mancano e nessun magazzino ha). `open_orders`: ordini del cassetto con TOOLKIT_TARGET_KEY non
 # ancora presi; `in_transit`: traveling().

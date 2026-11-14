@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_advanced_agriculture"]
+
+; Agricoltura avanzata (2026-11-15, richiesta utente — segnaposto): neolitico, dopo Agricoltura paleolitica. Sbloccherà
+; aratro, animali da lavoro e simili; per ora non sblocca niente. Costo provvisorio.
+[resource]
+script = ExtResource("1_advanced_agriculture")
+id = "advanced_agriculture"
+display_name = "idea_advanced_agriculture"
+summary = "idea_advanced_agriculture_summary"
+description = "idea_advanced_agriculture_description"
+thoughts_cost = 150
+prerequisites = Array[String](["agriculture"])
+era = "neolithic"

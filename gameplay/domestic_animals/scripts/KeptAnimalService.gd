@@ -178,7 +178,62 @@ static func keep_animal(game_data: GameData, building: Building, entry: Dictiona
 	if animal != null:
 		animal.captured_day = today
 		count_stat(game_data, species, "captured")
+		# Unico animale della tettoia (2026-11-14): il trappoliere lascia cibo per 3 giorni.
+		if DomesticAnimalService.get_kept_animals(game_data, building.id).size() == 1:
+			AnimalFeederService.add_starter_food(game_data, building, animal)
 	return animal
+
+
+# Animali di `species` chiusi adesso in tutte le tettoie.
+static func kept_count(game_data: GameData, species: String) -> int:
+	var count := 0
+	for animal in game_data.domestic_animals:
+		if animal.species == species and animal.building_id >= 0:
+			count += 1
+	return count
+
+
+# Soglia "Macella oltre" della specie (GameData.domestic_slaughter_above), 0 = ∞.
+static func species_slaughter_above(game_data: GameData, species: String) -> int:
+	return maxi(int(game_data.domestic_slaughter_above.get(species, 0)), 0)
+
+
+static func set_species_slaughter_above(game_data: GameData, species: String, value: int) -> void:
+	if value > 0:
+		game_data.domestic_slaughter_above[species] = value
+	else:
+		game_data.domestic_slaughter_above.erase(species)
+
+
+# Soglia "Macella oltre" della tettoia (Building.slaughter_above), 0 = ∞, mai oltre la capienza.
+static func building_slaughter_above(building: Building) -> int:
+	if building == null or building.slaughter_above <= 0:
+		return 0
+	return mini(building.slaughter_above, capacity(building))
+
+
+# true se la specie si tiene nelle tettoie (si cattura viva: punti di cattura); il cane no, è sempre libero.
+static func can_be_kept(rules: DomesticAnimalRules) -> bool:
+	return rules != null and (rules.capture_points_adult_male > 0 or rules.capture_points_adult_female > 0
+		or rules.capture_points_young > 0 or rules.capture_points_old > 0)
+
+
+# Giorni concessi a una tettoia oltre la capienza, con una soglia impostata, prima che i più giovani in più scappino
+# (2026-11-14, richiesta utente: tempo per macellare).
+const OVER_CAPACITY_GRACE_DAYS := 10
+
+
+# true se per `building` e la specie `species` c'è almeno una soglia "Macella oltre": allora i piccoli entrano anche oltre
+# la capienza (DomesticAnimalLifeService).
+static func has_slaughter_threshold(game_data: GameData, building: Building, species: String) -> bool:
+	return building_slaughter_above(building) > 0 or species_slaughter_above(game_data, species) > 0
+
+
+# Giorni che restano prima che i più giovani in più scappino; -1 se la tettoia non è in attesa.
+static func over_capacity_days_left(game_data: GameData, building: Building) -> int:
+	if building == null or building.over_capacity_since_day < 0:
+		return -1
+	return maxi(OVER_CAPACITY_GRACE_DAYS - (game_data.get_absolute_day() - building.over_capacity_since_day), 0)
 
 
 # Statistiche della cattività (GameData.domestication_stats): "captured", "died", "born".

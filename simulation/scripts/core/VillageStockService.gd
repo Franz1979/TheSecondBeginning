@@ -42,7 +42,8 @@ static func get_village_stock(world: World) -> Dictionary:
 				# Combustibile di una casa riscaldabile (2026-10-22): riservato alla casa, non è una scorta.
 				if HouseHeatingService.is_fuel_reserved(building, String(resource_name)) \
 						or HouseWardrobeService.is_apparel_reserved(building, String(resource_name)) \
-						or HouseWardrobeService.is_bowl_reserved(building, String(resource_name)):
+						or HouseWardrobeService.is_bowl_reserved(building, String(resource_name)) \
+						or FieldSeedStoreService.is_seed_reserved(building, String(resource_name)):
 					continue
 				var entry: Dictionary = building.stored_resources[resource_name]
 				_add(totals, String(resource_name), int(entry.get("quantity", 0)))

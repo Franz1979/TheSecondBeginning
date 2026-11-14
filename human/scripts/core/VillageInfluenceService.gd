@@ -19,7 +19,7 @@ static func apply_annual_growth(folk: Folk, world: World) -> void:
 			village.add_influence_value(influence_type, float(gains[influence_type]))
 		if not DebugLogging.ENABLED:
 			continue
-		print("[VILLAGE INFLUENCE] %s: +P %d +C %d +R %d -> P %d C %d R %d" % [
+		DebugLogging.print_event("[VILLAGE INFLUENCE] %s: +P %d +C %d +R %d -> P %d C %d R %d" % [
 			village.get_display_name(),
 			gains[InfluenceService.InfluenceType.POLITICAL], gains[InfluenceService.InfluenceType.CULTURAL],
 			gains[InfluenceService.InfluenceType.RELIGIOUS],

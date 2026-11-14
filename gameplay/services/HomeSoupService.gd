@@ -11,7 +11,8 @@ extends RefCounted
 #
 # Passo 2 (cottura): voce di SVAGO "Cucina la zuppa" (cook_soup.tres, IdleTaskAssignmentService), estratta a sorte come
 # le altre. Possibile (plan_cooking) per chi abita in una Capanna senza una zuppa buona, con il fuoco (has_fire) e, sommando
-# tutti i magazzini, SOUP_BONES ossa (zuppa di midollo: solo ossa, 2026-11-07, richiesta utente — prima anche cibo di
+# tutti i magazzini, gli ingredienti (ossa e SOUP_SEEDS once di Granaglie, plan_cooking; dal 2026-11-13 ossa e semi selvatici, zuppa di midollo e semi tostati; prima, dal
+# 2026-11-07, solo ossa — e ancora prima anche cibo di
 # stagione, tolto perché il villaggio lo mangiava prima) e, se in casa non c'è, la ciotola, raccoglibili in al massimo MAX_STOPS magazzini (2026-11-07, richiesta utente). Giro: tappe ai magazzini
 # (TakeSoupIngredientsAction: prende quello che manca, CONTEXT_MISSING; se manca ancora qualcosa la tappa successiva si
 # aggiunge al compito, insert_next_stop) -> casa (CookSoupAction: ciotola nel deposito di casa, dove resta, un uso in meno
@@ -23,13 +24,18 @@ extends RefCounted
 # zuppa non è una risorsa: nella saccoccia sono calorie e spazio (SPACE_PER_CALORIE), con felicità e salute proprie
 # (EAT_*_PER_100_CALORIES, come SecondaryResourceRules.eat_*). Senza stato.
 
-const POT_CALORIES: float = 150.0
+# 2026-11-13 (punto 1e, richiesta utente): zuppa di midollo e semi tostati, 5 ossa + 5 semi = 200 (prima solo ossa, 150).
+const POT_CALORIES: float = 200.0
 const FRESH_DAYS: int = 3
 const FRESH_DAYS_FIRE: int = 10
 const FRESHNESS_EPSILON: float = 0.001
 const BONE := "bone"
-# Ossa bollite per midollo e grasso: 5 fanno tutta la pentola (POT_CALORIES).
+# Ossa bollite per midollo e grasso.
 const SOUP_BONES: int = 5
+# Semi tostati (2026-11-13, punto 1e — obbligatori: senza semi niente zuppa). Dal 2026-11-15 (richiesta utente) qualunque
+# Granaglia (categoria GRAIN: orzo e grano selvatici, poi le altre), anche mescolate: SOUP_SEEDS once in tutto, scelte da
+# _pick_seeds prima dalla più abbondante (meno tipi nello zaino). Il piano porta i nomi veri, il resto non cambia.
+const SOUP_SEEDS: int = 5
 const BOWL := HouseWardrobeService.SOUP_BOWL
 # Spazio nella saccoccia: come la carne cotta (5 ogni 100 calorie).
 const SPACE_PER_CALORIE: float = 0.05
@@ -233,10 +239,9 @@ static func plan_cooking(individual: HumanIndividual, world: World, verbose: boo
 			house.id, ProductionService.get_available_fuel(house), house.heating_fuel_credit, COOK_FUEL
 		])
 	var take_bowl := not has_bowl(house)
-	var free_kinds := HumanIndividual.MAX_CARRIED_VARIETIES - individual.carried_resources.size() - 1 - (1 if take_bowl else 0)
-	if free_kinds < 0:
-		return _no(verbose, individual, "zaino con troppi tipi di oggetti (%s)" % str(individual.carried_resources.keys()))
+	var seed_names := soup_seed_names()
 	var wanted: Array[String] = [BONE]
+	wanted.append_array(seed_names)
 	if take_bowl:
 		wanted.append(BOWL)
 	var totals: Dictionary = {}
@@ -247,10 +252,21 @@ static func plan_cooking(individual: HumanIndividual, world: World, verbose: boo
 		for resource_name in stock.keys():
 			totals[resource_name] = int(totals.get(resource_name, 0)) + int(stock[resource_name])
 	if int(totals.get(BONE, 0)) < SOUP_BONES:
-		return _no(verbose, individual, "ossa nei magazzini %d < %d" % [int(totals.get(BONE, 0)), SOUP_BONES])
+		return _no(verbose, individual, "%s nei magazzini %d < %d" % [BONE, int(totals.get(BONE, 0)), SOUP_BONES])
+	# Riserva per la semina (2026-11-15): la zuppa usa solo le granaglie sopra il minimo del WM (StockReserveService).
+	var grain_totals := totals.duplicate()
+	for seed_name in seed_names:
+		grain_totals[seed_name] = StockReserveService.usable(GameSettings.active_game_data, seed_name, int(totals.get(seed_name, 0)))
+	var seeds := _pick_seeds(seed_names, grain_totals)
+	if seeds.is_empty():
+		return _no(verbose, individual, "granaglie sopra la riserva per la semina meno di %d once" % SOUP_SEEDS)
 	if take_bowl and int(totals.get(BOWL, 0)) < 1:
 		return _no(verbose, individual, "in casa non c'è la ciotola e nei magazzini nemmeno")
 	var ingredients := {BONE: SOUP_BONES}
+	ingredients.merge(seeds)
+	var free_kinds := HumanIndividual.MAX_CARRIED_VARIETIES - individual.carried_resources.size() - ingredients.size() - (1 if take_bowl else 0)
+	if free_kinds < 0:
+		return _no(verbose, individual, "zaino con troppi tipi di oggetti (%s)" % str(individual.carried_resources.keys()))
 	if _carry_space(ingredients, take_bowl) > individual.max_carry_capacity - individual.get_carried_space() + FoodSelectionService.UNIT_FIT_EPSILON:
 		return _no(verbose, individual, "non ci sta nello zaino: %.1f su %.1f liberi" % [
 			_carry_space(ingredients, take_bowl), individual.max_carry_capacity - individual.get_carried_space()
@@ -272,6 +288,40 @@ static func plan_cooking(individual: HumanIndividual, world: World, verbose: boo
 
 
 const TASK_NAME := "task_cook_soup_name"
+
+
+# Granaglie buone per la zuppa (2026-11-15): tutte le risorse della categoria GRAIN.
+static func soup_seed_names() -> Array[String]:
+	var names: Array[String] = []
+	for resource_name in CaloricCalculator.list_secondary_resource_names():
+		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		if rules != null and int(rules.category) == SecondaryResourceTypes.Category.GRAIN:
+			names.append(resource_name)
+	return names
+
+
+# SOUP_SEEDS once tra le granaglie disponibili (`totals`: nome -> once nei magazzini), dalla più abbondante; {} se non
+# bastano.
+static func _pick_seeds(seed_names: Array[String], totals: Dictionary) -> Dictionary:
+	var available: Array[String] = []
+	var sum := 0
+	for resource_name in seed_names:
+		if int(totals.get(resource_name, 0)) > 0:
+			available.append(resource_name)
+			sum += int(totals[resource_name])
+	if sum < SOUP_SEEDS:
+		return {}
+	available.sort_custom(func(a: String, b: String) -> bool:
+		return int(totals[a]) > int(totals[b]) if int(totals[a]) != int(totals[b]) else a < b)
+	var seeds: Dictionary = {}
+	var left := SOUP_SEEDS
+	for resource_name in available:
+		if left <= 0:
+			break
+		var take := mini(left, int(totals[resource_name]))
+		seeds[resource_name] = take
+		left -= take
+	return seeds
 
 
 static func is_cook_task(task: Task) -> bool:

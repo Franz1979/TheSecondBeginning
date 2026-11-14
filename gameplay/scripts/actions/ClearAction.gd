@@ -360,7 +360,7 @@ func _log_clear_start(individual: Variant) -> void:
 	var dead_plants := _count_exceptions_at(_macro_state.vegetation_death_exceptions, -1, false)
 	var live_plants := _count_live_plants_at()
 	var building_name: String = tr(target_building.rules.building_name) if target_building.rules != null else target_building.building_type_name
-	print("[CLEAR] inizio pulizia: %s #%d, macrocella (%d,%d) microcella (%d,%d), %s | erba %.1fg + %d ceppi d'albero × %.1fg = %.1fg totali | %d ceppi di arbusto e %d piante morte (0g)%s" % [
+	DebugLogging.print_event("[CLEAR] inizio pulizia: %s #%d, macrocella (%d,%d) microcella (%d,%d), %s | erba %.1fg + %d ceppi d'albero × %.1fg = %.1fg totali | %d ceppi di arbusto e %d piante morte (0g)%s" % [
 		building_name, target_building.id, target_building.macro_x, target_building.macro_y, _position.x, _position.y,
 		String(individual.name) if individual != null else "?",
 		grass_days, tree_stumps, TREE_STUMP_CLEAR_DAYS, _duration, shrub_stumps, dead_plants,
@@ -377,7 +377,7 @@ func _log_clear_end(individual: Variant) -> void:
 	if game_data != null and progress.has(CLEAR_LOG_START_DAY_KEY):
 		calendar_days = str(game_data.get_absolute_day() - int(progress[CLEAR_LOG_START_DAY_KEY]))
 	var building_name: String = tr(target_building.rules.building_name) if target_building.rules != null else target_building.building_type_name
-	print("[CLEAR] fine pulizia: %s #%d, %s | giorni di gioco dall'inizio: %s (tempo sullo step %.2fg) | stamina consumata: %.1f" % [
+	DebugLogging.print_event("[CLEAR] fine pulizia: %s #%d, %s | giorni di gioco dall'inizio: %s (tempo sullo step %.2fg) | stamina consumata: %.1f" % [
 		building_name, target_building.id, String(individual.name) if individual != null else "?",
 		calendar_days, float(progress.get(CLEAR_LOG_STEP_DAYS_KEY, 0.0)), float(progress.get(CLEAR_LOG_STAMINA_KEY, 0.0)),
 	])

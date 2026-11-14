@@ -182,7 +182,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	if labor_accumulated < required_labor:
 		stamina_spent_this_day = STAMINA_DRAIN_PER_DAY * delta
 		ProductionService.add_labor(target_building, order_key, stamina_spent_this_day * _get_labor_scale(individual, context) * tool_multiplier)
-	_try_complete_cycle(individual)
+	_try_complete_cycle(individual, context)
 	return -stamina_spent_this_day
 
 
@@ -237,7 +237,7 @@ func _get_labor_scale(individual: Variant, context: Dictionary) -> float:
 # Conclude un ciclo appena lavoro, input e posto nel buffer lo consentono (ProductionService.
 # complete_production sul proprio ordine: consumo esatto, prodotto nel buffer, lavoro azzerato per il ciclo
 # successivo; 0 = non ancora possibile).
-func _try_complete_cycle(individual: Variant) -> void:
+func _try_complete_cycle(individual: Variant, context: Dictionary) -> void:
 	if ProductionService.get_labor_accumulated(target_building, order_key) < ProductionService.get_required_labor(target_building, resource_name):
 		return
 	# L'ordine resta (lavoro azzerato) finché ha pezzi dovuti, poi sparisce: nessun record da ricreare.
@@ -246,6 +246,8 @@ func _try_complete_cycle(individual: Variant) -> void:
 		return
 	produced_count += produced
 	_consume_tools_for_cycle(individual)
+	# Addomesticazione delle piante (2026-11-15, corda di lino): punti per pezzo prodotto (DomesticPlantRules.points_per_product).
+	DomesticPlantCalculator.add_pending_points(context, DomesticPlantCalculator.product_points(resource_name, produced))
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[PRODUCE] Building #%d: prodotte %d unità di '%s' (%d/%d)." % [target_building.id, produced, resource_name, produced_count, quantity])
 
@@ -264,12 +266,12 @@ func _debug_log_block(individual: Variant, message: String) -> void:
 	var building_id: int = target_building.id if target_building != null else -1
 	if message == "":
 		if previous != "":
-			print("[PRODUCE BLOCK] %s edificio #%d '%s' (%d/%d): ripresa, lavoro %.1f/%.1f." % [
+			DebugLogging.print_event("[PRODUCE BLOCK] %s edificio #%d '%s' (%d/%d): ripresa, lavoro %.1f/%.1f." % [
 				who, building_id, resource_name, produced_count, quantity,
 				ProductionService.get_labor_accumulated(target_building, order_key),
 				ProductionService.get_required_labor(target_building, resource_name)])
 		return
-	print("[PRODUCE BLOCK] %s edificio #%d '%s' (%d/%d): FERMO — %s" % [who, building_id, resource_name, produced_count, quantity, message])
+	DebugLogging.print_event("[PRODUCE BLOCK] %s edificio #%d '%s' (%d/%d): FERMO — %s" % [who, building_id, resource_name, produced_count, quantity, message])
 
 
 func _debug_describe_no_record() -> String:

@@ -34,6 +34,8 @@ const EVENTS: Dictionary = {
 	&"star_vigil_call": &"call_for_stars_fest",
 	# Richiamo di caccia su una preda grossa ferita (2026-11-11, HuntCallService): fischio con le dita.
 	&"hunt_call": &"finger_whistle",
+	# Spinta verso le fosse (2026-11-14, PitDriveAction): grido di chi spaventa la mandria.
+	&"pit_drive_shout": &"hunt_shout",
 	# Arrivo di un gruppo di animali selvatici in visita (2026-10-28, lupi L1): evento "wild_animal_arrived:<specie>".
 	&"wild_animal_arrived:wolf": &"wolf_howl",
 	# Inizio della carica di un gruppo in visita (2026-10-30, lupi L4): evento "wild_animal_charged:<specie>".

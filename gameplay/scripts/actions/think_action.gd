@@ -27,6 +27,8 @@ extends Action
 # drain di una camminata piena (10.0 = 50.0/5) rende il costo reale ma nettamente più leggero di uno
 # sforzo fisico, senza azzerare comunque il recupero passivo di un'eventuale Task successiva di Rest.
 const STAMINA_DRAIN_PER_DAY: float = 10.0
+# Cognizione guadagnata a ogni Think concluso (intero, come le altre skill).
+const COGNITION_GAIN_PER_THINK: float = 1.0
 
 
 var duration: float = 0.0
@@ -79,6 +81,10 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 # ThoughtTargetSelectionService.has_thought_accepting_building, usata a monte per decidere se
 # assegnare l'intera Task Daydream, non qui).
 func on_complete(individual: Variant, context: Dictionary) -> void:
+	# Pensare allena la Cognizione (2026-11-14, richiesta utente): +1 a ogni riflessione vera. Il Think a durata 0 del
+	# pensiero già pronto (IdleTaskAssignmentService, ramo has_thought) non conta.
+	if duration > 0.0:
+		individual.skill_cognition = minf(individual.skill_cognition + COGNITION_GAIN_PER_THINK, HumanIndividual.SKILL_MAX)
 	individual.pending_thought = true
 	context["pending_thought_target_search"] = {"excluded_building_ids": []}
 

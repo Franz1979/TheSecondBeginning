@@ -69,6 +69,10 @@ static func get_remaining_uses_list(building: Building, tool_name: String) -> Ar
 static func is_accepted_tool(building: Building, tool_name: String) -> bool:
 	if not has_toolkit(building) or not ToolInstance.is_tool_resource(tool_name):
 		return false
+	# Attrezzi elencati nei dati dell'edificio (2026-11-13, BuildingRules.toolkit_extra_tools: vasi da semi del magazzino).
+	# Un contenitore entra solo se il magazzino accetta ciò che contiene (2026-11-13, vasi da semi: Materiali grezzi).
+	if building.rules.toolkit_extra_tools.has(tool_name):
+		return StorageContainerService.building_accepts_contents(building, tool_name)
 	var rules := CaloricCalculator.get_caloric_source_rules(tool_name)
 	if rules == null:
 		return false
@@ -283,8 +287,12 @@ static func accepted_tools_for_type(type_name: String) -> Array[String]:
 		for category in recipe_rules.recipe_required_tool_categories:
 			if not needed.has(int(category)):
 				needed.append(int(category))
+	var extra := BuildingCalculator.get_building_rules(type_name).toolkit_extra_tools
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		if not ToolInstance.is_tool_resource(resource_name):
+			continue
+		if extra.has(resource_name):
+			tools.append(resource_name)
 			continue
 		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 		if rules == null:

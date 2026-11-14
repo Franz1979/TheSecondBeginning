@@ -20,8 +20,10 @@ extends SocialRiteRules
 @export var gain_fraction: float = 0.01
 @export var min_gain: int = 1
 @export var max_gain: int = 10
-# Cognizione in più per ogni allievo presente a fine lezione (non per l'insegnante).
+# Cognizione in più per ogni allievo presente a fine lezione.
 @export var cognition_gain: float = 1.0
+# Cognizione in più per l'insegnante a ogni lezione tenuta (2026-11-14, richiesta utente — spiegando si impara).
+@export var teacher_cognition_gain: float = 1.0
 # Punti d'influenza culturale all'edificio (InfluenceService.add_points): base + per ogni allievo presente.
 @export var influence_points_base: float = 5.0
 @export var influence_points_per_student: float = 1.0
@@ -29,3 +31,12 @@ extends SocialRiteRules
 # solo con un villaggio che ha un centro): base + per ogni allievo presente.
 @export var village_culture_gain: float = 1.0
 @export var village_culture_gain_per_student: float = 0.2
+
+@export_group("Inspiration")
+# Idea dell'insegnante a fine lezione (2026-11-14, richiesta utente — "le domande dei bambini", InspirationService):
+# base + per ogni allievo presente + quota della Cognizione dell'insegnante (su SKILL_MAX), al massimo max.
+# 1 allievo e Cognizione 0 = 50%, 3 allievi = 70%, 6 allievi = 90%.
+@export var inspiration_base_chance: float = 0.4
+@export var inspiration_chance_per_student: float = 0.1
+@export var inspiration_cognition_chance: float = 0.5
+@export var inspiration_max_chance: float = 0.9

@@ -13,7 +13,7 @@ generation_source = 2
 day_durability = -1
 space_per_unit = 20.0
 recipe_inputs = {
-"dried_hide": 5,
+"dried_hide": 4,
 "fiber_rope": 3,
 "sinew": 2,
 "stick": 4,

@@ -64,6 +64,25 @@ extends Resource
 @export var litter_size_min: int = 0
 @export var litter_size_max: int = 0
 
+@export_group("Feeding")
+# Alimentazione (2026-11-13, punto 4, passo 1: solo i dati, nessuno li legge ancora). Calorie di gioco al giorno di un
+# adulto (1 ≈ 100 kcal; una persona 30), uguali per la selvatica in addomesticazione; i piccoli la metà. Mangiano dal
+# villaggio solo se chiusi in un edificio: sempre in addomesticazione, d'inverno da addomesticati (il cane oggi è sempre
+# libero). Cibi accettati: nomi di SecondaryResourceRules; un cibo vale per gli animali
+# SecondaryResourceRules.animal_calories_per_unit se > 0, altrimenti le sue calorie normali.
+@export var daily_calories: float = 0.0
+@export var accepted_foods: Array[String] = []
+# Fame (2026-11-14, punto 4): giorni di fila senza cibo che un animale chiuso regge; oltre muore di fame
+# (AnimalFeederService.feed_day). 0 = non muore di fame. Separata dalla salute.
+@export var max_days_without_food: int = 0
+# Punti addomesticazione tolti per ogni animale morto di fame finché la specie non è addomesticata (2026-11-14, richiesta
+# utente: 10). I punti non scendono mai sotto 0 (DomesticationPointsService.add_points).
+@export var starvation_point_loss: int = 0
+# Punti addomesticazione tolti (2026-11-14, richiesta utente) per ogni animale in tettoia macellato (2) e per ogni animale
+# scappato da una tettoia troppo piena (1), finché la specie non è addomesticata; mai sotto 0.
+@export var slaughter_point_loss: int = 0
+@export var escape_point_loss: int = 0
+
 @export_group("Butchering")
 # Rese dell'adulto (Macella, passo 7), scalate per fascia con size_multiplier_by_age della selvatica (ButcherAction.compute_yields).
 @export var butcher_meat_units: int = 0

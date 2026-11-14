@@ -254,10 +254,51 @@ var influence_last_gain_day: Dictionary = {}
 # lo riempirà la task di sepoltura. Un Dictionary JSON-nativo per defunto, salvato così com'è da GameSaveService.
 # Capienza: BuildingRules.max_buried.
 var buried: Array = []
+# Ossario (2026-11-14, richiesta utente): i sepolti da almeno BodyBurialService.OSSUARY_YEARS anni, spostati qui a fine anno
+# (le ossa risistemate) per liberare il posto. Stesse voci di `buried`; contano ancora come defunti per i riti.
+var ossuary: Array = []
 # Specie tenuta (2026-11-12, tettoia delle gabbie — KeptAnimalService): specie domestica scelta nel pannello
 # (DomesticAnimalRules.species_name, es. "domestic_rabbit"); "" = Qualunque, decide il primo animale che entra. Si cambia
 # solo a edificio vuoto. Gli animali tenuti stanno in GameData.domestic_animals con building_id = id.
 var kept_species: String = ""
+# Mangiatoia (2026-11-13, punto 4 — AnimalFeederService): spazio occupato, calorie per gli animali dentro e specie a cui
+# appartengono (cambiata la specie tenuta, si svuota). Salvati.
+var feeder_space_used: float = 0.0
+var feeder_calories: float = 0.0
+var feeder_species: String = ""
+# Giorni di cibo voluti in questa mangiatoia al posto della regola generale del WM (2026-11-14, FeederStockService.
+# days_for): -1 = regola generale, 0 = esclusa dal WM, > 0 = giorni suoi. Salvato.
+var feeder_days_override: int = -1
+# Once di seme da tenere nel capanno del campo (2026-11-15, passo 3a — FieldSeedStoreService): -1 = regola generale,
+# 0 = nessuno, > 0 = valore suo. Salvato.
+var field_seed_level: int = -1
+# Cura del campo (2026-11-15, FieldFertilityService): rimedio (Remedy) e soglia di fertilità (percento) di questo campo;
+# -1 = come la regola del WM. Salvati.
+var field_care_remedy: int = -1
+var field_care_threshold: int = -1
+# Terreno coltivato (2026-11-15, orto delle prove e campi — CultivationService): specie scelta ("" = nessuna, si cambia
+# solo a terreno tutto vuoto). Salvata.
+var crop_species: String = ""
+# Lotti (2026-11-15, passo 2 dei campi — CropLot): fase, once, piantine, semi portati e lavoro di ogni microcella
+# coltivata; letti sempre da CultivationService.lots, che li crea. Salvati.
+var crop_lots: Array[CropLot] = []
+# "Coltiva in automatico" del terreno (2026-11-15, richiesta utente): CultivationService.AutoMode — COME_REGOLA (0, segue la
+# regola del WM GameData.stock_cultivation_auto), SEMPRE_SI (1), SEMPRE_NO (2); la scelta del terreno vince sulla regola.
+# Spenta, la lista dei lavori non propone né Semina né Mietitura qui (il comando a mano, quando ci sarà, resta libero). Salvata.
+var crop_auto_mode: int = 0
+# Fertilità del terreno del campo (2026-11-15, richiesta utente — FieldFertilityService): 1,0 = piena, minimo 0,3. Pesa
+# sul tiro di maturazione. Salvata.
+var soil_fertility: float = 1.0
+# Conto dell'anno per la fertilità (FieldFertilityService): parte mietuta, seminato sì/no, specie dell'ultima mietitura,
+# anno dell'ultimo conto. Salvato.
+var fertility_tracking: Dictionary = {}
+# Soglia "Macella oltre" della tettoia (2026-11-14, richiesta utente — pezzo 2): oltre questo numero di animali il WM ne fa
+# macellare; 0 = ∞ (nessuna macellazione, i piccoli in più scappano). Mai oltre la capienza. Vince la più stretta tra
+# questa e quella della specie (KeptAnimalService.slaughter_limit). Salvato.
+var slaughter_above: int = 0
+# Giorno (assoluto) da cui la tettoia sta oltre la capienza con una soglia "Macella oltre" impostata (2026-11-14, pezzo 2b):
+# dopo KeptAnimalService.OVER_CAPACITY_GRACE_DAYS i più giovani in più scappano. -1 = dentro la capienza. Salvato.
+var over_capacity_since_day: int = -1
 # Rifiuti (2026-10-18, richiesta utente — Fossa dei rifiuti, passo 1): spazio occupato e spazio prenotato da trasporti
 # in viaggio verso la fossa (così due portatori non contano sullo stesso posto libero). Capienza:
 # BuildingRules.waste_capacity. Per ora sempre 0: chi ci butta dentro arriverà nei passi successivi.

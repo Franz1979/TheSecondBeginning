@@ -71,7 +71,7 @@ extends Resource
 @export var categories_locked: bool = false
 
 # Moltiplicatore di durabilità PER CATEGORIA DI RISORSA (2026-09-09, richiesta utente) — indice =
-# SecondaryResourceTypes.Category (0=FOOD, 1=RAW_MATERIAL, 2=MEDICINAL, 3=SEMI_FINISHED, 4=TOOL — un
+# SecondaryResourceTypes.Category (0=FOOD, 1=RAW_MATERIAL, 2=MEDICINAL, 3=SEMI_FINISHED, 4=TOOL, 5=APPAREL, 6=GRAIN — un
 # elemento per valore dell'enum, da allungare quando se ne aggiunge uno in fondo), stesso principio "array indicizzato per
 # enum" già in uso per HumanRules/AnimalRules (es. caloric_multiplier_by_age). Consultato da
 # ResourceDecayService.advance_building_decay: l'incremento giornaliero di decay_fraction diventa
@@ -83,7 +83,7 @@ extends Resource
 # accesso fuori range (una futura categoria aggiunta senza aggiornare questo array) va trattato dal
 # chiamante come "nessun moltiplicatore" (1.0), non un crash — vedi ResourceDecayService per la
 # guardia.
-@export var durability_multiplier_by_category: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+@export var durability_multiplier_by_category: Array[float] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 
 # Nome risorsa (stringa libera per ora, es. "wood"/"stick"/"stone"/"iron" — nessun enum dedicato
 # finché non esiste un vero inventario/economia) -> quantità richiesta per completare la
@@ -151,6 +151,9 @@ extends Resource
 # vivi, una sola specie per edificio; 0 = l'edificio non tiene animali. Per ora solo il dato e la riga Info: gli animali
 # arriveranno con la cattura viva.
 @export var animal_capacity: int = 0
+# Mangiatoia (2026-11-13, punto 4 — AnimalFeederService): spazio per il cibo, come la saccoccia delle persone (il cibo
+# entrato diventa calorie); 0 = nessuna mangiatoia.
+@export var feeder_space_capacity: int = 0
 
 # Rifiuti (2026-10-18, richiesta utente — Fossa dei rifiuti, passo 1): spazio totale per i rifiuti, come lo spazio di un
 # magazzino ma senza slot e senza mai riprendere nulla; 0 = non è una fossa. Occupato e prenotato stanno in
@@ -277,6 +280,25 @@ func can_be_village_center() -> bool:
 # nessun .tres da aggiornare, dato che il default vale già per tutti finché non lo si valorizza
 # esplicitamente per un tipo che dovrà davvero ammettere più lavoratori in parallelo.
 @export var max_builders: int = 1
+# Attrezzi obbligatori per costruire (2026-11-15, richiesta utente — dissodare l'orto delle prove col piccone):
+# TaskTypes.ToolCategory (2 = scavo). Chi costruisce deve averne uno per ogni categoria (BuildAction, stesso controllo
+# della produzione); ogni giorno di lavoro consuma un uso. Vuoto = nessun attrezzo, tutti gli edifici di prima.
+@export var construction_tool_categories: Array[int] = []
+# Terreno coltivato (2026-11-15, richiesta utente — Semina e Mietitura generiche per orto e campi, CultivationService):
+# microcelle seminabili (0 = non si coltiva) e moltiplicatore del lavoro di semina e mietitura (orto 2,0: più lento, più
+# fatica; campo 1,0).
+@export var cultivation_lots: int = 0
+@export var cultivation_labor_multiplier: float = 1.0
+# Tetto della resa per pianta matura (2026-11-15, richiesta utente): l'orto rende al più 3 once per pianta anche a specie
+# addomesticata (resa della specie oltre questo ignorata), prima e dopo l'addomesticazione; 0 = nessun tetto (il campo).
+@export var cultivation_yield_cap: float = 0.0
+# Once seminate per lotto (2026-11-15, richiesta utente — campi, passo 2): 0 = quelle della specie
+# (DomesticPlantRules.sown_units_per_lot, l'orto); il campo 100.
+@export var cultivation_units_per_lot: int = 0
+# Solo semi domestici (2026-11-15, richiesta utente — il campo): si sceglie solo una specie già addomesticata con la sua
+# risorsa domestica, si semina e si raccoglie quella, col nome domestico; nessun punto di addomesticazione (non servono
+# più). false = l'orto (semi selvatici, punti).
+@export var cultivation_domestic_only: bool = false
 
 # Moltiplicatore del recupero stamina per giorno quando un RestAction avviene in questo edificio
 # (2026-09-12, richiesta utente — campo base per la Rest Task esplicita: SOLO il dato in questo
@@ -329,6 +351,14 @@ func can_be_village_center() -> bool:
 # un altro edificio. Prima lo decideva la categoria MOVEMENT, che resta il "tappeto/strada" (elenco, conteggi, preferenza
 # del pathfinding); oggi true per terra battuta, sentiero di ciottoli e spiazzo.
 @export var walkable: bool = false
+# Terra coltivata (2026-11-15, richiesta utente — campo e orto): > 0 = le persone ci camminano sopra (ci lavorano), ma il
+# percorso la paga questo × il terreno normale, come il ruscello (PathfindingService.STREAM_WEIGHT_SCALE): la si aggira
+# se il giro non è lungo. Non è un fondo: niente mucchi né altri edifici sopra (MicrocellObstacles.cultivated_buildings).
+# 0 = regola di sempre (walkable decide).
+@export var people_path_weight_scale: float = 0.0
+# Chiuso agli animali (2026-11-15, richiesta utente — campo e orto; poi la staccionata): fauna, animali in visita e loro
+# percorsi non entrano nelle sue microcelle (MicrocellObstacles.animal_closed, PathfindingService.is_blocked_for_animals).
+@export var closed_to_animals: bool = false
 
 @export_group("Production")
 # Sistema di produzione (2026-09-23, richiesta utente) — letti da ProductionService/ProduceAction e
@@ -398,3 +428,6 @@ func can_be_village_center() -> bool:
 # (0 = nessuna Attrezzeria) e quanti pezzi per tipo. Chi produce qui usa questi attrezzi prima dei propri.
 @export var toolkit_tool_types: int = 0
 @export var toolkit_units_per_type: int = 0
+# Attrezzi che l'Attrezzeria accetta oltre a quelli delle ricette (2026-11-13, richiesta utente — attrezzeria del
+# magazzino: la Capanna di stoccaggio tiene i vasi da semi, ["seed_jar"]). Vuoto = solo la regola delle ricette.
+@export var toolkit_extra_tools: Array[String] = []

@@ -293,14 +293,14 @@ static func _log_house(individual: HumanIndividual, from_house_id: int, to: Buil
 	_print_trigger_once()
 	var from_text := "senza casa" if from_house_id == -1 else "casa #%d" % from_house_id
 	var to_text := "senza casa" if to == null else "%s #%d" % [to.get_display_name(), to.id]
-	print("[ASSIGN HOUSE] #%d %s: da %s a %s (%s)." % [individual.id, individual.name, from_text, to_text, reason])
+	DebugLogging.print_event("[ASSIGN HOUSE] #%d %s: da %s a %s (%s)." % [individual.id, individual.name, from_text, to_text, reason])
 
 
 static func _print_trigger_once() -> void:
 	if _trigger_printed:
 		return
 	_trigger_printed = true
-	print("[ASSIGN HOUSE] Motivo: %s." % (_trigger if _trigger != "" else "non indicato"))
+	DebugLogging.print_event("[ASSIGN HOUSE] Motivo: %s." % (_trigger if _trigger != "" else "non indicato"))
 
 
 # Riga della scelta del nucleo per una casa di nucleo (2026-10-25, richiesta utente): a chi va, perché, e chi resta in
@@ -310,7 +310,7 @@ static func _log_nucleus_choice(house: Building, nucleus_key: String, nuclei: Di
 	var others: Array[String] = []
 	for key in waiting:
 		others.append(_nucleus_label(nuclei, String(key)))
-	print("[ASSIGN HOUSE] %s #%d al %s: %s. In attesa: %s." % [
+	DebugLogging.print_event("[ASSIGN HOUSE] %s #%d al %s: %s. In attesa: %s." % [
 		house.get_display_name(), house.id, _nucleus_label(nuclei, nucleus_key), reason,
 		"nessuno" if others.is_empty() else "; ".join(others),
 	])

@@ -125,6 +125,12 @@ var domesticated_species: Array[String] = []
 # Anno (GameData.year) della prima addomesticazione per specie (2026-11-07, richiesta utente: la carta del pannello lo
 # mostra). Salvataggi più vecchi: chiave assente, la carta non dice l'anno. Scritto solo da DomesticationPointsService.
 var domestication_years: Dictionary = {}
+# Unità raccolte non ancora diventate un punto (2026-11-13, piante: DomesticPlantRules.harvested_units_per_point, 1 punto
+# ogni 10 once di semi): specie -> resto. Scritto solo da DomesticPlantCalculator.units_to_points. Salvato.
+var domestication_harvest_units: Dictionary = {}
+# Once raccolte da terra non ancora diventate una microcella alla Fossa (2026-11-13, PitSowingService): dal 2026-11-15
+# una per risorsa (nome -> once), soglia in SecondaryResourceRules.pit_sowing_units. Salvato.
+var pit_sowing_units: Dictionary = {}
 # Specie domestiche scoperte (2026-11-12, addomesticazione per cattura viva, passo C): il primo animale vivo arrivato in
 # una tettoia rivela la specie nel pannello delle Addomesticazioni (prima è una scheda "?"). Il cane non ne ha bisogno.
 # Scritto solo da DomesticationPointsService.discover_species.
@@ -144,6 +150,9 @@ var domestic_starvation_days: Dictionary = {}
 # in cui arriva da fuori il prossimo rimpiazzo (assente = nessuno in arrivo). Salvati.
 var domestic_first_arrival_day: Dictionary = {}
 var domestic_stray_due_day: Dictionary = {}
+# Soglia "Macella oltre" per specie domestica (2026-11-14, pezzo 2): animali chiusi in tutte le tettoie oltre cui il WM ne fa
+# macellare; assente o 0 = ∞. Salvata.
+var domestic_slaughter_above: Dictionary = {}
 
 func allocate_domestic_animal_id() -> int:
 	var id := next_domestic_animal_id
@@ -165,9 +174,23 @@ var broken_traps: Array[Dictionary] = []
 var snare_passages: Dictionary = {}
 var snare_disturbances: Dictionary = {}
 var snare_sample_slot: int = -1
+# Spinta verso le fosse (2026-11-14, richiesta utente — PitDriveService). pit_drive_enabled: regola del WM "Spingi le prede
+# grosse verso le fosse", spenta di partenza, salvata. Non salvate: pit_drive_candidates (id zona -> {"species",
+# "distance"}, rifatte ogni ora di gioco da PitDriveService.refresh) e pit_drive_last ("zona|specie" -> giorno dell'ultima
+# spinta, per non rispingere la stessa specie verso la stessa zona per qualche giorno).
+var pit_drive_enabled: bool = false
+var pit_drive_candidates: Dictionary = {}
+var pit_drive_last: Dictionary = {}
 # Regola del WM "Trappole per zona" (2026-11-07): trappole volute in ogni zona del loro lavoro, per tipo di trappola
 # (nome -> numero; assente o 0 = nessuna). Una zona può avere il proprio numero (WorkArea.trap_targets). Salvata.
 var stock_traps_per_zone: Dictionary = {}
+# Regola del WM "Semi nei campi" (2026-11-15, campi passo 3b — FieldSeedStockService): once da tenere nel capanno di ogni
+# campo, per seme domestico (nome -> once; assente = FieldSeedStoreService.default_level). Salvata.
+var stock_field_seeds: Dictionary = {}
+# Regola del WM "Cura dei campi" (2026-11-15 — FieldFertilityService): rimedio (Remedy) sotto la soglia di fertilità
+# (percento). Salvata.
+var stock_field_care_remedy: int = FieldFertilityService.DEFAULT_REMEDY
+var stock_field_care_threshold: int = FieldFertilityService.DEFAULT_THRESHOLD
 
 func allocate_placed_trap_id() -> int:
 	var id := next_placed_trap_id
@@ -184,6 +207,9 @@ var wild_animal_visits: Array[WildAnimalVisit] = []
 # Fauna selvatica ad hoc (2026-10-31, piano fauna passo 1a — WildFaunaService): riquadri delle specie già creati,
 # chiave WildFaunaService.region_key -> WildFaunaRegion. Salvati (passo 4, "wild_fauna" nella sezione "game").
 var wild_fauna: Dictionary = {}
+# Registro delle mete abituali delle mandrie (2026-11-15, HerdHabitService): chiave "x,y:specie" -> Array di
+# {"kind": "pascolo"|"acqua", "x": float, "y": float} (microcelle). Scelte una volta, poi sempre quelle. Salvato.
+var herd_habit_goals: Dictionary = {}
 # Una mandria ha cambiato cella nel giro di oggi (WildFaunaService.tick_day): la scena ridisegna gli animali delle celle
 # vive e lo rimette a false. Mai salvato.
 var wild_fauna_moved: bool = false
@@ -377,6 +403,9 @@ var stock_fuel_rule_enabled: bool = false
 # Regola "Acqua per tettoia" (2026-11-07, richiesta utente — giare, passo 3: WaterShelterStockService): acqua voluta in ogni
 # Tettoia dell'acqua (0 = regola spenta). Salvata ("stock_water_per_shelter"); partita nuova e salvataggi vecchi: 0.
 var stock_water_per_shelter: int = 0
+# Regola "Rifornisci le mangiatoie" (2026-11-14, FeederStockService): giorni di cibo da tenere nelle mangiatoie (0 =
+# spenta). Salvata; partita nuova e salvataggi vecchi: FeederStockService.DEFAULT_DAYS.
+var stock_feeder_days: int = 5
 var stock_fuel_min_by_type: Dictionary = {}
 # Regola "Rifornisci le Attrezzerie" (2026-10-18, richiesta utente — ToolkitStockService): accesa/spenta e pezzi voluti
 # per tipo di edificio e attrezzo (tipo -> {attrezzo -> int}). Salvati ("stock_toolkit_rule_enabled",
@@ -393,6 +422,10 @@ var stock_banquet_safe_only: bool = true
 # _request_workstation_food). Salvata da GameSaveService ("stock_workstation_food_rule_enabled"); partita nuova e
 # salvataggi vecchi: accesa.
 var stock_workstation_food_rule_enabled: bool = true
+# Regola "Coltiva in automatico tutti i terreni" (2026-11-15, richiesta utente — CultivationService.is_auto): vale per i
+# terreni lasciati su "come la regola"; quelli con "sempre sì" / "sempre no" la ignorano. Salvata da GameSaveService
+# ("stock_cultivation_auto"); partita nuova e salvataggi vecchi: accesa.
+var stock_cultivation_auto: bool = true
 # Regola di assegnazione "Riponi gli attrezzi presi per un lavoro" (2026-10-11): gli attrezzi presi in deposito per un
 # ordine della coda tornano in deposito quando l'individuo è libero (HumanIndividual.borrowed_tools). Salvata da
 # GameSaveService ("job_board_return_borrowed_tools"); partita nuova e salvataggi vecchi: accesa.

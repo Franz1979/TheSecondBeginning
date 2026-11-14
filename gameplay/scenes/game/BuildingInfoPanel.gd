@@ -114,8 +114,23 @@ signal cancel_empty_pit_requested(building: Building)
 signal waste_closed_toggle_requested(building: Building)
 # Tettoia dell'acqua (2026-11-07): livello d'acqua voluto della singola tettoia (-1 = regola generale, 0 = esclusa).
 signal water_target_changed(building: Building, level: int)
+# Giorni di cibo della singola mangiatoia (2026-11-14, FeederStockService): -1 = regola generale, 0 = esclusa.
+signal feeder_days_changed(building: Building, days: int)
 # Specie tenuta (2026-11-12, tettoia delle gabbie — KeptAnimalService): "" = Qualunque.
 signal kept_species_changed(building: Building, species: String)
+# Specie coltivata (2026-11-15, orto delle prove — CultivationService): "" = nessuna; solo a terreno vuoto.
+signal crop_species_changed(building: Building, species: String)
+# "Coltiva in automatico" (2026-11-15): Semina e Mietitura nella lista dei lavori per questo terreno.
+signal crop_auto_mode_changed(building: Building, mode: int)
+# Livello dei semi nel capanno del campo (2026-11-15, passo 3a): -1 = regola generale, 0 = nessuno, > 0 = suo.
+signal field_seed_level_changed(building: Building, level: int)
+# Cura del campo (2026-11-15, FieldFertilityService): rimedio e soglia del campo, -1 = come la regola.
+signal field_care_remedy_changed(building: Building, remedy: int)
+signal field_care_threshold_changed(building: Building, threshold: int)
+# Soglia "Macella oltre" della tettoia (2026-11-14, pezzo 2): 0 = ∞.
+signal slaughter_above_changed(building: Building, value: int)
+# 🔪 sulla riga di un animale in tettoia (2026-11-14, pezzo 3): ordina o annulla la macellazione.
+signal kept_animal_slaughter_toggled(animal_id: int)
 # Pulsante "Addomesticazioni" della tettoia delle gabbie (2026-11-12): GameScene apre il pannello delle Addomesticazioni.
 signal domestication_panel_requested
 # Cancello (2026-10-23): Apri/Chiudi.
@@ -456,6 +471,8 @@ func _ready() -> void:
 	move_child(_shared_links_box, settings_separator.get_index())
 	_build_durability_rows()
 	_build_repair_materials_rows()
+	# Animali tenuti (2026-11-14, richiesta utente): sotto i dati dell'edificio (stato, costruito, integrità e riparazione).
+	move_child(_kept_box, _repair_materials_grid.get_index() + 1)
 	_build_waste_rows()
 	clear()
 	residents_caption.text = tr("building_residents_caption")
@@ -557,6 +574,7 @@ func show_building(building: Building, residents_display_data: Array[Dictionary]
 	_refresh_sacredness(building)
 	_refresh_buried_list(building)
 	_refresh_kept_animals(building)
+	_refresh_crop(building)
 	_refresh_info(building)
 	_refresh_command_icon_row(building, demolition_started)
 	# Riparazione richiesta e non ancora assegnata (2026-10-10, coda dei lavori): "Riparazione in attesa di assegnazione".
@@ -1676,6 +1694,11 @@ func _refresh_buried_list(building: Building) -> void:
 		_buried_box.add_child(_build_buried_label(tr("building_buried_entry").format({
 			"name": String(buried_entry.get("name", "?")), "year": int(buried_entry.get("year", 0)),
 		}), BURIED_ROW_INDENT))
+	# Ossario (2026-11-14): solo il numero delle ossa risistemate, quando ce ne sono.
+	if not building.ossuary.is_empty():
+		_buried_box.add_child(_build_buried_label(tr("building_info_ossuary").format({
+			"count": building.ossuary.size(), "years": BodyBurialService.OSSUARY_YEARS,
+		}), 0))
 
 
 # Pulsante "Addomesticazioni" sulla riga di "Costruito" (2026-11-13, richiesta utente): creato al primo uso, mettendo
@@ -1717,6 +1740,226 @@ func _ensure_domestication_button() -> void:
 # Animali tenuti (2026-11-12, tettoia delle gabbie — KeptAnimalService): "Animali: 3/20", la specie (Qualunque o una
 # scelta, cambiabile solo a edificio vuoto) e una riga per animale: nome (la selvatica finché non è addomesticato), sesso,
 # età. Solo per gli edifici con animal_capacity e finiti.
+# Terreno coltivato (2026-11-15, passo 1 dell'orto — CultivationService): "Coltura:" col menu della specie (cambiabile
+# solo a terreno vuoto) e lo stato del terreno. Usa lo stesso contenitore degli animali tenuti (mai entrambi).
+func _refresh_crop(building: Building) -> void:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null or building == null or not building.is_complete or not CultivationService.is_cultivated(building):
+		return
+	_kept_box.visible = true
+	_kept_box.add_child(HSeparator.new())
+	var species_row := HBoxContainer.new()
+	species_row.add_theme_constant_override("separation", 6)
+	var title := Label.new()
+	title.text = tr("building_crop_species")
+	title.tooltip_text = TooltipText.wrap(tr("building_crop_species_tooltip"))
+	title.mouse_filter = Control.MOUSE_FILTER_PASS
+	title.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	species_row.add_child(title)
+	var picker := OptionButton.new()
+	picker.focus_mode = Control.FOCUS_NONE
+	picker.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	var choices: Array[String] = [""]
+	choices.append_array(CultivationService.selectable_species(game_data, building))
+	if building.crop_species != "" and not choices.has(building.crop_species):
+		choices.append(building.crop_species)
+	for i in range(choices.size()):
+		var species := choices[i]
+		picker.add_item(tr("building_crop_species_none") if species == "" else CultivationService.species_display_name(game_data, species, building), i)
+		if species == building.crop_species:
+			picker.select(i)
+	picker.disabled = not CultivationService.can_change_species(building)
+	picker.tooltip_text = TooltipText.wrap(tr("building_crop_species_locked_tooltip") if picker.disabled else tr("building_crop_species_tooltip"))
+	var target := building
+	picker.item_selected.connect(func(index: int) -> void:
+		crop_species_changed.emit(target, choices[index])
+	)
+	species_row.add_child(picker)
+	_kept_box.add_child(species_row)
+	# Stato (2026-11-15, passo 2 dei campi): un lotto (l'orto) per esteso, più lotti (il campo) in riepilogo per fase.
+	var crop_lots := CultivationService.lots(building)
+	var lot: CropLot = crop_lots[0] if not crop_lots.is_empty() else CropLot.new()
+	var state := tr(CultivationService.phase_key(lot.phase))
+	if crop_lots.size() > 1:
+		var counts := {"total": crop_lots.size(), "empty": 0, "sowing": 0, "sown": 0, "sprouted": 0, "ready": 0}
+		for each in crop_lots:
+			match each.phase:
+				CultivationService.Phase.SOWN:
+					counts["sown"] += 1
+				CultivationService.Phase.SPROUTED:
+					counts["sprouted"] += 1
+				CultivationService.Phase.READY:
+					counts["ready"] += 1
+				_:
+					counts["sowing" if each.seeds > 0 else "empty"] += 1
+		state = tr("building_crop_lots_summary").format(counts)
+	elif lot.phase == CultivationService.Phase.EMPTY and lot.seeds > 0:
+		var required := CultivationService.sowing_labor(building)
+		state = tr("building_crop_sowing").format({"seeds": lot.seeds,
+			"percent": int(100.0 * lot.labor / required) if required > 0.0 else 0})
+	elif lot.phase == CultivationService.Phase.READY and lot.labor > 0.0:
+		var reap_required := CultivationService.reaping_labor(building)
+		state = tr("building_crop_reaping").format({"mature": lot.mature,
+			"percent": int(100.0 * lot.labor / reap_required) if reap_required > 0.0 else 0})
+	elif lot.phase != CultivationService.Phase.EMPTY:
+		state = tr("building_crop_counts").format({"phase": state, "sown": lot.sown,
+			"sprouts": lot.sprouts, "mature": lot.mature})
+	_kept_box.add_child(_build_buried_label(tr("building_crop_state").format({"state": state}), BURIED_ROW_INDENT))
+	# Fertilità del campo (2026-11-15, FieldFertilityService): solo il campo, l'orto resta sempre pieno.
+	if FieldFertilityService.applies_to(building):
+		var fertility_label := _build_buried_label(tr("building_field_fertility").format({
+			"percent": roundi(FieldFertilityService.fertility(building) * 100.0)}), BURIED_ROW_INDENT)
+		fertility_label.tooltip_text = TooltipText.wrap(tr("building_field_fertility_tooltip"))
+		fertility_label.mouse_filter = Control.MOUSE_FILTER_PASS
+		_kept_box.add_child(fertility_label)
+		if FieldFertilityService.is_resting(building):
+			_kept_box.add_child(_build_buried_label(tr("building_field_resting"), BURIED_ROW_INDENT))
+		if FieldFertilityService.retill_pending(building) > 0:
+			_kept_box.add_child(_build_buried_label(tr("building_field_retill").format({
+				"left": FieldFertilityService.retill_pending(building), "total": CultivationService.lots(building).size()}), BURIED_ROW_INDENT))
+		_add_field_care_rows(game_data, building)
+	# "Coltiva in automatico" (2026-11-15): come la regola del WM (con il suo stato di oggi), sempre sì, sempre no.
+	var auto_row := HBoxContainer.new()
+	auto_row.add_theme_constant_override("separation", 6)
+	var auto_title := Label.new()
+	auto_title.text = tr("building_crop_auto")
+	auto_title.tooltip_text = TooltipText.wrap(tr("building_crop_auto_tooltip"))
+	auto_title.mouse_filter = Control.MOUSE_FILTER_PASS
+	auto_title.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	auto_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	auto_row.add_child(auto_title)
+	var auto_picker := OptionButton.new()
+	auto_picker.focus_mode = Control.FOCUS_NONE
+	auto_picker.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	auto_picker.tooltip_text = TooltipText.wrap(tr("building_crop_auto_tooltip"))
+	auto_picker.add_item(tr("building_crop_auto_rule").format({"state": tr("building_crop_auto_yes") if game_data.stock_cultivation_auto else tr("building_crop_auto_no")}), CultivationService.AutoMode.FOLLOW_RULE)
+	auto_picker.add_item(tr("building_crop_auto_always"), CultivationService.AutoMode.ALWAYS)
+	auto_picker.add_item(tr("building_crop_auto_never"), CultivationService.AutoMode.NEVER)
+	auto_picker.select(auto_picker.get_item_index(clampi(building.crop_auto_mode, 0, 2)))
+	auto_picker.item_selected.connect(func(index: int) -> void:
+		crop_auto_mode_changed.emit(target, auto_picker.get_item_id(index))
+	)
+	auto_row.add_child(auto_picker)
+	_kept_box.add_child(auto_row)
+	if FieldSeedStoreService.is_seed_store(building):
+		_add_field_seed_rows(game_data, building)
+
+
+# Cura del campo (2026-11-15): rimedio ("come la regola" o suo) e, con un rimedio, la soglia di fertilità con ↺ come i
+# giorni della mangiatoia.
+func _add_field_care_rows(game_data: GameData, building: Building) -> void:
+	var target := building
+	var remedy_row := HBoxContainer.new()
+	remedy_row.add_theme_constant_override("separation", 6)
+	var remedy_title := Label.new()
+	remedy_title.text = tr("building_field_care")
+	remedy_title.tooltip_text = TooltipText.wrap(tr("field_care_tooltip"))
+	remedy_title.mouse_filter = Control.MOUSE_FILTER_PASS
+	remedy_title.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	remedy_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	remedy_row.add_child(remedy_title)
+	var picker := OptionButton.new()
+	picker.focus_mode = Control.FOCUS_NONE
+	picker.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	picker.tooltip_text = TooltipText.wrap(tr("field_care_tooltip"))
+	picker.add_item(tr("building_field_care_rule").format({"remedy": tr(FieldFertilityService.remedy_key(game_data.stock_field_care_remedy))}), 1000)
+	for remedy in FieldFertilityService.SELECTABLE_REMEDIES:
+		picker.add_item(tr(FieldFertilityService.remedy_key(remedy)), remedy)
+	picker.select(picker.get_item_index(building.field_care_remedy if building.field_care_remedy >= 0 else 1000))
+	picker.item_selected.connect(func(index: int) -> void:
+		var id := picker.get_item_id(index)
+		field_care_remedy_changed.emit(target, -1 if id == 1000 else id)
+	)
+	remedy_row.add_child(picker)
+	var remedy_margin := MarginContainer.new()
+	remedy_margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
+	remedy_margin.add_child(remedy_row)
+	_kept_box.add_child(remedy_margin)
+	if FieldFertilityService.remedy_for(game_data, building) == FieldFertilityService.Remedy.NONE:
+		return
+	var override := building.field_care_threshold
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.text = tr("building_field_care_threshold_general") if override < 0 else tr("building_field_care_threshold_own")
+	label.tooltip_text = TooltipText.wrap(tr("field_care_threshold_tooltip"))
+	row.add_child(label)
+	var shown := override if override >= 0 else game_data.stock_field_care_threshold
+	row.add_child(WarehousePanel.build_level_field(shown, func(threshold: int) -> void:
+		field_care_threshold_changed.emit(target, threshold)
+	, "field_care_threshold_tooltip", 5, 0, true, WarehousePanel.LEVEL_NONE_TEXT, 100))
+	var marker := Button.new()
+	marker.text = "↺" if override >= 0 else "D"
+	marker.focus_mode = Control.FOCUS_NONE
+	marker.add_theme_font_size_override("font_size", 12)
+	marker.custom_minimum_size = Vector2(22.0, 22.0)
+	marker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if override >= 0:
+		marker.tooltip_text = TooltipText.wrap(tr("building_field_seeds_reset"))
+		marker.pressed.connect(func() -> void: field_care_threshold_changed.emit(target, -1))
+	else:
+		marker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		marker.tooltip_text = TooltipText.wrap(tr("building_field_seeds_default_tooltip"))
+	row.add_child(marker)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
+	margin.add_child(row)
+	_kept_box.add_child(margin)
+
+
+# Semi nel capanno del campo (2026-11-15, passo 3a): once tenute / livello e il livello, come i giorni della mangiatoia
+# (regola generale, nessuno o valore suo, con ↺).
+func _add_field_seed_rows(game_data: GameData, building: Building) -> void:
+	_kept_box.add_child(_build_buried_label(tr("building_field_seeds_stored").format({
+		"stored": FieldSeedStoreService.stored(building), "level": FieldSeedStoreService.target_level(game_data, building),
+		"capacity": FieldSeedStoreService.capacity(building)}), BURIED_ROW_INDENT))
+	var override := building.field_seed_level
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	if override < 0:
+		label.text = tr("building_field_seeds_general")
+	elif override == 0:
+		label.text = tr("building_field_seeds_none")
+	else:
+		label.text = tr("building_field_seeds_own")
+	label.tooltip_text = TooltipText.wrap(tr("building_field_seeds_tooltip"))
+	row.add_child(label)
+	var shown := override if override >= 0 else FieldSeedStoreService.rule_level(game_data, building)
+	var max_level := maxi(FieldSeedStoreService.max_capacity(building), 1)
+	row.add_child(WarehousePanel.build_level_field(mini(shown, max_level), func(level: int) -> void:
+		field_seed_level_changed.emit(building, level)
+	, "building_field_seeds_tooltip", 10, 0, true, WarehousePanel.LEVEL_NONE_TEXT, max_level))
+	var marker := Button.new()
+	marker.text = "↺" if override >= 0 else "D"
+	marker.focus_mode = Control.FOCUS_NONE
+	marker.add_theme_font_size_override("font_size", 12)
+	marker.custom_minimum_size = Vector2(22.0, 22.0)
+	marker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if override >= 0:
+		marker.tooltip_text = TooltipText.wrap(tr("building_field_seeds_reset"))
+		marker.pressed.connect(func() -> void: field_seed_level_changed.emit(building, -1))
+	else:
+		marker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		marker.tooltip_text = TooltipText.wrap(tr("building_field_seeds_default_tooltip"))
+	row.add_child(marker)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
+	margin.add_child(row)
+	_kept_box.add_child(margin)
+
+
 func _refresh_kept_animals(building: Building) -> void:
 	if _domestication_button != null:
 		_domestication_button.visible = false
@@ -1728,21 +1971,27 @@ func _refresh_kept_animals(building: Building) -> void:
 	if not _kept_box.visible:
 		return
 	var animals := DomesticAnimalService.get_kept_animals(game_data, building.id)
-	_kept_box.add_child(_build_buried_label(tr("building_kept_animals").format({
-		"count": animals.size(), "max": KeptAnimalService.capacity(building),
-	}), 0))
+	# A gruppi (2026-11-14, richiesta utente): separatore, "Animali: N/M" col menu della specie sulla stessa riga, giorni di
+	# cibo, mangiatoia con la sua barra, macella oltre; poi, separato, l'elenco degli animali.
+	_kept_box.add_child(HSeparator.new())
 	var species_row := HBoxContainer.new()
 	species_row.add_theme_constant_override("separation", 6)
-	# Etichetta senza taglio (_build_buried_label con clip_text sparisce in una riga orizzontale).
-	var species_label := Label.new()
-	species_label.text = tr("building_kept_species")
-	species_label.tooltip_text = TooltipText.wrap(tr("building_kept_species_tooltip"))
-	species_label.mouse_filter = Control.MOUSE_FILTER_PASS
-	species_label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
-	var species_margin := MarginContainer.new()
-	species_margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
-	species_margin.add_child(species_label)
-	species_row.add_child(species_margin)
+	var count_label := Label.new()
+	count_label.text = tr("building_kept_animals").format({"count": animals.size(), "max": KeptAnimalService.capacity(building)})
+	count_label.tooltip_text = TooltipText.wrap(tr("building_kept_species_tooltip"))
+	count_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	count_label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	species_row.add_child(count_label)
+	# Oltre la capienza con una soglia (2026-11-14, pezzo 2b): giorni prima che i più giovani in più scappino, in rosso.
+	var days_left := KeptAnimalService.over_capacity_days_left(game_data, building)
+	var over_row: Control = null
+	if days_left >= 0 and animals.size() > KeptAnimalService.capacity(building):
+		over_row = _build_buried_label(tr("building_kept_over_capacity").format({"days": days_left}), BURIED_ROW_INDENT)
+		var over_label: Label = over_row if over_row is Label else over_row.get_child(0)
+		over_label.add_theme_color_override("font_color", Color(0.95, 0.4, 0.35))
+		over_label.tooltip_text = TooltipText.wrap(tr("building_kept_over_capacity_tooltip"))
+		over_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	var picker := OptionButton.new()
 	picker.focus_mode = Control.FOCUS_NONE
 	picker.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
@@ -1766,16 +2015,166 @@ func _refresh_kept_animals(building: Building) -> void:
 	)
 	species_row.add_child(picker)
 	_kept_box.add_child(species_row)
+	if over_row != null:
+		_kept_box.add_child(over_row)
+	_add_feeder_line(game_data, building, current)
+	if FeederStockService.is_rule_available():
+		_add_slaughter_above_row(building)
 	# Pulsante "Addomesticazioni" (2026-11-13, richiesta utente): sulla riga di "Costruito", a fianco del menu non ci stava.
 	_ensure_domestication_button()
 	_domestication_button.visible = true
+	if not animals.is_empty():
+		_kept_box.add_child(HSeparator.new())
 	var today := game_data.get_absolute_day()
 	for animal in animals:
-		_kept_box.add_child(_build_buried_label(tr("building_kept_animal_row").format({
+		var animal_text := tr("building_kept_animal_row").format({
 			"name": KeptAnimalService.display_name(animal),
 			"sex": tr("domestic_animal_male" if animal.is_male else "domestic_animal_female"),
 			"age": animal.get_age_years(today),
-		}), BURIED_ROW_INDENT))
+		})
+		# Fame (2026-11-14): digiuno da N giorni, in rosso.
+		if animal.days_without_food > 0:
+			animal_text += " · " + tr("building_kept_animal_hungry").format({"days": animal.days_without_food})
+		if animal.slaughter_requested:
+			animal_text += " · " + tr("building_kept_animal_to_slaughter_wm" if animal.slaughter_by_wm else "building_kept_animal_to_slaughter")
+		var animal_row := _build_buried_label(animal_text, BURIED_ROW_INDENT)
+		var animal_label: Label = animal_row if animal_row is Label else animal_row.get_child(0)
+		if animal.days_without_food > 0:
+			animal_label.add_theme_color_override("font_color", Color(0.95, 0.4, 0.35))
+		# 🔪 Macella / ✕ Annulla (pezzo 3), accanto al testo.
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 2)
+		animal_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line.add_child(animal_row)
+		var slaughter_button := Button.new()
+		slaughter_button.text = "✕" if animal.slaughter_requested else "🔪"
+		slaughter_button.focus_mode = Control.FOCUS_NONE
+		slaughter_button.add_theme_font_size_override("font_size", 11)
+		slaughter_button.custom_minimum_size = Vector2(22.0, 20.0)
+		slaughter_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		slaughter_button.tooltip_text = TooltipText.wrap(tr("animal_slaughter_cancel_tooltip") if animal.slaughter_requested
+			else tr("building_kept_animal_slaughter_tooltip"))
+		var animal_id := animal.id
+		slaughter_button.pressed.connect(func() -> void: kept_animal_slaughter_toggled.emit(animal_id))
+		line.add_child(slaughter_button)
+		_kept_box.add_child(line)
+
+
+# Mangiatoia (2026-11-13, AnimalFeederService): "Mangiatoia: 34 / 200 spazio (340 calorie)", con la specie non decisa
+# "scegli la specie". Tooltip: cibi accettati con le loro calorie e l'avviso che cambiando specie si svuota.
+func _add_feeder_line(game_data: GameData, building: Building, species: String) -> void:
+	if AnimalFeederService.capacity(building) <= 0:
+		return
+	var text := tr("building_feeder_line").format({
+		"space": int(ceil(AnimalFeederService.space_used(game_data, building))), "max": AnimalFeederService.capacity(building),
+		"calories": int(floor(AnimalFeederService.calories(game_data, building))),
+	})
+	var foods: Array[String] = []
+	for food in AnimalFeederService.accepted_foods(game_data, building):
+		# Calorie 0 = cibo non ancora attivo (es. il fieno segnaposto): non si mostra.
+		if AnimalFeederService.food_calories(food) > 0.0:
+			foods.append("%s (%d)" % [IconRegistry.get_resource_display_name(food), roundi(AnimalFeederService.food_calories(food))])
+	# Giorni che restano (2026-11-14): calorie / quanto mangiano oggi gli animali.
+	var need := AnimalFeederService.daily_calories_needed(game_data, building)
+	if need > 0.0:
+		text += " · " + tr("building_feeder_days_left").format({"days": floori(AnimalFeederService.calories(game_data, building) / need)})
+	var tooltip := tr("building_feeder_tooltip_no_species")
+	if species == "":
+		text += " " + tr("building_feeder_choose_species")
+	else:
+		tooltip = tr("building_feeder_tooltip").format({
+			"species": KeptAnimalService.species_display_name(species, true), "foods": ", ".join(foods),
+		})
+	# Giorni di cibo prima della mangiatoia (2026-11-14, richiesta utente), poi la riga e la sua barra di riempimento.
+	if FeederStockService.is_rule_available():
+		_add_feeder_days_row(game_data, building)
+	var line := _build_buried_label(text, 0)
+	var label: Label = line if line is Label else line.get_child(0)
+	label.tooltip_text = TooltipText.wrap(tooltip)
+	_kept_box.add_child(line)
+	# Barra come quella dell'Integrità (stessi stili della barra di costruzione).
+	var bar := ProgressBar.new()
+	bar.custom_minimum_size = construction_progress_bar.custom_minimum_size
+	bar.min_value = 0.0
+	bar.max_value = float(AnimalFeederService.capacity(building))
+	bar.value = AnimalFeederService.space_used(game_data, building)
+	bar.show_percentage = false
+	bar.mouse_filter = Control.MOUSE_FILTER_PASS
+	bar.tooltip_text = TooltipText.wrap(tooltip)
+	bar.add_theme_stylebox_override("background", construction_progress_bar.get_theme_stylebox("background"))
+	bar.add_theme_stylebox_override("fill", construction_progress_bar.get_theme_stylebox("fill"))
+	var bar_margin := MarginContainer.new()
+	bar_margin.add_theme_constant_override("margin_left", 4)
+	bar_margin.add_theme_constant_override("margin_right", 4)
+	bar_margin.add_child(bar)
+	_kept_box.add_child(bar_margin)
+
+
+# Giorni di cibo della mangiatoia (2026-11-14, come il livello voluto della tettoia dell'acqua): "Giorni di cibo: regola
+# generale" col campo che mostra il valore generale; toccandolo la mangiatoia prende un valore suo (0 = esclusa dal WM) e
+# compare ↺ per tornare alla regola generale.
+func _add_feeder_days_row(game_data: GameData, building: Building) -> void:
+	var override := building.feeder_days_override
+	var general := game_data.stock_feeder_days if game_data != null else 0
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	if override < 0:
+		label.text = tr("building_feeder_days_general")
+	elif override == 0:
+		label.text = tr("building_feeder_days_excluded")
+	else:
+		label.text = tr("building_feeder_days_own")
+	label.tooltip_text = TooltipText.wrap(tr("building_feeder_days_tooltip"))
+	row.add_child(label)
+	var shown := override if override >= 0 else general
+	row.add_child(WarehousePanel.build_level_field(shown, func(days: int) -> void:
+		feeder_days_changed.emit(building, days)
+	, "building_feeder_days_tooltip", 1, 0, true, WarehousePanel.LEVEL_NONE_TEXT, WarehousePanel.FEEDER_DAYS_MAX))
+	var marker := Button.new()
+	marker.text = "↺" if override >= 0 else "D"
+	marker.focus_mode = Control.FOCUS_NONE
+	marker.add_theme_font_size_override("font_size", 12)
+	marker.custom_minimum_size = Vector2(22.0, 22.0)
+	marker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if override >= 0:
+		marker.tooltip_text = TooltipText.wrap(tr("building_feeder_days_reset"))
+		marker.pressed.connect(func() -> void: feeder_days_changed.emit(building, -1))
+	else:
+		marker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		marker.tooltip_text = TooltipText.wrap(tr("building_feeder_days_default_tooltip"))
+	row.add_child(marker)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
+	margin.add_child(row)
+	_kept_box.add_child(margin)
+
+
+# Soglia "Macella oltre" (2026-11-14, pezzo 2, solo col gestore scorte): campo da 1 alla capienza, "∞" = nessuna
+# macellazione (0, o − sotto 1).
+func _add_slaughter_above_row(building: Building) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.text = tr("building_slaughter_above")
+	label.tooltip_text = TooltipText.wrap(tr("building_slaughter_above_tooltip"))
+	row.add_child(label)
+	row.add_child(WarehousePanel.build_level_field(KeptAnimalService.building_slaughter_above(building), func(value: int) -> void:
+		slaughter_above_changed.emit(building, value)
+	, "building_slaughter_above_tooltip", 1, 0, true, "∞", maxi(KeptAnimalService.capacity(building), 1)))
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
+	margin.add_child(row)
+	_kept_box.add_child(margin)
 
 
 func _build_buried_label(text: String, indent: int) -> Control:
@@ -2837,8 +3236,9 @@ func _make_toolkit_deposit_target(box: Control, resource_name: String, from_outp
 
 # Tooltip di un'icona dell'Attrezzeria (2026-10-04): "Nome · N pezzi", "In uso: u su max" (il pezzo più consumato),
 # "Di scorta: …" per gli altri (il numero e il valore pieno se tutti nuovi, altrimenti gli usi di ciascuno; assente con
-# un pezzo solo) e cosa fa il clic. `uses_list`: usi rimasti di ogni pezzo, dal più consumato.
-func _toolkit_tooltip(tool_name: String, quantity: int, uses_list: Array[int], max_uses: int) -> String:
+# un pezzo solo) e cosa fa il clic. `uses_list`: usi rimasti di ogni pezzo, dal più consumato. `click_line` (2026-11-14,
+# contenitori) sostituisce la riga del clic.
+func _toolkit_tooltip(tool_name: String, quantity: int, uses_list: Array[int], max_uses: int, click_line: String = "") -> String:
 	var lines: Array[String] = []
 	var display_name := IconRegistry.get_resource_display_name(tool_name)
 	lines.append(tr("toolkit_tooltip_count_one" if quantity == 1 else "toolkit_tooltip_count").format({"name": display_name, "count": quantity}))
@@ -2859,7 +3259,10 @@ func _toolkit_tooltip(tool_name: String, quantity: int, uses_list: Array[int], m
 				parts.append(tr("toolkit_tooltip_uses_of").format({"uses": int(uses), "max": max_uses}))
 			spare_text = ", ".join(parts)
 		lines.append(tr("toolkit_tooltip_spare").format({"count": spare.size(), "uses": spare_text}))
-	lines.append(tr("toolkit_click_to_return_spare" if quantity > 1 else "toolkit_click_to_return"))
+	if click_line != "":
+		lines.append(click_line)
+	else:
+		lines.append(tr("toolkit_click_to_return_spare" if quantity > 1 else "toolkit_click_to_return"))
 	return "\n".join(lines)
 
 
@@ -2917,6 +3320,10 @@ func _refresh_toolkit(building: Building) -> void:
 	_toolkit_caption.text = tr("toolkit_caption").format({
 		"used": tool_names.size(), "types": BuildingToolkitService.get_type_capacity(building),
 	})
+	# Attrezzeria del magazzino (2026-11-13, richiesta utente): spiegazione dei vasi da semi nel tooltip del titolo.
+	var is_storage_toolkit := not building.rules.toolkit_extra_tools.is_empty()
+	_toolkit_caption.tooltip_text = TooltipText.wrap(tr("toolkit_storage_tooltip")) if is_storage_toolkit else ""
+	_toolkit_caption.mouse_filter = Control.MOUSE_FILTER_STOP if is_storage_toolkit else Control.MOUSE_FILTER_IGNORE
 	if tool_names.is_empty():
 		var empty_label := Label.new()
 		empty_label.text = tr("toolkit_empty")
@@ -2932,6 +3339,18 @@ func _refresh_toolkit(building: Building) -> void:
 		# Barra degli usi del pezzo in uso (il più consumato), come in cintura al pipottino.
 		if max_uses > 0 and not uses_list.is_empty():
 			chip.add_child(_build_uses_bar(float(uses_list[0]) / float(max_uses)))
+		# Contenitore (2026-11-13, richiesta utente — vasi da semi): il contenuto si vede nel vaso stesso, con il livello
+		# a sinistra e le once nel tooltip, invece di un riquadro a parte.
+		var container_capacity := StorageContainerService.capacity_of(building, tool_name)
+		if container_capacity > 0:
+			var contained := StorageContainerService.stored_in(building, tool_name)
+			chip.add_child(_build_container_fill_bar(float(contained) / float(container_capacity)))
+			# Riga del clic dei vasi (2026-11-14, richiesta utente): "di scorta" faceva pensare a vasi liberi; il clic toglie
+			# solo un vaso che si può svuotare, ed è rifiutato quando i semi non ci starebbero più (blocks_removal).
+			var container_click := tr("toolkit_container_click_blocked" if StorageContainerService.blocks_removal(building, tool_name)
+				else "toolkit_container_click_return")
+			chip.tooltip_text = TooltipText.wrap(_toolkit_tooltip(tool_name, quantity, uses_list, max_uses, container_click) + "\n"
+				+ tr("toolkit_container_fill").format({"quantity": contained, "capacity": container_capacity}))
 		chip.mouse_filter = Control.MOUSE_FILTER_STOP
 		chip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 		var chip_tool := tool_name
@@ -2941,6 +3360,27 @@ func _refresh_toolkit(building: Building) -> void:
 				toolkit_withdraw_requested.emit(building, chip_tool)
 		)
 		_toolkit_grid.add_child(chip)
+
+
+# Livello di un contenitore dell'Attrezzeria (2026-11-13, vasi da semi): barra verticale a sinistra, piena dal basso.
+func _build_container_fill_bar(ratio: float) -> Control:
+	ratio = clampf(ratio, 0.0, 1.0)
+	var bar := ColorRect.new()
+	bar.color = TOOLKIT_USES_BAR_BACKGROUND
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.anchor_left = 0.0
+	bar.anchor_right = TOOLKIT_USES_BAR_HEIGHT_FRACTION
+	bar.anchor_top = 0.0
+	bar.anchor_bottom = 1.0 - TOOLKIT_USES_BAR_HEIGHT_FRACTION
+	var fill := ColorRect.new()
+	fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fill.anchor_left = 0.0
+	fill.anchor_right = 1.0
+	fill.anchor_bottom = 1.0
+	fill.anchor_top = 1.0 - ratio
+	fill.color = Color(0.93, 0.78, 0.35)
+	bar.add_child(fill)
+	return bar
 
 
 # Griglia residenti (2026-09-12, richiesta utente — "quadrati simili a quelli dello storage per
@@ -3377,7 +3817,9 @@ func _refresh_accepted_categories_toggles(building: Building, has_storage: bool)
 	var categories_to_show: Array = (
 		building.rules.accepted_categories if not building.rules.accepted_categories.is_empty()
 		else SecondaryResourceTypes.Category.values()
-	)
+	).filter(func(category: int) -> bool: return StorageContainerService.type_can_hold_category(building, category))
+	# Filtro sopra (2026-11-15, richiesta utente): niente spunta per una categoria che il tipo non può tenere (Granaglie
+	# solo nei vasi, quindi solo dove l'Attrezzeria li prende — non nel Sito di deposito).
 	for category in categories_to_show:
 		var check_box := CheckBox.new()
 		check_box.text = _category_display_name(category)

@@ -23,3 +23,6 @@ var toolkit_warnings: Dictionary = {}
 # Regola "Acqua per tettoia" (2026-11-07): giare che mancano nei magazzini per tenere le tettoie al loro livello, ricalcolate
 # a ogni Inventario (riga rossa del WM e avviso in campanella).
 var water_jars_missing: int = 0
+# Regola "Rifornisci le mangiatoie" (2026-11-14): id degli edifici con mangiatoia sotto l'obiettivo e nessun cibo da
+# ricevere, ricalcolati a ogni Inventario (avviso in campanella).
+var feeder_warnings: Array = []

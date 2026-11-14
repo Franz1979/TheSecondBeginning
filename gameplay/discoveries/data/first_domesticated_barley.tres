@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="DiscoveryHintRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/discoveries/scripts/DiscoveryHintRules.gd" id="1_rules"]
+
+; Primo orzo addomesticato (2026-11-13, punto 2): regala Addomesticazione delle piante, che ha come prerequisito
+; Conoscenza delle piante — senza, il regalo resta in attesa (Folk.earned_idea_grants).
+[resource]
+script = ExtResource("1_rules")
+id = "first_domesticated_barley"
+title_key = "discovery_first_domesticated_barley_title"
+paragraph_keys = Array[String](["discovery_first_domesticated_barley_p1", "discovery_first_domesticated_barley_p2"])
+trigger_type = 2
+close_action = 1
+grant_idea_id = "plant_domestication"
+grant_title_key = "discovery_first_domesticated_barley_gift_title"
+grant_paragraph_keys = Array[String](["discovery_first_domesticated_barley_gift_p1", "discovery_first_domesticated_barley_gift_p2"])
+species = "barley"

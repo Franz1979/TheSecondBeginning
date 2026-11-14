@@ -213,6 +213,12 @@ extends Resource
 # di units_per_mature_plant/patch_probability sopra.
 @export var patch_capacity_min: int = 0
 @export var patch_capacity_max: int = 0
+# Semina alla Fossa (2026-11-15, Fossa generica — PitSowingService): once di questa risorsa raccolte da terra perché ne
+# nasca una microcella al massimo (patch_capacity_max) vicino alla Fossa. 0 = alla Fossa non nasce.
+@export var pit_sowing_units: int = 0
+# Infestante della Fossa (2026-11-15, avena): probabilità che spunti sulla stessa microcella quando alla Fossa nasce
+# un'altra risorsa (PitSowingService.sow). 0 = mai.
+@export var pit_weed_chance: float = 0.0
 
 @export_group("Lot capacity")
 # Quale delle quattro formule di LotCapacityService risolve i lotti/capacità di questa risorsa —
@@ -283,6 +289,15 @@ extends Resource
 # Acqua che l'attrezzo contiene (2026-10-30, richiesta utente — otre, categoria WATERSKIN): si riempie alla riva e si beve
 # lontano dall'acqua (ThirstService). 0.0 = non contiene acqua.
 @export var water_capacity: float = 0.0
+# Misure di semi che il recipiente tiene in magazzino (2026-11-13, richiesta utente — vaso da semi, seed_jar.tres): un
+# magazzino accetta semi fino a vasi MONTATI in attrezzeria × seed_capacity. 0 = non è un vaso da semi.
+@export var seed_capacity: int = 0
+# Contenitore in cui la risorsa sta in magazzino (2026-11-13, punto 1d — wild_seeds -> "seed_jar"): entra solo fino alla
+# capienza dei contenitori montati nell'Attrezzeria e non occupa slot (StorageContainerService). "" = magazzino normale.
+@export var stored_in_container: String = ""
+# Calorie di gioco per unità quando la mangia un animale (2026-11-13, punto 4): per i cibi che l'uomo non mangia crudi
+# (semi, carne e pesce crudi, ossa), che hanno calories_per_unit 0. 0 = per gli animali vale calories_per_unit.
+@export var animal_calories_per_unit: float = 0.0
 # Efficienza di lavoro dell'attrezzo (2026-10-04, richiesta utente — generico): la durata del lavoro che lo usa si
 # divide per questo valore (2.0 = metà tempo). 1.0 = neutro. Oggi lo leggono CutAction e QuarryAction
 # (Action.get_tool_efficiency).
@@ -353,6 +368,9 @@ extends Resource
 @export var trap_full_passage_hours: int = 6
 # Giorni in cui, dopo una cattura, i gruppetti di quella specie evitano l'area del laccio.
 @export var trap_disturbance_days: int = 0
+# Caduta in fuga (2026-11-14, richiesta utente — "spingere verso le fosse"): probabilità che un animale in fuga che passa
+# sulla microcella della trappola ci cada (SnareService._on_pit_fall). 0 = nessuna caduta (tutte tranne la fossa).
+@export var trap_flee_fall_chance: float = 0.0
 # Laccio piazzato fuori da una zona: i passaggi si contano in un quadrato di questo raggio attorno a lui.
 @export var trap_passage_radius: int = 5
 # Cattura viva (2026-11-12, cesto a caduta — TrapService.QUARRY_LIVE_SMALL_GAME): giorni che l'animale preso resta vivo

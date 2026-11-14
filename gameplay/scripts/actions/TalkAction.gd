@@ -73,11 +73,13 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	# Coesione del villaggio (2026-10-14): una volta per talk, dal lato di chi l'ha lanciata.
 	if bool(context.get(TalkService.CONTEXT_IS_CALLER, false)):
 		VillageCohesionService.add((individual as HumanIndividual).village_ref, VillageCohesionService.TALK_GAIN, "talk")
+	var partner := ContagionService.find_individual(int(context.get(TalkService.CONTEXT_PARTNER_ID, -1)))
 	# Contagio (2026-10-25, ContagionService): ognuno tira per sé, se il partner è contagioso.
-	ContagionService.expose(
-		individual, ContagionService.find_individual(int(context.get(TalkService.CONTEXT_PARTNER_ID, -1))),
-		ContagionService.Channel.CONTACT, GameSettings.active_game_data, "conversazione"
-	)
+	ContagionService.expose(individual, partner, ContagionService.Channel.CONTACT, GameSettings.active_game_data, "conversazione")
+	# Idea dalla chiacchierata (2026-11-14): tira solo il primo dei due a chiudere (il partner non ha ancora completato),
+	# così il tiro è uno per Talk e arriva prima del resolve_idle_individual di entrambi.
+	if _partner_action == null or not _partner_action.completed:
+		TalkService.roll_talk_idea(individual as HumanIndividual, partner as HumanIndividual)
 	# Gli effetti arrivano subito dopo, a fine Task (task_completion_effects.tres): qui i valori di partenza.
 	TalkService.log_event(individual, "conversazione finita (%.2f giorni, attesa %.2f) — felicità %.0f e socialità %.0f prima degli effetti." % [
 		_talk_elapsed, _wait_elapsed, individual.current_happiness, individual.skill_social

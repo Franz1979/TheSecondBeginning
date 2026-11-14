@@ -280,6 +280,9 @@ func activate(individual: Variant, context: Dictionary) -> void:
 			var units_now: int = 0
 			if deposit_kind == DepositKind.REPAIR:
 				units_now = mini(_repair_room(String(resource_name)), carried_units)
+			elif AnimalFeederService.accepts(GameSettings.active_game_data, target_building, String(resource_name)):
+				# Mangiatoia (2026-11-14): solo lo spazio che resta.
+				units_now = mini(AnimalFeederService.max_depositable(GameSettings.active_game_data, target_building, String(resource_name)), carried_units)
 			elif WasteDisposalService.is_waste_pit(target_building):
 				# Fossa dei rifiuti (2026-10-18): solo lo spazio che resta nella fossa.
 				units_now = mini(WasteDisposalService.get_max_disposable(target_building, String(resource_name)), carried_units)
@@ -491,7 +494,10 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 				# Contenitore della riparazione (2026-10-10): mai il magazzino, solo fino a quanto chiede ancora.
 				deposited = _store_repair_material(String(resource_name), int(carried_entry["quantity"]))
 			elif not _is_completed_site_destination(context) and _is_deposit_allowed(String(resource_name)):
-				if WasteDisposalService.is_waste_pit(target_building):
+				if AnimalFeederService.accepts(GameSettings.active_game_data, target_building, String(resource_name)):
+					# Mangiatoia (2026-11-14, AnimalFeederService): il cibo occupa il suo spazio, diventa calorie e sparisce.
+					deposited = AnimalFeederService.deposit(GameSettings.active_game_data, target_building, String(resource_name), int(carried_entry["quantity"]))
+				elif WasteDisposalService.is_waste_pit(target_building):
 					# Fossa dei rifiuti (2026-10-18): la merce è distrutta, occupa solo spazio. Gli attrezzi escono
 					# dallo zaino qui (la rimozione sotto salta chi usa le istanze).
 					deposited = WasteDisposalService.dispose(target_building, String(resource_name), int(carried_entry["quantity"]))

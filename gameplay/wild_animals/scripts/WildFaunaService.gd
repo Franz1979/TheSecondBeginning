@@ -35,7 +35,7 @@ const OLD_AGE_DEATH_DAY := 359
 # ritorno dopo l'estinzione resta RECOLONIZE_START_RATIO.
 const NEW_YEAR_DAY := 0
 const REINFORCE_BELOW_RATIO := 0.2
-const REINFORCE_AMOUNT_RATIO := 0.2
+const REINFORCE_AMOUNT_RATIO := 0.3
 # Dopo lo split la mandria torna tra queste quote del suo massimo (herd_size_max).
 const SPLIT_TARGET_MIN_RATIO := 0.75
 const SPLIT_TARGET_MAX_RATIO := 0.9
@@ -244,9 +244,18 @@ static func _random_free_microcell(coords: Vector2i) -> Variant:
 		return null
 	for attempt in range(FREE_MICROCELL_ATTEMPTS):
 		var microcell := Vector2i(randi_range(0, World.WIDTH - 1), randi_range(0, World.HEIGHT - 1))
-		if not PathfindingService.is_blocked(live_cell, microcell):
+		if not PathfindingService.is_blocked_for_animals(live_cell, microcell):
 			return microcell
 	return null
+
+
+# true se il riquadro che contiene `coords` ha una mandria di `species` con almeno un capo, anche se ora sta in un'altra
+# cella del riquadro (2026-11-14, trappole: la mandria che esce a piedi si può ancora prendere; remove_one la trova).
+static func has_herd_in_region(game_data: GameData, species: String, coords: Vector2i) -> bool:
+	if game_data == null:
+		return false
+	var entry := _region_at(game_data, species, coords)
+	return entry != null and entry.status == WildFaunaRegion.Status.PRESENT and entry.get_total() > 0
 
 
 # Preda uccisa (passo 2, HuntService.apply_prey_kill): un capo in meno nella mandria del riquadro, nella sua fascia
@@ -514,6 +523,64 @@ static func _catch_up(world: World, game_data: GameData, rules: AnimalRules, ent
 					_count(entry, GameTypes.AgeBand.YOUNG), _count(entry, GameTypes.AgeBand.ADULT),
 					_count(entry, GameTypes.AgeBand.OLD)])
 	return changed
+
+
+# Animali scappati da una tettoia piena (2026-11-14, richiesta utente — DomesticAnimalLifeService): `count` capi della
+# selvatica `species`, fascia `age_band`, tornano nel riquadro di `coords`. Mandria presente: si aggiungono alla fascia fino
+# a herd_size_max (gli altri si perdono). Assente: la rifondano lì (in `coords` se adatta, sennò in una cella adatta del riquadro). Riquadro mai
+# visto: creato senza tiro di presenza (assente o mai). Habitat non adatto (NEVER): si perdono. Ritorna quanti ne entrano.
+static func release_animals(world: World, game_data: GameData, species: String, coords: Vector2i, count: int,
+		age_band: int = GameTypes.AgeBand.YOUNG) -> int:
+	if world == null or game_data == null or count <= 0:
+		return 0
+	var rules := AnimalCalculator.get_animal_rules(species)
+	if rules == null:
+		return 0
+	var today := game_data.get_absolute_day()
+	var side := region_side(rules)
+	var region := Vector2i(coords.x / side, coords.y / side)
+	var key := region_key(species, region)
+	var suitable := _suitable_cells(world, rules, region, side)
+	var entry: WildFaunaRegion = game_data.wild_fauna.get(key)
+	if entry == null:
+		entry = WildFaunaRegion.new()
+		entry.species = species
+		entry.region = region
+		entry.side = side
+		entry.last_update_day = today
+		entry.status = WildFaunaRegion.Status.NEVER if suitable.is_empty() else WildFaunaRegion.Status.ABSENT
+		entry.extinct_since_day = -1 if suitable.is_empty() else today
+		game_data.wild_fauna[key] = entry
+	else:
+		_catch_up(world, game_data, rules, entry, today)
+	if entry.status == WildFaunaRegion.Status.NEVER or suitable.is_empty():
+		return 0
+	var added := 0
+	if entry.status == WildFaunaRegion.Status.PRESENT:
+		added = mini(count, maxi(rules.herd_size_max - entry.get_total(), 0))
+		if added > 0:
+			entry.age_counts[age_band] = _count(entry, age_band) + added
+	else:
+		added = mini(count, maxi(rules.herd_size_max, 1))
+		entry.status = WildFaunaRegion.Status.PRESENT
+		entry.extinct_since_day = -1
+		entry.returns = false
+		entry.age_counts = {GameTypes.AgeBand.YOUNG: 0, GameTypes.AgeBand.ADULT: 0, GameTypes.AgeBand.OLD: 0}
+		entry.age_counts[age_band] = added
+		entry.previous_cell = Vector2i(-1, -1)
+		entry.current_cell = coords if suitable.has(coords) else suitable.pick_random()
+		entry.stay_remaining = CROSSING_MAX_DAYS
+		entry.exit_side = Vector2i.ZERO
+		entry.last_move_day = today
+		entry.last_update_day = today
+		ensure_exit_side(world, entry)
+	if added > 0:
+		game_data.wild_fauna_moved = true
+	if DebugLogging.SHOW_WILD_FAUNA_LOGS:
+		print("[WILD FAUNA] giorno %d %s (%d,%d): %d scappati da una tettoia, entrati %d, mandria %d/%d/%d" % [today,
+			species, region.x, region.y, count, added, _count(entry, GameTypes.AgeBand.YOUNG),
+			_count(entry, GameTypes.AgeBand.ADULT), _count(entry, GameTypes.AgeBand.OLD)])
+	return added
 
 
 # Mandria a zero (caccia, vecchiaia): riquadro "assente" da `day`, e la specie ci tornerà (returns).

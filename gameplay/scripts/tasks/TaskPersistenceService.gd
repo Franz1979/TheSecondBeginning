@@ -295,6 +295,17 @@ static func _action_type_for_step(step: Action) -> int:
 		return TaskTypes.ActionType.EMPTY_TRAP
 	if step is KeepAnimalAction:
 		return TaskTypes.ActionType.KEEP_ANIMAL
+	if step is PitDriveAction:
+		return TaskTypes.ActionType.PIT_DRIVE
+	# TAKE_SEEDS / SOW (2026-11-15, Semina).
+	if step is TakeSeedsAction:
+		return TaskTypes.ActionType.TAKE_SEEDS
+	if step is SowAction:
+		return TaskTypes.ActionType.SOW
+	if step is ReapAction:
+		return TaskTypes.ActionType.REAP
+	if step is RetillAction:
+		return TaskTypes.ActionType.RETILL
 	# TAKE_SOUP_INGREDIENTS / COOK_SOUP (2026-11-07, zuppa di casa), aggiunte insieme ai propri case in _build_step.
 	if step is TakeSoupIngredientsAction:
 		return TaskTypes.ActionType.TAKE_SOUP_INGREDIENTS
@@ -607,6 +618,17 @@ static func _build_step(action_type: int, step_data: Dictionary, macro_state: Ma
 			step = TakeTrapAction.new(_find_building_by_id(world, int(step_data.get("trap_building_id", -1))))
 		TaskTypes.ActionType.SET_TRAP:
 			step = SetTrapAction.new()
+		TaskTypes.ActionType.PIT_DRIVE:
+			step = PitDriveAction.new()
+		TaskTypes.ActionType.TAKE_SEEDS:
+			step = TakeSeedsAction.new(_find_building_by_id(world, int(step_data.get("seed_building_id", -1))))
+		TaskTypes.ActionType.SOW:
+			# Il terreno nel costruttore: serve anche quando lo step non è il corrente.
+			step = SowAction.new(_find_building_by_id(world, int(step_data.get("sow_garden_id", -1))))
+		TaskTypes.ActionType.REAP:
+			step = ReapAction.new(_find_building_by_id(world, int(step_data.get("reap_garden_id", -1))))
+		TaskTypes.ActionType.RETILL:
+			step = RetillAction.new(_find_building_by_id(world, int(step_data.get("retill_garden_id", -1))))
 		TaskTypes.ActionType.EMPTY_TRAP:
 			# La trappola della tappa (giro delle trappole, 2026-11-07) nel costruttore: load_save_data vale solo per lo step corrente.
 			step = EmptyTrapAction.new(int(step_data.get("trap_id", 0)))

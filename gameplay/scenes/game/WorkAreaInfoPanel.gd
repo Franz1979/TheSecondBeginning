@@ -251,6 +251,9 @@ func _haul_tree() -> Dictionary:
 		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 		if rules == null or not TerrainScatteredResourceService.is_pickable(resource_name):
 			continue
+		# Risorse non ancora scoperte (required_idea_id, 2026-11-15): nascoste come nel magazzino.
+		if TerrainScatteredResourceService.is_resource_locked(resource_name, rules):
+			continue
 		if food_only and int(rules.category) != int(SecondaryResourceTypes.Category.FOOD):
 			continue
 		var category := int(rules.category)

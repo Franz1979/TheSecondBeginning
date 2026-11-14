@@ -132,6 +132,12 @@ var shrub_claimed_lots: Dictionary = {}
 var tree_lot_slots: Dictionary = {}
 var shrub_lot_slots: Dictionary = {}
 var grass_lots: Dictionary = {}
+# Erba seminata alla Fossa (2026-11-13, PitSowingService): lotto (Vector2i) -> anno della semina. Sempre erba, mai
+# piante, col massimo dei semi. Salvata con la disposizione (VegetationLayoutService.to_save_data).
+var sown_grass_lots: Dictionary = {}
+# Risorse seminate su ogni lotto di sown_grass_lots (2026-11-15, Fossa generica): lotto -> Array di nomi, ciascuna al
+# massimo (LotCapacityService.refresh_grass_patch_lot_capacity). Vecchi salvataggi: solo "wild_seeds".
+var sown_lot_resources: Dictionary = {}
 var vegetation_layout_ready: bool = false
 # Valore di GameData.vegetation_checkpoint_count all'ultima generazione della disposizione. -1: mai (o vecchio salvataggio).
 var vegetation_layout_checkpoint: int = -1

@@ -100,7 +100,8 @@ static func get_used_space(building: Building) -> float:
 		var entry: Dictionary = building.stored_resources[resource_name]
 		var quantity: int = int(entry.get("quantity", 0))
 		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
-		if resource_rules == null:
+		# Nei contenitori dell'Attrezzeria (2026-11-13, StorageContainerService): nessuno spazio di magazzino.
+		if resource_rules == null or resource_rules.stored_in_container != "":
 			continue
 		used += float(quantity) * resource_rules.space_per_unit
 	return used
@@ -152,7 +153,8 @@ static func get_slots_used(building: Building) -> int:
 		if quantity <= 0:
 			continue
 		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
-		if resource_rules == null:
+		# Nei contenitori dell'Attrezzeria (2026-11-13): nessuno slot.
+		if resource_rules == null or resource_rules.stored_in_container != "":
 			continue
 		total += _slots_for_quantity(quantity, _units_per_slot(building, resource_rules.space_per_unit))
 	return total
@@ -257,6 +259,12 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 		return true
 	if not _free_storage_allows(building, resource_name, resource_rules):
 		return false
+	# Contenitori dell'Attrezzeria (2026-11-13, vasi da semi): solo con posto nei contenitori montati.
+	if resource_rules.stored_in_container != "" and StorageContainerService.room(building, resource_name) <= 0:
+		return false
+	# Capanno del campo (2026-11-15, passo 3a): solo fino al livello dei semi.
+	if FieldSeedStoreService.is_seed_store(building) and FieldSeedStoreService.room(building, resource_name) <= 0:
+		return false
 	return true
 
 
@@ -268,6 +276,19 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 # serializzato/deserializzato come lo stesso Dictionary). Ultimo slot di ogni gruppo tipicamente
 # parziale (space_used < space_capacity) — è esattamente quello il "posto residuo" che una
 # quantità aggiuntiva della STESSA risorsa riempirebbe prima di aprirne uno nuovo (vedi store()).
+# Edifici il cui contenuto si vede sulla mappa (2026-11-14, scattini a ogni deposito): mucchietti del sito di deposito e
+# del deposito coperto, travois appoggiati, giare della tettoia dell'acqua. Gli altri (capanna di stoccaggio, case...)
+# mostrano il contenuto solo nel pannello: un deposito o un prelievo lì non va ridisegnato. Un nuovo edificio che disegna
+# ciò che contiene va aggiunto qui.
+static func shows_contents_on_map(building: Building) -> bool:
+	if building == null:
+		return false
+	match building.building_type_name:
+		"deposit_site", "covered_depot", TravoisRackShape.TYPE, WaterJarService.SHELTER_TYPE:
+			return true
+	return false
+
+
 static func get_slot_breakdown(building: Building) -> Array:
 	var slots: Array = []
 	if building == null or building.rules == null:
@@ -279,7 +300,8 @@ static func get_slot_breakdown(building: Building) -> Array:
 		if quantity <= 0:
 			continue
 		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
-		if resource_rules == null:
+		# Nei contenitori dell'Attrezzeria (2026-11-13): si vedono nell'Attrezzeria del pannello, non negli slot.
+		if resource_rules == null or resource_rules.stored_in_container != "":
 			continue
 		var space_per_unit: float = resource_rules.space_per_unit
 		var units_per_slot := _units_per_slot(building, space_per_unit)
@@ -361,6 +383,8 @@ static func store(building: Building, resource_name: String, quantity: int, deca
 		print("[DRYING] %s #%d: +%d %s (totale %d), slot: %s." % [
 			building.building_type_name, building.id, deposit_amount, resource_name, new_quantity, str(auto_slots)
 		])
+	# Usura dei contenitori (2026-11-13, vasi da semi): un uso per misura entrata.
+	StorageContainerService.wear(building, resource_name, deposit_amount)
 	return deposit_amount
 
 
@@ -644,6 +668,13 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 		return production_quota
 	if not _free_storage_allows(building, resource_name, resource_rules):
 		return production_quota
+	# Contenitori dell'Attrezzeria (2026-11-13, vasi da semi): il posto nei contenitori montati, niente slot.
+	if resource_rules.stored_in_container != "":
+		var container_room := StorageContainerService.room(building, resource_name)
+		# Capanno del campo (2026-11-15, passo 3a): solo fino al livello dei semi.
+		if FieldSeedStoreService.is_seed_store(building):
+			container_room = mini(container_room, FieldSeedStoreService.room(building, resource_name))
+		return maxi(container_room, production_quota)
 
 	# Ramo edificio COMPLETO — comportamento ESATTAMENTE INVARIATO rispetto a sempre: storage_slot_
 	# count/storage_space_per_slot come UNICO vincolo (mai required_materials qui, un edificio finito
@@ -687,6 +718,9 @@ static func _free_storage_allows(building: Building, resource_name: String, reso
 		return false
 	# Casa di nucleo (2026-10-22, HouseWardrobeService): solo combustibile e vestiario.
 	if HouseWardrobeService.is_wardrobe_house(building) and not HouseWardrobeService.accepts(resource_name):
+		return false
+	# Capanno del campo (2026-11-15, passo 3a, FieldSeedStoreService): solo il seme domestico della specie del campo.
+	if FieldSeedStoreService.is_seed_store(building) and not FieldSeedStoreService.accepts(building, resource_name):
 		return false
 	# Rifiuti (2026-10-18, detriti): nessun magazzino li accetta, vanno solo alla Fossa (WasteDisposalService).
 	if resource_rules != null and resource_rules.waste_only:
@@ -876,4 +910,6 @@ static func withdraw_stored(building: Building, resource_name: String, quantity_
 		auto_slots = get_auto_slots(building, resource_name)
 		_remove_auto_units(auto_slots, withdrawn)
 	_write_entry(building, resource_name, current_quantity - withdrawn, float(existing_entry.get("decay_fraction", 0.0)), [], auto_slots)
+	# Usura dei contenitori (2026-11-13, vasi da semi): un uso per misura uscita.
+	StorageContainerService.wear(building, resource_name, withdrawn)
 	return withdrawn

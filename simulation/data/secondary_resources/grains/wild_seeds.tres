@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_wild_seeds"]
+
+; Orzo selvatico (nel gioco dal 2026-11-15; nome interno wild_seeds invariato) — semi selvatici (2026-11-13, richiesta utente — ramo delle piante, punto 1d): si raccolgono a mano dall'erba, senza
+; attrezzo, su 7 microcelle d'erba su 10 (patch_probability 0.7, 2026-11-15 richiesta utente; prima 1.0), 5–10 once per microcella (richiesta utente 2026-11-13; una
+; misura ≈ 0,2 kg). Stagioni [inverno, primavera, estate, autunno]: piena estate, poco il resto. Crudi non si mangiano
+; (calories_per_unit 0: altrimenti diventerebbero cibo per l'uomo); le calorie per gli animali arriveranno al punto 4.
+; In magazzino solo nei vasi da semi montati in attrezzeria (stored_in_container, StorageContainerService).
+[resource]
+script = ExtResource("1_wild_seeds")
+secondary_resource_name = "wild_seeds"
+calories_per_unit = 0.0
+seasonal_availability_multiplier = Array[float]([0.0, 0.2, 1.0, 0.5])
+category = 6
+required_idea_id = "pottery"
+generation_source = 1
+day_durability = 365
+space_per_unit = 0.5
+patch_probability = 0.7
+patch_capacity_min = 5
+patch_capacity_max = 10
+pit_sowing_units = 500
+lot_source = 3
+stored_in_container = "seed_jar"
+animal_calories_per_unit = 5.0

@@ -50,6 +50,9 @@ const STAMINA_COST_PER_SPACE_UNIT: float = 2.0
 # GameScene._assign_pickup_task/_debug_test_two_walk_task) decide se/come rinfrescare il disegno
 # (vedi GameScene._refresh_resource_visuals, il consumatore).
 signal resource_collected(resource_name: String, target_position: Vector2i, quantity: int)
+# Risorse raccolte da terra in questa tappa (2026-11-15, scoperte alla prima raccolta — grano selvatico): Array di nomi nel
+# context della Task, letto a fine tappa da HumanIndividualActionService (terrain_resources_collected).
+const CONTEXT_PENDING_TERRAIN_COLLECTED := "pending_terrain_collected"
 
 # Emesso UNA SOLA VOLTA a fine on_complete() se e' stato raccolto qualcosa (2026-09-20, zaino multi-
 # risorsa): `collected` = {nome_risorsa: quantita' raccolta}. resource_collected sopra parte una volta per
@@ -91,6 +94,7 @@ const PRIORITY_CATEGORIES: Array = [
 	SecondaryResourceTypes.Category.SEMI_FINISHED,
 	SecondaryResourceTypes.Category.TOOL,
 	SecondaryResourceTypes.Category.APPAREL,
+	SecondaryResourceTypes.Category.GRAIN,
 ]
 
 var target_position: Vector2i
@@ -433,6 +437,15 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			continue
 		collected[entry_name] = added
 		resource_collected.emit(entry_name, target_position, added)
+		# Addomesticazione delle piante (2026-11-13): semi raccolti da terra (non da un mucchio) fanno avanzare l'orzo.
+		if source_kind == SourceKind.TERRAIN:
+			DomesticPlantCalculator.add_harvest(context, entry_name, added)
+			# Semina alla Fossa (2026-11-13): ogni 500 once raccolte, una microcella d'erba accanto alla Fossa.
+			PitSowingService.add_harvest(GameSettings.active_game_data, entry_name, added)
+			var gathered: Array = context.get(CONTEXT_PENDING_TERRAIN_COLLECTED, [])
+			if not gathered.has(entry_name):
+				gathered.append(entry_name)
+			context[CONTEXT_PENDING_TERRAIN_COLLECTED] = gathered
 		# Quantita' cercata = TUTTO quello che ora si trasporta di questa risorsa (comprese eventuali unita'
 		# gia' in spalla prima di questa raccolta), perche' l'Unload deposita tutto cio' che il magazzino
 		# accetta.

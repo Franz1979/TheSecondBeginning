@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_flint_sickle"]
+
+; Falcetto di selce (2026-11-15, richiesta utente — ramo piante): schegge di pietra fissate su un manico e legate, per
+; mietere nell'orto delle prove e poi nel campo (categoria Mietitura). Capanna degli attrezzi agricoli, col coltello.
+[resource]
+script = ExtResource("1_flint_sickle")
+secondary_resource_name = "flint_sickle"
+calories_per_unit = 0.0
+category = 4
+panel_group = "work"
+required_idea_id = "plant_domestication"
+generation_source = 2
+space_per_unit = 3.0
+recipe_inputs = {
+"fiber_rope": 1,
+"pebble": 2,
+"stick": 1
+}
+recipe_labor = 350.0
+recipe_workstation_types = Array[String](["farmer_hut"])
+recipe_required_tool_categories = Array[int]([1])
+tool_categories = Array[int]([16])
+max_uses = 60
+work_efficiency = 1.0

@@ -151,6 +151,15 @@ enum ActionType {
 	# KEEP_ANIMAL (2026-11-12, animali vivi dei cesti nella tettoia delle gabbie — KeepAnimalAction, solo tappa aggiunta
 	# a fine giro) — IN CODA (48).
 	KEEP_ANIMAL,
+	# PIT_DRIVE (2026-11-14, spinta verso le fosse — PitDriveAction, pit_drive.tres) — IN CODA (49).
+	PIT_DRIVE,
+	# TAKE_SEEDS / SOW (2026-11-15, Semina dell'orto e dei campi — TakeSeedsAction/SowAction, sow.tres) — IN CODA (50, 51).
+	TAKE_SEEDS,
+	SOW,
+	# REAP (2026-11-15, Mietitura — ReapAction, reap.tres) — IN CODA (52).
+	REAP,
+	# RETILL (2026-11-15, Rizollatura del campo — RetillAction, retill.tres) — IN CODA (53).
+	RETILL,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,
@@ -195,4 +204,9 @@ enum ToolCategory {
 	# TRAP (2026-11-07, richiesta utente — rete per uccelli, bird_net.tres) aggiunto IN FONDO, stesso motivo: una trappola
 	# da piazzare, mai da cintura. Nessuna Action la richiede, così nessuno se la prende in cintura.
 	TRAP,
+	# SOWING e REAPING (2026-11-15, richiesta utente — bastone da scavo e falcetto di selce, ramo piante) aggiunte IN FONDO,
+	# stesso motivo: seminare e mietere nell'orto delle prove e poi nel campo. Separate da DIGGING/CUTTING perché il bastone
+	# non deve valere per la cava né il falcetto come coltello. Nessuna Action le richiede ancora.
+	SOWING,
+	REAPING,
 }

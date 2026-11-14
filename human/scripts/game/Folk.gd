@@ -55,6 +55,10 @@ var completed_ideas: Array[String] = []
 # investiti che non sono né attive né completate. Impostato da IdeaProgressService.select_idea
 # quando un'idea smette di essere attiva, rimosso quando torna attiva o a thoughts_invested zero.
 var idea_decay_due_day: Dictionary = {}
+# Regali guadagnati in attesa dei prerequisiti (2026-11-13, richiesta utente — Addomesticazione delle piante: regalata dal
+# cereale ma solo con Conoscenza delle piante): id dell'idea -> id della scoperta che l'ha regalata (DiscoveryHintRules.id,
+# per riusarne i testi). Arriva da sola quando l'ultimo prerequisito è completato (GameScene._on_idea_completed). Salvato.
+var earned_idea_grants: Dictionary = {}
 
 
 func find_village(village_id: int) -> Village:

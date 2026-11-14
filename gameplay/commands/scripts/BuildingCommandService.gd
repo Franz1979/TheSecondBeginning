@@ -45,6 +45,20 @@ static func assign_resumable(ctx: GameContext, worker: HumanIndividual, building
 			"is_currently_grass": grass_on_site if grass_on_site != null else false,
 		}
 	var age_band := ctx.age_band_of(worker)
+	# Attrezzi per costruire (2026-11-15, orto col piccone): il prelievo si calcola prima dell'assegnazione, come per la
+	# produzione; senza nulla da prendere il costruttore aspetta l'attrezzo sul cantiere (BuildAction).
+	var fetch_plan: Array[Dictionary] = []
+	if not is_demolition:
+		var tool_categories := BuildingJobProvider.construction_tool_categories(building)
+		fetch_plan = ToolFetchService.plan_fetch(ctx.world, worker, tool_categories)
+		# Rifiuto (2026-11-15, come gli altri comandi): un attrezzo che non ha addosso e non può prendere in deposito.
+		var not_fetchable := ToolFetchService.member_missing_categories(worker, tool_categories)
+		for entry in fetch_plan:
+			not_fetchable.erase(int(entry["category"]))
+		if not not_fetchable.is_empty():
+			effects.command_icon_at_microcell(macro_coords, microcell, "task_rejected")
+			CommandFeedback.tool_gate_failure(worker, {"result": ToolGateService.Result.MISSING_TOOLS, "missing_categories": not_fetchable}, effects)
+			return true
 	# reassign_task assegna già la Task (anche in coda, con lo zaino occupato): qui solo l'esito.
 	var task := TaskReassignmentService.reassign_task(building, worker, age_band, extra_context)
 	if task == null:
@@ -65,6 +79,8 @@ static func assign_resumable(ctx: GameContext, worker: HumanIndividual, building
 	# libero (stessa regola dei trasporti del magazzino). Il comando manuale e la coda dei lavori passano entrambi da qui.
 	if not is_demolition and site_needs_towing(worker, building):
 		ZoneOrderCommandService.start_towed_fetch(ctx, worker, "cantiere #%d" % building.id, effects)
+	if not fetch_plan.is_empty():
+		ZoneOrderCommandService.start_tool_fetch(ctx, worker, fetch_plan, "costruire #%d" % building.id, effects)
 	if DebugLogging.ENABLED and (DebugLogging.SHOW_TRANSPORT_BUILD_LOGS or DebugLogging.SHOW_BUILDERS_LOGS):
 		print("[BUILD] Task di %s assegnata a #%d %s per l'edificio #%d." % [
 			"demolizione" if is_demolition else "costruzione", worker.id, worker.name, building.id

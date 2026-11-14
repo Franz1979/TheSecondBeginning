@@ -81,6 +81,10 @@ var path_regions_dirty: bool = true
 var path_region_pocket: PackedByteArray = PackedByteArray()
 var path_pocket_exits: Dictionary = {}
 var path_block_version: int = 0
+# Griglia degli animali (2026-11-15, PathfindingService.animal_grid): copia con le microcelle chiuse agli animali (campo,
+# orto) bloccate, rifatta quando cambia path_grid_version; null finché non serve.
+var path_animal_grid: AStarGrid2D = null
+var path_animal_grid_version: int = -1
 
 # Cache del risultato di VegetationPositionService.generate_positions (diagnostica lentezza,
 # 2026-08-30) — quella chiamata è deterministica e COSTOSA (~90-190ms/cella): il suo output
@@ -117,6 +121,10 @@ var last_vegetation_rebuild_day: int = -1
 # taglio per lotto si riusano, spostati di uno, invece di rifare il filtro (VegetationCutPatchService.patch_render_positions).
 var last_tree_group_starts: Array = []
 var last_shrub_group_starts: Array = []
+# Filtro della nebbia per zone (2026-11-14, scattini camminando): ultimo filtro di GameScene.
+# _filter_vegetation_positions_by_visibility — per tipo l'elenco sorgente (stesso oggetto e lunghezza), il risultato e gli
+# inizi dei gruppi (copie), più epoca e versione dell'insieme visibile del fog of war. Vuoto = nessun filtro da riusare.
+var visibility_filter_memo: Dictionary = {}
 var last_scattered_availability: Dictionary = {}
 # true dopo aver passato al fog of war la vegetazione sfocata (set_vegetation_presence) con le posizioni correnti; false
 # a ogni rigenerazione completa. Il ridisegno per movimento/nebbia la salta se è true (2026-10-03).

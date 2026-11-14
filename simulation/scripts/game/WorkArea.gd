@@ -64,6 +64,10 @@ static func from_save_data(data: Dictionary) -> WorkArea:
 			var categories: Array = []
 			for category in job_filters["categories"]:
 				categories.append(int(category))
+			# Granaglie (2026-11-15): i semi erano Materiali grezzi; chi raccoglieva quelli raccoglie anche le Granaglie.
+			if categories.has(SecondaryResourceTypes.Category.RAW_MATERIAL) \
+					and not categories.has(SecondaryResourceTypes.Category.GRAIN):
+				categories.append(SecondaryResourceTypes.Category.GRAIN)
 			job_filters["categories"] = categories
 	var raw_traps = data.get("trap_targets", {})
 	if raw_traps is Dictionary:

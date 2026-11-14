@@ -10,10 +10,13 @@ class_name DiscoveryTypes
 #   BUILDING_COMPLETED -> {"building": Building}
 #   ANIMAL_DOMESTICATED -> {"species": String} (specie domestica, es. "dog" — primo superamento della soglia, vedi
 #                          DomesticationPointsService)
+#   RESOURCE_FIRST_COLLECTED -> {"resource_name": String} (risorsa raccolta da terra; la scoperta scatta la prima volta —
+#                          2026-11-15, grano selvatico)
 enum TriggerType {
 	IDEA_COMPLETED,
 	BUILDING_COMPLETED,
 	ANIMAL_DOMESTICATED,
+	RESOURCE_FIRST_COLLECTED,
 }
 
 # Azione eseguita da GameScene dopo l'OK del DiscoveryPopup (o subito, se non c'è nulla da mostrare).

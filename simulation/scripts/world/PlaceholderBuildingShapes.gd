@@ -16,7 +16,35 @@ extends RefCounted
 # mappa e anteprima con SmokehouseShape, qui solo l'icona (SmokehouseIcon).
 # Lo stesso per "drying_rack" (2026-10-31): mappa e anteprima con DryingRackShape, qui solo l'icona (DryingRackIcon).
 const TYPES: Array[String] = ["burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford",
-	"rabbit_hutch", "chicken_coop"]
+	"rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden"]
+
+# Orto delle prove (2026-11-15, ramo piante), vista dall'alto: terra smossa a solchi, recinto alla buona di paletti storti
+# e radi (alcuni tratti legati, altri no) e un mucchietto di terra a est. Paletti: posizioni fisse un po' irregolari.
+const GARDEN_BED_RECT := Rect2(-3.4, -3.4, 6.2, 6.8)
+const GARDEN_STAKES: Array[Vector2] = [
+	Vector2(-3.8, -3.9), Vector2(-1.6, -4.1), Vector2(0.7, -3.8), Vector2(3.1, -4.0),
+	Vector2(3.3, -1.5), Vector2(3.0, 1.1), Vector2(3.4, 3.7),
+	Vector2(1.0, 3.9), Vector2(-1.4, 3.6), Vector2(-3.9, 3.8),
+	Vector2(-3.6, 1.2), Vector2(-4.0, -1.4),
+]
+# Tratti di graticcio tra paletti consecutivi (indice del primo): il resto del recinto resta aperto.
+const GARDEN_WATTLE_FROM: Array[int] = [0, 1, 3, 4, 7, 9, 10]
+const GARDEN_HEAP_CENTER := Vector2(4.4, -0.2)
+# Terra dissodata (2026-11-15, richiesta utente): più scura del terreno intorno, solchi ancora più scuri.
+const GARDEN_SOIL := Color(0.30, 0.22, 0.14, 1.0)
+const GARDEN_FURROW := Color(0.21, 0.15, 0.09, 1.0)
+
+# Capanna del contadino (2026-11-15, ramo piante), vista dall'alto: rettangolo di legno, tetto di paglia a due falde, porta
+# sul lato sud (+y, ruota con la direzione), due attrezzi appoggiati a est e un mucchietto di bastoni a ovest.
+const FARMER_HUT_RECT := Rect2(-2.8, -3.0, 5.6, 5.4)
+const FARMER_HUT_DOOR_RECT := Rect2(-0.8, 2.0, 1.6, 0.6)
+
+# Piccolo granaio (2026-11-15, ramo piante), vista dall'alto: tondo, rialzato su quattro pietre che sporgono, muro
+# d'argilla e tetto conico di paglia con le falde e il nodo in cima.
+const GRANARY_STILT_RADIUS: float = 3.9
+const GRANARY_WALL_RADIUS: float = 3.6
+const GRANARY_ROOF_RADIUS: float = 3.1
+const CLAY_WALL := Color(0.72, 0.52, 0.36, 1.0)
 
 # Conigliera e pollaio (2026-11-13, idea Allevamento — segnaposto), viste dall'alto.
 const HUTCH_RECT := Rect2(-3.6, -2.6, 7.2, 5.2)
@@ -289,6 +317,52 @@ static func draw(
 			canvas.draw_line(p.call(COOP_ROOF_RECT.position.x, -1.9), p.call(COOP_ROOF_RECT.end.x, -1.9), tint.call(WOOD_DARK), w.call(0.35), true)
 			for grain in COOP_GRAIN:
 				canvas.draw_circle(p.call(grain.x, grain.y), w.call(0.25), tint.call(STRAW))
+		"trial_garden":
+			var bed := Rect2(p.call(GARDEN_BED_RECT.position.x, GARDEN_BED_RECT.position.y), GARDEN_BED_RECT.size * scale)
+			canvas.draw_rect(bed, tint.call(GARDEN_SOIL))
+			for i in range(4):
+				var y := GARDEN_BED_RECT.position.y + 1.0 + float(i) * 1.6
+				canvas.draw_line(p.call(GARDEN_BED_RECT.position.x + 0.5, y), p.call(GARDEN_BED_RECT.end.x - 0.5, y + 0.15),
+					tint.call(GARDEN_FURROW), w.call(0.35), true)
+			for i in GARDEN_WATTLE_FROM:
+				var a: Vector2 = GARDEN_STAKES[i]
+				var b: Vector2 = GARDEN_STAKES[(i + 1) % GARDEN_STAKES.size()]
+				canvas.draw_line(p.call(a.x, a.y), p.call(b.x, b.y), tint.call(WOOD), w.call(0.25), true)
+			for stake in GARDEN_STAKES:
+				canvas.draw_circle(p.call(stake.x, stake.y), w.call(0.4), tint.call(WOOD_DARK))
+			canvas.draw_colored_polygon(_blob_polygon(p.call(GARDEN_HEAP_CENTER.x, GARDEN_HEAP_CENTER.y), w.call(0.9), 600, 8, 0.8, 1.1),
+				tint.call(GARDEN_SOIL))
+		"farmer_hut":
+			var walls := Rect2(p.call(FARMER_HUT_RECT.position.x, FARMER_HUT_RECT.position.y), FARMER_HUT_RECT.size * scale)
+			canvas.draw_rect(walls, tint.call(WOOD_DARK))
+			canvas.draw_rect(walls.grow(-float(w.call(0.45))), tint.call(STRAW))
+			canvas.draw_line(p.call(0.0, FARMER_HUT_RECT.position.y + 0.45), p.call(0.0, FARMER_HUT_RECT.end.y - 0.45),
+				tint.call(STRAW_DARK), w.call(0.35), true)
+			var door := Rect2(p.call(FARMER_HUT_DOOR_RECT.position.x, FARMER_HUT_DOOR_RECT.position.y), FARMER_HUT_DOOR_RECT.size * scale)
+			canvas.draw_rect(door, tint.call(CLOTHING_HUT_DOOR))
+			# Attrezzi appoggiati a est: due manici, uno con la pietra forata, uno con la lama.
+			canvas.draw_line(p.call(3.3, -2.6), p.call(3.7, 1.8), tint.call(WOOD), w.call(0.35), true)
+			canvas.draw_circle(p.call(3.6, 0.9), w.call(0.45), tint.call(STONE))
+			canvas.draw_line(p.call(4.2, -2.2), p.call(4.3, 2.0), tint.call(WOOD), w.call(0.35), true)
+			canvas.draw_line(p.call(4.3, -2.2), p.call(4.8, -1.6), tint.call(SLAB_EDGE), w.call(0.4), true)
+			# Bastoni a ovest.
+			for i in range(3):
+				var y := -1.4 + float(i) * 0.5
+				canvas.draw_line(p.call(-4.6, y), p.call(-3.2, y + 0.3), tint.call(WOOD), w.call(0.3), true)
+		"small_granary":
+			for i in range(4):
+				var angle := TAU * (float(i) + 0.5) / 4.0
+				var stilt: Vector2 = center +Vector2(cos(angle), sin(angle)) * w.call(GRANARY_STILT_RADIUS)
+				canvas.draw_circle(stilt, w.call(0.9), tint.call(SLAB_EDGE))
+				canvas.draw_circle(stilt, w.call(0.7), tint.call(STONE))
+			canvas.draw_circle(center, w.call(GRANARY_WALL_RADIUS), tint.call(CLAY_WALL))
+			canvas.draw_circle(center, w.call(GRANARY_ROOF_RADIUS), tint.call(STRAW))
+			for i in range(8):
+				var angle := TAU * float(i) / 8.0
+				var dir := Vector2(cos(angle), sin(angle))
+				canvas.draw_line(center + dir * w.call(0.6), center + dir * w.call(GRANARY_ROOF_RADIUS),
+					tint.call(STRAW_DARK), w.call(0.2), true)
+			canvas.draw_circle(center, w.call(0.7), tint.call(WOOD_DARK))
 		"waste_pit":
 			# Bordo di terra, fondo scuro, poi gli scarti sopra il fondo.
 			canvas.draw_colored_polygon(_blob_polygon(center, w.call(WASTE_PIT_RIM_RADIUS), 500, 12, 0.9, 1.06), tint.call(WASTE_PIT_RIM))

@@ -61,3 +61,5 @@ hunt_scent_radius = 8.0
 hunt_hold_hours = 3.0
 hunt_hold_contact_distance = 1.5
 hunt_chase_max_distance = 25.0
+daily_calories = 12.0
+accepted_foods = Array[String](["meat", "fish_meat", "bone"])

@@ -40,6 +40,8 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 	if failure != "":
 		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "soup_" + failure
 		return
+	# Addomesticazione delle piante (2026-11-13): la zuppa coi semi fa avanzare l'orzo (DomesticPlantRules.points_per_meal).
+	DomesticPlantCalculator.add_pending_points(context, DomesticPlantCalculator.meal_points(ingredients))
 	storage_changed.emit(house)
 
 

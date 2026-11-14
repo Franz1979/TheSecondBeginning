@@ -86,6 +86,8 @@ static func apply_lesson(
 			student.set(subject, minf(float(student.get(subject)) + float(gain), HumanIndividual.SKILL_MAX))
 		student.skill_cognition = minf(student.skill_cognition + rules.cognition_gain, HumanIndividual.SKILL_MAX)
 		parts.append("#%d %s +%d" % [student.id, student.name, gain])
+	# Insegnante (2026-11-14): +teacher_cognition_gain a ogni lezione tenuta, prima del tiro dell'idea (che ne dipende).
+	teacher.skill_cognition = minf(teacher.skill_cognition + rules.teacher_cognition_gain, HumanIndividual.SKILL_MAX)
 	var points := rules.influence_points_base + rules.influence_points_per_student * float(students.size())
 	var tradition_before := InfluenceService.get_points(building, InfluenceService.InfluenceType.CULTURAL)
 	InfluenceService.add_points(building, InfluenceService.InfluenceType.CULTURAL, points, game_data)
@@ -104,3 +106,19 @@ static func apply_lesson(
 		teacher.id, teacher.name, building.id, subject, roundi(teacher_value),
 		", ".join(parts) if not parts.is_empty() else "nessuno", tradition_before, tradition_after, points,
 	])
+	_roll_teacher_idea(rules, teacher, students.size())
+
+
+# Idea dell'insegnante (2026-11-14, InspirationService): solo dopo un insegnamento vero, con almeno un allievo presente.
+static func _roll_teacher_idea(rules: TeachingRiteRules, teacher: HumanIndividual, student_count: int) -> void:
+	if student_count <= 0 or not InspirationService.is_possible():
+		return
+	if not InspirationService.can_receive(teacher):
+		InspirationService.log_event(teacher, "nessuna idea dalla lezione: non può riceverla (pensiero già pronto).")
+		return
+	var chance := minf(
+		rules.inspiration_base_chance + rules.inspiration_chance_per_student * float(student_count)
+			+ rules.inspiration_cognition_chance * teacher.skill_cognition / HumanIndividual.SKILL_MAX,
+		rules.inspiration_max_chance
+	)
+	InspirationService.try_inspire(teacher, chance, "dalla lezione (%d allievi)" % student_count)

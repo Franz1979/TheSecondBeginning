@@ -59,6 +59,11 @@ signal take_waterskin_changed(enabled: bool)
 signal wear_apparel_changed(enabled: bool)
 # Regola "Un solo costruttore per cantiere" (2026-10-17, GameData.job_board_single_builder).
 signal single_builder_changed(enabled: bool)
+# Regola "Spingi le prede grosse verso le fosse" (2026-11-14, PitDriveService; spostata qui dalle regole di stoccaggio):
+# visibile solo dopo la prima fossa. Stato da GameScene (set_pit_drive, prima di _ready).
+signal pit_drive_changed(enabled: bool)
+var _pit_drive_shown: bool = false
+var _pit_drive_enabled: bool = false
 # Bottone "Produci" (2026-10-09, ordini creati dal cassetto): GameScene risponde con open_produce_overlay (le ricette).
 # "Invia in coda" nello strato = produce_orders_submitted: `orders` = [{"recipe", "quantity"}] delle ricette preparate,
 # `deliver_to_warehouse` = la spunta "Porta al deposito" al momento dell'invio.
@@ -534,11 +539,12 @@ func _entries_signature(entries: Array[Dictionary]) -> String:
 	return "\n".join(parts)
 
 
-# Ciò che una riga mostra: se non cambia, la riga si riusa così com'è.
+# Ciò che una riga mostra: se non cambia, la riga si riusa così com'è. Il conto alla rovescia dell'attesa ("wait_seconds")
+# resta fuori (2026-11-14): cambia ogni secondo e si aggiorna sull'etichetta della riga riusata (_refresh_row_status).
 func _entry_signature(entry: Dictionary) -> String:
 	return "%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s" % [
 		entry["key"], entry.get("building_name", ""), entry.get("name_detail", ""), str(entry.get("icon", {})), str(entry.get("enabled", true)), str(entry.get("locked", false)),
-		str(entry.get("waiting", false)), str(entry.get("wait_seconds", 0)), entry.get("workers", ""),
+		str(entry.get("waiting", false)), str(int(entry.get("wait_seconds", 0)) > 0), entry.get("workers", ""),
 		str(entry.get("cancel_disabled", false)), entry.get("cancel_tooltip", "") + "|" + String(entry.get("status_text", "")) + "|" + str(entry.get("direct", false)) + str(entry.get("automatic", false)) + str(entry.get("cargo_return", false)) + str(entry.get("warehouse", false)) + "|" + String(entry.get("progress", "")) + "|" + String(entry.get("text", "")) + "|" + String(entry.get("disabled_reason", "")),
 	]
 
@@ -563,6 +569,7 @@ func _fill_box(box: VBoxContainer, entries: Array[Dictionary], in_progress: bool
 			if old != null and old["signature"] == signature:
 				row = old["row"]
 				old_rows.erase(key)
+				_refresh_row_status(row, entry, in_progress)
 			else:
 				row = _build_list_row(entry, in_progress)
 			new_rows[key] = {"row": row, "signature": signature}
@@ -584,11 +591,13 @@ func _fill_box(box: VBoxContainer, entries: Array[Dictionary], in_progress: bool
 		empty_label.modulate = Color(1, 1, 1, 0.7)
 		box.add_child(empty_label)
 		return
+	# Spostata solo la riga fuori posto (2026-11-14): ogni move_child fa riordinare il contenitore.
 	for i in range(ordered.size()):
 		var row := ordered[i]
 		if row.get_parent() != box:
 			box.add_child(row)
-		box.move_child(row, i)
+		if row.get_index() != i:
+			box.move_child(row, i)
 
 
 # La voce più recente con la stessa chiave (riga riusata), altrimenti quella con cui la riga è nata.
@@ -604,6 +613,41 @@ func _latest_entry(in_progress: bool, entry: Dictionary) -> Dictionary:
 # Clic su tutta la riga (non sui bottoni) = centra la visuale; voce che non si può centrare: nome spento, spiegazione
 # nel tooltip. Bloccato:
 # icona, nome e scritta attenuati, i bottoni no.
+# Etichetta di stato della riga (seconda riga: chi lavora, motivo, attesa, avanzamento), conservata come meta per
+# aggiornarne il testo senza rifare la riga.
+const STATUS_LABEL_META := &"status_label"
+
+
+# Testo della seconda riga.
+func _row_status_text(entry: Dictionary, in_progress: bool) -> String:
+	var locked := bool(entry.get("locked", false))
+	var status_text := ""
+	if in_progress:
+		status_text = String(entry.get("workers", ""))
+	elif not locked and String(entry.get("status_text", "")) != "":
+		# Lavoro impossibile per ora (2026-10-07, es. "Nessun magazzino lo accetta"): il motivo, senza conto alla rovescia.
+		status_text = String(entry["status_text"])
+	elif not locked and bool(entry.get("waiting", false)):
+		var wait_seconds := int(entry.get("wait_seconds", 0))
+		status_text = tr("task_assignment_waiting") + ((" (%d)" % wait_seconds) if wait_seconds > 0 else "")
+	# Avanzamento dell'ordine (2026-10-11, "progress", es. "1/5"): nella seconda riga, accanto a chi lo fa o allo stato.
+	var progress := String(entry.get("progress", ""))
+	if progress != "":
+		status_text = progress if status_text == "" else "%s · %s" % [status_text, progress]
+	return status_text
+
+
+# Riga riusata: solo il conto alla rovescia può essere cambiato fuori dalla firma.
+func _refresh_row_status(row: Control, entry: Dictionary, in_progress: bool) -> void:
+	if not row.has_meta(STATUS_LABEL_META):
+		return
+	var status_label: Label = row.get_meta(STATUS_LABEL_META)
+	var status_text := _row_status_text(entry, in_progress)
+	if is_instance_valid(status_label) and status_label.text != status_text:
+		status_label.text = status_text
+		status_label.tooltip_text = TooltipText.wrap(status_text)
+
+
 func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	var enabled := bool(entry.get("enabled", true))
 	var locked := bool(entry.get("locked", false)) and not in_progress
@@ -658,21 +702,11 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 		name_box.add_child(name_line)
 	else:
 		name_box.add_child(label)
-	var status_text := ""
-	if in_progress:
-		status_text = String(entry.get("workers", ""))
-	elif not locked and String(entry.get("status_text", "")) != "":
-		# Lavoro impossibile per ora (2026-10-07, es. "Nessun magazzino lo accetta"): il motivo, senza conto alla rovescia.
-		status_text = String(entry["status_text"])
-	elif not locked and bool(entry.get("waiting", false)):
-		var wait_seconds := int(entry.get("wait_seconds", 0))
-		status_text = tr("task_assignment_waiting") + ((" (%d)" % wait_seconds) if wait_seconds > 0 else "")
-	# Avanzamento dell'ordine (2026-10-11, "progress", es. "1/5"): nella seconda riga, accanto a chi lo fa o allo stato.
-	var progress := String(entry.get("progress", ""))
-	if progress != "":
-		status_text = progress if status_text == "" else "%s · %s" % [status_text, progress]
+	var status_text := _row_status_text(entry, in_progress)
+	var status_label_ref: Label = null
 	if status_text != "":
 		var status_label := Label.new()
+		status_label_ref = status_label
 		status_label.text = status_text
 		status_label.tooltip_text = TooltipText.wrap(status_text)
 		status_label.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -760,6 +794,8 @@ func _build_list_row(entry: Dictionary, in_progress: bool) -> Control:
 	clickable_row.clickable = enabled
 	clickable_row.add_child(row)
 	clickable_row.clicked.connect(func() -> void: entry_activated.emit(_latest_entry(in_progress, entry)))
+	if status_label_ref != null:
+		clickable_row.set_meta(STATUS_LABEL_META, status_label_ref)
 	return clickable_row
 
 
@@ -904,6 +940,8 @@ func _build_settings_section() -> void:
 	_apply_take_waterskin_available()
 	DashedSeparator.add_item(_settings_box, _build_wear_apparel_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_single_builder_setting_row())
+	if _pit_drive_shown:
+		DashedSeparator.add_item(_settings_box, _build_pit_drive_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_collect_piles_setting_row())
 	DashedSeparator.add_item(_settings_box, _build_empty_outputs_setting_row())
 	_build_priority_setting(_settings_box)
@@ -1057,6 +1095,28 @@ func _build_auto_clear_rubble_setting_row() -> Control:
 # quando chi li ha preso è libero (ToolFetchService.return_borrowed_tools).
 func set_return_borrowed_tools(enabled: bool) -> void:
 	_return_borrowed_tools = enabled
+
+
+func set_pit_drive(is_shown: bool, enabled: bool) -> void:
+	_pit_drive_shown = is_shown
+	_pit_drive_enabled = enabled
+
+
+func _build_pit_drive_setting_row() -> Control:
+	var check := CheckBox.new()
+	check.text = tr("task_assignment_setting_pit_drive")
+	check.tooltip_text = TooltipText.wrap(tr("task_assignment_setting_pit_drive_tooltip"))
+	check.focus_mode = Control.FOCUS_NONE
+	check.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	check.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
+	check.button_pressed = _pit_drive_enabled
+	check.toggled.connect(func(pressed: bool) -> void:
+		if _pit_drive_enabled == pressed:
+			return
+		_pit_drive_enabled = pressed
+		pit_drive_changed.emit(pressed)
+	)
+	return check
 
 
 func set_single_builder(enabled: bool) -> void:

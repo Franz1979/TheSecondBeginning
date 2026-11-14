@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_hay"]
+
+; Fieno (2026-11-13, segnaposto del punto 4): nascerà al punto 6 come sottoprodotto della raccolta dei cereali (paglia/
+; fieno), per gli animali chiusi. Spento finché non esiste (required_idea_id segnaposto); calorie per gli animali da
+; decidere allora. Non è il vecchio "forage" del motore mondiale (pascolo aggregato), che resta com'è.
+[resource]
+script = ExtResource("1_hay")
+secondary_resource_name = "hay"
+category = 1
+calories_per_unit = 0.0
+required_idea_id = "placeholder_unavailable"
+animal_calories_per_unit = 0.0

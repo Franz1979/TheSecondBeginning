@@ -7,7 +7,7 @@ extends VBoxContainer
 #
 # Riga sul modello della lista degli abitanti: a sinistra il tasto 🎯, poi il testo su una riga, troncato con i puntini
 # (intero nel tooltip), così la scheda non allarga mai il pannello. Solo il 🎯 centra e seleziona (dal 2026-10-07 il
-# testo non è più cliccabile). Voce che non si può centrare: riga spenta, spiegazione nel tooltip. Le righe vengono rifatte solo quando l'elenco cambia davvero.
+# testo non è più cliccabile). Voce che non si può centrare: riga spenta, spiegazione nel tooltip. Le righe vengono rifatte solo quando cambiano davvero (per chiave).
 #
 # Dal 2026-10-09 (richiesta utente): titolo "In sospeso" in cima (stile dei titoli delle altre schede, 11 px), "Niente in
 # sospeso" al posto della lista vuota, e righe su due livelli come quelle del cassetto "Assegnazione compiti": sopra il
@@ -31,6 +31,10 @@ const DISABLED_MODULATE := Color(1, 1, 1, 0.45)
 var _signature: String = "-"
 var _title_label: Label = null
 var _rows_box: VBoxContainer = null
+# Righe per chiave della voce: {"row": Control, "signature": String}; voce attuale di ogni chiave (il 🎯 manda questa).
+var _rows_by_key: Dictionary = {}
+var _row_entries: Dictionary = {}
+var _empty_label: Label = null
 
 
 func _ready() -> void:
@@ -47,33 +51,88 @@ func _ready() -> void:
 	_show_empty()
 
 
+# Scheda chiusa (2026-11-14, richiesta utente): le righe non si fanno se il pannello non si vede (numero e lampeggio della
+# linguetta li aggiorna GameScene comunque); l'ultimo elenco arrivato si mette in righe quando la scheda torna visibile.
+var _waiting_entries: Variant = null
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and is_visible_in_tree() and _waiting_entries != null:
+		var waiting: Array[Dictionary] = _waiting_entries
+		_waiting_entries = null
+		set_entries(waiting)
+
+
 func set_entries(entries: Array[Dictionary]) -> void:
+	if not is_visible_in_tree():
+		_waiting_entries = entries
+		return
+	_waiting_entries = null
 	var parts: PackedStringArray = []
+	var row_signatures: Array[String] = []
 	for entry in entries:
-		parts.append("%s|%s|%s|%s|%s|%s" % [
+		var row_signature := "%s|%s|%s|%s|%s|%s" % [
 			entry["key"], entry["text"], entry.get("name", ""), entry.get("detail", ""), str(entry.get("enabled", true)),
 			entry.get("disabled_reason", ""),
-		])
-	var signature := "\n".join(parts)
+		]
+		row_signatures.append(row_signature)
+		parts.append(row_signature)
+	var signature := "
+".join(parts)
 	if signature == _signature or _rows_box == null:
 		return
 	_signature = signature
-	for child in _rows_box.get_children():
-		_rows_box.remove_child(child)
-		child.queue_free()
 	if entries.is_empty():
+		_clear_rows()
 		_show_empty()
 		return
-	for entry in entries:
-		_rows_box.add_child(_build_row(entry))
+	if _empty_label != null:
+		_rows_box.remove_child(_empty_label)
+		_empty_label.queue_free()
+		_empty_label = null
+	# Righe tenute per chiave (2026-11-14, scattini — ~16 ms a ricreare tutte le righe per un "Restano 3 gg" diventato
+	# "2 gg"): si rifà solo la riga cambiata, le nuove si aggiungono, le sparite si tolgono, poi l'ordine.
+	var kept: Dictionary = {}
+	for i in range(entries.size()):
+		var entry: Dictionary = entries[i]
+		var key := String(entry["key"])
+		_row_entries[key] = entry
+		var existing: Variant = _rows_by_key.get(key)
+		if existing != null and String(existing["signature"]) == row_signatures[i]:
+			kept[key] = existing
+			continue
+		if existing != null:
+			_rows_box.remove_child(existing["row"])
+			(existing["row"] as Control).queue_free()
+		var row := _build_row(entry)
+		_rows_box.add_child(row)
+		kept[key] = {"row": row, "signature": row_signatures[i]}
+	for key in _rows_by_key.keys():
+		if not kept.has(key):
+			_rows_box.remove_child(_rows_by_key[key]["row"])
+			(_rows_by_key[key]["row"] as Control).queue_free()
+			_row_entries.erase(key)
+	_rows_by_key = kept
+	for i in range(entries.size()):
+		var row: Control = kept[String(entries[i]["key"])]["row"]
+		if row.get_index() != i:
+			_rows_box.move_child(row, i)
+
+
+func _clear_rows() -> void:
+	for key in _rows_by_key.keys():
+		_rows_box.remove_child(_rows_by_key[key]["row"])
+		(_rows_by_key[key]["row"] as Control).queue_free()
+	_rows_by_key.clear()
+	_row_entries.clear()
 
 
 func _show_empty() -> void:
-	if _rows_box == null or _rows_box.get_child_count() > 0:
+	if _rows_box == null or _empty_label != null:
 		return
-	var empty_label := _make_label(tr("pending_empty"), FONT_SIZE)
-	empty_label.modulate = DETAIL_MODULATE
-	_rows_box.add_child(empty_label)
+	_empty_label = _make_label(tr("pending_empty"), FONT_SIZE)
+	_empty_label.modulate = DETAIL_MODULATE
+	_rows_box.add_child(_empty_label)
 
 
 # Riga: 🎯 a sinistra (in alto), poi il nome e sotto il motivo, entrambi a capo se serve.
@@ -91,7 +150,8 @@ func _build_row(entry: Dictionary) -> Control:
 	center_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	center_button.disabled = not enabled
 	center_button.tooltip_text = TooltipText.wrap(tr("pending_center_tooltip") if enabled else String(entry.get("disabled_reason", "")))
-	center_button.pressed.connect(func(): entry_activated.emit(entry))
+	var entry_key := String(entry["key"])
+	center_button.pressed.connect(func(): entry_activated.emit(_row_entries.get(entry_key, entry)))
 	row.add_child(center_button)
 	# Il testo non è cliccabile (2026-10-07, richiesta utente): il gesto è solo il 🎯. Resta il tooltip.
 	var text_box := VBoxContainer.new()

@@ -130,6 +130,21 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
 			"building": toolkit_target.get_display_name() if toolkit_target != null else "",
 		})
+	# Mangiatoia (2026-11-14): "Tettoia delle gabbie: mangiatoia, porta 60 Verdure".
+	if order.has(FeederStockService.FEEDER_TARGET_KEY):
+		var feeder_target := WarehouseManagerService.find_building(ctx.world, int(order[FeederStockService.FEEDER_TARGET_KEY]))
+		row_name = GameContext.tr_text("drawer_order_feeder_row").format({
+			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
+			"building": feeder_target.get_display_name() if feeder_target != null else "",
+		})
+	# Capanno del campo (2026-11-15, "Semi nei campi"): "Campo: capanno, porta 200 Orzo" / "… porta via 100 Orzo".
+	if order.has(FieldSeedStockService.SEED_TARGET_KEY) or order.has(FieldSeedStockService.SEED_REMOVE_KEY):
+		var removing := order.has(FieldSeedStockService.SEED_REMOVE_KEY)
+		var shed := WarehouseManagerService.find_building(ctx.world, int(order[FieldSeedStockService.SEED_REMOVE_KEY if removing else FieldSeedStockService.SEED_TARGET_KEY]))
+		row_name = GameContext.tr_text("drawer_order_field_seed_remove_row" if removing else "drawer_order_field_seed_row").format({
+			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
+			"building": shed.get_display_name() if shed != null else "",
+		})
 	# Eccedenza da buttare (2026-10-18): "Buttare · 70 Rametti".
 	if is_waste:
 		row_name = GameContext.tr_text("drawer_order_waste_row").format({"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name)})
@@ -307,6 +322,12 @@ static func zone_blocked_reason(ctx: GameContext, order_type: String, zone_id: i
 		JobBoardTimingService.add("attrezzi (lista)", started)
 	if tool_reason != "":
 		return tool_reason
+	# Raccolta di una risorsa da contenitore (2026-11-13, semi nei vasi): X rossa finché nessun magazzino ha posto nei
+	# contenitori montati (la stessa regola di HaulZoneService.work_area_accepts), col motivo.
+	if order_type == DrawerOrderService.TYPE_GATHER:
+		var gather_name := String(order.get("resource_name", ""))
+		if gather_name != "" and StorageContainerService.is_container_resource(gather_name) 				and not StorageContainerService.village_has_room(gather_name):
+			return StorageContainerService.no_room_reason(gather_name)
 	# Taglio/estrazione di un ordine non preso (2026-10-23): valido se l'ordine ha (o trova) il suo bersaglio
 	# (DrawerOrderTargetService), invece del giro su tutte le zone.
 	if DrawerOrderTargetService.uses_order_target(order_type) and order.has("id") and not bool(order.get("taken", false)):
@@ -506,16 +527,7 @@ static func _extraction_carry_rejection(
 			product = String(PlantCutService.compute_yield(
 				cell.macro_state, plant["object_type"], plant["individual_key"], ctx.game_data.year
 			).get("resource_name", ""))
-	if product == "":
-		return ""
-	var rules := CaloricCalculator.get_caloric_source_rules(product)
-	if rules == null or rules.space_per_unit <= 0.0:
-		return ""
-	var tools_to_fetch := ToolFetchService.member_missing_categories(worker, categories).size()
-	var capacity := worker.max_carry_capacity - float(tools_to_fetch) * worker._carry_bonus_per_empty_tool_slot()
-	if int(floor(capacity / rules.space_per_unit + FoodSelectionService.UNIT_FIT_EPSILON)) >= 1:
-		return ""
-	return "non riesce a portare nemmeno un'unità di %s con gli attrezzi in cintura" % IconRegistry.get_resource_display_name(product)
+	return ToolFetchService.carry_rejection(worker, categories, product)
 
 
 # "Produci": mai nessuno (alla presa l'ordine diventa un ordine dell'edificio ed esce dall'elenco). Ordini di zona: chi

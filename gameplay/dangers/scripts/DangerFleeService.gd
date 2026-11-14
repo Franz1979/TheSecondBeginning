@@ -50,7 +50,7 @@ static func start_flee(member: HumanIndividual, profile_name: String, danger_id:
 		return true
 	var choice := _choose_target(member, profile, danger_position, safe_points, world)
 	if choice.is_empty():
-		print("[FLEE] #%d %s: nessun riparo, resta dov'è (pericolo: %s)" % [member.id, member.name, profile_name])
+		DebugLogging.print_event("[FLEE] #%d %s: nessun riparo, resta dov'è (pericolo: %s)" % [member.id, member.name, profile_name])
 		return false
 	var task := TaskFactory.build_task(TaskDefinitionCache.get_definition(FLEE_TASK_DEFINITION_PATH), {
 		"flee_target": choice["target"],
@@ -60,9 +60,9 @@ static func start_flee(member: HumanIndividual, profile_name: String, danger_id:
 	})
 	var interrupted := member.current_task.task_name if member.current_task != null else "(niente)"
 	if not member.assign_task(task, GameContext.age_band_for(member, game_data), true):
-		print("[FLEE] #%d %s: non può scappare (compito rifiutato)" % [member.id, member.name])
+		DebugLogging.print_event("[FLEE] #%d %s: non può scappare (compito rifiutato)" % [member.id, member.name])
 		return false
-	print("[FLEE] #%d %s %s verso %s (pericolo: %s), interrompe '%s'" % [
+	DebugLogging.print_event("[FLEE] #%d %s %s verso %s (pericolo: %s), interrompe '%s'" % [
 		member.id, member.name, "sceglie di nuovo e scappa" if choose_again else "scappa", choice["label"], profile_name,
 		interrupted])
 	return true
@@ -75,7 +75,7 @@ static func end_danger(individuals: Array[HumanIndividual], danger_id: int) -> v
 		if not is_fleeing_from(member, danger_id) or bool(member.current_task.context.get(CONTEXT_DANGER_OVER, false)):
 			continue
 		member.current_task.context[CONTEXT_DANGER_OVER] = true
-		print("[FLEE] #%d %s: pericolo passato, riprende il lavoro" % [member.id, member.name])
+		DebugLogging.print_event("[FLEE] #%d %s: pericolo passato, riprende il lavoro" % [member.id, member.name])
 
 
 # Scacciare in gruppo (L6.1, DangerProfile gruppo "Drive off"): gli adulti disponibili vicino a `target` (stessa
@@ -132,10 +132,10 @@ static func start_drive_off(individuals: Array[HumanIndividual], target: HumanIn
 			enough = true
 			break
 	if not enough:
-		print("[DRIVE OFF] #%d %s: %d adulti e %d animali di guardia non bastano per %d minacce, nessuna persona interviene" % [
+		DebugLogging.print_event("[DRIVE OFF] #%d %s: %d adulti e %d animali di guardia non bastano per %d minacce, nessuna persona interviene" % [
 			target.id, target.name, candidates.size(), support.size(), threat_positions.size()])
 		return {"helper_ids": helper_ids, "needed": 0}
-	print("[DRIVE OFF] #%d %s: per vicinanza bastano %d persone e %d animali di guardia (%d minacce)" % [
+	DebugLogging.print_event("[DRIVE OFF] #%d %s: per vicinanza bastano %d persone e %d animali di guardia (%d minacce)" % [
 		target.id, target.name, chosen.size(), support_used, threat_positions.size()])
 	var definition := TaskDefinitionCache.get_definition(DRIVE_OFF_TASK_DEFINITION_PATH)
 	for member in chosen:
@@ -152,7 +152,7 @@ static func start_drive_off(individuals: Array[HumanIndividual], target: HumanIn
 		})
 		if member.assign_task(task, GameContext.age_band_for(member, game_data), true):
 			helper_ids.append(member.id)
-			print("[DRIVE OFF] #%d %s corre a scacciare il pericolo (%s)" % [member.id, member.name, profile_name])
+			DebugLogging.print_event("[DRIVE OFF] #%d %s corre a scacciare il pericolo (%s)" % [member.id, member.name, profile_name])
 	return {"helper_ids": helper_ids, "needed": chosen.size()}
 
 
@@ -205,7 +205,7 @@ static func _choose_target(member: HumanIndividual, profile: DangerProfile, dang
 		var danger_distance := danger_position.distance_to(target)
 		var angle := rad_to_deg(absf((target - member.position).angle_to(danger_position - member.position)))
 		var blocked := danger_distance < distance and angle <= profile.shelter_blocked_angle_degrees
-		print("[FLEE]   %s: %s a %.1f, pericolo a %.1f, a %d° dalla strada -> %s" % [
+		DebugLogging.print_event("[FLEE]   %s: %s a %.1f, pericolo a %.1f, a %d° dalla strada -> %s" % [
 			candidate["label"], member.name, distance, danger_distance, roundi(angle), "scartato" if blocked else "valido"])
 		if blocked:
 			continue

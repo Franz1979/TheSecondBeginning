@@ -15,17 +15,27 @@ static func build(rules: BuildingRules) -> Array[Dictionary]:
 		return rows
 	var add_row := func(text: String, indent: bool) -> void:
 		rows.append({"text": text, "indent": indent})
+	# Magazzino a soli vasi (2026-11-15, piccolo granaio): niente slot, ma la conservazione si mostra lo stesso; con
+	# accepted_categories solo le categorie che il tipo accetta.
+	var stores_in_containers := not rules.toolkit_extra_tools.is_empty() and rules.toolkit_tool_types > 0
 	if rules.storage_slot_count > 0:
 		add_row.call(_tr("building_info_storage").format({
 			"slots": rules.storage_slot_count, "space": rules.storage_space_per_slot,
 			"total": rules.storage_slot_count * rules.storage_space_per_slot,
 		}), false)
+	if rules.storage_slot_count > 0 or stores_in_containers:
 		add_row.call(_tr("building_info_conservation"), false)
 		for category_index in SecondaryResourceTypes.Category.size():
+			if not rules.accepted_categories.is_empty() and not rules.accepted_categories.has(category_index):
+				continue
 			add_row.call(_tr("building_info_conservation_row").format({
 				"category": category_display_name(category_index),
 				"value": format_percent_bonus(durability_multiplier(rules, category_index)),
 			}), true)
+	# Attrezzi per costruire (2026-11-15, orto delle prove): "Per costruire serve: scavo (es. Piccone d'osso)".
+	if not rules.construction_tool_categories.is_empty():
+		rows.append({"text": _tr("building_info_construction_tools").format({
+			"tools": ToolFetchService.describe_missing_categories(rules.construction_tool_categories)}), "indent": false, "wrap": true})
 	if rules.max_residents > 0:
 		add_row.call(_tr("building_info_residents").format({"count": rules.max_residents}), false)
 		add_row.call(_tr("building_info_rest").format({"value": format_percent_bonus(rules.rest_multiplier)}), false)
@@ -43,7 +53,8 @@ static func build(rules: BuildingRules) -> Array[Dictionary]:
 	# Attrezzeria (2026-10-04): letta dai dati, su ogni edificio che ce l'ha; con la regola d'uso.
 	if rules.toolkit_tool_types > 0 and rules.toolkit_units_per_type > 0:
 		add_row.call(_tr("building_info_toolkit").format({"types": rules.toolkit_tool_types, "units": rules.toolkit_units_per_type}), false)
-		add_row.call(_tr("building_info_toolkit_usage"), true)
+		# Magazzino (2026-11-13, attrezzeria dei vasi da semi): non ci lavora nessuno, la riga dice a cosa serve.
+		add_row.call(_tr("building_info_toolkit_usage" if rules.toolkit_extra_tools.is_empty() else "building_info_toolkit_seed_jars"), true)
 	if rules.is_workstation:
 		# Ordini in tutto (2026-10-09, BuildingRules.production_max_orders, ordini in coda): accanto ai lavori
 		# contemporanei solo se l'edificio ne tiene di più.

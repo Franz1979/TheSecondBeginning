@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="DomesticPlantRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/domestic_plants/scripts/DomesticPlantRules.gd" id="1_barley"]
+
+; Orzo (2026-11-13, richiesta utente — capostipite del ramo delle piante, punto 2): 1 punto ogni 10 once di semi
+; raccolte da terra, 5 per ogni zuppa di midollo e semi tostati cucinata; soglia 1500 (2026-11-13, richiesta utente).
+[resource]
+script = ExtResource("1_barley")
+species_name = "barley"
+display_name = "domestic_plant_barley"
+wild_display_name = "wild_plant_barley"
+domestication_points_required = 1500
+harvest_resource_name = "wild_seeds"
+harvested_units_per_point = 10
+points_per_meal = 5
+domestic_resource_name = "domestic_barley"
+sowing_season = 3
+harvest_season = 2
+sown_units_per_lot = 50
+yield_per_unit = 5.0
+points_per_sown_unit = 1
+points_per_sprout = 1
+points_per_mature_plant = 2
+points_per_rotten_plant = 1
+crop_color = Color(0.9, 0.78, 0.42, 1)

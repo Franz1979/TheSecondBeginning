@@ -42,18 +42,20 @@ const TAB_POPULATION := 0
 # nell'ordine dei nodi (vedi GameInfoTabs.tscn), TAB_SELECTION e la quarta scheda spostati avanti di
 # uno di conseguenza.
 const TAB_BUILDINGS := 1
-const TAB_SELECTION := 2
+# Scheda 🦌 spostata subito dopo gli edifici (2026-11-14, richiesta utente): selezione e campanella avanti di uno.
+const TAB_ANIMALS := 2
+const TAB_SELECTION := 3
 # Scheda "In sospeso" (2026-10-04, richiesta utente — prima la scheda segnaposto "❔"): ospita PendingPanel
 # (aggiunto da GameScene in pending_tab). Linguetta 🔔 con il numero delle voci (set_pending_count) e lampeggio 🔔/❗
 # quando entra una voce nuova (start_pending_blink), fermato aprendo la scheda.
-const TAB_PENDING := 3
+const TAB_PENDING := 4
 const PENDING_ICON := "🔔"
 const PENDING_BLINK_ICON := "❗"
 const PENDING_BLINK_TOGGLES: int = 10
 const PENDING_BLINK_INTERVAL_SEC: float = 0.4
 const PENDING_MAX_SHOWN_COUNT: int = 9
-# Scheda degli animali domestici (2026-11-03, cane passo 1): ospita DomesticAnimalsPanel (aggiunto da GameScene).
-const TAB_ANIMALS := 4
+# Scheda degli animali domestici (2026-11-03, cane passo 1): ospita DomesticAnimalsPanel (aggiunto da GameScene);
+# indice TAB_ANIMALS più sopra.
 # DebugTab (2026-09-12, richiesta utente — "una tab di debug (colore etichetta del debug) nell'info
 # panel" per TaskDebugPanel, elenco di tutte le Task assegnate in sessione) — AGGIUNTA IN CODA
 # (dopo Placeholder, non prima: nessuna posizione specifica richiesta per questa, a differenza di

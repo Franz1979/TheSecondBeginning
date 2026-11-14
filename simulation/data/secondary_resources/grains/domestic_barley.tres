@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_domestic_barley"]
+
+; Orzo (domestico) (2026-11-15, richiesta utente — ramo piante): le once della pianta domestica (scheda
+; gameplay/domestic_plants/data/barley.tres, domestic_resource_name). Non si trova in natura: nasce dalla Mietitura
+; dell'orto seminato con l'orzo selvatico dopo l'addomesticazione, poi dai campi (che seminano solo domestici).
+; Granaglia nei vasi da semi come la selvatica; si conserva più a lungo (1000 giorni contro 365) e nutre di più gli
+; animali (10 calorie per oncia contro 5). Crudo non si mangia (calories_per_unit 0).
+[resource]
+script = ExtResource("1_domestic_barley")
+secondary_resource_name = "domestic_barley"
+calories_per_unit = 0.0
+category = 6
+required_idea_id = "plant_domestication"
+day_durability = 1000
+space_per_unit = 0.5
+stored_in_container = "seed_jar"
+animal_calories_per_unit = 10.0

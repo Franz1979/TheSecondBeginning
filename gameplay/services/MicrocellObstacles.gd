@@ -34,6 +34,13 @@ var barrier_buildings: Dictionary = {}
 # piazzamento li consulta (is_free con stack_as_host/stack_as_ground). Microcella -> id edificio.
 var ground_hosts: Dictionary = {}
 var ground_buildings: Dictionary = {}
+# Terra coltivata (2026-11-15, richiesta utente — BuildingRules.people_path_weight_scale > 0: campo, orto): non blocca il
+# cammino delle persone (is_free con allow_cultivated, solo dal pathfinding, che la fa pagare cara), ma per tutto il resto
+# (piazzamento, mucchi) è occupata. Microcella -> id edificio; cultivated_weights: microcella -> moltiplicatore del peso.
+var cultivated_buildings: Dictionary = {}
+var cultivated_weights: Dictionary = {}
+# Microcelle chiuse agli animali (2026-11-15, BuildingRules.closed_to_animals): microcella -> id edificio.
+var animal_closed: Dictionary = {}
 
 
 # `river_positions`: microcelle del fiume (Array o Dictionary con le microcelle come chiavi, o null).
@@ -70,6 +77,9 @@ func refresh_buildings(macro_coords: Vector2i, macro_world: World) -> void:
 	barrier_buildings.clear()
 	ground_hosts.clear()
 	ground_buildings.clear()
+	cultivated_buildings.clear()
+	cultivated_weights.clear()
+	animal_closed.clear()
 	if macro_world == null:
 		return
 	for building in macro_world.buildings:
@@ -81,7 +91,15 @@ func refresh_buildings(macro_coords: Vector2i, macro_world: World) -> void:
 		var is_walkable: bool = building.is_walkable()
 		var is_host: bool = building.rules != null and building.rules.allows_ground_beneath
 		var is_ground: bool = building.rules != null and building.rules.walkable
+		var cultivated_weight: float = building.rules.people_path_weight_scale if building.rules != null and not is_walkable else 0.0
+		var is_closed: bool = building.rules != null and building.rules.closed_to_animals
 		for microcell in BuildingFootprint.cells_of(building):
+			if is_closed:
+				animal_closed[microcell] = building.id
+			if cultivated_weight > 0.0:
+				cultivated_buildings[microcell] = building.id
+				cultivated_weights[microcell] = cultivated_weight
+				continue
 			if is_host:
 				ground_hosts[microcell] = building.id
 			if is_ground:
@@ -107,7 +125,7 @@ func is_barrier(microcell: Vector2i) -> bool:
 func is_free(
 	microcell: Vector2i, allow_water: bool = false, allow_river: bool = false, allow_stone: bool = false,
 	ignore_movement_buildings: bool = false, stack_as_host: bool = false, stack_as_ground: bool = false,
-	allow_stream: bool = false
+	allow_stream: bool = false, allow_cultivated: bool = false
 ) -> bool:
 	if not cell_known:
 		return false
@@ -118,6 +136,8 @@ func is_free(
 	if not allow_stream and not allow_river and stream.has(microcell):
 		return false
 	if not allow_stone and stones.has(microcell):
+		return false
+	if not allow_cultivated and cultivated_buildings.has(microcell):
 		return false
 	if stack_as_host:
 		return not ground_hosts.has(microcell) and not blocking_buildings.has(microcell)

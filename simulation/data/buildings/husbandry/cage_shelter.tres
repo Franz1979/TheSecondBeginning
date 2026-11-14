@@ -25,3 +25,4 @@ required_materials = {
 required_space = 1
 visibility_radius = 2
 animal_capacity = 20
+feeder_space_capacity = 200

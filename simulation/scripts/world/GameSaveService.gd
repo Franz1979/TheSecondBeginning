@@ -74,6 +74,8 @@ func save_game_to_json(
 			"domestication_points": game_data.domestication_points,
 			"domesticated_species": game_data.domesticated_species,
 			"domestication_years": game_data.domestication_years,
+			"domestication_harvest_units": game_data.domestication_harvest_units,
+			"pit_sowing_units": game_data.pit_sowing_units,
 			"discovered_domestic_species": game_data.discovered_domestic_species,
 			"domestication_stats": game_data.domestication_stats,
 			# Animali domestici (vedi GameData, DomesticAnimal.to_save_data).
@@ -90,9 +92,13 @@ func save_game_to_json(
 			"snare_passages": game_data.snare_passages,
 			"snare_disturbances": game_data.snare_disturbances,
 			"stock_traps_per_zone": game_data.stock_traps_per_zone,
+			"stock_field_seeds": game_data.stock_field_seeds,
+			"stock_field_care_remedy": game_data.stock_field_care_remedy,
+			"stock_field_care_threshold": game_data.stock_field_care_threshold,
 			"domestic_starvation_days": game_data.domestic_starvation_days,
 			"domestic_first_arrival_day": game_data.domestic_first_arrival_day,
 			"domestic_stray_due_day": game_data.domestic_stray_due_day,
+			"domestic_slaughter_above": game_data.domestic_slaughter_above,
 			# Gruppi di animali che frequentano il villaggio (vedi GameData, WildAnimalGroup.to_save_data).
 			"wild_animal_groups": game_data.wild_animal_groups.map(
 				func(group: WildAnimalGroup) -> Dictionary: return group.to_save_data()
@@ -102,6 +108,8 @@ func save_game_to_json(
 			"wild_fauna": game_data.wild_fauna.values().map(
 				func(entry: WildFaunaRegion) -> Dictionary: return entry.to_save_data()
 			),
+			# Registro delle mete abituali delle mandrie (2026-11-15, vedi GameData) — soli tipi JSON-nativi.
+			"herd_habit_goals": game_data.herd_habit_goals,
 			# Visite in corso (2026-10-30, vedi WildAnimalVisit.to_save_data).
 			"wild_animal_visits": game_data.wild_animal_visits.map(
 				func(visit: WildAnimalVisit) -> Dictionary: return visit.to_save_data()
@@ -173,11 +181,14 @@ func save_game_to_json(
 			"stock_excess_fish_destination": game_data.stock_excess_fish_destination,
 			"stock_fuel_rule_enabled": game_data.stock_fuel_rule_enabled,
 			"stock_water_per_shelter": game_data.stock_water_per_shelter,
+			"stock_feeder_days": game_data.stock_feeder_days,
 			"stock_fuel_min_by_type": game_data.stock_fuel_min_by_type,
 			"stock_toolkit_rule_enabled": game_data.stock_toolkit_rule_enabled,
 			"stock_toolkit_targets": game_data.stock_toolkit_targets,
 			"stock_banquet_safe_only": game_data.stock_banquet_safe_only,
 			"stock_workstation_food_rule_enabled": game_data.stock_workstation_food_rule_enabled,
+			"stock_cultivation_auto": game_data.stock_cultivation_auto,
+			"pit_drive_enabled": game_data.pit_drive_enabled,
 			"job_board_return_borrowed_tools": game_data.job_board_return_borrowed_tools,
 			"job_board_take_bag": game_data.job_board_take_bag,
 			"job_board_take_waterskin": game_data.job_board_take_waterskin,
@@ -469,8 +480,26 @@ func save_game_to_json(
 			"influence_last_gain_day": building.influence_last_gain_day,
 			# Sepolti (2026-10-04, cumulo sepolcrale): elenco di Dictionary JSON-nativi.
 			"buried": building.buried,
+			# Ossario (2026-11-14): sepolti spostati dopo BodyBurialService.OSSUARY_YEARS anni.
+			"ossuary": building.ossuary,
 			# Specie tenuta (2026-11-12, tettoia delle gabbie): "" = Qualunque.
 			"kept_species": building.kept_species,
+			# Mangiatoia (2026-11-13, AnimalFeederService).
+			"feeder_space_used": building.feeder_space_used,
+			"feeder_calories": building.feeder_calories,
+			"feeder_species": building.feeder_species,
+			"feeder_days_override": building.feeder_days_override,
+			"field_seed_level": building.field_seed_level,
+			"field_care_remedy": building.field_care_remedy,
+			"field_care_threshold": building.field_care_threshold,
+			# Terreno coltivato (2026-11-15, CultivationService).
+			"crop_species": building.crop_species,
+			"crop_lots": building.crop_lots.map(func(lot: CropLot) -> Dictionary: return lot.to_dict()),
+			"crop_auto_mode": building.crop_auto_mode,
+			"soil_fertility": building.soil_fertility,
+			"fertility_tracking": building.fertility_tracking,
+			"slaughter_above": building.slaughter_above,
+			"over_capacity_since_day": building.over_capacity_since_day,
 			# Rifiuti (2026-10-18, Fossa dei rifiuti): spazio occupato e prenotato.
 			"waste_stored": building.waste_stored,
 			"waste_reserved": building.waste_reserved,
@@ -511,6 +540,8 @@ func save_game_to_json(
 			# cofano) — vuoto per ogni edificio che il player non ha ancora ristretto, stesso
 			# trattamento "storia reale" già usato per stored_resources sopra.
 			"enabled_categories": building.enabled_categories,
+			# Segno che il filtro conosce già le Granaglie (2026-11-15): il load non le riaggiunge (GameLoadService).
+			"grain_category_known": true,
 			# Filtro per-istanza attivo (2026-09-28, Building.restricts_categories): distingue "nessuna restrizione" da
 			# "nessuna categoria accettata" quando enabled_categories è vuoto.
 			"restricts_categories": building.restricts_categories,
@@ -584,6 +615,8 @@ func save_game_to_json(
 				"completed_ideas": human_folk.completed_ideas,
 				# Giorno assoluto del prossimo decadimento per idea (vedi Folk/IdeaDecayService).
 				"idea_decay_due_day": human_folk.idea_decay_due_day,
+				# Regali guadagnati in attesa dei prerequisiti (2026-11-13): idea -> id della scoperta.
+				"earned_idea_grants": human_folk.earned_idea_grants,
 				# Villaggi del Folk (2026-10-12): abitanti mai salvati, si ricavano da village_id degli individui.
 				"next_village_id": human_folk.next_village_id,
 				"villages": _serialize_villages(human_folk)
@@ -715,6 +748,7 @@ func save_game_to_json(
 				"skill_social": individual.skill_social,
 				"skill_medicine": individual.skill_medicine,
 				"skill_fishing": individual.skill_fishing,
+				"skill_farming": individual.skill_farming,
 				# Capacità di trasporto (2026-09-08, richiesta utente) — lo zaino è l'unico stato "posseduto"
 				# da un individuo che sparirebbe silenziosamente al reload senza persistenza (stesso
 				# principio di dependent_child_id sopra: un possesso, non un dato ricalcolabile al volo).
@@ -771,7 +805,7 @@ func save_game_to_json(
 		data["human"] = data["human"].duplicate(true)
 	SaveFileWriter.write_async(data, file_path)
 	# MISURA TEMPORANEA (autosave): da togliere dopo la prova.
-	print("[Save misura] thread principale: %d ms" % (Time.get_ticks_msec() - measure_start_msec))
+	DebugLogging.print_event("[Save misura] thread principale: %d ms" % (Time.get_ticks_msec() - measure_start_msec))
 
 
 # Appiattisce ogni record di GameData.expired_objects in un Dictionary di soli tipi JSON-nativi —

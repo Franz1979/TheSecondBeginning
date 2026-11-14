@@ -44,7 +44,8 @@ const CLUSTER_AVOID_STEER_RATE: float = 3.0
 # completo, esclusi quelli di categoria MOVEMENT (sorgente "cluster_buildings" di disturbance_source). Un centro nasce
 # fuori dalla zona (_random_cluster_position) e, se ci si trova dentro (edificio costruito dopo), viene spinto fuori a
 # CLUSTER_BUILDING_PUSH_SPEED (_push_cluster_out_of_buildings). Gli individui seguono il loro centro col guinzaglio.
-const CLUSTER_BUILDING_AVOID_MULTIPLIER: float = 3.0
+# 2026-11-14 (richiesta utente — prede grosse quasi mai nelle zone delle fosse): da 3 a 2, centri a 10 dagli edifici invece di 15.
+const CLUSTER_BUILDING_AVOID_MULTIPLIER: float = 2.0
 # Velocità della spinta fuori dalla zona, in microcelle per giorno di gioco (circa 3 volte il vagare dei centri).
 const CLUSTER_BUILDING_PUSH_SPEED: float = 80.0
 
@@ -547,6 +548,15 @@ var chase_no_enter_radii: Array[float] = []
 # Mandria che sta uscendo dalla cella (start_herd_leaving), e chi è arrivato al bordo in questo fotogramma.
 var _herd_leaving: bool = false
 var _herd_exited_ids: Dictionary = {}
+# Fosse (2026-11-14, richiesta utente — "spingere verso le fosse", passo 1): microcelle coperte dalle fosse ancora vuote di
+# questa cella per questa specie (microcella -> microcella della fossa: la fossa e le 8 attorno, stesso giorno), rinnovate
+# ogni ora da SnareService.sample_hour, e chi decide se un animale IN FUGA che entra in una di quelle microcelle ci cade
+# (Callable(renderer, individuo, microcella della fossa) -> bool, che registra la preda). Chi cade lo toglie il renderer dopo il giro.
+# _pit_last_lot: fossa che l'individuo sta attraversando ((-1, -1) = nessuna), così ogni passaggio è un tiro solo.
+var pit_lots: Dictionary = {}
+var pit_fall_test: Callable = Callable()
+var _pit_last_lot: Dictionary = {}
+var _fallen_ids: Dictionary = {}
 # Secondi reali al prossimo controllo: parte da un valore casuale così i renderer di celle e specie
 # diverse non controllano tutti nello stesso frame.
 var _behavior_check_timer: float = 0.0
@@ -1120,16 +1130,85 @@ func _update_group_phase(group: AnimalVisualGroup, delta: float) -> void:
 				group.micro_phase_timer = randf_range(hop_duration_min, hop_duration_max)
 				_apply_avoidance_on_hop(group)
 		if group.macro_phase_timer <= 0.0:
-			group.macro_phase = AnimalVisualGroup.MacroPhase.RESTING
-			group.macro_phase_timer = randf_range(rest_phase_duration_min, rest_phase_duration_max)
+			# Rimasto indietro: non si ferma finché non raggiunge il suo gruppetto (vedi _is_behind_cluster).
+			if _is_behind_cluster(group):
+				group.macro_phase_timer = randf_range(movement_phase_duration_min, movement_phase_duration_max)
+			else:
+				group.macro_phase = AnimalVisualGroup.MacroPhase.RESTING
+				group.macro_phase_timer = randf_range(rest_phase_duration_min, rest_phase_duration_max)
 	else:
-		if group.macro_phase_timer <= 0.0:
+		if group.macro_phase_timer <= 0.0 or _is_behind_cluster(group):
 			group.macro_phase = AnimalVisualGroup.MacroPhase.MOVING
 			group.macro_phase_timer = randf_range(movement_phase_duration_min, movement_phase_duration_max)
 			group.running_phase = randf() < run_phase_chance
 			group.micro_phase = AnimalVisualGroup.MicroPhase.HOPPING
 			group.micro_phase_timer = randf_range(hop_duration_min, hop_duration_max)
 			_apply_avoidance_on_hop(group)
+
+
+# Individuo oltre cluster_comfort_radius dal centro del suo gruppetto (2026-11-14, richiesta utente — fosse con pali):
+# non riposa e cammina finché non lo raggiunge. Le prede grosse riposano 2-4 giorni e camminano poche ore, mentre il
+# centro scorre di continuo: senza questa regola il centro se ne andava e il gruppetto vero restava fermo.
+# Spinta verso le fosse (2026-11-14): l'animale in `position` si vede (fuori dalla nebbia, stesso test del disegno).
+func is_position_visible(position: Vector2) -> bool:
+	return _is_visible_now(position)
+
+
+# Spinta verso le fosse (2026-11-14, richiesta utente — PitDriveService): centro del gruppetto più vicino a `point`
+# (microcelle locali), Vector2.INF se la mandria non ha gruppetti.
+func nearest_cluster_center(point: Vector2) -> Vector2:
+	var best := Vector2.INF
+	var best_distance := INF
+	for cluster in _clusters:
+		var distance: float = (cluster as AnimalVisualGroup).position.distance_squared_to(point)
+		if distance < best_distance:
+			best_distance = distance
+			best = (cluster as AnimalVisualGroup).position
+	return best
+
+
+# Spinta: gli animali entro `radius` da `herd_point` corrono tutti verso `toward` (la direzione dal centro del gruppetto
+# alla fossa, con un piccolo scarto per ognuno), con la stessa fuga di trigger_flee ma lunga quanto serve ad arrivarci
+# più DRIVE_OVERSHOOT microcelle (al massimo DRIVE_MAX_DAYS). Restituisce quanti sono partiti.
+const DRIVE_JITTER_RADIANS: float = 0.12
+const DRIVE_OVERSHOOT: float = 4.0
+const DRIVE_MAX_DAYS: float = 1.0
+
+func start_drive(herd_point: Vector2, toward: Vector2, radius: float) -> int:
+	var heading := toward - herd_point
+	if heading.length_squared() < 0.000001 or hop_speed <= 0.0:
+		return 0
+	heading = heading.normalized()
+	var radius_sq := radius * radius
+	var started := 0
+	for group in _groups:
+		if group.position.distance_squared_to(herd_point) > radius_sq:
+			continue
+		var run_length := maxf(group.position.distance_to(toward), 1.0) + DRIVE_OVERSHOOT
+		group.flee_direction = heading.rotated(randf_range(-DRIVE_JITTER_RADIANS, DRIVE_JITTER_RADIANS))
+		group.direction = group.flee_direction
+		group.flee_timer = minf(run_length / hop_speed, DRIVE_MAX_DAYS)
+		started += 1
+	return started
+
+
+func _check_pit_fall(group: AnimalVisualGroup) -> void:
+	# Un tiro per passaggio sulla fossa (2026-11-14, bordo 3×3): si ricorda la fossa che si sta attraversando, non la
+	# microcella, così attraversare il bordo non dà un tiro per ogni microcella; uscendone si azzera.
+	var lot := Vector2i(group.position.floor())
+	var pit: Vector2i = pit_lots.get(lot, Vector2i(-1, -1))
+	if _pit_last_lot.get(group.id, Vector2i(-1, -1)) == pit:
+		return
+	_pit_last_lot[group.id] = pit
+	if pit != Vector2i(-1, -1) and pit_fall_test.is_valid() and bool(pit_fall_test.call(self, group, pit)):
+		_fallen_ids[group.id] = true
+
+
+func _is_behind_cluster(group: AnimalVisualGroup) -> bool:
+	if _clusters.is_empty() or group.cluster_index < 0 or group.cluster_index >= _clusters.size():
+		return false
+	var center: Vector2 = (_clusters[group.cluster_index] as AnimalVisualGroup).position
+	return group.position.distance_squared_to(center) > cluster_comfort_radius * cluster_comfort_radius
 
 
 # Livello 1: movimento casuale semplice, non un vero sistema di IA. I cluster (centri invisibili)
@@ -1170,17 +1249,30 @@ func _process(real_delta: float) -> void:
 
 	# I cluster avanzano per primi (stessa logica di sempre) così i gruppi, elaborati subito
 	# dopo, tirano verso il centro già aggiornato di questo frame invece che verso quello vecchio.
-	for cluster in _clusters:
+	var habits := _step_habits(delta)
+	for c in range(_clusters.size()):
+		var cluster: AnimalVisualGroup = _clusters[c]
+		# Mete abituali: in cammino lungo il percorso (che già gira attorno agli edifici), senza le spinte fuori dalle zone.
+		if habits and _habit_walking and not _habit_arrived[c]:
+			_move_cluster_on_leg(c, cluster, delta)
+			_bounce_at_bounds(cluster)
+			continue
 		cluster.direction = cluster.direction.rotated(randf_range(-turn_rate, turn_rate) * delta)
+		# In sosta a una meta: vaga come sempre, ma non oltre HABIT_DWELL_RADIUS dal suo punto.
+		if habits:
+			_leash_cluster_to_habit(c, cluster, delta)
 		_apply_cluster_avoidance(cluster, delta)
 		# Centri dei gruppetti senza collisione (2026-09-27): solo i singoli individui scorrono lungo gli ostacoli.
-		if herd_exit_side != Vector2i.ZERO and not _herd_leaving:
+		# Verso l'uscita solo quando le mete di passaggio sono finite (in sosta tirerebbe contro il richiamo alla meta).
+		if not habits and herd_exit_side != Vector2i.ZERO and not _herd_leaving:
 			cluster.direction = cluster.direction.slerp(Vector2(herd_exit_side), clampf(HERD_HEADING_STEER_RATE * delta, 0.0, 1.0)).normalized()
 		cluster.position += cluster.direction * move_speed * delta
 		_push_cluster_out_of_buildings(cluster, delta)
 		_push_cluster_out_of_rects(cluster, delta)
 		_bounce_at_bounds(cluster)
-	_check_herd_exit()
+	# Bordo d'uscita: solo dopo le mete di passaggio (un abbeveratoio vicino al bordo non deve farla uscire prima di bere).
+	if not habits:
+		_check_herd_exit()
 
 	for i in range(_groups.size()):
 		var group: AnimalVisualGroup = _groups[i]
@@ -1191,6 +1283,8 @@ func _process(real_delta: float) -> void:
 			group.direction = group.flee_direction
 			_move_with_collision(group, group.direction * hop_speed * _wounded_speed_factor(group) * delta)
 			group.flee_direction = group.direction
+			if not pit_lots.is_empty():
+				_check_pit_fall(group)
 			_write_instance_transform(i, group)
 			continue
 		if group.behavior != AnimalVisualGroup.Behavior.WANDER:
@@ -1211,6 +1305,12 @@ func _process(real_delta: float) -> void:
 			_move_with_collision(group, group.direction * gait_speed * _wounded_speed_factor(group) * delta, true)
 		_write_instance_transform(i, group)
 
+	# Caduti in una fossa: tolti come gli usciti dal bordo.
+	if not _fallen_ids.is_empty():
+		for fallen_id in _fallen_ids:
+			_pit_last_lot.erase(fallen_id)
+		_herd_exited_ids.merge(_fallen_ids)
+		_fallen_ids = {}
 	# Usciti dal bordo: tolti dopo il giro, che scorre _groups per indice.
 	if not _herd_exited_ids.is_empty():
 		_remove_individuals_by_id(_herd_exited_ids)
@@ -1219,6 +1319,285 @@ func _process(real_delta: float) -> void:
 
 	if _is_timing_enabled():
 		_record_process_timing(Time.get_ticks_usec() - timing_start_usec)
+
+
+# --- Mete abituali (2026-11-14, richiesta utente — mandrie che passano sempre dagli stessi posti, passo 1) ---
+# Le mete (punti in microcelle, con quanto fermarsi) le sceglie HerdHabitService una volta per renderer; qui solo il
+# cammino. Tutta la mandria va alla stessa meta: ogni centro di gruppetto pianifica UN percorso a inizio tratto (la griglia
+# delle mandrie, che gira attorno agli edifici) verso la meta più un piccolo scarto suo, e lo segue a move_speed (lo stesso
+# vagare lento di sempre, ora con una direzione). Quando sono arrivati tutti, o è scaduto il tempo del tratto, la mandria
+# sosta: i centri vagano come prima ma restano entro HABIT_DWELL_RADIUS dal loro punto. Finita la sosta, meta successiva.
+# Di passaggio (herd_exit_side, 2026-11-15 — quasi tutte le mandrie attraversano la cella): un giro solo, un pascolo e
+# l'acqua nell'ordine più comodo verso l'uscita, poi l'uscita come prima; il bordo d'uscita conta solo dopo. Ferme
+# mentre la mandria esce (_herd_leaving).
+# Gli individui non cambiano: seguono il loro centro col guinzaglio, come sempre.
+const HABIT_ARRIVE_DISTANCE: float = 2.0
+const HABIT_CLUSTER_SPREAD: float = 3.0
+const HABIT_DWELL_RADIUS: float = 8.0
+# Tempo massimo di un tratto: quello che servirebbe in linea retta × HABIT_LEG_TIME_FACTOR, più HABIT_LEG_SLACK_DAYS.
+const HABIT_LEG_TIME_FACTOR: float = 2.0
+const HABIT_LEG_SLACK_DAYS: float = 3.0
+# Forza del richiamo verso il punto di sosta oltre HABIT_DWELL_RADIUS (come cluster_attraction_strength degli individui).
+const HABIT_DWELL_PULL: float = 4.0
+
+var _habit_goals: Array = []
+var _habit_index: int = -1
+var _habit_walking: bool = false
+var _habit_targets: Array[Vector2] = []
+var _habit_paths: Array = []
+var _habit_arrived: Array[bool] = []
+var _habit_timer: float = 0.0
+var _habit_leg_elapsed: float = 0.0
+# Di passaggio: lato d'uscita per cui è fatta la coda, mete ancora da fare, coda finita (si va all'uscita).
+var _habit_crossing_side: Vector2i = Vector2i.ZERO
+var _habit_crossing_queue: Array[int] = []
+var _habit_crossing_done: bool = false
+
+
+func has_habit_goals() -> bool:
+	return not _habit_goals.is_empty()
+
+
+func is_big_prey() -> bool:
+	return _is_big_prey
+
+
+# Mete scelte da HerdHabitService: [{"kind": String, "point": Vector2, "dwell": Vector2(min, max) giorni}]. Si parte
+# dalla più vicina al primo giro di _step_habits.
+func set_habit_goals(goals: Array) -> void:
+	_habit_goals = goals
+	_habit_index = -1
+	_habit_walking = false
+	_habit_crossing_side = Vector2i.ZERO
+	_habit_crossing_done = false
+	_habit_crossing_queue.clear()
+
+
+# Edifici da cui i centri dei gruppetti stanno lontani, letti adesso (per chi sceglie le mete).
+func get_cluster_avoid_buildings_now() -> Array:
+	_refresh_building_zone()
+	return _cluster_avoid_buildings
+
+
+func cluster_building_avoid_distance() -> float:
+	return _cluster_building_avoid_distance()
+
+
+func is_wander_blocked_at(microcell: Vector2i) -> bool:
+	return _is_wander_blocked(microcell)
+
+
+# Un giro per frame, prima dei centri: true se le mete guidano i centri in questo frame.
+func _step_habits(delta: float) -> bool:
+	if _habit_goals.is_empty() or _clusters.is_empty() or _herd_leaving:
+		if _habit_index >= 0:
+			_habit_log("mete sospese (la mandria lascia la cella)")
+		_habit_index = -1
+		_habit_walking = false
+		return false
+	# Di passaggio (lato d'uscita): un giro solo dalle mete che ha sulla strada, poi l'uscita come prima. Senza lato
+	# d'uscita (nessuna cella accanto adatta): il giro continuo pascolo → acqua → pascolo...
+	if herd_exit_side != _habit_crossing_side:
+		_habit_crossing_side = herd_exit_side
+		_habit_index = -1
+		_habit_walking = false
+		_habit_crossing_done = false
+		_habit_crossing_queue.clear()
+		if herd_exit_side != Vector2i.ZERO:
+			_habit_crossing_queue = _plan_crossing_goals()
+			var names: Array[String] = []
+			for i in _habit_crossing_queue:
+				names.append("%s %s" % [_habit_goals[i]["kind"], str(Vector2i(_habit_goals[i]["point"]))])
+			_habit_log("di passaggio verso %s, passa da: %s" % [str(herd_exit_side),
+				", ".join(names) if not names.is_empty() else "nessuna meta sulla strada"])
+	if _habit_crossing_side != Vector2i.ZERO and _habit_crossing_done:
+		return false
+	if _habit_index < 0:
+		return _next_habit_leg()
+	# Un gruppetto in più o in meno (nascite, morti): il tratto riparte con i centri di adesso.
+	if _habit_targets.size() != _clusters.size():
+		if _habit_walking:
+			_start_habit_leg(_habit_index)
+		else:
+			_set_habit_targets()
+	if _habit_walking:
+		_habit_leg_elapsed += delta
+		_habit_timer -= delta
+		var arrived := 0
+		for flag in _habit_arrived:
+			if flag:
+				arrived += 1
+		if arrived == _habit_arrived.size() or _habit_timer <= 0.0:
+			var goal: Dictionary = _habit_goals[_habit_index]
+			var dwell: Vector2 = goal["dwell"]
+			_habit_walking = false
+			_habit_timer = randf_range(dwell.x, dwell.y)
+			_habit_log("arrivata a %s %s in %.1f giorni (%d gruppetti su %d%s), resta %.1f giorni" % [goal["kind"],
+				str(Vector2i(goal["point"])), _habit_leg_elapsed, arrived, _habit_arrived.size(),
+				"" if arrived == _habit_arrived.size() else ", tempo scaduto", _habit_timer])
+	else:
+		_habit_timer -= delta
+		if _habit_timer <= 0.0:
+			return _next_habit_leg()
+	return true
+
+
+# Tratto successivo: di passaggio la prossima meta in coda (finita la coda, verso l'uscita: false); sennò la meta dopo
+# nel giro (la più vicina al primo tratto).
+func _next_habit_leg() -> bool:
+	if _habit_crossing_side != Vector2i.ZERO:
+		if _habit_crossing_queue.is_empty():
+			_habit_crossing_done = true
+			_habit_index = -1
+			_habit_walking = false
+			_habit_log("riprende l'uscita verso %s" % str(_habit_crossing_side))
+			return false
+		_start_habit_leg(_habit_crossing_queue.pop_front())
+		return true
+	_start_habit_leg(_nearest_habit_goal() if _habit_index < 0 else (_habit_index + 1) % _habit_goals.size())
+	return true
+
+
+# Mete del passaggio: un pascolo e l'acqua (se ci sono), nell'ordine che allunga meno la strada fino al bordo d'uscita.
+# Anche se stanno indietro rispetto all'uscita (2026-11-15, richiesta utente): chi attraversa passa sempre dal pascolo,
+# facendo la deviazione — nella cella del villaggio il pascolo è nell'anello attorno al centro (HerdHabitService).
+func _plan_crossing_goals() -> Array[int]:
+	var mean := _clusters_mean()
+	var water := -1
+	var pastures: Array[int] = []
+	for i in range(_habit_goals.size()):
+		if _habit_goals[i]["kind"] == "acqua":
+			if water < 0:
+				water = i
+		else:
+			pastures.append(i)
+	var routes: Array = []
+	for p in pastures:
+		if water >= 0:
+			routes.append([p, water])
+			routes.append([water, p])
+		else:
+			routes.append([p])
+	if routes.is_empty() and water >= 0:
+		routes.append([water])
+	var best: Array[int] = []
+	var best_length := INF
+	for route in routes:
+		var length := 0.0
+		var from := mean
+		for i in route:
+			var point: Vector2 = _habit_goals[i]["point"]
+			length += from.distance_to(point)
+			from = point
+		length += _distance_to_exit_edge(from)
+		if length < best_length:
+			best_length = length
+			best.assign(route)
+	return best
+
+
+func _distance_to_exit_edge(point: Vector2) -> float:
+	match herd_exit_side:
+		Vector2i(1, 0):
+			return World.WIDTH - point.x
+		Vector2i(-1, 0):
+			return point.x
+		Vector2i(0, 1):
+			return World.HEIGHT - point.y
+		Vector2i(0, -1):
+			return point.y
+	return 0.0
+
+
+func _clusters_mean() -> Vector2:
+	var mean := Vector2.ZERO
+	for cluster in _clusters:
+		mean += cluster.position
+	return mean / float(_clusters.size())
+
+
+func _nearest_habit_goal() -> int:
+	var mean := _clusters_mean()
+	var best := 0
+	for i in range(1, _habit_goals.size()):
+		if mean.distance_to(_habit_goals[i]["point"]) < mean.distance_to(_habit_goals[best]["point"]):
+			best = i
+	return best
+
+
+# Punto di ciascun centro attorno alla meta: sparsi in cerchio di HABIT_CLUSTER_SPREAD, sulla meta se lì è bloccato.
+func _set_habit_targets() -> void:
+	var goal_point: Vector2 = _habit_goals[_habit_index]["point"]
+	_habit_targets.clear()
+	for c in range(_clusters.size()):
+		var target := goal_point
+		if _clusters.size() > 1:
+			target = _clamp_to_cell(goal_point + Vector2.from_angle(TAU * c / _clusters.size()) * HABIT_CLUSTER_SPREAD)
+			if _is_wander_blocked(Vector2i(target.floor())):
+				target = goal_point
+		_habit_targets.append(target)
+
+
+func _start_habit_leg(index: int) -> void:
+	_habit_index = index
+	_habit_walking = true
+	_habit_leg_elapsed = 0.0
+	_set_habit_targets()
+	_refresh_building_zone()
+	var zone_grid := _get_herd_zone_grid()
+	_habit_paths.clear()
+	_habit_arrived.clear()
+	var longest := 0.0
+	var waypoints := 0
+	for c in range(_clusters.size()):
+		var plan := PathfindingService.plan_waypoints(macro_coords, _clusters[c].position, _habit_targets[c], zone_grid)
+		var path: Array[Vector2] = []
+		path.assign(plan["path"])
+		_habit_targets[c] = plan["target"]
+		_habit_paths.append(path)
+		_habit_arrived.append(false)
+		longest = maxf(longest, _clusters[c].position.distance_to(_habit_targets[c]))
+		waypoints += path.size()
+	_release_herd_zone_grid_if_idle()
+	var speed := maxf(move_speed, 0.1)
+	_habit_timer = longest / speed * HABIT_LEG_TIME_FACTOR + HABIT_LEG_SLACK_DAYS
+	var goal: Dictionary = _habit_goals[_habit_index]
+	_habit_log("parte verso %s %s: %d gruppetti, il più lontano a %.0f, %d punti di percorso, al massimo %.1f giorni" % [
+		goal["kind"], str(Vector2i(goal["point"])), _clusters.size(), longest, waypoints, _habit_timer])
+
+
+# Un frame di cammino di un centro: verso il prossimo punto del percorso (o la sua meta), a move_speed, con il disagio
+# per gli umani come sempre. Arrivato entro HABIT_ARRIVE_DISTANCE dalla sua meta, si ferma lì.
+func _move_cluster_on_leg(c: int, cluster: AnimalVisualGroup, delta: float) -> void:
+	var path: Array[Vector2] = _habit_paths[c]
+	while not path.is_empty() and cluster.position.distance_to(path[0]) <= HABIT_ARRIVE_DISTANCE:
+		path.pop_front()
+	var goal: Vector2 = path[0] if not path.is_empty() else _habit_targets[c]
+	var to_goal := goal - cluster.position
+	var distance := to_goal.length()
+	if path.is_empty() and distance <= HABIT_ARRIVE_DISTANCE:
+		_habit_arrived[c] = true
+		return
+	if distance > 0.000001:
+		cluster.direction = to_goal / distance
+	_apply_cluster_avoidance(cluster, delta)
+	cluster.position += cluster.direction * minf(move_speed * delta, distance)
+
+
+func _leash_cluster_to_habit(c: int, cluster: AnimalVisualGroup, delta: float) -> void:
+	if c >= _habit_targets.size():
+		return
+	var offset: Vector2 = cluster.position - _habit_targets[c]
+	var distance := offset.length()
+	if distance <= HABIT_DWELL_RADIUS:
+		return
+	var pull := clampf((distance - HABIT_DWELL_RADIUS) / HABIT_DWELL_RADIUS * HABIT_DWELL_PULL * delta, 0.0, 1.0)
+	cluster.direction = cluster.direction.slerp(-offset / distance, pull).normalized()
+
+
+func _habit_log(text: String) -> void:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_HERD_HABIT_LOGS:
+		print("[HERD] %s in %s: %s" % [species_name, str(macro_coords), text])
 
 
 # Frazione di giorno di gioco corrispondente a `real_delta` secondi reali: dal clock se assegnato

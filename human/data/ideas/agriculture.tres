@@ -10,4 +10,4 @@ summary = "idea_agriculture_summary"
 description = "idea_agriculture_description"
 thoughts_cost = 100
 prerequisites = Array[String](["plant_domestication"])
-era = "neolithic"
+era = "paleolithic"

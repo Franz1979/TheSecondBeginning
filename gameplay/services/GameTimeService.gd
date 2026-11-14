@@ -808,7 +808,7 @@ func _run_annual_human_conception() -> void:
 		if scheduled.is_empty() else
 		"%d concepimenti fissati: %s" % [scheduled.size(), ", ".join(scheduled_details)]
 	)
-	print("[HUMAN CONCEPTION] tiro anno=%d: %s (query figli-sotto-soglia: %.3f ms)" % [
+	DebugLogging.print_event("[HUMAN CONCEPTION] tiro anno=%d: %s (query figli-sotto-soglia: %.3f ms)" % [
 		_game_data.year, " -> ".join(stages), query_time_ms
 	])
 
@@ -946,7 +946,7 @@ func _apply_scheduled_births() -> void:
 					mother_outcome_suffix,
 				]
 			)
-	print("[HUMAN BIRTH] anno=%d giorno=%d: %d esiti -> %s" % [
+	DebugLogging.print_event("[HUMAN BIRTH] anno=%d giorno=%d: %d esiti -> %s" % [
 		_game_data.year, _game_data.current_day, birth_results.size(), ", ".join(details)
 	])
 
@@ -982,11 +982,13 @@ func _format_absolute_day(absolute_day: int) -> String:
 
 
 func _on_year_rolled_over() -> void:
-	print("GameTimeService: nuovo anno, year=%d" % _game_data.year)
+	DebugLogging.print_event("GameTimeService: nuovo anno, year=%d" % _game_data.year)
 	# Coesione (2026-10-14): calo annuale, poi le serie di fine anno per le statistiche (popolazione, coesione, medie,
 	# influenze, edifici), prima della determinazione della mortalità: StatisticsSnapshotService.
 	VillageCohesionService.apply_annual_decay(_human_folk)
 	StatisticsSnapshotService.record_year_end(_game_data, _human_individuals, _human_folk, _world)
+	# Ossario (2026-11-14): i sepolti da OSSUARY_YEARS anni liberano il posto nel cumulo.
+	BodyBurialService.move_old_to_ossuary(_world, _game_data.year)
 	_run_annual_human_mortality_determination()
 	# Registro (2026-11-09): il giro giornaliero di oggi (giorno 0) è già passato prima di questo segnale, quindi
 	# chi ha estratto il giorno 0 muore adesso — prima moriva al giorno 0 dell'anno DOPO.

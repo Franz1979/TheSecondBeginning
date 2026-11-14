@@ -128,13 +128,19 @@ static func refresh_grass_patch_lot_capacity(macro_state: MacroCellState, resour
 	var lots: Dictionary = {}
 	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	var grass_space: int = macro_state.get_dedicated_space(GameTypes.WorldObjectType.GRASS)
-	if rules != null and rules.patch_probability > 0.0 and grass_space > 0:
+	# Anche a diffusione 0 se ci sono lotti seminati alla Fossa (2026-11-15: l'avena nasce solo lì).
+	if rules != null and (rules.patch_probability > 0.0 or not macro_state.sown_grass_lots.is_empty()) and grass_space > 0:
 		var patch_seed: int = hash(str(macro_state.micro_seed) + "_" + resource_name + "_patch")
 		var capacity_seed: int = hash(str(macro_state.micro_seed) + "_" + resource_name + "_patch_capacity")
 		# Niente più fattore di densità sulla capacità (2026-10-27, richiesta utente: con poca erba ogni lotto dava 1-2
 		# invece di patch_capacity_min-max): la densità conta già nel numero dei lotti, che nascono solo sulle posizioni GRASS.
+		# Erba seminata alla Fossa (2026-11-13, PitSowingService): semi sempre presenti e al massimo; dal 2026-11-15 per
+		# ogni risorsa seminata su quel lotto (MacroCellState.sown_lot_resources).
 		for pos in grass_positions:
 			var lot := Vector2i(pos.x, pos.y)
+			if macro_state.sown_grass_lots.has(lot) and macro_state.sown_lot_resources.get(lot, []).has(resource_name):
+				lots[lot] = rules.patch_capacity_max
+				continue
 			var hash_value: float = float(hash(lot * 3 + Vector2i(patch_seed, 811)) % 100000) / 100000.0
 			if hash_value >= rules.patch_probability:
 				continue

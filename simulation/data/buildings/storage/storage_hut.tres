@@ -13,7 +13,7 @@ required_idea_id = "advanced_paleolithic_constructions"
 required_labor = 4000
 storage_slot_count = 12
 storage_space_per_slot = 300
-durability_multiplier_by_category = Array[float]([1.5, 1.4, 1.4, 1.4, 1.4, 1.6])
+durability_multiplier_by_category = Array[float]([1.5, 1.4, 1.4, 1.4, 1.4, 1.6, 1.0])
 required_materials = {
 "dried_hide": 12,
 "fiber_rope": 20,
@@ -23,4 +23,7 @@ required_materials = {
 "wood": 40
 }
 required_space = 1
+toolkit_tool_types = 1
+toolkit_units_per_type = 6
+toolkit_extra_tools = Array[String](["seed_jar"])
 visibility_radius = 4

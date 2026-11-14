@@ -32,6 +32,16 @@ const TALK_DURATION_DAYS: float = 0.25
 const MEETING_SIDE_DISTANCE: float = 0.8
 
 # Stati del partner visti da TalkAction (get_partner_state).
+# Idea dalla chiacchierata (2026-11-14, richiesta utente): a fine Talk conclusa, probabilità
+# TALK_IDEA_BASE_CHANCE + TALK_IDEA_COGNITION_CHANCE × (Cognizione A + Cognizione B) / SKILL_MAX, al massimo
+# TALK_IDEA_MAX_CHANCE (0+0 = 50%, somma 400 = 70%, somma 800 = 90%). Chi la riceve: a caso, pesato su
+# Cognizione + TALK_IDEA_RECEIVER_WEIGHT_BASE, tra chi può pensare (InspirationService.can_receive).
+const TALK_IDEA_BASE_CHANCE: float = 0.5
+const TALK_IDEA_COGNITION_CHANCE: float = 0.5
+const TALK_IDEA_MAX_CHANCE: float = 0.9
+const TALK_IDEA_RECEIVER_WEIGHT_BASE: float = 100.0
+const DAYDREAM_TASK_NAME := "task_daydream_name"
+
 const PARTNER_PRESENT := "present"
 const PARTNER_WALKING := "walking"
 const PARTNER_GONE := "gone"
@@ -118,6 +128,32 @@ static func start_talk(caller: HumanIndividual, caller_age_band: int) -> Diction
 	return result
 
 
+# Tiro dell'idea a fine Talk conclusa (vedi TALK_IDEA_*): una volta per chiacchierata, chiamato dal primo dei due che la
+# chiude (TalkAction.on_complete), così l'altro è ancora nella Talk e il flag arriva prima del suo resolve_idle_individual.
+# Il tiro, il flag e la partenza del daydream sono di InspirationService; qui solo probabilità e chi la riceve (scelto prima
+# del tiro: stesse probabilità che sceglierlo dopo).
+static func roll_talk_idea(individual: HumanIndividual, partner: HumanIndividual) -> void:
+	if individual == null or partner == null or not InspirationService.is_possible():
+		return
+	var receivers: Array[HumanIndividual] = []
+	for member: HumanIndividual in [individual, partner]:
+		if InspirationService.can_receive(member):
+			receivers.append(member)
+	if receivers.is_empty():
+		InspirationService.log_event(individual, "nessuno dei due può ricevere un'idea dalla chiacchierata (età o pensiero già pronto).")
+		return
+	var cognition_sum := individual.skill_cognition + partner.skill_cognition
+	var chance := minf(TALK_IDEA_BASE_CHANCE + TALK_IDEA_COGNITION_CHANCE * cognition_sum / HumanIndividual.SKILL_MAX, TALK_IDEA_MAX_CHANCE)
+	var receiver := receivers[0]
+	if receivers.size() == 2:
+		var weight_a := receivers[0].skill_cognition + TALK_IDEA_RECEIVER_WEIGHT_BASE
+		var weight_b := receivers[1].skill_cognition + TALK_IDEA_RECEIVER_WEIGHT_BASE
+		if randf() * (weight_a + weight_b) >= weight_a:
+			receiver = receivers[1]
+	var other := partner if receiver == individual else individual
+	InspirationService.try_inspire(receiver, chance, "dalla chiacchierata con #%d %s" % [other.id, other.name])
+
+
 # Individui chiamabili da `caller` (vedi il commento in testa al file), in ordine qualsiasi.
 static func find_partner_candidates(caller: HumanIndividual, definition: TaskDefinition, radius: float) -> Array[HumanIndividual]:
 	var callable_names := _callable_task_names()
@@ -149,6 +185,9 @@ static func _exclusion_reason(
 	var task := member.current_task
 	if task != null and not task.is_finished() and not callable_names.has(task.task_name):
 		return "occupato (%s)" % task.task_name
+	# Chi sta pensando non viene chiamato (2026-11-14): l'interruzione gli farebbe perdere il pensiero.
+	if task != null and not task.is_finished() and task.task_name == DAYDREAM_TASK_NAME:
+		return "sta pensando"
 	var age_band := resolve_age_band(member)
 	if not definition.allowed_age_bands.is_empty() and not definition.allowed_age_bands.has(age_band):
 		return "fascia d'età %s" % (HumanTypes.AgeBand.keys()[age_band] if age_band >= 0 else "sconosciuta (nessuna partita attiva)")

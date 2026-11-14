@@ -574,6 +574,9 @@ const CLAY_CORNER_JITTER: float = 3.0
 # Tracciato del ruscello di questa macrocella (StreamMicrocellService.get_layout; layout vuoto = nessun ruscello).
 func set_streams(layout: Dictionary) -> void:
 	_stream_positions = layout.get("positions", {})
+	# I guadi di pietre (livello degli edifici) leggono l'angolo dal ruscello.
+	if _building_layer != null:
+		_building_layer.queue_redraw()
 	var mud_vertices := PackedVector2Array()
 	var mud_colors := PackedColorArray()
 	var water_vertices := PackedVector2Array()
@@ -794,8 +797,32 @@ func set_grass_patch_availability(resource_name: String, availability: Dictionar
 		set_egg_nest_availability(availability)
 		return
 	grass_patch_availability[resource_name] = availability
-	_rebuild_grass_patch_multimesh(resource_name)
+	# Granaglie (2026-11-15, richiesta utente): una sola spighetta per lotto, qualunque cereale ci sia (GRAIN_MARKER_KEY).
+	if _is_grain_resource(resource_name):
+		var union: Dictionary = {}
+		for name in grass_patch_availability.keys():
+			if not _is_grain_resource(String(name)):
+				continue
+			var lots: Dictionary = grass_patch_availability[name]
+			for lot in lots.keys():
+				if int(lots[lot]) > 0:
+					union[lot] = int(union.get(lot, 0)) + int(lots[lot])
+		grass_patch_availability[GRAIN_MARKER_KEY] = union
+		_rebuild_grass_patch_multimesh(GRAIN_MARKER_KEY)
+	else:
+		_rebuild_grass_patch_multimesh(resource_name)
 	queue_redraw()
+
+
+# Categoria Granaglie (cache per nome): disegnate tutte con la spighetta comune.
+static var _grain_resource_cache: Dictionary = {}
+
+
+static func _is_grain_resource(resource_name: String) -> bool:
+	if not _grain_resource_cache.has(resource_name):
+		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		_grain_resource_cache[resource_name] = rules != null and int(rules.category) == int(SecondaryResourceTypes.Category.GRAIN)
+	return _grain_resource_cache[resource_name]
 
 
 # Fascia di disegno di una risorsa sparsa per una quantità (2026-10-04, richiesta utente — raccolta leggera per lotto,
@@ -814,9 +841,70 @@ func scattered_availability_tier(kind: String, quantity: int) -> int:
 
 func set_buildings(buildings_data: Array) -> void:
 	buildings = buildings_data
-	_rebuild_dirt_ground_mesh()
-	_rebuild_path_pebble_multimeshes()
-	queue_redraw()
+	# Terra battuta e sassolini dei sentieri dipendono solo dalla disposizione: un deposito non li rifà (2026-11-14).
+	var layout_signature := _buildings_layout_signature(buildings_data)
+	if layout_signature != _buildings_layout_signature_last:
+		_buildings_layout_signature_last = layout_signature
+		_rebuild_dirt_ground_mesh()
+		_rebuild_path_pebble_multimeshes()
+	# Piantine (2026-11-15): rifatte solo se cambia lo stato di un terreno coltivato.
+	var crop_signature := _crop_signature(buildings_data)
+	if crop_signature != _crop_signature_last:
+		_crop_signature_last = crop_signature
+		_rebuild_crop_multimeshes()
+	redraw_buildings()
+
+
+# Livello degli edifici (2026-11-14, scattini: ~37 ms di _draw_buildings rifatti a ogni ridisegno della cella, per un
+# frutto raccolto o un passo). Nodo figlio disegnato sopra il renderer, con le stesse funzioni di disegno di prima
+# (ricevono il nodo su cui disegnare): Godot ne conserva i comandi, quindi gli edifici si ridisegnano solo quando
+# cambiano (set_buildings, selezione di un edificio), mai per vegetazione, frutti, nebbia o movimento.
+class BuildingLayer extends Node2D:
+	var renderer: MicroCellRenderer = null
+
+	func _draw() -> void:
+		if renderer != null:
+			renderer.draw_building_layer(self)
+
+
+var _building_layer: BuildingLayer = null
+var _buildings_layout_signature_last: Variant = null
+
+
+func _ensure_building_layer() -> void:
+	if _building_layer != null:
+		return
+	_building_layer = BuildingLayer.new()
+	_building_layer.name = "BuildingLayer"
+	_building_layer.renderer = self
+	add_child(_building_layer)
+
+
+func redraw_buildings() -> void:
+	_ensure_building_layer()
+	_building_layer.queue_redraw()
+
+
+func draw_building_layer(canvas: CanvasItem) -> void:
+	_draw_buildings(canvas)
+	_draw_job_markers(canvas)
+	_draw_selected_building_highlight(canvas)
+
+
+# Campi degli edifici letti da _rebuild_dirt_ground_mesh e _rebuild_path_pebble_multimeshes (più ingombro e rotazione):
+# uguali = stessa terra battuta e stessi sassolini.
+const _LAYOUT_SIGNATURE_KEYS: Array[String] = [
+	"id", "position", "size", "rotation", "building_type_name", "is_complete", "dirt_ground_under", "dirt_neighbors",
+	"dirt_cells", "is_linear", "linear_ground_fill", "linear_neighbors", "linear_clip",
+]
+
+
+static func _buildings_layout_signature(buildings_data: Array) -> Array:
+	var signature: Array = []
+	for entry in buildings_data:
+		for key in _LAYOUT_SIGNATURE_KEYS:
+			signature.append(entry.get(key))
+	return signature
 
 
 func set_vegetation_positions(positions: Dictionary) -> void:
@@ -1163,14 +1251,14 @@ var _selected_building_id: int = -1
 
 func set_selected_building(building_id: int) -> void:
 	_selected_building_id = building_id
-	queue_redraw()
+	redraw_buildings()
 
 
 func clear_selected_building() -> void:
 	if _selected_building_id == -1:
 		return
 	_selected_building_id = -1
-	queue_redraw()
+	redraw_buildings()
 
 
 # Posizione a schermo (spazio locale di questo renderer) del centro dell'edificio selezionato —
@@ -1197,7 +1285,7 @@ static func _building_entry_center(entry: Dictionary) -> Vector2:
 # RADIUS, stesso margine SELECTION_OUTLINE_PADDING_RATIO della vegetazione). Nessun disegno se
 # l'edificio selezionato non è (più) tra quelli di questa cella — stesso principio difensivo già
 # usato per la vegetazione (has_individual).
-func _draw_selected_building_highlight() -> void:
+func _draw_selected_building_highlight(canvas: CanvasItem) -> void:
 	if _selected_building_id == -1:
 		return
 	var center := get_building_screen_position(_selected_building_id)
@@ -1211,7 +1299,7 @@ func _draw_selected_building_highlight() -> void:
 			if rect_size != Vector2i(1, 1):
 				radius = maxf(radius, (Vector2(rect_size) * CELL_SIZE).length() / 2.0 * SELECTION_OUTLINE_PADDING_RATIO)
 			break
-	draw_arc(center, radius, 0, TAU, 24, SELECTION_HIGHLIGHT_COLOR, SELECTION_HIGHLIGHT_WIDTH)
+	canvas.draw_arc(center, radius, 0, TAU, 24, SELECTION_HIGHLIGHT_COLOR, SELECTION_HIGHLIGHT_WIDTH)
 
 
 # Posizione STONE attualmente selezionata per l'ispezione (2026-09-08, richiesta utente) — stesso
@@ -1479,11 +1567,10 @@ func _draw() -> void:
 	_draw_selected_individual_highlight()
 	_sel_individual_outline_usec = Time.get_ticks_usec() - _sel_outline_start_usec
 	_draw_fish_positions()
-	_draw_buildings()
-	_draw_job_markers()
-	_sel_outline_start_usec = Time.get_ticks_usec()
-	_draw_selected_building_highlight()
-	_sel_building_outline_usec = Time.get_ticks_usec() - _sel_outline_start_usec
+	# Edifici, segnali dei lavori e contorno dell'edificio selezionato: livello a parte (_building_layer, sopra tutto
+	# questo), ridisegnato solo quando cambiano (redraw_buildings). Creato fuori dal disegno se manca ancora.
+	if _building_layer == null:
+		_ensure_building_layer.call_deferred()
 	_draw_neighbor_previews(grid_size)
 	_draw_boundary(grid_size)
 
@@ -1546,11 +1633,11 @@ func _draw_uniform_terrain() -> void:
 # ancorati al centro della microcella), ma opaca: un edificio piazzato non è più un'anteprima.
 # Ancoraggio al centro della microcella (base+half), nessun jitter/dispersione come per la
 # vegetazione — un edificio occupa una posizione precisa, non un lotto condiviso da più individui.
-func _draw_buildings() -> void:
+func _draw_buildings(canvas: CanvasItem) -> void:
 	# Terra battuta PRIMA di ogni altro edificio (2026-09-19): è una superficie piatta a livello
 	# del terreno, mai sopra la sagoma di un altro edificio — vedi _rebuild_dirt_ground_mesh.
-	_draw_dirt_ground_tiles()
-	_draw_linear_grounds()
+	_draw_dirt_ground_tiles(canvas)
+	_draw_linear_grounds(canvas)
 	for entry in buildings:
 		# Centro del rettangolo (2026-10-17, ingombro): per un 1x1 è il centro della microcella di sempre.
 		var ground := _building_entry_center(entry)
@@ -1567,10 +1654,10 @@ func _draw_buildings() -> void:
 		var is_complete: bool = entry.get("is_complete", true)
 		if not is_complete:
 			if not entry.get("site_setup_complete", false):
-				_draw_construction_wip_marker(ground)
+				_draw_construction_wip_marker(canvas, ground)
 			# Detriti dei ceppi rimasti nel cantiere (2026-10-18): le macerie sopra finché non vengono portati via.
 			if entry.get("site_debris", false):
-				PlaceholderBuildingShapes.draw(self, "rubble", ground)
+				PlaceholderBuildingShapes.draw(canvas, "rubble", ground)
 			continue
 		# Smistamento per tipo (2026-09-07, richiesta utente, Pebble Circle) — .get() con default
 		# "hut" per compatibilità con entry costruite prima che "building_type_name" esistesse
@@ -1578,17 +1665,17 @@ func _draw_buildings() -> void:
 		# — ma stesso principio difensivo già usato altrove nel progetto per Dictionary in evoluzione).
 		var building_type_name: String = entry.get("building_type_name", "hut")
 		if building_type_name == "pebble_circle":
-			_draw_pebble_circle(ground)
+			_draw_pebble_circle(canvas, ground)
 			continue
 		if building_type_name == "campfire":
-			_draw_campfire(ground)
+			_draw_campfire(canvas, ground)
 			continue
 		if building_type_name == "dirt_ground":
 			# Già disegnato da _draw_dirt_ground_tiles (una sola mesh per cella, un draw call) — qui solo lo skip, il ramo "cantiere" sopra copre i tile
 			# non ancora completi.
 			continue
 		if building_type_name == "deposit_site":
-			_draw_deposit_site(ground)
+			_draw_deposit_site(canvas, ground)
 			# Griglia di stoccaggio (2026-09-11, richiesta utente — "sul deposit site... disegna gli
 			# oggetti che ci sono, tipo mucchietti... solo un alert visivo, non mi interessa
 			# proporzionalità alla quantità") — SOLO per deposit_site, vedi GameScene.
@@ -1596,14 +1683,14 @@ func _draw_buildings() -> void:
 			# .get() con default [] per compatibilità con entry che non lo passano (nessuna in
 			# pratica oggi, GameScene lo valorizza sempre per questo tipo — stesso principio
 			# difensivo già seguito sopra per "building_type_name").
-			_draw_deposit_site_storage_grid(ground, entry.get("slot_breakdown", []))
+			_draw_deposit_site_storage_grid(canvas, ground, entry.get("slot_breakdown", []))
 			continue
 		# Deposito coperto (2026-10-04, richiesta utente): lo spiazzo e i mucchietti del sito di deposito, con sopra la
 		# tettoia leggera di CoveredDepotShape (pali, graticcio, due pelli) che lascia vedere i mucchi.
 		if building_type_name == "covered_depot":
-			_draw_deposit_site(ground)
-			_draw_deposit_site_storage_grid(ground, entry.get("slot_breakdown", []))
-			CoveredDepotShape.draw_cover(self, ground)
+			_draw_deposit_site(canvas, ground)
+			_draw_deposit_site_storage_grid(canvas, ground, entry.get("slot_breakdown", []))
+			CoveredDepotShape.draw_cover(canvas, ground)
 			continue
 		# Edifici segnaposto (2026-09-26, richiesta utente) — disegno provvisorio condiviso, senza porta.
 		# Vallo difensivo a pezzi uniti (2026-10-04, richiesta utente): cumulo più un braccio verso ogni lato con un altro
@@ -1611,7 +1698,7 @@ func _draw_buildings() -> void:
 		# per ogni edificio lineare). Dal 2026-10-16 ogni tipo lineare passa da LinearShapes (vallo, sentiero di ciottoli).
 		if LinearShapes.has_shape(building_type_name):
 			LinearShapes.draw(
-				self, building_type_name, ground, int(entry.get("linear_neighbors", 0)), false, 1.0, 1.0, int(entry.get("linear_clip", 0)),
+				canvas, building_type_name, ground, int(entry.get("linear_neighbors", 0)), false, 1.0, 1.0, int(entry.get("linear_clip", 0)),
 				false, PalisadeShape.side_vector(entry.get("rotation", GameTypes.Direction.SOUTH)) if LinearShapes.has_side(building_type_name) else Vector2.ZERO,
 				bool(entry.get("gate_open", true))
 			)
@@ -1619,109 +1706,192 @@ func _draw_buildings() -> void:
 		# Guado di pietre (2026-11-04): sempre di traverso al ruscello, qualunque sia la rotazione salvata.
 		if building_type_name == PlaceholderBuildingShapes.STONE_FORD_TYPE:
 			var ford_angle := StreamMicrocellService.ford_angle(_stream_positions, entry.get("position", Vector2i.ZERO))
-			PlaceholderBuildingShapes.draw(self, building_type_name, ground, false, 1.0, GameTypes.Direction.SOUTH, ford_angle)
+			PlaceholderBuildingShapes.draw(canvas, building_type_name, ground, false, 1.0, GameTypes.Direction.SOUTH, ford_angle)
 			continue
 		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
-			PlaceholderBuildingShapes.draw(self, building_type_name, ground, false, 1.0, entry.get("rotation", GameTypes.Direction.SOUTH))
+			PlaceholderBuildingShapes.draw(canvas, building_type_name, ground, false, 1.0, entry.get("rotation", GameTypes.Direction.SOUTH))
+			continue
+		# Campo con capanno (2026-11-15): terra a solchi, capanno nell'angolo, recinto e cancellino (FieldShape).
+		if building_type_name == FieldShape.TYPE:
+			FieldShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		# Capanna del vestiario (2026-10-20): vista dall'alto, ruota con la porta (ClothingHutShape).
 		if building_type_name == ClothingHutShape.TYPE:
-			ClothingHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			ClothingHutShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		# Capanna del guaritore (2026-10-25): vista dall'alto, ruota con la porta; fumo solo mentre scalda un infuso (HealerHutShape).
 		if building_type_name == HealerHutShape.TYPE:
-			HealerHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
+			HealerHutShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
 			continue
 		# Capanna del trappoliere (2026-11-07): vista dall'alto, ruota con l'apertura (TrapperHutShape).
 		if building_type_name == TrapperHutShape.TYPE:
-			TrapperHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			TrapperHutShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		# Tettoia delle gabbie (2026-11-12): vista dall'alto, ruota con l'apertura (CageShelterShape).
 		if building_type_name == CageShelterShape.TYPE:
-			CageShelterShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			CageShelterShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		# Capanna del vasellaio (2026-11-03): vista dall'alto, ruota con la porta; fumo solo mentre cuoce (PotterHutShape).
 		if building_type_name == PotterHutShape.TYPE:
-			PotterHutShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
+			PotterHutShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
 			continue
 		# Essiccatoio (2026-10-31): vista dall'alto, ruota con la direzione scelta (DryingRackShape).
 		if building_type_name == DryingRackShape.TYPE:
-			DryingRackShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			DryingRackShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		# Affumicatoio (2026-10-23): vista dall'alto, ruota con la porta; fumo solo mentre produce (SmokehouseShape).
 		if building_type_name == SmokehouseShape.TYPE:
-			SmokehouseShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
+			SmokehouseShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, 1.0, bool(entry.get("smoking", false)))
 			continue
 		# Legnaia (2026-10-18, 2x1): tettoia con la catasta e spiazzo di lavoro, sul rettangolo intero.
 		if building_type_name == WoodshedShape.TYPE:
-			WoodshedShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			WoodshedShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
 			continue
 		# Appoggio per travois (2026-10-23, 1x1): staccionata con i travois presenti appoggiati.
 		if building_type_name == TravoisRackShape.TYPE:
-			TravoisRackShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), int(entry.get("travois_count", 0)))
+			TravoisRackShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH), int(entry.get("travois_count", 0)))
 			continue
 		# Tettoia dell'acqua (2026-11-06, 1x1, rotonda: la rotazione non cambia niente): pali, tetto trasparente e le giare.
 		if building_type_name == WaterShelterShape.TYPE:
-			WaterShelterShape.draw(self, ground, entry.get("rotation", GameTypes.Direction.SOUTH), entry.get("jar_waters", []))
+			WaterShelterShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH), entry.get("jar_waters", []))
 			continue
 		# Cerchio del consiglio (2026-10-26, 2x2): anello di grandi pietre sul rettangolo intero, fondo dai tile di terra.
 		if building_type_name == CouncilCircleShape.TYPE or building_type_name == CouncilCircleShape.STAR_TYPE:
 			CouncilCircleShape.draw(
-				self, ground, Vector2(entry.get("size", Vector2i(1, 1))) * CELL_SIZE, false, 1.0, false,
+				canvas, ground, Vector2(entry.get("size", Vector2i(1, 1))) * CELL_SIZE, false, 1.0, false,
 				building_type_name == CouncilCircleShape.TYPE
 			)
 			continue
 		# Spiazzo delle feste (2026-10-17, 2x2): terra battuta e cerchio di sassi, sul rettangolo intero.
 		if building_type_name == FeastGroundShape.TYPE:
 			# Il fondo è quello dei tile di terra battuta (_rebuild_dirt_ground_mesh): qui solo il cerchio di sassi.
-			FeastGroundShape.draw(self, ground, Vector2(entry.get("size", Vector2i(1, 1))) * CELL_SIZE, false, 1.0, false)
+			FeastGroundShape.draw(canvas, ground, Vector2(entry.get("size", Vector2i(1, 1))) * CELL_SIZE, false, 1.0, false)
 			continue
 		var direction: GameTypes.Direction = entry["rotation"]
 		# Tende (2026-10-03, scambio di aspetto — TentShapes): la tenda di pelli ha il disco liscio che prima avevano
 		# entrambe, la tenda di rami la copertura di rami a raggiera.
 		if building_type_name == "hide_tent":
-			TentShapes.draw_hide_tent(self, ground, direction)
+			TentShapes.draw_hide_tent(canvas, ground, direction)
 			continue
 		if building_type_name == "stick_tent":
-			TentShapes.draw_stick_tent(self, ground, direction)
+			TentShapes.draw_stick_tent(canvas, ground, direction)
 			continue
 		# Capanna di stoccaggio (2026-10-03, richiesta utente): pianta quadrata chiusa, StorageHutShape. Niente griglia
 		# dei mucchietti (solo il sito di deposito la ha).
 		if building_type_name == "storage_hut":
-			StorageHutShape.draw(self, ground, direction, false, 1.0, StorageHutShape.MAP_SCALE)
+			StorageHutShape.draw(canvas, ground, direction, false, 1.0, StorageHutShape.MAP_SCALE)
 			continue
 		# Capanna dell'attrezzista (2026-09-24, richiesta utente) — disegno provvisorio: stessa sagoma
 		# della capanna (porta + recinto, ruota con `direction`), riempimento più scuro e un segno
 		# "attrezzi incrociati" al centro, vedi _draw_toolmaker_hut_mark.
 		var is_toolmaker_hut: bool = building_type_name == "toolmaker_hut"
-		_draw_building_fence(ground, direction)
+		_draw_building_fence(canvas, ground, direction)
 		var hut_points := _building_hut_polygon(ground, direction)
-		draw_colored_polygon(hut_points, TOOLMAKER_HUT_COLOR if is_toolmaker_hut else BUILDING_COLOR)
+		canvas.draw_colored_polygon(hut_points, TOOLMAKER_HUT_COLOR if is_toolmaker_hut else BUILDING_COLOR)
 		# Riempie il ritaglio della porta col colore del bordo invece di lasciarlo trasparente
 		# (richiesta utente, 2026-08-30: aperto sul terreno sotto leggeva come una sagoma a V
 		# "stile Batman", non come una porta) — stessi tre punti già calcolati per hut_points:
 		# la spalla iniziale (indice 0), l'apice (ultimo punto) e la spalla finale (penultimo).
-		draw_colored_polygon(
+		canvas.draw_colored_polygon(
 			PackedVector2Array([hut_points[0], hut_points[hut_points.size() - 1], hut_points[hut_points.size() - 2]]),
 			BUILDING_OUTLINE_COLOR
 		)
 		var outline_points := hut_points.duplicate()
 		outline_points.append(hut_points[0])
-		draw_polyline(outline_points, BUILDING_OUTLINE_COLOR, BUILDING_OUTLINE_WIDTH)
+		canvas.draw_polyline(outline_points, BUILDING_OUTLINE_COLOR, BUILDING_OUTLINE_WIDTH)
 		if is_toolmaker_hut:
-			_draw_toolmaker_hut_mark(ground)
+			_draw_toolmaker_hut_mark(canvas, ground)
 		# Casa riscaldata oggi (2026-10-22, HouseHeatingService): fumo fermo sopra il tetto.
 		if bool(entry.get("heated", false)):
-			_draw_house_smoke(ground)
+			_draw_house_smoke(canvas, ground)
 	# Sentieri (2026-10-17): corpo e poi ciottoli, in MultiMesh.
 	for mm in _path_body_multimeshes:
 		if (mm as MultiMesh).instance_count > 0:
-			draw_multimesh(mm, null)
+			canvas.draw_multimesh(mm, null)
 			_debug_draw_primitive_count += 1
 	for mm in _path_pebble_multimeshes:
 		if (mm as MultiMesh).instance_count > 0:
-			draw_multimesh(mm, null)
+			canvas.draw_multimesh(mm, null)
 			_debug_draw_primitive_count += 1
+	# Piantine dei terreni coltivati (2026-11-15): germogli, poi steli e spighe, tre MultiMesh per tutta la cella.
+	for mm in [_crop_sprout_mm, _crop_stalk_mm, _crop_ear_mm]:
+		if mm != null and (mm as MultiMesh).instance_count > 0:
+			canvas.draw_multimesh(mm, null)
+			_debug_draw_primitive_count += 1
+
+
+# Piantine dei terreni coltivati (2026-11-15, orto delle prove e campi — CultivationService.crop_visual nell'entry
+# "crop"). Stessa forma per ogni specie, cambia solo il colore della spiga (DomesticPlantRules.crop_color). Per microcella
+# al più CROP_MAX_PLANTS_PER_LOT piantine, in proporzione alle piante sulle once seminabili; posizioni fisse per hash
+# (stesse a ogni ricostruzione). Germogliato: foglioline verdi. Maturo: stelo e spiga. Tre MultiMesh per cella, rifatti
+# solo quando cambia lo stato di un terreno (_crop_signature).
+const CROP_MAX_PLANTS_PER_LOT := 12
+const CROP_SPROUT_COLOR := Color(0.42, 0.7, 0.28, 1.0)
+const CROP_STALK_COLOR := Color(0.5, 0.58, 0.28, 1.0)
+var _crop_sprout_mm: MultiMesh = null
+var _crop_stalk_mm: MultiMesh = null
+var _crop_ear_mm: MultiMesh = null
+var _crop_signature_last: Variant = null
+
+
+static func _crop_signature(buildings_data: Array) -> Array:
+	var signature: Array = []
+	for entry in buildings_data:
+		for crop in entry.get("crop", []):
+			signature.append([entry.get("id", -1), crop.get("cell", Vector2i.ZERO), crop.get("phase", 0), crop.get("ratio", 0.0),
+				crop.get("color", Color.WHITE)])
+	return signature
+
+
+static func _ellipse_points(radius_x: float, radius_y: float, center: Vector2, segments: int = 8) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for i in range(segments):
+		var angle := TAU * float(i) / float(segments)
+		points.append(center + Vector2(cos(angle) * radius_x, sin(angle) * radius_y))
+	return points
+
+
+func _ensure_crop_multimeshes() -> void:
+	if _crop_sprout_mm != null:
+		return
+	_crop_sprout_mm = _make_multimesh(_build_fan_mesh(_ellipse_points(0.35, 0.7, Vector2.ZERO, 6), CROP_SPROUT_COLOR), false)
+	_crop_stalk_mm = _make_multimesh(_build_fan_mesh(PackedVector2Array([
+		Vector2(-0.12, 0.0), Vector2(0.12, 0.0), Vector2(0.12, -1.6), Vector2(-0.12, -1.6)]), CROP_STALK_COLOR), false)
+	# Bianca: il colore della specie arriva per istanza.
+	_crop_ear_mm = _make_multimesh(_build_fan_mesh(_ellipse_points(0.4, 0.85, Vector2(0.0, -2.1), 8), Color.WHITE), true)
+
+
+func _rebuild_crop_multimeshes() -> void:
+	_ensure_crop_multimeshes()
+	var sprouts: Array = []
+	var stalks: Array = []
+	var ear_colors: Array = []
+	for entry in buildings:
+		# Una voce per lotto (2026-11-15, passo 2 dei campi — CultivationService.crop_visual): la sua microcella.
+		for crop in entry.get("crop", []):
+			var count := ceili(float(CROP_MAX_PLANTS_PER_LOT) * float(crop.get("ratio", 0.0)))
+			if count <= 0:
+				continue
+			var lot: Vector2i = crop.get("cell", Vector2i.ZERO)
+			var ready := int(crop.get("phase", 0)) == CultivationService.Phase.READY
+			for i in range(count):
+				# Griglia 4×3 con un poco di disordine, sempre la stessa per microcella e indice.
+				var seed_value := hash(lot * 53 + Vector2i(i * 7 + 3, i * 13 + 5))
+				var column := i % 4
+				var row := i / 4
+				var jitter := Vector2(float(posmod(seed_value, 100)) / 100.0 - 0.5, float(posmod(seed_value / 100, 100)) / 100.0 - 0.5) * 0.12
+				var local := Vector2(0.16 + 0.22 * float(column), 0.3 + 0.27 * float(row)) + jitter
+				var transform := Transform2D(0.0, (Vector2(lot) + local) * CELL_SIZE)
+				if ready:
+					stalks.append(transform)
+					ear_colors.append(crop.get("color", Color.WHITE))
+				else:
+					sprouts.append(transform)
+	_apply_transforms(_crop_sprout_mm, sprouts)
+	_apply_transforms(_crop_stalk_mm, stalks)
+	_apply_transforms(_crop_ear_mm, stalks)
+	for i in range(ear_colors.size()):
+		_crop_ear_mm.set_instance_color(i, ear_colors[i])
 
 
 # Ciottoli dei pezzi di sentiero completi (PebblePathShape.pebble_points), variante per hash di posizione e indice.
@@ -1797,16 +1967,16 @@ const TOOLMAKER_HUT_MARK_HEAD_RADIUS: float = 0.4
 const HOUSE_SMOKE_PUFFS: Array[Vector3] = [Vector3(0.0, -0.6, 0.85), Vector3(0.5, -1.9, 0.7), Vector3(0.9, -3.0, 0.5)]
 
 
-func _draw_house_smoke(ground: Vector2) -> void:
+func _draw_house_smoke(canvas: CanvasItem, ground: Vector2) -> void:
 	for puff in HOUSE_SMOKE_PUFFS:
-		draw_circle(ground + Vector2(puff.x, puff.y), puff.z, PlaceholderBuildingShapes.SMOKE)
+		canvas.draw_circle(ground + Vector2(puff.x, puff.y), puff.z, PlaceholderBuildingShapes.SMOKE)
 
 
-func _draw_toolmaker_hut_mark(ground: Vector2) -> void:
+func _draw_toolmaker_hut_mark(canvas: CanvasItem, ground: Vector2) -> void:
 	for diagonal in [Vector2(1, -1), Vector2(-1, -1)]:
 		var half: Vector2 = diagonal.normalized() * TOOLMAKER_HUT_MARK_HALF_LENGTH
-		draw_line(ground - half, ground + half, TOOLMAKER_HUT_MARK_COLOR, TOOLMAKER_HUT_MARK_WIDTH)
-		draw_circle(ground + half, TOOLMAKER_HUT_MARK_HEAD_RADIUS, TOOLMAKER_HUT_MARK_COLOR)
+		canvas.draw_line(ground - half, ground + half, TOOLMAKER_HUT_MARK_COLOR, TOOLMAKER_HUT_MARK_WIDTH)
+		canvas.draw_circle(ground + half, TOOLMAKER_HUT_MARK_HEAD_RADIUS, TOOLMAKER_HUT_MARK_COLOR)
 
 
 # Cartello "work in progress" — vedi il commento esteso su WIP_SIGN_POST_COLOR sopra per il perché.
@@ -1823,7 +1993,7 @@ const JOB_MARKER_SYMBOL_COLOR := Color(1.0, 1.0, 1.0, 1.0)
 const JOB_MARKER_OFFSET := Vector2(3.2, 1.0)
 
 
-func _draw_job_markers() -> void:
+func _draw_job_markers(canvas: CanvasItem) -> void:
 	for entry in buildings:
 		var demolish: bool = bool(entry.get("marked_for_demolition", false))
 		var upgrade: bool = bool(entry.get("upgrading", false))
@@ -1831,31 +2001,31 @@ func _draw_job_markers() -> void:
 			continue
 		var ground := _building_entry_center(entry) + JOB_MARKER_OFFSET
 		var post_top: Vector2 = ground + Vector2(0, -WIP_SIGN_POST_HEIGHT)
-		draw_line(ground, post_top, WIP_SIGN_POST_COLOR, WIP_SIGN_POST_WIDTH)
+		canvas.draw_line(ground, post_top, WIP_SIGN_POST_COLOR, WIP_SIGN_POST_WIDTH)
 		var plate_center: Vector2 = post_top + Vector2(0, -WIP_SIGN_PLATE_RADIUS * 0.3)
 		var triangle := PackedVector2Array([
 			plate_center + Vector2(0.0, -WIP_SIGN_PLATE_RADIUS),
 			plate_center + Vector2(WIP_SIGN_PLATE_RADIUS * 0.9, WIP_SIGN_PLATE_RADIUS * 0.75),
 			plate_center + Vector2(-WIP_SIGN_PLATE_RADIUS * 0.9, WIP_SIGN_PLATE_RADIUS * 0.75),
 		])
-		draw_colored_polygon(triangle, JOB_MARKER_DEMOLISH_PLATE_COLOR if demolish else JOB_MARKER_UPGRADE_PLATE_COLOR)
+		canvas.draw_colored_polygon(triangle, JOB_MARKER_DEMOLISH_PLATE_COLOR if demolish else JOB_MARKER_UPGRADE_PLATE_COLOR)
 		var outline := triangle.duplicate()
 		outline.append(triangle[0])
-		draw_polyline(outline, WIP_SIGN_PLATE_OUTLINE_COLOR, WIP_SIGN_PLATE_OUTLINE_WIDTH)
+		canvas.draw_polyline(outline, WIP_SIGN_PLATE_OUTLINE_COLOR, WIP_SIGN_PLATE_OUTLINE_WIDTH)
 		var symbol_center: Vector2 = plate_center + Vector2(0.0, WIP_SIGN_PLATE_RADIUS * 0.2)
 		var arm: float = WIP_SIGN_PLATE_RADIUS * 0.35
 		if demolish:
-			draw_line(symbol_center + Vector2(-arm, -arm), symbol_center + Vector2(arm, arm), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
-			draw_line(symbol_center + Vector2(-arm, arm), symbol_center + Vector2(arm, -arm), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+			canvas.draw_line(symbol_center + Vector2(-arm, -arm), symbol_center + Vector2(arm, arm), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+			canvas.draw_line(symbol_center + Vector2(-arm, arm), symbol_center + Vector2(arm, -arm), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
 		else:
-			draw_line(symbol_center + Vector2(0.0, arm), symbol_center + Vector2(0.0, -arm), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
-			draw_line(symbol_center + Vector2(0.0, -arm), symbol_center + Vector2(-arm * 0.8, -arm * 0.1), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
-			draw_line(symbol_center + Vector2(0.0, -arm), symbol_center + Vector2(arm * 0.8, -arm * 0.1), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+			canvas.draw_line(symbol_center + Vector2(0.0, arm), symbol_center + Vector2(0.0, -arm), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+			canvas.draw_line(symbol_center + Vector2(0.0, -arm), symbol_center + Vector2(-arm * 0.8, -arm * 0.1), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
+			canvas.draw_line(symbol_center + Vector2(0.0, -arm), symbol_center + Vector2(arm * 0.8, -arm * 0.1), JOB_MARKER_SYMBOL_COLOR, WIP_SIGN_MARK_WIDTH)
 
 
-func _draw_construction_wip_marker(ground: Vector2) -> void:
+func _draw_construction_wip_marker(canvas: CanvasItem, ground: Vector2) -> void:
 	var post_top: Vector2 = ground + Vector2(0, -WIP_SIGN_POST_HEIGHT)
-	draw_line(ground, post_top, WIP_SIGN_POST_COLOR, WIP_SIGN_POST_WIDTH)
+	canvas.draw_line(ground, post_top, WIP_SIGN_POST_COLOR, WIP_SIGN_POST_WIDTH)
 
 	var plate_center: Vector2 = post_top + Vector2(0, -WIP_SIGN_PLATE_RADIUS * 0.3)
 	var triangle := PackedVector2Array([
@@ -1863,18 +2033,18 @@ func _draw_construction_wip_marker(ground: Vector2) -> void:
 		plate_center + Vector2(WIP_SIGN_PLATE_RADIUS * 0.9, WIP_SIGN_PLATE_RADIUS * 0.75),
 		plate_center + Vector2(-WIP_SIGN_PLATE_RADIUS * 0.9, WIP_SIGN_PLATE_RADIUS * 0.75),
 	])
-	draw_colored_polygon(triangle, WIP_SIGN_PLATE_COLOR)
+	canvas.draw_colored_polygon(triangle, WIP_SIGN_PLATE_COLOR)
 	var outline := triangle.duplicate()
 	outline.append(triangle[0])
-	draw_polyline(outline, WIP_SIGN_PLATE_OUTLINE_COLOR, WIP_SIGN_PLATE_OUTLINE_WIDTH)
+	canvas.draw_polyline(outline, WIP_SIGN_PLATE_OUTLINE_COLOR, WIP_SIGN_PLATE_OUTLINE_WIDTH)
 
 	# Punto esclamativo: un trattino verticale + un puntino, entrambi centrati nel triangolo.
-	draw_line(
+	canvas.draw_line(
 		plate_center + Vector2(0.0, -WIP_SIGN_PLATE_RADIUS * 0.45),
 		plate_center + Vector2(0.0, WIP_SIGN_PLATE_RADIUS * 0.15),
 		WIP_SIGN_MARK_COLOR, WIP_SIGN_MARK_WIDTH
 	)
-	draw_circle(plate_center + Vector2(0.0, WIP_SIGN_PLATE_RADIUS * 0.4), WIP_SIGN_MARK_WIDTH * 0.5, WIP_SIGN_MARK_COLOR)
+	canvas.draw_circle(plate_center + Vector2(0.0, WIP_SIGN_PLATE_RADIUS * 0.4), WIP_SIGN_MARK_WIDTH * 0.5, WIP_SIGN_MARK_COLOR)
 
 
 # Anello di sassolini attorno al centro della microcella — nessuna porta/rotazione da rispettare
@@ -1886,15 +2056,15 @@ func _draw_construction_wip_marker(ground: Vector2) -> void:
 # breve esperimento di una variante colore/parametro per il "cantiere in attesa" (2026-09-11) è
 # stato scartato lo stesso giorno a favore del cartello WIP, che sostituisce del tutto questa
 # sagoma finché is_complete resta false — nessun parametro colore più necessario qui.
-func _draw_pebble_circle(ground: Vector2) -> void:
+func _draw_pebble_circle(canvas: CanvasItem, ground: Vector2) -> void:
 	for i in range(PEBBLE_CIRCLE_PEBBLE_COUNT):
 		var angle: float = TAU * float(i) / float(PEBBLE_CIRCLE_PEBBLE_COUNT)
 		var pebble_center: Vector2 = ground + Vector2(cos(angle), sin(angle)) * PEBBLE_CIRCLE_RING_RADIUS
 		var blob := _pebble_blob_polygon(pebble_center, i)
-		draw_colored_polygon(blob, PEBBLE_CIRCLE_COLOR)
+		canvas.draw_colored_polygon(blob, PEBBLE_CIRCLE_COLOR)
 		var outline := blob.duplicate()
 		outline.append(blob[0])
-		draw_polyline(outline, PEBBLE_CIRCLE_OUTLINE_COLOR, PEBBLE_CIRCLE_OUTLINE_WIDTH)
+		canvas.draw_polyline(outline, PEBBLE_CIRCLE_OUTLINE_COLOR, PEBBLE_CIRCLE_OUTLINE_WIDTH)
 
 
 # Poligono a PEBBLE_CIRCLE_BLOB_VERTEX_COUNT lati con raggio-per-vertice jittered attorno a `center`
@@ -1928,17 +2098,17 @@ func _pebble_blob_polygon(center: Vector2, seed_index: int) -> PackedVector2Arra
 # Stessa funzione (duplicata apposta, vedi commento su _draw_buildings) in
 # BuildingGhost._draw_fence. Chiamata SOLO a edificio completo (vedi commento su _draw_pebble_circle
 # sopra) — nessun parametro colore più necessario.
-func _draw_building_fence(ground: Vector2, direction: GameTypes.Direction) -> void:
+func _draw_building_fence(canvas: CanvasItem, ground: Vector2, direction: GameTypes.Direction) -> void:
 	var dir_vector := _direction_vector(direction)
 	var gate_center_angle: float = dir_vector.angle()
 	var gate_half_angle: float = BUILDING_DOOR_NOTCH_HALF_WIDTH / BUILDING_FENCE_RADIUS
 	var start_angle: float = gate_center_angle + gate_half_angle
 	var end_angle: float = gate_center_angle - gate_half_angle + TAU
-	draw_arc(ground, BUILDING_FENCE_RADIUS, start_angle, end_angle, BUILDING_CIRCLE_SEGMENTS, BUILDING_FENCE_COLOR, BUILDING_FENCE_WIDTH, true)
+	canvas.draw_arc(ground, BUILDING_FENCE_RADIUS, start_angle, end_angle, BUILDING_CIRCLE_SEGMENTS, BUILDING_FENCE_COLOR, BUILDING_FENCE_WIDTH, true)
 
 	var hinge_dir := Vector2(cos(start_angle), sin(start_angle))
 	var hinge: Vector2 = ground + hinge_dir * BUILDING_FENCE_RADIUS
-	draw_line(hinge, hinge + hinge_dir * BUILDING_GATE_LENGTH, BUILDING_FENCE_COLOR, BUILDING_FENCE_WIDTH)
+	canvas.draw_line(hinge, hinge + hinge_dir * BUILDING_GATE_LENGTH, BUILDING_FENCE_COLOR, BUILDING_FENCE_WIDTH)
 
 
 # Poligono della capanna: segue il cerchio di raggio BUILDING_HUT_RADIUS per quasi tutto il giro,
@@ -2176,7 +2346,7 @@ func _append_dirt_ground_tile(pos: Vector2i, neighbor_mask: int, vertices: Packe
 # di base della terra battuta, più la metà di microcella verso i vicini con il proprio fondo ("linear_ground_fill", da
 # GameScene). Tutti i fondi prima di tutti gli argini, così il fondo di un pezzo non copre l'argine del vicino. Un nuovo
 # edificio lineare aggiunge qui il proprio ramo con il proprio stile.
-func _draw_linear_grounds() -> void:
+func _draw_linear_grounds(canvas: CanvasItem) -> void:
 	var half: float = CELL_SIZE / 2.0
 	for entry in buildings:
 		if not bool(entry.get("is_linear", false)) or not entry.get("is_complete", true):
@@ -2184,15 +2354,15 @@ func _draw_linear_grounds() -> void:
 		var pos: Vector2i = entry["position"]
 		var ground := Vector2(pos.x * CELL_SIZE + half, pos.y * CELL_SIZE + half)
 		LinearShapes.draw_ground(
-			self, String(entry.get("building_type_name", "")), ground, int(entry.get("linear_neighbors", 0)),
+			canvas, String(entry.get("building_type_name", "")), ground, int(entry.get("linear_neighbors", 0)),
 			int(entry.get("linear_clip", 0)), int(entry.get("linear_ground_fill", 0)), DirtGroundPattern.BASE_COLOR
 		)
 
 
-func _draw_dirt_ground_tiles() -> void:
+func _draw_dirt_ground_tiles(canvas: CanvasItem) -> void:
 	if _dirt_ground_mesh == null or _dirt_ground_mesh.get_surface_count() == 0:
 		return
-	draw_mesh(_dirt_ground_mesh, null)
+	canvas.draw_mesh(_dirt_ground_mesh, null)
 	_debug_draw_primitive_count += 1
 
 
@@ -2206,11 +2376,11 @@ func _draw_dirt_ground_tiles() -> void:
 # disegno su `ground` — nessun nuovo array per deposito, nessun draw call in più (1 poligono + 1
 # polilinea come prima). Il transform torna a identità subito dopo, prima di _draw_deposit_site_
 # storage_grid e di ogni altro disegno.
-func _draw_deposit_site(ground: Vector2) -> void:
-	draw_set_transform(ground)
-	draw_colored_polygon(DepositSiteShape.get_polygon(DEPOSIT_SITE_HALF_SIDE), DEPOSIT_SITE_COLOR)
-	draw_polyline(DepositSiteShape.get_closed_outline(DEPOSIT_SITE_HALF_SIDE), DEPOSIT_SITE_OUTLINE_COLOR, DEPOSIT_SITE_OUTLINE_WIDTH)
-	draw_set_transform(Vector2.ZERO)
+func _draw_deposit_site(canvas: CanvasItem, ground: Vector2) -> void:
+	canvas.draw_set_transform(ground)
+	canvas.draw_colored_polygon(DepositSiteShape.get_polygon(DEPOSIT_SITE_HALF_SIDE), DEPOSIT_SITE_COLOR)
+	canvas.draw_polyline(DepositSiteShape.get_closed_outline(DEPOSIT_SITE_HALF_SIDE), DEPOSIT_SITE_OUTLINE_COLOR, DEPOSIT_SITE_OUTLINE_WIDTH)
+	canvas.draw_set_transform(Vector2.ZERO)
 
 
 # Focolare (2026-09-23, richiesta utente) — forma provvisoria: anello di CAMPFIRE_STONE_COUNT pietre
@@ -2227,12 +2397,12 @@ const CAMPFIRE_STONE_COUNT: int = 8
 const CAMPFIRE_FLAME_RADIUS: float = 1.4
 const CAMPFIRE_FLAME_CORE_RADIUS: float = 0.7
 
-func _draw_campfire(ground: Vector2) -> void:
+func _draw_campfire(canvas: CanvasItem, ground: Vector2) -> void:
 	for i in range(CAMPFIRE_STONE_COUNT):
 		var angle: float = TAU * float(i) / float(CAMPFIRE_STONE_COUNT)
-		draw_circle(ground + Vector2(cos(angle), sin(angle)) * CAMPFIRE_RING_RADIUS, CAMPFIRE_STONE_RADIUS, CAMPFIRE_STONE_COLOR)
-	draw_circle(ground, CAMPFIRE_FLAME_RADIUS, CAMPFIRE_FLAME_COLOR)
-	draw_circle(ground, CAMPFIRE_FLAME_CORE_RADIUS, CAMPFIRE_FLAME_CORE_COLOR)
+		canvas.draw_circle(ground + Vector2(cos(angle), sin(angle)) * CAMPFIRE_RING_RADIUS, CAMPFIRE_STONE_RADIUS, CAMPFIRE_STONE_COLOR)
+	canvas.draw_circle(ground, CAMPFIRE_FLAME_RADIUS, CAMPFIRE_FLAME_COLOR)
+	canvas.draw_circle(ground, CAMPFIRE_FLAME_CORE_RADIUS, CAMPFIRE_FLAME_CORE_COLOR)
 
 
 # Un mucchietto per SLOT occupato di `slot_breakdown` (Array di {"resource_name","quantity",
@@ -2243,7 +2413,7 @@ func _draw_campfire(ground: Vector2) -> void:
 # esattamente su `ground`. `i >= 9` (mai raggiungibile oggi: get_slot_breakdown non supera mai
 # storage_slot_count=9 per deposit_site, ma questo file non deve assumerlo silenziosamente)
 # interrompe il ciclo invece di continuare a disegnare fuori dalla chiazza del deposito.
-func _draw_deposit_site_storage_grid(ground: Vector2, slot_breakdown: Array) -> void:
+func _draw_deposit_site_storage_grid(canvas: CanvasItem, ground: Vector2, slot_breakdown: Array) -> void:
 	for i in range(slot_breakdown.size()):
 		if i >= DEPOSIT_SITE_STORAGE_GRID_COLUMNS * DEPOSIT_SITE_STORAGE_GRID_COLUMNS:
 			break
@@ -2262,13 +2432,13 @@ func _draw_deposit_site_storage_grid(ground: Vector2, slot_breakdown: Array) -> 
 		# Sfondo quadrato nello STESSO colore del deposito (lo "stratagemma" chiesto dall'utente al
 		# posto della trasparenza vera) — disegnato SEMPRE, anche per una risorsa senza replica
 		# dedicata sotto (fallback), così il quadrato resta comunque coerente con lo sfondo.
-		draw_rect(Rect2(top_left, Vector2(DEPOSIT_SITE_STORAGE_SQUARE_SIDE, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)), DEPOSIT_SITE_COLOR)
+		canvas.draw_rect(Rect2(top_left, Vector2(DEPOSIT_SITE_STORAGE_SQUARE_SIDE, DEPOSIT_SITE_STORAGE_SQUARE_SIDE)), DEPOSIT_SITE_COLOR)
 		# Icona magazzino della risorsa (DepositStorageIcons, condivisa con i mucchi a terra — GroundPileView).
-		if not DepositStorageIcons.draw_icon(self, resource_name, top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE):
+		if not DepositStorageIcons.draw_icon(canvas, resource_name, top_left, DEPOSIT_SITE_STORAGE_SQUARE_SIDE):
 			# Fallback per un'eventuale risorsa futura senza geometria replicata qui — un
 			# semplice pallino nel colore della risorsa (IconRegistry.get_resource_color, stessa
 			# fonte già in uso altrove), niente sfondo proprio oltre al quadrato sopra.
-			draw_circle(marker_center, DEPOSIT_SITE_STORAGE_SQUARE_SIDE * 0.25, IconRegistry.get_resource_color(resource_name))
+			canvas.draw_circle(marker_center, DEPOSIT_SITE_STORAGE_SQUARE_SIDE * 0.25, IconRegistry.get_resource_color(resource_name))
 
 
 func _direction_vector(direction: GameTypes.Direction) -> Vector2:
@@ -2752,9 +2922,36 @@ func _draw_egg_nest_positions() -> void:
 # separata). Aggiungere una risorsa GRASS_PATCH nuova = una riga qui (+ la sua lista di ellissi);
 # una risorsa senza riga NON viene disegnata (warning una tantum, mai un marker generico che
 # sembra un'altra risorsa). Le foglie sono ellissi semplici (cos/sin diretti, nessun width_scale).
+# Spighetta comune delle Granaglie (2026-11-15, richiesta utente): stessa per orzo, grano e le prossime, visibile anche
+# prima della scoperta (l'ispezione dice "Risorsa sconosciuta"); la disponibilità segue già la stagione.
+const GRAIN_MARKER_KEY := "grains"
+const GRAIN_MARKER_COLOR_STALK := Color(0.60, 0.53, 0.27, 1.0)
+const GRAIN_MARKER_COLOR_GRAIN := Color(0.88, 0.74, 0.40, 1.0)
+const GRAIN_MARKER_COLOR_GRAIN_DARK := Color(0.72, 0.57, 0.27, 1.0)
+const GRAIN_MARKER_SHAPE := [
+	{"cx": 0.50, "cy": 0.66, "rx": 0.03, "ry": 0.28, "rot": 0.0, "color": GRAIN_MARKER_COLOR_STALK},
+	{"cx": 0.43, "cy": 0.46, "rx": 0.08, "ry": 0.045, "rot": 0.6, "color": GRAIN_MARKER_COLOR_GRAIN_DARK},
+	{"cx": 0.57, "cy": 0.46, "rx": 0.08, "ry": 0.045, "rot": -0.6, "color": GRAIN_MARKER_COLOR_GRAIN_DARK},
+	{"cx": 0.43, "cy": 0.34, "rx": 0.08, "ry": 0.045, "rot": 0.6, "color": GRAIN_MARKER_COLOR_GRAIN},
+	{"cx": 0.57, "cy": 0.34, "rx": 0.08, "ry": 0.045, "rot": -0.6, "color": GRAIN_MARKER_COLOR_GRAIN},
+	{"cx": 0.44, "cy": 0.23, "rx": 0.07, "ry": 0.04, "rot": 0.6, "color": GRAIN_MARKER_COLOR_GRAIN},
+	{"cx": 0.56, "cy": 0.23, "rx": 0.07, "ry": 0.04, "rot": -0.6, "color": GRAIN_MARKER_COLOR_GRAIN},
+	{"cx": 0.50, "cy": 0.14, "rx": 0.045, "ry": 0.07, "rot": 0.0, "color": GRAIN_MARKER_COLOR_GRAIN},
+]
+# Lino selvatico (2026-11-15): due steli sottili con un fiorellino azzurro ciascuno.
+const FLAX_MARKER_COLOR_STEM := Color(0.46, 0.55, 0.27, 1.0)
+const FLAX_MARKER_COLOR_PETAL := Color(0.45, 0.62, 0.92, 1.0)
+const FLAX_MARKER_SHAPE := [
+	{"cx": 0.40, "cy": 0.60, "rx": 0.025, "ry": 0.30, "rot": 0.15, "color": FLAX_MARKER_COLOR_STEM},
+	{"cx": 0.60, "cy": 0.62, "rx": 0.025, "ry": 0.28, "rot": -0.15, "color": FLAX_MARKER_COLOR_STEM},
+	{"cx": 0.36, "cy": 0.28, "rx": 0.08, "ry": 0.08, "rot": 0.0, "color": FLAX_MARKER_COLOR_PETAL},
+	{"cx": 0.64, "cy": 0.32, "rx": 0.08, "ry": 0.08, "rot": 0.0, "color": FLAX_MARKER_COLOR_PETAL},
+]
 const GRASS_PATCH_MARKER_SHAPES := {
 	"wild_vegetables": DepositStorageIcons.DEPOSIT_STORAGE_WILD_VEGETABLES_LEAVES,
 	"medicinal_herbs": DepositStorageIcons.DEPOSIT_STORAGE_MEDICINAL_HERBS_LEAVES,
+	GRAIN_MARKER_KEY: GRAIN_MARKER_SHAPE,
+	"wild_flax": FLAX_MARKER_SHAPE,
 }
 const GRASS_PATCH_CLUSTER_SCALE: float = 2.4
 # Scala per-risorsa che sostituisce GRASS_PATCH_CLUSTER_SCALE (2026-09-19, richiesta utente — "le
@@ -2762,6 +2959,8 @@ const GRASS_PATCH_CLUSTER_SCALE: float = 2.4
 # risultano molto più piccole delle foglie delle verdure). Una risorsa assente qui usa il default.
 const GRASS_PATCH_CLUSTER_SCALE_BY_RESOURCE := {
 	"medicinal_herbs": 3.6,
+	GRAIN_MARKER_KEY: 4.0,
+	"wild_flax": 4.0,
 }
 const GRASS_PATCH_ROTATION_JITTER_MAX: float = 0.4
 const GRASS_PATCH_ELLIPSE_SEGMENTS: int = 12
@@ -3101,11 +3300,25 @@ func _build_dead_tree_transform(key: Vector3i, size_multiplier: float, lot_count
 # zona (vegetation_zone_of), e una zona si rifà solo se le sue voci o il numero di individui dei suoi lotti sono cambiati;
 # poi le zone si concatenano nell'ordine delle zone. Ritorna true se almeno una zona è stata rifatta.
 var _cut_dead_groups: Dictionary = {}  # "cut:<tipo>" / "dead:<tipo>" -> Array di gruppi per zona
+# Ultimi ingressi (2026-11-14, scattini camminando — 4-9 ms a ridisegno da movimento): con ceppi e morti uguali ai
+# precedenti si riusano le voci divise per zona (gli stessi Array dei gruppi, confronto immediato); con lo stesso
+# conteggio dei lotti non si ricontrolla nessuna zona; e se nessuna zona è stata rifatta i MultiMesh non si ricaricano.
+var _cut_dead_last_cut: Variant = null
+var _cut_dead_last_dead: Variant = null
+var _cut_dead_last_buckets: Dictionary = {}  # kind -> voci per zona
+var _cut_dead_last_lot_counts: Dictionary = {}  # kind -> conteggio dei lotti usato
 
 
 func _rebuild_cut_dead_multimeshes() -> bool:
 	_ensure_vegetation_meshes()
+	var multimeshes_existed := _tree_trunk_multimesh != null
 	_ensure_vegetation_multimeshes()
+	var same_inputs: bool = _cut_dead_last_cut != null and _cut_dead_last_cut == cut_positions \
+		and _cut_dead_last_dead == dead_positions
+	if not same_inputs:
+		_cut_dead_last_buckets.clear()
+	_cut_dead_last_cut = cut_positions
+	_cut_dead_last_dead = dead_positions
 
 	var tree_stump_transforms: Array = []
 	var shrub_stump_transforms: Array = []
@@ -3119,11 +3332,19 @@ func _rebuild_cut_dead_multimeshes() -> bool:
 			var kind := "%s:%d" % [source_name, object_type]
 			used_kinds[kind] = true
 			var lot_counts := _lot_extent_counts(object_type)
-			var buckets := _cut_dead_entries_by_zone(by_type[object_type])
+			var buckets: Array
+			if _cut_dead_last_buckets.has(kind):
+				buckets = _cut_dead_last_buckets[kind]
+			else:
+				buckets = _cut_dead_entries_by_zone(by_type[object_type])
+				_cut_dead_last_buckets[kind] = buckets
+			var lot_counts_same: bool = is_same(_cut_dead_last_lot_counts.get(kind), lot_counts)
+			_cut_dead_last_lot_counts[kind] = lot_counts
 			var groups: Array = _cut_dead_groups.get(kind, [])
 			if groups.size() != VEGETATION_ZONE_COUNT:
 				groups = []
 				groups.resize(VEGETATION_ZONE_COUNT)
+				lot_counts_same = false
 			var target: Array
 			if source_name == "cut":
 				target = tree_stump_transforms if object_type == GameTypes.WorldObjectType.TREE else shrub_stump_transforms
@@ -3132,7 +3353,7 @@ func _rebuild_cut_dead_multimeshes() -> bool:
 			for zone in range(VEGETATION_ZONE_COUNT):
 				var entries: Array = buckets[zone]
 				var group: Variant = groups[zone]
-				if group == null or group["entries"] != entries or not _group_lot_counts_match(group, lot_counts):
+				if group == null or group["entries"] != entries or (not lot_counts_same and not _group_lot_counts_match(group, lot_counts)):
 					group = _build_cut_dead_group(source_name, object_type, entries, lot_counts)
 					groups[zone] = group
 					rebuilt = true
@@ -3141,7 +3362,10 @@ func _rebuild_cut_dead_multimeshes() -> bool:
 	for kind in _cut_dead_groups.keys():
 		if not used_kinds.has(kind):
 			_cut_dead_groups.erase(kind)
+			_cut_dead_last_lot_counts.erase(kind)
 			rebuilt = true
+	if not rebuilt and multimeshes_existed:
+		return false
 	_apply_transforms(_tree_stump_multimesh, tree_stump_transforms)
 	_apply_transforms(_shrub_stump_multimesh, shrub_stump_transforms)
 	_apply_transforms(_dead_multimesh, dead_transforms)

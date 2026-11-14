@@ -20,16 +20,9 @@ extends RefCounted
 
 const HOURS_PER_DAY := 24
 
-# TEMPORANEO (misura 2026-11-12, con _log_day_measure): per area e specie, {"min", "sum", "n"} della distanza oraria dal
-# rettangolo del centro di gruppetto più vicino, e "building" = distanza dall'edificio non stradale più vicino, "avoid" = raggio
-# da cui i centri stanno lontani. Azzerata a fine giornata.
-static var _measure := {}
-# Righe MISURA delle mandrie (passaggi, distanze): spente il 2026-11-13, i passaggi sono verificati.
-const _MEASURE_LOGS := false
-
 
 # Ora di gioco nuova: conta i passaggi nelle celle accese con lacci e aggiorna le aree da evitare dei gruppetti.
-static func sample_hour(game_data: GameData, live_cells: Dictionary, day_progress: float) -> void:
+static func sample_hour(game_data: GameData, live_cells: Dictionary, day_progress: float, individuals: Array = []) -> void:
 	if game_data == null:
 		return
 	var day := game_data.get_absolute_day()
@@ -39,6 +32,8 @@ static func sample_hour(game_data: GameData, live_cells: Dictionary, day_progres
 	game_data.snare_sample_slot = slot
 	_prune_disturbances(game_data, day)
 	_apply_avoidance(game_data, live_cells)
+	_update_pit_lots(game_data, live_cells)
+	PitDriveService.refresh(game_data, live_cells, individuals)
 	# Aree dei lacci per cella accesa: coords -> {chiave area: {"rect", "species"}}.
 	var areas_by_cell := {}
 	for trap in game_data.placed_traps:
@@ -63,8 +58,6 @@ static func sample_hour(game_data: GameData, live_cells: Dictionary, day_progres
 				var renderer: AnimalGroupRenderer = cell.animal_renderers.get(species)
 				if renderer == null or is_disturbed(game_data, area_key, species, day):
 					continue
-				if _MEASURE_LOGS:
-					_measure_hour(_key(area_key, species), rect, renderer)
 				# Passaggio (2026-11-12, richiesta utente): basta un animale qualunque della mandria dentro l'area, non il
 				# centro del suo gruppetto. Vale per tutte le trappole a mandria: lacci, cesti e fosse.
 				if renderer.has_individual_in_rect(rect):
@@ -96,13 +89,24 @@ static func roll_catch(game_data: GameData, trap: PlacedTrap, rules: SecondaryRe
 	var threshold := 0.0
 	for species in TrapService.prey_species(rules):
 		var passages := int(game_data.snare_passages.get(_key(area_key, species), 0))
-		if passages <= 0 or not herds.has(species) or is_disturbed(game_data, area_key, species, day):
+		if passages <= 0 or not _can_take(game_data, trap, species, herds) or is_disturbed(game_data, area_key, species, day):
 			continue
 		var weight := float(rules.trap_prey_weights.get(species, 1.0))
 		threshold += rules.trap_daily_catch_chance * weight * minf(float(passages) / full_hours, 1.0)
 		if roll < threshold:
 			return species
 	return ""
+
+
+# Specie prendibile dalla trappola: la mandria sta nella cella, oppure (2026-11-14, richiesta utente) sta uscendo a piedi
+# e i suoi animali sono ancora qui — finché il riquadro ha la mandria, così take_prey toglie davvero un capo.
+static func _can_take(game_data: GameData, trap: PlacedTrap, species: String, herds: Dictionary) -> bool:
+	if herds.has(species):
+		return true
+	var live_cell := PathfindingService.get_live_cell(trap.macro_coords)
+	var renderer: AnimalGroupRenderer = live_cell.animal_renderers.get(species) if live_cell != null else null
+	return renderer != null and renderer.get_individual_count() > 0 \
+		and WildFaunaService.has_herd_in_region(game_data, species, trap.macro_coords)
 
 
 # Preda presa: la figura della specie più vicina al laccio sparisce dalla mappa, la mandria perde un capo della sua età e
@@ -124,6 +128,13 @@ static func take_prey(game_data: GameData, trap: PlacedTrap, rules: SecondaryRes
 			age_band = int(nearest.age_band)
 			renderer.remove_individual(nearest.id)
 	WildFaunaService.remove_one(game_data, species, age_band, trap.macro_coords)
+	_disturb_after_catch(game_data, trap, rules, species, live_cell)
+	return age_band
+
+
+# Dopo una cattura l'area resta evitata da quella specie per trap_disturbance_days giorni.
+static func _disturb_after_catch(game_data: GameData, trap: PlacedTrap, rules: SecondaryResourceRules, species: String,
+		live_cell: LiveMacroCell) -> void:
 	var area := passage_area(game_data, trap, rules)
 	var rect: Rect2 = area["rect"]
 	game_data.snare_disturbances[_key(String(area["key"]), species)] = {
@@ -133,79 +144,101 @@ static func take_prey(game_data: GameData, trap: PlacedTrap, rules: SecondaryRes
 	}
 	if live_cell != null:
 		_apply_avoidance(game_data, {trap.macro_coords: live_cell})
-	return age_band
+
+
+# Caduta in fuga (2026-11-14, richiesta utente — "spingere verso le fosse", passo 1). Ogni ora ogni renderer delle celle
+# accese riceve le microcelle delle trappole ancora vuote che fanno cadere chi fugge (trap_flee_fall_chance > 0) e che
+# hanno la sua specie tra le prede; il renderer chiama _on_pit_fall quando un suo animale in fuga entra in una di quelle.
+static func _update_pit_lots(game_data: GameData, live_cells: Dictionary) -> void:
+	var lots_by_renderer := {}
+	for trap in game_data.placed_traps:
+		var rules := TrapService.get_rules(trap.trap_name)
+		if rules == null or rules.trap_flee_fall_chance <= 0.0 or trap.get_caught() >= rules.trap_capacity:
+			continue
+		var cell: LiveMacroCell = live_cells.get(trap.macro_coords)
+		if cell == null:
+			continue
+		for species in TrapService.prey_species(rules):
+			var renderer: AnimalGroupRenderer = cell.animal_renderers.get(species)
+			if renderer == null:
+				continue
+			if not lots_by_renderer.has(renderer):
+				lots_by_renderer[renderer] = {}
+			# Bordo della fossa (2026-11-14, richiesta utente): cade anche chi in corsa passa su una delle 8 microcelle attorno,
+			# non solo su quella della fossa. Le fosse distano almeno trap_min_spacing, quindi i bordi non si toccano.
+			for dy in range(-PIT_EDGE_CELLS, PIT_EDGE_CELLS + 1):
+				for dx in range(-PIT_EDGE_CELLS, PIT_EDGE_CELLS + 1):
+					var edge := trap.lot + Vector2i(dx, dy)
+					if edge.x >= 0 and edge.y >= 0 and edge.x < World.WIDTH and edge.y < World.HEIGHT \
+							and not lots_by_renderer[renderer].has(edge):
+						lots_by_renderer[renderer][edge] = trap.lot
+	for coords in live_cells:
+		var cell: LiveMacroCell = live_cells[coords]
+		if cell == null:
+			continue
+		for renderer in cell.animal_renderers.values():
+			var herd_renderer := renderer as AnimalGroupRenderer
+			herd_renderer.pit_lots = lots_by_renderer.get(herd_renderer, {})
+			herd_renderer.pit_fall_test = SnareService._on_pit_fall.bind(game_data) if not herd_renderer.pit_lots.is_empty() else Callable()
+
+
+# Microcelle attorno alla fossa da cui si cade (1 = quadrato 3×3).
+const PIT_EDGE_CELLS := 1
+
+
+# Toglie dal renderer tutte le microcelle che portano alla fossa in `lot`.
+static func _forget_pit(renderer: AnimalGroupRenderer, lot: Vector2i) -> void:
+	for cell in renderer.pit_lots.keys():
+		if renderer.pit_lots[cell] == lot:
+			renderer.pit_lots.erase(cell)
+
+
+# Un animale in fuga è entrato in una microcella della trappola in `lot` (la sua o una attorno; un tiro per passaggio,
+# AnimalGroupRenderer._check_pit_fall): tiro con trap_flee_fall_chance. Se cade, la preda
+# è registrata come quelle del tiro di fine giornata (la mandria perde un capo, l'area resta evitata) e il renderer toglie
+# l'animale. True se è caduto.
+static func _on_pit_fall(renderer: AnimalGroupRenderer, body: AnimalVisualGroup, lot: Vector2i, game_data: GameData) -> bool:
+	var species := renderer.species_name
+	var trap: PlacedTrap = null
+	var rules: SecondaryResourceRules = null
+	for candidate in game_data.placed_traps:
+		if candidate.macro_coords != renderer.macro_coords or candidate.lot != lot:
+			continue
+		var candidate_rules := TrapService.get_rules(candidate.trap_name)
+		if candidate_rules != null and candidate_rules.trap_flee_fall_chance > 0.0 				and candidate.get_caught() < candidate_rules.trap_capacity and TrapService.prey_species(candidate_rules).has(species):
+			trap = candidate
+			rules = candidate_rules
+			break
+	if trap == null:
+		_forget_pit(renderer, lot)
+		return false
+	if not _can_take(game_data, trap, species, WildFaunaService.get_herds_in_cell(game_data, trap.macro_coords)):
+		return false
+	if randf() >= rules.trap_flee_fall_chance:
+		TrapService.log_line("%s #%d in %s %s: %s in fuga ci passa sopra e non cade" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, species])
+		return false
+	var day := game_data.get_absolute_day()
+	var age_band := int(body.age_band)
+	WildFaunaService.remove_one(game_data, species, age_band, trap.macro_coords)
+	trap.catch_days.append(day)
+	trap.catch_species.append(species)
+	trap.catch_ages.append(age_band)
+	var alive := TrapService.is_live_catch(rules)
+	trap.catch_sexes.append((1 if randf() < 0.5 else 0) if alive else -1)
+	trap.catch_death_days.append(-1 if alive else day)
+	game_data.placed_traps_revision += 1
+	TrapService.log_line("%s #%d in %s %s: %s in fuga ci cade dentro (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot,
+		species, trap.get_caught(), rules.trap_capacity])
+	if trap.get_caught() >= rules.trap_capacity:
+		_forget_pit(renderer, lot)
+	_disturb_after_catch(game_data, trap, rules, species, PathfindingService.get_live_cell(trap.macro_coords))
+	return true
 
 
 # Fine giornata (dopo i tiri): i passaggi ricominciano da zero.
 static func end_day(game_data: GameData) -> void:
 	if game_data != null:
-		if _MEASURE_LOGS:
-			_log_day_measure(game_data)
-		_measure.clear()
 		game_data.snare_passages.clear()
-
-
-# TEMPORANEO (2026-11-12, misura: lacci e cesti non prendono niente): a fine giornata, per ogni area di lacci/cesti e
-# specie preda, i passaggi contati, se la mandria risulta presente nella macrocella e se l'area è disturbata. Da togliere
-# appena trovata la causa.
-static func _log_day_measure(game_data: GameData) -> void:
-	var day := game_data.get_absolute_day()
-	var seen := {}
-	for trap in game_data.placed_traps:
-		var rules := TrapService.get_rules(trap.trap_name)
-		if rules == null or not TrapService.is_herd_quarry(rules):
-			continue
-		var area_key := String(passage_area(game_data, trap, rules)["key"])
-		var herds := WildFaunaService.get_herds_in_cell(game_data, trap.macro_coords)
-		for species in TrapService.prey_species(rules):
-			var key := _key(area_key, species)
-			if seen.has(key):
-				continue
-			seen[key] = true
-			TrapService.log_line("MISURA %s %s (%s): passaggi %d, mandria presente %s, disturbata %s" % [area_key, species,
-				trap.trap_name, int(game_data.snare_passages.get(key, 0)), herds.has(species), is_disturbed(game_data, area_key, species, day)])
-			var entry: Dictionary = _measure.get(key, {})
-			if entry.is_empty() or int(entry.get("n", 0)) == 0:
-				TrapService.log_line("MISURA %s %s: nessun gruppetto misurato (cella spenta o mandria senza renderer)" % [area_key, species])
-			else:
-				TrapService.log_line("MISURA %s %s: gruppetto più vicino al rettangolo min %.1f media %.1f (%d ore); edificio più vicino %.1f, i centri ne stanno a %.1f" % [
-					area_key, species, float(entry["min"]), float(entry["sum"]) / float(entry["n"]), int(entry["n"]),
-					float(entry["building"]), float(entry["avoid"])])
-				var at: Vector2 = entry.get("at", Vector2.ZERO)
-				var r: Rect2 = entry.get("rect", Rect2())
-				TrapService.log_line("MISURA %s %s: al minimo il centro era in (%.1f, %.1f), a %.1f dall'edificio più vicino; rettangolo (%.0f, %.0f)-(%.0f, %.0f)" % [
-					area_key, species, at.x, at.y, float(entry.get("at_building", INF)), r.position.x, r.position.y, r.end.x, r.end.y])
-
-
-# TEMPORANEO (misura): distanza oraria del centro più vicino dal rettangolo, ed edificio non stradale più vicino al rettangolo.
-static func _measure_hour(key: String, rect: Rect2, renderer: AnimalGroupRenderer) -> void:
-	var nearest := INF
-	var nearest_center := Vector2.ZERO
-	for center in renderer.get_cluster_positions():
-		var d := _distance_to_rect(center, rect)
-		if d < nearest:
-			nearest = d
-			nearest_center = center
-	if nearest == INF:
-		return
-	# Il centro più vicino al rettangolo: quanto dista dall'edificio più vicino (ciò che lo spinge via).
-	var center_to_building := INF
-	for building_position: Vector2 in renderer._cluster_avoid_buildings:
-		center_to_building = minf(center_to_building, nearest_center.distance_to(building_position))
-	var building := INF
-	for building_position: Vector2 in renderer._cluster_avoid_buildings:
-		building = minf(building, _distance_to_rect(building_position, rect))
-	var entry: Dictionary = _measure.get(key, {"min": INF, "sum": 0.0, "n": 0})
-	if nearest < float(entry["min"]):
-		entry["at"] = nearest_center
-		entry["at_building"] = center_to_building
-	entry["min"] = minf(float(entry["min"]), nearest)
-	entry["rect"] = rect
-	entry["sum"] = float(entry["sum"]) + nearest
-	entry["n"] = int(entry["n"]) + 1
-	entry["building"] = building
-	entry["avoid"] = renderer._cluster_building_avoid_distance()
-	_measure[key] = entry
 
 
 static func _distance_to_rect(point: Vector2, rect: Rect2) -> float:

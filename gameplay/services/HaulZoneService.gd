@@ -231,6 +231,10 @@ static func work_area_accepts(area: WorkArea, resource_name: String) -> bool:
 	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 	if is_food_only_limit_active() and (rules == null or int(rules.category) != int(SecondaryResourceTypes.Category.FOOD)):
 		return false
+	# Risorsa da contenitore (2026-11-13, semi selvatici nei vasi): niente raccolta senza posto nei vasi montati di un
+	# magazzino.
+	if rules != null and rules.stored_in_container != "" and not StorageContainerService.village_has_room(resource_name):
+		return false
 	var filters: Variant = area.filters.get(HAUL_JOB, null)
 	if not (filters is Dictionary):
 		filters = WorkAreaTypes.get_default_filters(HAUL_JOB)

@@ -12,6 +12,7 @@ const REPRESENTATIVE_RESOURCE := {
 	SecondaryResourceTypes.Category.SEMI_FINISHED: "dried_hide",
 	SecondaryResourceTypes.Category.TOOL: "stone_axe",
 	SecondaryResourceTypes.Category.APPAREL: "fur_dress",
+	SecondaryResourceTypes.Category.GRAIN: "wild_seeds",
 }
 const LEAF_COLOR := Color(0.36, 0.68, 0.32, 1.0)
 const LEAF_VEIN_COLOR := Color(0.22, 0.45, 0.20, 1.0)

@@ -21,6 +21,7 @@ const CATEGORY_TEXT_KEYS := {
 	SecondaryResourceTypes.Category.SEMI_FINISHED: ["pickup_choice_category_semi_finished", "pickup_choice_all_semi_finished"],
 	SecondaryResourceTypes.Category.TOOL: ["pickup_choice_category_tool", "pickup_choice_all_tool"],
 	SecondaryResourceTypes.Category.APPAREL: ["pickup_choice_category_apparel", "pickup_choice_all_apparel"],
+	SecondaryResourceTypes.Category.GRAIN: ["pickup_choice_category_grain", "pickup_choice_all_grain"],
 }
 
 # Sorgenti nell'ordine in cui compaiono (2026-09-26, ground drop): prima il mucchio a terra (sta sopra), poi il

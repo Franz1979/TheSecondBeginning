@@ -12,3 +12,4 @@ prefers_recipe_workstation = true
 generation_source = 3
 day_durability = 12
 space_per_unit = 4.0
+animal_calories_per_unit = 60.0

@@ -19,8 +19,11 @@ enum CardState { DOMESTICATED, IN_PROGRESS, HIDDEN }
 
 const ANIMALS_TAB := 0
 const PLANTS_TAB := 1
-# Idea «Addomesticazione» (solo da scoperta, al primo lupo addomesticato): sblocca il pannello intero.
-const DOMESTICATION_IDEA_ID := "domestication"
+# Idea «Addomesticazione degli animali» (solo da scoperta, al primo lupo addomesticato): sblocca il pannello intero.
+# 2026-11-13 (richiesta utente): prima era l'idea generale «Addomesticazione», tolta; i due rami hanno ciascuno la sua.
+const DOMESTICATION_IDEA_ID := "animal_domestication"
+# Idea delle piante (2026-11-13, punto 2): regalata dal primo orzo; prima la scheda Piante mostra solo la carta dell'orzo.
+const PLANT_DOMESTICATION_IDEA_ID := "plant_domestication"
 const CARD_SIZE := Vector2(260, 150)
 const DEBUG_POINTS := 100
 # Stessi colori degli stati di TechTreePanel (completata/disponibile/bloccata).
@@ -67,16 +70,37 @@ func refresh_content() -> void:
 	_clear(plants_box)
 	_fill_animals()
 	_fill_plants()
-	# Prima dell'idea solo la carta del primo animale (vedi is_available): niente piante.
-	tab_container.set_tab_hidden(PLANTS_TAB, not _has_full_access())
-	if not _has_full_access():
-		tab_container.current_tab = ANIMALS_TAB
+	# Due rami indipendenti (2026-11-13): ogni scheda c'è quando il suo ramo è iniziato (vedi is_available).
+	var animals_on := animals_available(_human_folk, _game_data)
+	var plants_on := plants_available(_human_folk, _game_data)
+	tab_container.set_tab_hidden(ANIMALS_TAB, not animals_on and plants_on)
+	tab_container.set_tab_hidden(PLANTS_TAB, not plants_on)
+	if tab_container.is_tab_hidden(tab_container.current_tab):
+		tab_container.current_tab = PLANTS_TAB if plants_on and not animals_on else ANIMALS_TAB
 
 
 # Pulsante 🐾 (2026-11-07, decisione utente, strada A): con l'idea «Addomesticazione» il pannello intero; prima, solo la
 # carta della prima addomesticazione (specie senza idea richiesta, il cane), dalla prima visita del suo branco selvatico
 # o dal primo punto: così il giocatore vede a che punto è. Letta da GameScene._refresh_domestication_button.
 static func is_available(human_folk: Folk, game_data: GameData) -> bool:
+	return animals_available(human_folk, game_data) or plants_available(human_folk, game_data)
+
+
+# Ramo delle piante (2026-11-13, punto 2): dall'idea delle piante o dalla prima unità raccolta di una specie vegetale.
+static func plants_available(human_folk: Folk, game_data: GameData) -> bool:
+	if human_folk == null or game_data == null:
+		return false
+	if human_folk.completed_ideas.has(PLANT_DOMESTICATION_IDEA_ID):
+		return true
+	# Dalla prima oncia raccolta (2026-11-13, richiesta utente): conta anche il resto non ancora diventato punto.
+	for species in DomesticPlantCalculator.list_species():
+		if DomesticationPointsService.get_points(game_data, species) > 0 or game_data.domesticated_species.has(species) 				or int(game_data.domestication_harvest_units.get(species, 0)) > 0:
+			return true
+	return false
+
+
+# Ramo degli animali: con l'idea il pannello intero; prima, solo la carta del cane.
+static func animals_available(human_folk: Folk, game_data: GameData) -> bool:
 	if human_folk == null or game_data == null:
 		return false
 	if human_folk.completed_ideas.has(DOMESTICATION_IDEA_ID):
@@ -105,10 +129,6 @@ func _clear(box: Container) -> void:
 
 
 func _fill_animals() -> void:
-	if _has_full_access() and not _human_folk.completed_ideas.has("animal_domestication"):
-		animals_box.add_child(_notice_label(tr("domestication_animals_locked_notice").format({
-			"idea": _idea_name("animal_domestication")
-		})))
 	var cards := HFlowContainer.new()
 	cards.add_theme_constant_override("h_separation", 12)
 	cards.add_theme_constant_override("v_separation", 12)
@@ -124,14 +144,81 @@ func _fill_animals() -> void:
 		cards.add_child(_build_card(rules))
 
 
+# Piante (2026-11-13, punto 2): una carta per specie vegetale (oggi solo l'orzo), prima dell'idea con l'avviso su come
+# arriva.
 func _fill_plants() -> void:
-	# Specie vegetali: arriveranno con l'agricoltura.
-	if not _human_folk.completed_ideas.has("plant_domestication"):
+	if not _human_folk.completed_ideas.has(PLANT_DOMESTICATION_IDEA_ID):
 		plants_box.add_child(_notice_label(tr("domestication_plants_locked_notice").format({
-			"idea": _idea_name("plant_domestication")
+			"idea": _idea_name(PLANT_DOMESTICATION_IDEA_ID), "lore": _idea_name("plant_lore"),
 		})))
+	var cards := HFlowContainer.new()
+	cards.add_theme_constant_override("h_separation", 12)
+	cards.add_theme_constant_override("v_separation", 12)
+	plants_box.add_child(cards)
+	for species in DomesticPlantCalculator.list_species():
+		var rules := DomesticPlantCalculator.get_rules(species)
+		# Dal 2026-11-15 (grano): la carta c'è dalla prima oncia raccolta della specie, così una pianta non ancora trovata
+		# non si vede (l'orzo, la prima, apre il pannello stesso).
+		if rules != null and (DomesticationPointsService.get_points(_game_data, species) > 0 \
+				or int(_game_data.domestication_harvest_units.get(species, 0)) > 0 or _game_data.domesticated_species.has(species)):
+			cards.add_child(_build_plant_card(rules))
+
+
+# Come avanza una pianta (2026-11-15, generico per specie): raccolta, zuppa, prodotto, tetto e orto, solo le voci usate.
+func _plant_hint(rules: DomesticPlantRules) -> String:
+	var lines: Array[String] = []
+	if rules.harvested_units_per_point > 0:
+		lines.append(tr("domestication_plant_hint_gather").format({
+			"resource": IconRegistry.get_resource_display_name(rules.harvest_resource_name), "units": rules.harvested_units_per_point}))
+	if rules.points_per_meal > 0:
+		lines.append(tr("domestication_plant_hint_meal").format({"meal": rules.points_per_meal}))
+	if rules.points_per_product > 0:
+		lines.append(tr("domestication_plant_hint_product").format({
+			"product": IconRegistry.get_resource_display_name(rules.product_resource_name), "points": rules.points_per_product}))
+	if rules.wild_points_cap > 0:
+		lines.append(tr("domestication_plant_hint_cap").format({"cap": rules.wild_points_cap}))
+	return "\n".join(lines)
+
+
+func _build_plant_card(rules: DomesticPlantRules) -> PanelContainer:
+	var done := _game_data.domesticated_species.has(rules.species_name)
+	var state := CardState.DOMESTICATED if done else CardState.IN_PROGRESS
+	var style := StyleBoxFlat.new()
+	style.bg_color = STATE_BG_COLORS[state]
+	style.border_color = STATE_BORDER_COLORS[state]
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(6)
+	style.set_content_margin_all(8)
+	var card := PanelContainer.new()
+	card.custom_minimum_size = CARD_SIZE
+	card.add_theme_stylebox_override("panel", style)
+	var box := VBoxContainer.new()
+	card.add_child(box)
+	if done:
+		box.add_child(_title_label(tr(rules.display_name)))
+		var done_label := _plain_label(tr("domestication_plant_done").format({
+			"species": tr(rules.wild_display_name), "year": int(_game_data.domestication_years.get(rules.species_name, 0))}))
+		done_label.add_theme_color_override("font_color", STATE_BORDER_COLORS[CardState.DOMESTICATED])
+		box.add_child(done_label)
 	else:
-		plants_box.add_child(_notice_label(tr("domestication_plants_empty")))
+		box.add_child(_title_label(tr(rules.wild_display_name)))
+		var points := DomesticationPointsService.get_points(_game_data, rules.species_name)
+		var progress_label := _plain_label(tr("domestication_state_in_progress"))
+		progress_label.add_theme_color_override("font_color", STATE_BORDER_COLORS[CardState.IN_PROGRESS])
+		box.add_child(progress_label)
+		box.add_child(_bar(rules.domestication_points_required, points))
+		box.add_child(_plain_label("%d / %d" % [points, rules.domestication_points_required]))
+		box.add_child(_plain_label(tr("domestication_will_become").format({"species": tr(rules.display_name)})))
+		var hint_label := _plain_label(_plant_hint(rules))
+		hint_label.add_theme_color_override("font_color", Color(0.7, 0.72, 0.78))
+		box.add_child(hint_label)
+	if DebugLogging.ENABLED:
+		var debug_button := Button.new()
+		debug_button.text = "+%d" % DEBUG_POINTS
+		debug_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+		debug_button.pressed.connect(func() -> void: debug_add_points_requested.emit(rules.species_name))
+		box.add_child(debug_button)
+	return card
 
 
 func _state_of(rules: DomesticAnimalRules) -> CardState:
@@ -243,10 +330,7 @@ func _add_in_progress_rows(box: VBoxContainer, rules: DomesticAnimalRules) -> vo
 # Statistiche della cattività (2026-11-12): catturati, morti, nati, in tettoia adesso e vita di un animale catturato oggi.
 func _add_captivity_stats(box: VBoxContainer, rules: DomesticAnimalRules) -> void:
 	var species := rules.species_name
-	var kept_now := 0
-	for animal in _game_data.domestic_animals:
-		if animal.species == species and animal.building_id >= 0:
-			kept_now += 1
+	var kept_now := KeptAnimalService.kept_count(_game_data, species)
 	box.add_child(_plain_label(tr("domestication_stats_line").format({
 		"captured": KeptAnimalService.get_stat(_game_data, species, "captured"),
 		"died": KeptAnimalService.get_stat(_game_data, species, "died"),
@@ -258,8 +342,7 @@ func _add_captivity_stats(box: VBoxContainer, rules: DomesticAnimalRules) -> voi
 
 
 static func _uses_capture_points(rules: DomesticAnimalRules) -> bool:
-	return rules.capture_points_adult_male > 0 or rules.capture_points_adult_female > 0 or rules.capture_points_young > 0 \
-		or rules.capture_points_old > 0
+	return KeptAnimalService.can_be_kept(rules)
 
 
 # Testo per specie se c'è (es. domestication_done_dog, per il genere e il plurale giusti), altrimenti quello generico.

@@ -144,6 +144,19 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for species in data["game"].get("domesticated_species", []):
 		game_data.domesticated_species.append(String(species))
 	# Anno della prima addomesticazione (2026-11-07): JSON lo rende float.
+	# Resto delle unità raccolte per le piante (2026-11-13): vuoto per i salvataggi precedenti.
+	game_data.domestication_harvest_units.clear()
+	# Semina alla Fossa (2026-11-13): vuoto per i salvataggi precedenti; un numero (prima del 2026-11-15) era solo orzo.
+	game_data.pit_sowing_units.clear()
+	var saved_pit_units: Variant = data["game"].get("pit_sowing_units", {})
+	if saved_pit_units is Dictionary:
+		for resource_name in saved_pit_units:
+			game_data.pit_sowing_units[String(resource_name)] = int(saved_pit_units[resource_name])
+	elif int(saved_pit_units) > 0:
+		game_data.pit_sowing_units["wild_seeds"] = int(saved_pit_units)
+	var saved_harvest_units: Dictionary = data["game"].get("domestication_harvest_units", {})
+	for species in saved_harvest_units:
+		game_data.domestication_harvest_units[String(species)] = int(saved_harvest_units[species])
 	game_data.domestication_years.clear()
 	var saved_domestication_years: Dictionary = data["game"].get("domestication_years", {})
 	for species in saved_domestication_years:
@@ -193,9 +206,23 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	if saved_trap_levels is Dictionary:
 		for trap_name in saved_trap_levels.keys():
 			game_data.stock_traps_per_zone[String(trap_name)] = maxi(int(saved_trap_levels[trap_name]), 0)
+	game_data.stock_field_care_remedy = int(data["game"].get("stock_field_care_remedy", FieldFertilityService.DEFAULT_REMEDY))
+	game_data.stock_field_care_threshold = clampi(int(data["game"].get("stock_field_care_threshold", FieldFertilityService.DEFAULT_THRESHOLD)), 0, 100)
+	# Regola "Semi nei campi" (2026-11-15): vuota nei salvataggi precedenti.
+	game_data.stock_field_seeds.clear()
+	var saved_field_seeds = data["game"].get("stock_field_seeds", {})
+	if saved_field_seeds is Dictionary:
+		for seed_name in saved_field_seeds.keys():
+			game_data.stock_field_seeds[String(seed_name)] = maxi(int(saved_field_seeds[seed_name]), 0)
 	game_data.domestic_starvation_days = data["game"].get("domestic_starvation_days", {})
 	game_data.domestic_first_arrival_day = data["game"].get("domestic_first_arrival_day", {})
 	game_data.domestic_stray_due_day = data["game"].get("domestic_stray_due_day", {})
+	game_data.domestic_slaughter_above = {}
+	var saved_slaughter_above: Variant = data["game"].get("domestic_slaughter_above", {})
+	if saved_slaughter_above is Dictionary:
+		for species in saved_slaughter_above.keys():
+			if int(saved_slaughter_above[species]) > 0:
+				game_data.domestic_slaughter_above[String(species)] = int(saved_slaughter_above[species])
 	# Gruppi di animali in visita (2026-10-26) — .get() per i save precedenti: nessun gruppo, li ricrea
 	# WildAnimalGroupService.ensure_groups al primo giorno.
 	game_data.wild_animal_groups.clear()
@@ -208,6 +235,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	for saved_region in data["game"].get("wild_fauna", []):
 		var entry := WildFaunaRegion.from_save_data(saved_region)
 		game_data.wild_fauna[WildFaunaService.region_key(entry.species, entry.region)] = entry
+	# Registro delle mete abituali (2026-11-15) — .get() per i save precedenti: vuoto, le mete si scelgono entrando.
+	game_data.herd_habit_goals = (data["game"].get("herd_habit_goals", {}) as Dictionary).duplicate(true)
 	# Visite in corso (2026-10-30) — .get() per i save precedenti: nessuna visita. Le ricostruisce alla prima mossa
 	# WildAnimalVisitService (collisione, edifici, animali usciti dal branco).
 	game_data.wild_animal_visits.clear()
@@ -340,10 +369,14 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.stock_fuel_rule_enabled = bool(data["game"].get("stock_fuel_rule_enabled", int(data["game"].get("stock_fuel_min_per_building", 0)) > 0))
 	# Acqua per tettoia (2026-11-07): 0 (spenta) per i salvataggi precedenti.
 	game_data.stock_water_per_shelter = maxi(int(data["game"].get("stock_water_per_shelter", 0)), 0)
+	# Rifornisci le mangiatoie (2026-11-14): default per i salvataggi precedenti.
+	game_data.stock_feeder_days = maxi(int(data["game"].get("stock_feeder_days", FeederStockService.DEFAULT_DAYS)), 0)
 	# Regola dei banchetti spontanei (2026-10-17) — 500 e accesa per i salvataggi precedenti.
 	game_data.stock_banquet_safe_only = bool(data["game"].get("stock_banquet_safe_only", true))
 	# Carne lasciata nelle postazioni (2026-10-20) — accesa per i salvataggi precedenti.
 	game_data.stock_workstation_food_rule_enabled = bool(data["game"].get("stock_workstation_food_rule_enabled", true))
+	game_data.stock_cultivation_auto = bool(data["game"].get("stock_cultivation_auto", true))
+	game_data.pit_drive_enabled = bool(data["game"].get("pit_drive_enabled", false))
 	game_data.stock_fuel_min_by_type.clear()
 	var raw_fuel_mins = data["game"].get("stock_fuel_min_by_type", {})
 	if raw_fuel_mins is Dictionary:
@@ -763,8 +796,45 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			for buried_entry in building_data.get("buried", []):
 				if buried_entry is Dictionary:
 					building.buried.append(buried_entry)
+			# Ossario (2026-11-14): [] nei salvataggi precedenti; i sepolti vecchi ci passano al primo fine anno.
+			building.ossuary = []
+			for ossuary_entry in building_data.get("ossuary", []):
+				if ossuary_entry is Dictionary:
+					building.ossuary.append(ossuary_entry)
 			# Specie tenuta (2026-11-12, tettoia delle gabbie): "" (Qualunque) nei salvataggi precedenti.
 			building.kept_species = String(building_data.get("kept_species", ""))
+			# Mangiatoia (2026-11-13): vuota nei salvataggi precedenti.
+			building.feeder_space_used = float(building_data.get("feeder_space_used", 0.0))
+			building.feeder_calories = float(building_data.get("feeder_calories", 0.0))
+			building.feeder_species = String(building_data.get("feeder_species", ""))
+			building.feeder_days_override = int(building_data.get("feeder_days_override", -1))
+			building.field_seed_level = int(building_data.get("field_seed_level", -1))
+			building.field_care_remedy = int(building_data.get("field_care_remedy", -1))
+			building.field_care_threshold = int(building_data.get("field_care_threshold", -1))
+			# Terreno coltivato (2026-11-15): vuoto nei salvataggi precedenti.
+			building.crop_species = String(building_data.get("crop_species", ""))
+			# Lotti (2026-11-15, passo 2 dei campi); i salvataggi di prima avevano un solo terreno sull'edificio: diventa il
+			# lotto della sua microcella (l'orto).
+			building.crop_lots.clear()
+			if building_data.has("crop_lots"):
+				for lot_data in building_data["crop_lots"]:
+					building.crop_lots.append(CropLot.from_dict(lot_data))
+			elif building_data.has("crop_phase"):
+				building.crop_lots.append(CropLot.from_dict({
+					"x": building.micro_x, "y": building.micro_y, "phase": building_data.get("crop_phase", 0),
+					"sown": building_data.get("crop_sown", 0), "sprouts": building_data.get("crop_sprouts", 0),
+					"mature": building_data.get("crop_mature", 0), "seeds": building_data.get("crop_seeds", 0),
+					"labor": building_data.get("crop_labor", 0.0)}))
+			# Salvataggi con la vecchia casella "crop_auto": spenta -> sempre no, accesa -> come la regola.
+			if building_data.has("crop_auto_mode"):
+				building.crop_auto_mode = clampi(int(building_data["crop_auto_mode"]), 0, 2)
+			else:
+				building.crop_auto_mode = 0 if bool(building_data.get("crop_auto", true)) else 2
+			building.soil_fertility = float(building_data.get("soil_fertility", 1.0))
+			var saved_tracking = building_data.get("fertility_tracking", {})
+			building.fertility_tracking = saved_tracking if saved_tracking is Dictionary else {}
+			building.slaughter_above = maxi(int(building_data.get("slaughter_above", 0)), 0)
+			building.over_capacity_since_day = int(building_data.get("over_capacity_since_day", -1))
 			# Rifiuti (2026-10-18, Fossa dei rifiuti): 0 nei salvataggi precedenti.
 			building.waste_stored = int(building_data.get("waste_stored", 0))
 			building.waste_reserved = int(building_data.get("waste_reserved", 0))
@@ -840,6 +910,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var enabled_categories: Array[SecondaryResourceTypes.Category] = []
 			for category_value in building_data.get("enabled_categories", []):
 				enabled_categories.append(int(category_value))
+			# Granaglie (2026-11-15): i semi erano Materiali grezzi; chi li accettava accetta anche le Granaglie. Solo nei
+			# salvataggi di prima delle Granaglie (senza grain_category_known): dopo, una spunta tolta resta tolta.
+			if not bool(building_data.get("grain_category_known", false)) \
+					and enabled_categories.has(SecondaryResourceTypes.Category.RAW_MATERIAL) \
+					and not enabled_categories.has(SecondaryResourceTypes.Category.GRAIN):
+				enabled_categories.append(SecondaryResourceTypes.Category.GRAIN)
 			building.enabled_categories = enabled_categories
 			# restricts_categories (2026-09-28): assente nei salvataggi precedenti — lì "vuoto" voleva dire "nessuna
 			# restrizione", quindi il filtro è attivo solo se l'elenco non è vuoto (stesso comportamento di prima).
@@ -923,6 +999,12 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 					pending_ideas.append(prerequisite_id)
 		# Default {} per i salvataggi precedenti al decadimento dei pensieri (IdeaDecayService inizializza
 		# da sé le scadenze mancanti). JSON legge i numeri come float: convertiti a int per-valore.
+		# Regali in attesa dei prerequisiti (2026-11-13): vuoto per i salvataggi precedenti.
+		human_folk.earned_idea_grants.clear()
+		var raw_grants: Variant = human_data["folk"].get("earned_idea_grants", {})
+		if raw_grants is Dictionary:
+			for grant_idea_id in raw_grants.keys():
+				human_folk.earned_idea_grants[String(grant_idea_id)] = String(raw_grants[grant_idea_id])
 		var decay_due_day: Dictionary = human_data["folk"].get("idea_decay_due_day", {})
 		for decay_idea_id in decay_due_day:
 			human_folk.idea_decay_due_day[String(decay_idea_id)] = int(decay_due_day[decay_idea_id])
@@ -1089,6 +1171,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.skill_medicine = float(individual_data.get("skill_medicine", 0.0))
 			# skill_fishing (2026-10-31): 0.0 per i save precedenti alla skill.
 			individual.skill_fishing = float(individual_data.get("skill_fishing", 0.0))
+			# skill_farming (2026-11-15): 0.0 per i save precedenti alla skill.
+			individual.skill_farming = float(individual_data.get("skill_farming", 0.0))
 			# Capacità di trasporto (2026-09-08, richiesta utente) — .get() con default "non sta
 			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
 			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre

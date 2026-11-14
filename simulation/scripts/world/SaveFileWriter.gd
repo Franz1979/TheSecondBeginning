@@ -84,4 +84,4 @@ static func _write_task(data_holder: Array, file_path: String) -> void:
 		return
 	print("Game saved to JSON: ", file_path)
 	# MISURA TEMPORANEA (autosave): da togliere dopo la prova.
-	print("[Save misura] thread: JSON %d ms, compressione e scrittura %d ms, testo %.1f MB, file %.1f MB" % [measure_json_msec - measure_start_msec, Time.get_ticks_msec() - measure_json_msec, json_text.length() / 1048576.0, FileAccess.get_size(file_path) / 1048576.0])
+	DebugLogging.print_event("[Save misura] thread: JSON %d ms, compressione e scrittura %d ms, testo %.1f MB, file %.1f MB" % [measure_json_msec - measure_start_msec, Time.get_ticks_msec() - measure_json_msec, json_text.length() / 1048576.0, FileAccess.get_size(file_path) / 1048576.0])

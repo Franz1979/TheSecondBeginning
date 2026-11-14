@@ -70,6 +70,17 @@ static func grant_idea(folk: Folk, idea_id: String) -> bool:
 	return true
 
 
+# Prerequisiti di `idea` non ancora completati (2026-11-13, regali in attesa dei prerequisiti).
+static func missing_prerequisites(folk: Folk, idea: Idea) -> Array[String]:
+	var missing: Array[String] = []
+	if folk == null or idea == null:
+		return missing
+	for prerequisite_id in idea.prerequisites:
+		if not folk.completed_ideas.has(prerequisite_id):
+			missing.append(prerequisite_id)
+	return missing
+
+
 # "Disponibile" = non ancora completata e con TUTTI i prerequisites già in folk.completed_ideas
 # (l'idea attiva stessa resta disponibile: chi distingue "in ricerca" è il chiamante, vedi
 # TechTreePanel._state_of).

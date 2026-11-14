@@ -41,6 +41,7 @@ const LEISURE_BANQUET_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/defi
 # per due sole voci — stesso principio "niente genericità prematura" già seguito ovunque in questo
 # progetto, es. TaskFactory.build_task).
 const EXPLORE_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/explore.tres"
+const DAYDREAM_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/daydreaming.tres"
 const IDLE_FALLBACK_TASK_PATHS: Array[String] = [
 	"res://gameplay/scripts/tasks/definitions/wander.tres",
 	EXPLORE_TASK_DEFINITION_PATH,
@@ -196,16 +197,13 @@ static func _resolve_anchor_building(individual: HumanIndividual, world: World) 
 			oldest_storage = building
 	return oldest_storage if oldest_storage != null else any_building
 
-# Distanza/durata BASE della Daydream del fallback (2026-09-16, richiesta utente) — STESSI valori
-# di GameScene._DEBUG_DAYDREAM_AROUND_DISTANCE/_DEBUG_DAYDREAM_THINK_BASE_DURATION (tasto Y), ma
-# SENZA il moltiplicatore EraRules.think_duration_multiplier che quel tasto applica: questa
-# funzione (chiamata da _resolve_active_stamina_need_priority/resolve_idle_individual a cascata,
-# vedi HumanIndividualActionService) non riceve `game_data`, solo `world` — thread-arlo giù da lì
-# toccherebbe 5 chiamanti esterni (HumanBirthIndividualService/GameLoadService/ZombieTaskTest/
-# GameScene x2) per un affinamento cosmetico. Semplificazione deliberata: durata BASE = "era
-# neutra" (moltiplicatore 1.0), coerente con l'uso già arbitrario di questa costante nel tasto Y.
+# Distanza/durata BASE della Daydream del fallback (2026-09-16, richiesta utente) — distanza uguale a
+# GameScene._DEBUG_DAYDREAM_AROUND_DISTANCE (tasto Y). La durata vera la calcola think_duration_for (2026-11-14:
+# Cognizione e moltiplicatore d'era, era corrente letta da GameSettings.active_game_data), per svago e tasto Y.
 const DAYDREAM_AROUND_DISTANCE: float = 14.1
 const DAYDREAM_THINK_BASE_DURATION: float = 2.0
+# Riduzione massima del pensare a Cognizione piena (0.5 = metà della base).
+const COGNITION_MAX_THINK_REDUCTION: float = 0.5
 # Il percorso vero è più lungo della linea d'aria (ostacoli, terreni lenti).
 const DAYDREAM_PATH_MARGIN: float = 1.25
 
@@ -347,7 +345,19 @@ static func _daydream_trip_days(individual: HumanIndividual, around_position: Ve
 	if target != null:
 		var macro_offset := Vector2(Vector2i(target.macro_x, target.macro_y) - individual.home_macro_coords) * World.WIDTH
 		distance += around_position.distance_to(Vector2(target.micro_x, target.micro_y) + macro_offset)
-	return distance * DAYDREAM_PATH_MARGIN / maxf(individual.move_speed, 0.001) + DAYDREAM_THINK_BASE_DURATION
+	return distance * DAYDREAM_PATH_MARGIN / maxf(individual.move_speed, 0.001) + think_duration_for(individual)
+
+
+# Giorni di riflessione del daydream (2026-11-14, richiesta utente — la Cognizione accorcia il pensare): base ridotta in
+# modo lineare con skill_cognition fino a COGNITION_MAX_THINK_REDUCTION a SKILL_MAX (2 giorni a 0, 1 giorno a 1000), per
+# EraRules.think_duration_multiplier. Unica formula, usata dallo svago e dal tasto debug Y (GameScene).
+# era_rules null = quelle dell'era corrente (GameSettings.active_game_data), moltiplicatore 1.0 se non risolvibili.
+static func think_duration_for(individual: HumanIndividual, era_rules: EraRules = null) -> float:
+	if era_rules == null and GameSettings.active_game_data != null:
+		era_rules = EraCalculator.get_era_rules(GameSettings.active_game_data.current_era_name)
+	var cognition_ratio := clampf(individual.skill_cognition / HumanIndividual.SKILL_MAX, 0.0, 1.0)
+	var era_multiplier := era_rules.think_duration_multiplier if era_rules != null else 1.0
+	return DAYDREAM_THINK_BASE_DURATION * (1.0 - COGNITION_MAX_THINK_REDUCTION * cognition_ratio) * era_multiplier
 
 
 # Eleggibilita' di leisure_restock nel sorteggio idle: spazio libero nelle provviste >=
@@ -456,7 +466,7 @@ static func _build_idle_task(path: String, individual: HumanIndividual, world: W
 			var definition := TaskDefinitionCache.get_definition(path)
 			var context: Dictionary = {
 				"target_position": around_position,
-				"think_duration": 0.0 if has_thought else DAYDREAM_THINK_BASE_DURATION,
+				"think_duration": 0.0 if has_thought else think_duration_for(individual),
 			}
 			var task := TaskFactory.build_task(definition, context)
 			# daydream_step_appended_connector (vedi sopra) — collegato SUBITO dopo la costruzione,
@@ -569,6 +579,15 @@ static func assign_idle_fallback(individual: HumanIndividual, age_band: HumanTyp
 			return true
 		remaining.remove_at(drawn_index)
 	return false
+
+
+# Daydream fuori dal sorteggio (2026-11-14 — idea nata da una chiacchierata, TalkService.roll_talk_idea): stessa Task
+# dello svago (_build_idle_task), solo se esiste un edificio dei pensieri finito. true se assegnata.
+static func assign_daydream(individual: HumanIndividual, age_band: HumanTypes.AgeBand, world: World) -> bool:
+	if not ThoughtTargetSelectionService.has_thought_accepting_building(world):
+		return false
+	var task := _build_idle_task(DAYDREAM_TASK_DEFINITION_PATH, individual, world, age_band)
+	return task != null and individual.assign_task(task, age_band)
 
 
 # L'attività estratta si può fare (prima, fino al 2026-10-24, controllato per tutte prima del tiro). Per i riti sociali

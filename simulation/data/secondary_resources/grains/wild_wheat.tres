@@ -1,0 +1,25 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_wild_wheat"]
+
+; Grano selvatico (2026-11-15, richiesta utente — ramo piante, grano passo 1): come l'orzo selvatico (wild_seeds), raccolto
+; a mano dall'erba, nei vasi da semi (un vaso, una specie: StorageContainerService), 5-10 once per microcella. Solo dopo
+; Addomesticazione delle piante (prima "Risorsa sconosciuta"); su 3 microcelle d'erba su 10; estate piena, poco in
+; autunno. 10 calorie per gli animali come l'orzo. Più avanti è il seme dell'orto delle prove per il grano.
+[resource]
+script = ExtResource("1_wild_wheat")
+secondary_resource_name = "wild_wheat"
+calories_per_unit = 0.0
+seasonal_availability_multiplier = Array[float]([0.0, 0.0, 1.0, 0.2])
+category = 6
+required_idea_id = "plant_domestication"
+generation_source = 1
+day_durability = 365
+space_per_unit = 0.5
+patch_probability = 0.3
+patch_capacity_min = 5
+patch_capacity_max = 10
+pit_sowing_units = 500
+lot_source = 3
+stored_in_container = "seed_jar"
+animal_calories_per_unit = 5.0

@@ -180,7 +180,11 @@ static func assign_slaughter(ctx: GameContext, worker: HumanIndividual, animal: 
 	if task == null:
 		return false
 	effects.wire_task(GameEffects.WireKind.STEP_SIGNALS, task, worker)
-	var request := AssignRequest.create(worker, task, "task_activity_butcher").at_microcell(animal.macro_coords, Vector2i(animal.position.floor()), "butcher")
+	var where := DomesticAnimalSlaughterService.spot(ctx.world, animal)
+	if where.is_empty():
+		return false
+	var request := AssignRequest.create(worker, task, "task_activity_butcher").at_microcell(where["macro"],
+		Vector2i((where["position"] as Vector2).floor()), "butcher")
 	request.strict = true
 	var age_band := ctx.age_band_of(worker)
 	if not AssignService.check(request, age_band, effects):

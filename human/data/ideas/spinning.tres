@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_spinning"]
+
+; Filatura (2026-11-15, richiesta utente — ramo piante): ramo indipendente dall'Agricoltura, dopo Addomesticazione delle
+; piante, era paleolitica (2026-11-15, richiesta utente: Tessitura col telaio resta al neolitico). Fa riconoscere il lino selvatico (risorsa e specie da fare) e porterà il fuso; poi Tessitura col telaio.
+[resource]
+script = ExtResource("1_spinning")
+id = "spinning"
+display_name = "idea_spinning"
+summary = "idea_spinning_summary"
+description = "idea_spinning_description"
+thoughts_cost = 80
+prerequisites = Array[String](["plant_domestication"])
+era = "paleolithic"

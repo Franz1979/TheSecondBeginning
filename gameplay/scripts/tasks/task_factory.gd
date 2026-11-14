@@ -333,6 +333,34 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 				# Nessun argomento: la trappola è nel context (TrapService.CONTEXT_TRAP_ID) — 2026-11-07.
 				steps.append(EmptyTrapAction.new())
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.PIT_DRIVE:
+				# Nessun argomento: zona e specie nel context (PitDriveAction.CONTEXT_*) — 2026-11-14.
+				steps.append(PitDriveAction.new())
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.TAKE_SEEDS, TaskTypes.ActionType.SOW:
+				# 1 argomento (magazzino dei semi / terreno da seminare) — 2026-11-15, Semina.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante per step %d di TaskDefinition '%s'." % [step_definition.action_type, definition.task_name])
+					continue
+				if step_definition.action_type == TaskTypes.ActionType.TAKE_SEEDS:
+					steps.append(TakeSeedsAction.new(context[step_definition.context_keys[0]]))
+				else:
+					steps.append(SowAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.REAP:
+				# 1 argomento (il terreno da mietere) — 2026-11-15, Mietitura.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante per step REAP di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(ReapAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.RETILL:
+				# 1 argomento (il campo da rizollare) — 2026-11-15, Cura del campo.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante per step RETILL di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(RetillAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.TAKE_SOUP_INGREDIENTS:
 				# 1 argomento (il magazzino della tappa; quello che manca è nel context) — 2026-11-07, zuppa di casa.
 				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):

@@ -80,6 +80,16 @@ func _update_pursuit(individual: Variant, context: Dictionary) -> bool:
 		_stand_still(individual)
 		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "animale da macellare sparito"
 		return false
+	# In tettoia (2026-11-14, pezzo 3): il cammino fino alla tettoia è lo step prima (TaskBuilderService.build_slaughter_task),
+	# qui si uccide subito.
+	if animal.building_id >= 0:
+		if not ensure_required_tools(individual):
+			_stand_still(individual)
+			return false
+		_done = true
+		_stand_still(individual)
+		_kill(animal, context)
+		return true
 	if not ensure_required_tools(individual) or animal.macro_coords.x < 0:
 		_stand_still(individual)
 		return false
@@ -94,6 +104,12 @@ func _update_pursuit(individual: Variant, context: Dictionary) -> bool:
 
 
 func _kill(animal: DomesticAnimal, context: Dictionary) -> void:
+	# Punti persi (pezzo 3, −2 in tettoia prima dell'addomesticazione): li toglie GameScene a fine step.
+	var loss := DomesticAnimalSlaughterService.point_loss(GameSettings.active_game_data, animal)
+	if loss > 0:
+		var pending: Dictionary = context.get(HumanIndividualActionService.CONTEXT_PENDING_DOMESTICATION_POINTS, {})
+		pending[animal.species] = int(pending.get(animal.species, 0)) - loss
+		context[HumanIndividualActionService.CONTEXT_PENDING_DOMESTICATION_POINTS] = pending
 	var carcass := DomesticAnimalSlaughterService.kill(GameSettings.active_game_data, animal)
 	if carcass.is_empty():
 		return

@@ -105,7 +105,7 @@ static func blocked_test_for(macro_coords: Vector2i) -> Callable:
 		var cell: LiveMacroCell = _live_cells.get(macro_coords)
 		if cell == null or cell.path_grid == null or not _in_bounds(microcell):
 			return false
-		return is_blocked(cell, microcell)
+		return is_blocked_for_animals(cell, microcell)
 
 
 # Spostamento di un animale con la collisione di `blocked_test` (vedi blocked_test_for; non valido = nessuna collisione):
@@ -173,7 +173,10 @@ static func pick_free_destination(individual: HumanIndividual, sampler: Callable
 		var candidate: Vector2 = sampler.call()
 		var microcell := Vector2i(floori(candidate.x), floori(candidate.y))
 		# Ruscello (2026-10-31, richiesta utente — pipottini che riposavano nell'acqua): si attraversa, ma non ci si ferma.
+		# Terra coltivata (2026-11-15, campo e orto): idem, ci si lavora ma non ci si va a zonzo.
 		if cell.stream_positions.has(microcell) or is_blocked(cell, microcell) or not is_reachable(cell, from, microcell):
+			continue
+		if cell.path_obstacles != null and cell.path_obstacles.cultivated_buildings.has(microcell):
 			continue
 		return candidate
 	# Nessuna meta e fermo nel ruscello: la riva accanto (il ruscello è largo 1, una riva è tra i 4 vicini).
@@ -203,10 +206,30 @@ static func _new_grid() -> AStarGrid2D:
 # Copia della griglia della cella con le microcelle di `zone` (WIDTH×HEIGHT, 1 = nella zona) che costano ZONE_WEIGHT_SCALE
 # volte tanto: separata perché quella della cella è anche delle persone, che non devono evitare il proprio villaggio. Null
 # senza griglia. Chi la tiene la rifà quando cambia get_grid_version.
+# Anche le microcelle chiuse agli animali (2026-11-15) vi sono bloccate: la usano solo le mandrie.
 static func build_zone_grid(macro_coords: Vector2i, zone: PackedByteArray) -> AStarGrid2D:
 	var cell := get_live_cell(macro_coords)
 	if cell == null or cell.path_grid == null or zone.size() != World.WIDTH * World.HEIGHT:
 		return null
+	return _build_animal_grid(cell, zone)
+
+
+# Griglia degli animali della cella (2026-11-15, campo e orto): quella delle persone con in più bloccate le microcelle
+# chiuse agli animali. Null se non ce n'è nessuna (va bene quella delle persone). Tenuta sulla cella e rifatta quando
+# cambia path_grid_version.
+static func animal_grid(cell: LiveMacroCell) -> AStarGrid2D:
+	if cell == null or cell.path_grid == null or cell.path_obstacles == null or cell.path_obstacles.animal_closed.is_empty():
+		return null
+	if cell.path_animal_grid == null or cell.path_animal_grid_version != cell.path_grid_version:
+		cell.path_animal_grid = _build_animal_grid(cell, PackedByteArray())
+		cell.path_animal_grid_version = cell.path_grid_version
+	return cell.path_animal_grid
+
+
+# Copia della griglia della cella con le chiusure agli animali e, se `zone` non è vuota, la zona a ZONE_WEIGHT_SCALE.
+static func _build_animal_grid(cell: LiveMacroCell, zone: PackedByteArray) -> AStarGrid2D:
+	var has_zone := zone.size() == World.WIDTH * World.HEIGHT
+	var closed: Dictionary = cell.path_obstacles.animal_closed if cell.path_obstacles != null else {}
 	var grid := _new_grid()
 	grid.fill_weight_scale_region(grid.region, terrain_weight())
 	for position in cell.path_weights.keys():
@@ -216,9 +239,9 @@ static func build_zone_grid(macro_coords: Vector2i, zone: PackedByteArray) -> AS
 		for x in range(World.WIDTH):
 			var position := Vector2i(x, y)
 			var index := _index(position)
-			if cell.path_solid[index] == 1:
+			if cell.path_solid[index] == 1 or closed.has(position):
 				grid.set_point_solid(position, true)
-			if zone[index] == 1:
+			if has_zone and zone[index] == 1:
 				grid.set_point_weight_scale(position, grid.get_point_weight_scale(position) * ZONE_WEIGHT_SCALE)
 	return grid
 
@@ -279,7 +302,10 @@ static func sync_buildings(cell: LiveMacroCell, macro_world: World) -> void:
 	var start_usec := Time.get_ticks_usec()
 	var macro_coords := Vector2i(cell.macro_x, cell.macro_y)
 	var old_blocking: Dictionary = cell.path_obstacles.blocking_buildings.duplicate()
+	var old_animal_closed: Dictionary = cell.path_obstacles.animal_closed.duplicate()
 	cell.path_obstacles.refresh_buildings(macro_coords, macro_world)
+	# Chiusure agli animali cambiate (2026-11-15): i percorsi degli animali vanno ripianificati (path_block_version).
+	var animal_changed: bool = old_animal_closed.hash() != cell.path_obstacles.animal_closed.hash()
 	var changed: Dictionary = {}
 	for position in old_blocking.keys():
 		if not cell.path_obstacles.blocking_buildings.has(position):
@@ -296,6 +322,9 @@ static func sync_buildings(cell: LiveMacroCell, macro_world: World) -> void:
 			changed[position] = true
 	cell.path_weights = new_weights
 	if changed.is_empty():
+		if animal_changed:
+			cell.path_block_version += 1
+			cell.path_grid_version += 1
 		return
 
 	var solid := cell.path_solid
@@ -313,6 +342,7 @@ static func sync_buildings(cell: LiveMacroCell, macro_world: World) -> void:
 	cell.path_solid = solid
 	if blocking_changed:
 		cell.path_regions_dirty = true
+	if blocking_changed or animal_changed:
 		cell.path_block_version += 1
 	cell.path_grid_version += 1
 	if DebugLogging.ENABLED and DebugLogging.SHOW_PATHFINDING_LOGS:
@@ -348,6 +378,13 @@ static func is_blocked(cell: LiveMacroCell, microcell: Vector2i) -> bool:
 	if cell == null or cell.path_grid == null or not _in_bounds(microcell):
 		return true
 	return cell.path_solid[_index(microcell)] == 1
+
+
+# Come is_blocked, più le microcelle chiuse agli animali (2026-11-15, BuildingRules.closed_to_animals: campo, orto).
+static func is_blocked_for_animals(cell: LiveMacroCell, microcell: Vector2i) -> bool:
+	if is_blocked(cell, microcell):
+		return true
+	return cell.path_obstacles != null and cell.path_obstacles.animal_closed.has(microcell)
 
 
 # Id della regione connessa della microcella, -1 se bloccata, fuori dalla macrocella o griglia assente. Ricalcola le
@@ -417,8 +454,8 @@ static func find_path(cell: LiveMacroCell, from: Vector2i, to: Vector2i, zone_gr
 		escape.append_array(rest)
 		return escape
 	var grid: AStarGrid2D = zone_grid if zone_grid != null else cell.path_grid
-	var from_was_blocked := cell.path_solid[_index(from)] == 1
-	var to_was_blocked := cell.path_solid[_index(to)] == 1
+	var from_was_blocked := grid.is_point_solid(from)
+	var to_was_blocked := grid.is_point_solid(to)
 	if from_was_blocked:
 		grid.set_point_solid(from, false)
 	if to_was_blocked:
@@ -459,6 +496,18 @@ static func plan_waypoints(macro_coords: Vector2i, from_point: Vector2, to_point
 		to = nearest
 		result["target"] = Vector2(nearest) + Vector2(0.5, 0.5)
 		result["redirected"] = true
+	# Chiuso agli animali (2026-11-15, campo e orto): meta dentro → la microcella aperta più vicina; percorso sulla
+	# griglia degli animali (le mandrie in cammino hanno già la loro, con le stesse chiusure).
+	var closed: Dictionary = cell.path_obstacles.animal_closed if cell.path_obstacles != null else {}
+	if closed.has(to):
+		var open := find_open_microcell(cell, to, 0, get_region(cell, from), func(microcell: Vector2i) -> bool: return not closed.has(microcell))
+		if open == NO_POCKET_EXIT or open == from:
+			return result
+		to = open
+		result["target"] = Vector2(open) + Vector2(0.5, 0.5)
+		result["redirected"] = true
+	if zone_grid == null:
+		zone_grid = animal_grid(cell)
 	var cells := find_path(cell, from, to, zone_grid)
 	for i in range(1, cells.size() - 1):
 		path.append(Vector2(cells[i]) + Vector2(0.5, 0.5))
@@ -559,6 +608,8 @@ static func _cell_ok(cell: LiveMacroCell, microcell: Vector2i, max_weight: float
 		return true
 	if not _in_bounds(microcell) or cell.path_solid[_index(microcell)] == 1:
 		return false
+	if zone_grid != null and zone_grid.is_point_solid(microcell):
+		return false
 	return _weight_of(cell, microcell, zone_grid) <= max_weight + 0.000001
 
 
@@ -580,7 +631,7 @@ static func count_blocked(cell: LiveMacroCell) -> int:
 # Blocco di UNA microcella secondo la regola condivisa (MicrocellObstacles.is_free): guado = fiume ammesso, edifici
 # MOVEMENT ignorati. Acqua dell'intera macrocella compresa (is_free la rifiuta).
 static func _is_blocked_by_rule(cell: LiveMacroCell, position: Vector2i) -> bool:
-	return not cell.path_obstacles.is_free(position, false, cell.path_fords.has(position), false, true, false, false, true)
+	return not cell.path_obstacles.is_free(position, false, cell.path_fords.has(position), false, true, false, false, true, true)
 
 
 # Pesi diversi da quello del terreno normale: le microcelle con modificatori di movimento (path_weight) e i guadi.
@@ -597,6 +648,10 @@ static func _compute_weights(cell: LiveMacroCell) -> Dictionary:
 	# Ruscello: si guada ovunque, a caro prezzo; sul guado di pietre poco più del terreno.
 	for position in cell.stream_positions.keys():
 		weights[position] = (STONE_FORD_WEIGHT_SCALE if cell.stream_crossings.has(position) else STREAM_WEIGHT_SCALE) * terrain
+	# Terra coltivata (2026-11-15, campo e orto): ci si cammina, ma cara (BuildingRules.people_path_weight_scale).
+	if cell.path_obstacles != null:
+		for position in cell.path_obstacles.cultivated_weights.keys():
+			weights[position] = float(cell.path_obstacles.cultivated_weights[position]) * terrain
 	return weights
 
 

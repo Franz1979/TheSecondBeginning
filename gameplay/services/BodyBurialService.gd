@@ -387,9 +387,10 @@ static func convoke_funeral_procession(carrier: HumanIndividual, record: Diction
 # (il primo trovato). I sepolti senza dati di parentela (save precedenti) contano solo per i figli.
 static func get_buried_relative_ids(building: Building, individuals: Array) -> Dictionary:
 	var relatives: Dictionary = {}
-	if building == null or building.buried.is_empty():
+	if building == null or count_dead(building) == 0:
 		return relatives
-	for entry in building.buried:
+	# Anche chi è nell'ossario (2026-11-14): le ossa spostate restano antenati.
+	for entry in building.buried + building.ossuary:
 		var buried_entry: Dictionary = entry if entry is Dictionary else {}
 		var deceased_id := int(buried_entry.get("individual_id", -1))
 		var deceased_name := String(buried_entry.get("name", "?"))
@@ -405,6 +406,36 @@ static func get_buried_relative_ids(building: Building, individuals: Array) -> D
 					and (individual.mother_id == deceased_id or individual.father_id == deceased_id):
 				relatives[individual.id] = {"kind": "child", "of": deceased_name}
 	return relatives
+
+
+# Defunti del cumulo, sepolti e nell'ossario (2026-11-14): quello che conta per i riti (RiteRules.min_buried).
+static func count_dead(building: Building) -> int:
+	return building.buried.size() + building.ossuary.size() if building != null else 0
+
+
+# Ossario (2026-11-14, richiesta utente): a fine anno, in ogni cumulo, i sepolti da almeno OSSUARY_YEARS anni passano da
+# Building.buried a Building.ossuary e il loro posto torna libero. Implicito: nessun lavoro, nessun avviso; il pannello
+# del cumulo mostra quante ossa sono nell'ossario. Chiamato da GameTimeService._on_year_rolled_over.
+const OSSUARY_YEARS := 10
+
+
+static func move_old_to_ossuary(world: World, year: int) -> void:
+	if world == null:
+		return
+	for building in world.buildings:
+		if building == null or building.rules == null or building.rules.max_buried <= 0 or building.buried.is_empty():
+			continue
+		var kept: Array = []
+		for entry in building.buried:
+			var buried_entry: Dictionary = entry if entry is Dictionary else {}
+			if year - int(buried_entry.get("year", year)) >= OSSUARY_YEARS:
+				building.ossuary.append(buried_entry)
+				if DebugLogging.ENABLED and DebugLogging.SHOW_TASK_LIFECYCLE_LOGS:
+					print("[BURY] ossa di %s spostate nell'ossario del cumulo #%d (sepolto nell'anno %d)." % [
+						String(buried_entry.get("name", "?")), building.id, int(buried_entry.get("year", 0))])
+			else:
+				kept.append(entry)
+		building.buried = kept
 
 
 # Funerale concluso (2026-10-04): il corpo viene consumato — il record sparisce da game_data.expired_objects (la vista la

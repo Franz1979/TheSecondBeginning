@@ -46,4 +46,7 @@ enum Category {
 	# Allevamento (2026-11-12, richiesta utente — addomesticazione per cattura viva): tettoia delle gabbie, poi recinto con
 	# riparo, pollaio, conigliera, stalle, fienile. Aggiunta IN FONDO.
 	HUSBANDRY,
+	# Agricoltura (2026-11-15, richiesta utente — ramo piante): orto delle prove, poi i campi. La Capanna del contadino resta
+	# in Produzione (fa attrezzi). Aggiunta IN FONDO.
+	AGRICULTURE,
 }

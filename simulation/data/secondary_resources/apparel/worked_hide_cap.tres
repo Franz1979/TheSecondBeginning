@@ -14,7 +14,7 @@ space_per_unit = 5.0
 recipe_inputs = {
 "fiber_rope": 1,
 "sinew": 2,
-"smoked_hide": 3
+"smoked_hide": 2
 }
 recipe_labor = 500.0
 recipe_workstation_types = Array[String](["clothing_hut"])

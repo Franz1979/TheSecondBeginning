@@ -11,7 +11,7 @@ panel_group = "transport"
 generation_source = 2
 space_per_unit = 4.0
 recipe_inputs = {
-"dried_hide": 4,
+"dried_hide": 3,
 "fiber_rope": 2,
 "sinew": 3
 }

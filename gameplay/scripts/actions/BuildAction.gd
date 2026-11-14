@@ -53,6 +53,9 @@ var completing_individual: Variant = null
 # Moltiplicatore degli attrezzi, oggi sempre 1.0. La skill non è più un campo salvato: il fattore si legge a ogni tick
 # da SkillEffectService (2026-09-27, chiave "build"), vedi get_stamina_delta.
 var tool_multiplier: float = 1.0
+# Giorni di lavoro dall'ultimo uso consumato degli attrezzi obbligatori (2026-11-15): un uso per giorno intero. Non
+# salvato: a una ripresa si perde al più meno di un giorno.
+var _tool_wear_days: float = 0.0
 
 # Emesso UNA VOLTA quando la costruzione è DAVVERO completa (2026-09-11) — stesso principio di
 # disaccoppiamento già seguito da SetupSiteAction.site_setup_completed/ClearAction.site_cleared:
@@ -79,6 +82,10 @@ func _init(
 	# INFANT al gameplay, vedi Action.disallowed_age_bands). CHILD aggiunto 2026-09-13 (richiesta
 	# utente).
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
+	# Attrezzi obbligatori del tipo (2026-11-15, BuildingRules.construction_tool_categories: l'orto chiede lo scavo).
+	if target_building != null and target_building.rules != null:
+		for category in target_building.rules.construction_tool_categories:
+			required_tool_categories.append(category as TaskTypes.ToolCategory)
 
 
 # Validità (vedi Action.is_target_valid): un cantiere nullo, demolito o già completo non ha più nulla
@@ -174,6 +181,10 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	if _get_labor_accumulated() >= float(target_building.rules.required_labor):
 		return 0.0
+	# Attrezzi obbligatori (2026-11-15): senza, il cantiere aspetta (stesso stato d'attesa della produzione).
+	if not ensure_required_tools(individual):
+		return 0.0
+	_wear_tools(individual, delta)
 	var stamina_spent_this_day: float = STAMINA_DRAIN_PER_DAY * delta
 	# Skill (2026-09-27, SkillEffectService "build"): lavoro richiesto diviso per il fattore, realizzato moltiplicando
 	# il lavoro aggiunto (stesso tempo; il progresso sull'edificio resta misurato su required_labor).
@@ -183,6 +194,18 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	BuildingLifecycleService.mark_build_started(target_building)
 	target_building.construction_progress["labor_accumulated"] = _get_labor_accumulated() + effective_work_this_day
 	return -stamina_spent_this_day
+
+
+# Un uso degli attrezzi obbligatori per ogni giorno intero di lavoro (2026-11-15), come la cava dopo ogni roccia.
+func _wear_tools(individual: Variant, delta: float) -> void:
+	if required_tool_categories.is_empty() or not (individual is HumanIndividual):
+		return
+	_tool_wear_days += delta
+	if _tool_wear_days < 1.0:
+		return
+	_tool_wear_days -= 1.0
+	var broken := ToolGateService.consume_tool_uses(individual, required_tool_categories, GameSettings.active_game_data)
+	report_broken_tools(individual, broken)
 
 
 # false (mai "vero da subito") se target_building/rules non risolvibili — difensivo: nessun dato

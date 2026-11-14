@@ -119,7 +119,7 @@ static func advance_daily(individual: HumanIndividual) -> float:
 		if infection_rules == null or has_condition(individual, infection_id):
 			continue
 		_start(individual, infection_rules)
-		print("[INFEZIONE] #%d %s: ferita infetta -> %s" % [individual.id, individual.name, infection_id])
+		DebugLogging.print_event("[INFEZIONE] #%d %s: ferita infetta -> %s" % [individual.id, individual.name, infection_id])
 	return health_before - individual.current_health
 
 
@@ -185,7 +185,7 @@ static func _apply_untreated_sequela(individual: HumanIndividual, rules: HealthC
 		return
 	individual.permanent_max_health_loss += rules.untreated_sequela_max_health_loss
 	individual.max_health -= rules.untreated_sequela_max_health_loss
-	print("[SEQUELA] #%d %s: %s senza rimedio, salute massima -%d (persa in tutto %d)" % [
+	DebugLogging.print_event("[SEQUELA] #%d %s: %s senza rimedio, salute massima -%d (persa in tutto %d)" % [
 		individual.id, individual.name, rules.id, int(rules.untreated_sequela_max_health_loss),
 		int(individual.permanent_max_health_loss)])
 
