@@ -282,6 +282,13 @@ var crop_species: String = ""
 # Lotti (2026-11-15, passo 2 dei campi — CropLot): fase, once, piantine, semi portati e lavoro di ogni microcella
 # coltivata; letti sempre da CultivationService.lots, che li crea. Salvati.
 var crop_lots: Array[CropLot] = []
+# Appezzamenti entrati nel campo (2026-11-15, richiesta utente — passo 2): microcelle in più oltre al 3×3, in coordinate di
+# griglia NON ruotate del campo ((0,0) = il capanno, FieldShape.base_cell_of). Vuoto per ogni altro edificio. Salvato.
+var field_extra_cells: Array[Vector2i] = []
+# Materiali davvero usati per costruirlo (2026-11-15, materiali con opzioni): nome -> quantità consumata alla fine della
+# costruzione (es. corda di lino al posto di quella di fibre); vuoto = sconosciuti (salvataggi di prima, miglioramenti),
+# allora vale required_materials. Il recupero della demolizione ne rende metà. Salvato.
+var built_materials: Dictionary = {}
 # "Coltiva in automatico" del terreno (2026-11-15, richiesta utente): CultivationService.AutoMode — COME_REGOLA (0, segue la
 # regola del WM GameData.stock_cultivation_auto), SEMPRE_SI (1), SEMPRE_NO (2); la scelta del terreno vince sulla regola.
 # Spenta, la lista dei lavori non propone né Semina né Mietitura qui (il comando a mano, quando ci sarà, resta libero). Salvata.

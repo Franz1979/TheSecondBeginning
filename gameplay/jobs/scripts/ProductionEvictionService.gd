@@ -148,14 +148,17 @@ static func has_inputs_for_cycle(world: World, building: Building, recipe: Strin
 	if rules == null or world == null:
 		return false
 	for input_name in rules.recipe_inputs.keys():
-		var needed := int(rules.recipe_inputs[input_name])
-		var have := ProductionService.get_input_available(building, String(input_name))
+		var needed := float(rules.recipe_inputs[input_name])
+		# Materiali con opzioni (2026-11-15): anche i sostituti, pesati col loro valore (MaterialOptionsService).
+		var have := ProductionService.get_input_covered(building, String(input_name))
+		var options := MaterialOptionsService.options_for(String(input_name))
 		for other in world.buildings:
-			if have >= needed:
+			if have >= needed - 0.0001:
 				break
 			if other != building and not other.is_demolished:
-				have += BuildingStorageService.get_auto_available_quantity(other, String(input_name))
-		if have < needed:
+				for option_name in options.keys():
+					have += float(BuildingStorageService.get_auto_available_quantity(other, String(option_name))) * float(options[option_name])
+		if have < needed - 0.0001:
 			return false
 	# Combustibile (2026-11-10, richiesta utente): quello che manca nel deposito della postazione, coperto da quello
 	# prelevabile in automatico dagli altri edifici.
@@ -178,7 +181,7 @@ static func _holds_any_input(building: Building, recipe: String) -> bool:
 	if rules == null:
 		return false
 	for input_name in rules.recipe_inputs.keys():
-		if ProductionService.get_input_available(building, String(input_name)) > 0:
+		if ProductionService.get_input_covered(building, String(input_name)) > 0.0:
 			return true
 	return false
 

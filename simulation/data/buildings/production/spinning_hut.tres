@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_spinning_hut"]
+
+; Filatoio (2026-11-15, richiesta utente — segnaposto): richiede la Filatura. Qui si farà il filo di lino (e in futuro di
+; lana); tessitura e confezione dei vestiti da decidere (qui o altrove). Per ora solo l'edificio, senza ricette.
+[resource]
+script = ExtResource("1_spinning_hut")
+building_name = "building_spinning_hut"
+category = 4
+required_idea_id = "spinning"
+min_construction_days = 3
+required_labor = 2500
+max_builders = 2
+lifespan_years = 15
+max_durability = 100
+defense = 10
+required_materials = {
+"fiber_rope": 10,
+"plant_fiber": 10,
+"stick": 30,
+"stone": 10,
+"wood": 15
+}
+required_space = 1
+has_door = false
+visibility_radius = 2

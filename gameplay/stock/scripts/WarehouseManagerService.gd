@@ -1127,7 +1127,7 @@ static func _request_feeders(ctx: GameContext, now: float, stock: Dictionary) ->
 	var game_data := ctx.game_data
 	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool: return order.has(FeederStockService.FEEDER_TARGET_KEY))
 	var plan := FeederStockService.plan_orders(ctx.world, game_data, open_orders, FeederStockService.traveling(ctx.individuals),
-		stock, active_min_levels(ctx.world, game_data), average_carry_capacity(ctx))
+		stock, average_carry_capacity(ctx))
 	game_data.stock_runtime.feeder_warnings = plan["warnings"]
 	for order_id in plan["remove"]:
 		DrawerOrderService.remove(game_data, int(order_id))

@@ -1553,6 +1553,7 @@ build_bar_teaching_stump_tooltip,"Ceppo dell'insegnamento: si costruisce dove è
 building_category_cultural,Culturale
 building_category_recreational,Ricreativo
 build_blocked_needs_tree_stump,Serve una microcella con almeno un albero tagliato (un ceppo)
+build_blocked_plot_needs_field,"L'appezzamento va accanto a un campo finito, dentro il quadrato di 5×5 che parte dal capanno, e mai tra due campi"
 rite_oral_lesson_name,Lezione
 social_rite_reject_no_convocable,Nessuno da convocare nel villaggio (per la lezione servono bambini)
 building_pebble_path,Sentiero di ciottoli
@@ -1660,6 +1661,7 @@ task_assignment_kind_clear_cut,Sgombero delle microcelle
 job_clear_plants,"Taglio · Rimuovi tutto ({count} piante)"
 task_assignment_kind_clear_quarry,Sgombero delle rocce
 job_clear_rock,"Cava · Rimuovi tutta la roccia ({count} estrazioni)"
+job_clear_clay,"Cava · Rimuovi tutta l'argilla ({count} scavi)"
 clear_order_cancel_tooltip,"Annulla la rimozione: la microcella non è più segnata. Chi ci sta già lavorando finisce il suo lavoro da 5."
 job_butcher,"Macellazione · {species}"
 task_assignment_kind_butcher,Macellazione
@@ -1930,9 +1932,11 @@ microcell_clear_button,Rimuovi tutto
 microcell_clear_cancel_button,Annulla rimozione
 microcell_clear_plants_detail,"Segna la microcella da sgomberare: nella lista dei lavori nasce un lavoro ogni 5 piante, per chi ha l'ascia, fino a 4 persone insieme."
 microcell_clear_rock_detail,"Segna la roccia da togliere tutta: nella lista dei lavori nasce un lavoro ogni 5 estrazioni, per chi ha il piccone, fino a 4 persone insieme."
+microcell_clear_clay_detail,"Segna il giacimento da scavare tutto, così ci si può costruire: nella lista dei lavori nasce un lavoro ogni 5 scavi, per chi ha il piccone, fino a 4 persone insieme. L'argilla va al deposito."
 microcell_clear_cancel_detail,"La microcella non è più segnata: chi ci sta già lavorando finisce il suo lavoro da 5."
 microcell_clear_status,"Da rimuovere: {count} piante"
 microcell_clear_rock_status,"Da rimuovere: {count} estrazioni"
+microcell_clear_clay_status,"Da rimuovere: {count} scavi"
 bird_presence_none,nessuno
 bird_presence_few,pochi
 bird_presence_some,parecchi
@@ -2029,6 +2033,9 @@ idea_animal_husbandry_summary,"Edifici per tenere e far crescere gli animali add
 idea_animal_husbandry_description,"Chi ha imparato a prendere gli animali vivi e a tenerli nelle gabbie capisce che, con il riparo giusto e cure costanti, possono vivere e moltiplicarsi accanto al villaggio. Ogni specie addomesticata avrà il suo edificio."
 building_rabbit_hutch,Conigliera
 build_bar_rabbit_hutch_tooltip,Conigliera
+building_spinning_hut,Filatoio
+build_bar_spinning_hut_tooltip,Filatoio
+build_bar_spinning_hut_description,"Una capanna col tetto di frasche dove si torcerà la fibra di lino in filo col fuso. Si costruisce dopo la Filatura. Per ora è solo l'edificio: il filo arriverà più avanti."
 build_bar_rabbit_hutch_description,"Cassone di legno con il tetto di frasche dove vivranno i conigli domestici. Si costruisce quando il coniglio è addomesticato."
 building_chicken_coop,Pollaio
 build_bar_chicken_coop_tooltip,Pollaio
@@ -2039,7 +2046,7 @@ building_info_toolkit_seed_jars,"Tiene i vasi da semi: solo quelli montati qui a
 carried_resource_tooltip_wild_seeds,Orzo selvatico
 toolkit_reject_container_in_use,{tool}: dentro ci sono dei semi che altrove non entrano. Prima prelevali dal magazzino.
 toolkit_reject_container_category,{tool}: questo magazzino non accetta le Granaglie e i semi non potrebbero entrare. Abilita la categoria per montarlo.
-toolkit_storage_tooltip,"Attrezzeria del magazzino: qui si montano i vasi da semi (clic sul vaso nel magazzino, oppure la regola del gestore scorte «Rifornisci le Attrezzerie»). Solo i vasi montati accolgono i semi, 100 once ciascuno, e i semi non occupano altro spazio. Un vaso si monta solo se il magazzino accetta i Materiali grezzi; se li spegni dopo, i semi già dentro restano ma non ne entrano altri. Ogni oncia che entra o esce consuma il vaso: quando si rompe, i semi che non stanno negli altri vasi vanno persi. Un vaso non si smonta se i suoi semi non entrerebbero negli altri."
+toolkit_storage_tooltip,"Attrezzeria del magazzino: qui si montano i vasi da semi (clic sul vaso nel magazzino, oppure la regola del gestore scorte «Rifornisci le Attrezzerie»). Solo i vasi montati accolgono i semi, 50 once ciascuno, e i semi non occupano altro spazio. Un vaso si monta solo se il magazzino accetta i Materiali grezzi; se li spegni dopo, i semi già dentro restano ma non ne entrano altri. Ogni oncia che entra o esce consuma il vaso: quando si rompe, i semi che non stanno negli altri vasi vanno persi. Un vaso non si smonta se i suoi semi non entrerebbero negli altri."
 discovery_grant_waiting_title,Idea in attesa: {idea}
 discovery_grant_waiting_line,"Il villaggio è pronto per «{idea}», ma serve ancora {missing}. Arriverà da sola appena completata."
 domestic_plant_barley,Orzo
@@ -2063,7 +2070,7 @@ building_feeder_choose_species,(scegli la specie per riempirla)
 building_feeder_tooltip,"Mangiatoia per: {species}. Accetta: {foods} (calorie per unità). Il cibo portato occupa il suo spazio, diventa calorie e non si riprende. Cambiando specie la mangiatoia si svuota e il cibo è perso."
 building_feeder_tooltip_no_species,"La mangiatoia accetta solo i cibi della specie tenuta: scegli la specie, o aspetta il primo animale. Cambiando specie la mangiatoia si svuota e il cibo è perso."
 warehouse_rule_feeder,Rifornisci le mangiatoie (giorni di cibo)
-warehouse_rule_feeder_tooltip,"Giorni di cibo da tenere nelle mangiatoie degli animali chiusi. All'inventario il WM calcola quanto mangiano gli animali di ogni mangiatoia e, se sotto, manda cibo dai magazzini: nell'ordine della dieta della specie, mai sotto il livello minimo di quel cibo, e almeno uno zaino pieno a ogni viaggio. 0 = regola spenta."
+warehouse_rule_feeder_tooltip,"Giorni di cibo da tenere nelle mangiatoie degli animali chiusi. All'inventario il WM calcola quanto mangiano gli animali di ogni mangiatoia e, se sotto, manda cibo dai magazzini: nell'ordine della dieta della specie, da tutta la scorta del villaggio, e almeno uno zaino pieno a ogni viaggio. 0 = regola spenta."
 drawer_order_feeder_row,"{building}: mangiatoia, porta {quantity} {resource}"
 warehouse_rule_field_seeds,Semi nei campi
 warehouse_rule_field_seeds_tooltip,"Once di ogni seme domestico da tenere nel capanno di ogni campo che lo semina: il WM le porta dal granaio e porta via i semi che il capanno non tiene più. Un campo può avere un valore suo. 0 = nessuno."
@@ -2071,7 +2078,7 @@ warehouse_rule_field_seeds_empty,Nessuna pianta ancora addomesticata.
 drawer_order_field_seed_row,"{building}: capanno, porta {quantity} {resource}"
 drawer_order_field_seed_remove_row,"{building}: capanno, porta via {quantity} {resource}"
 pending_stock_feeder,Mangiatoie da rifornire
-pending_stock_feeder_missing,"Nessun cibo della dieta sopra il minimo per: {buildings}"
+pending_stock_feeder_missing,"Nessun cibo della dieta in magazzino per: {buildings}"
 building_feeder_days_general,Giorni di cibo: regola generale
 building_feeder_days_excluded,Giorni di cibo: esclusa dal WM
 building_feeder_days_own,Giorni di cibo: valore suo
@@ -2139,6 +2146,9 @@ build_bar_haystack_description,"Quattro trespoli di legno legati con la corda, d
 building_clay_oven,Forno d'argilla
 build_bar_clay_oven_tooltip,Forno d'argilla
 build_bar_clay_oven_description,"Una cupola d'argilla refrattaria su una base di pietre, con la bocca davanti. Dentro si fa il fuoco, poi si toglie la brace e si cuoce sulla pietra calda: la pita con la semola d'orzo, il pane con la farina di grano, il pane nero con quella di segale, le gallette con i fiocchi d'avena. Tiene una scorta di legna; semola e farina arrivano per ogni ordine."
+building_field_plot,Appezzamento
+build_bar_field_plot_tooltip,Appezzamento
+build_bar_field_plot_description,"Una microcella di terra da dissodare accanto a un campo finito, per allargarlo: va messa a contatto con un lato del campo, dentro il quadrato di 5×5 che parte dal capanno, e mai tra due campi. Serve il piccone."
 building_farmer_hut,Capanna degli attrezzi agricoli
 build_bar_farmer_hut_tooltip,Capanna degli attrezzi agricoli
 build_bar_farmer_hut_description,"Capanna di legno col tetto di frasche dove si fanno gli attrezzi per coltivare: il bastone da scavo e il falcetto."
@@ -2168,13 +2178,16 @@ discovery_first_wild_oats_p2,"Cresce come un'erbaccia dove la terra è stata smo
 idea_spinning,Filatura
 idea_spinning_summary,Certe piante hanno fibre lunghe che si torcono in filo.
 idea_spinning_description,"Osservando gli steli delle piante selvatiche, il gruppo nota che alcuni contengono fibre lunghe e resistenti: battute e torte diventano un filo sottile. Si impara a riconoscere il lino."
-carried_resource_tooltip_wild_flax,Lino selvatico
+carried_resource_tooltip_wild_flax,Semi di lino selvatico
 carried_resource_tooltip_flax_rope,Corda di lino
+carried_resource_tooltip_flax_seeds,Semi di lino
+carried_resource_tooltip_flax_fiber,Fibra di lino
+carried_resource_tooltip_flax_thread,Filo di lino
 domestic_plant_flax,Lino
 wild_plant_flax,Lino selvatico
 discovery_first_wild_flax_title,Lino selvatico
-discovery_first_wild_flax_p1,"Tra l'erba d'estate qualcuno strappa steli sottili coi fiorellini azzurri: dentro hanno le fibre lunghe di cui parla la Filatura. È lino selvatico."
-discovery_first_wild_flax_p2,"Alla Capanna del vestiario se ne fa una corda di lino, e ogni corda insegna qualcosa sulla pianta. Il filo e la tela verranno solo dal lino domestico, da ottenere nell'orto dell'addomesticazione."
+discovery_first_wild_flax_p1,"Tra l'erba d'estate qualcuno nota steli sottili coi fiorellini azzurri: dentro hanno le fibre lunghe di cui parla la Filatura. È lino selvatico, e se ne raccolgono i semi piatti e lucidi."
+discovery_first_wild_flax_p2,"Le piante selvatiche sono troppo poche e sparse per farne fibra. Raccoglierne i semi insegna qualcosa sulla pianta, e seminati nell'orto dell'addomesticazione porteranno al lino domestico: i suoi campi daranno la fibra per la corda di lino, poi filo e tela."
 domestication_plant_hint_gather,Raccogliendo {resource}: 1 punto ogni {units}.
 domestication_plant_hint_meal,Cucinando la zuppa coi semi: {meal} punti a pentola.
 domestication_plant_hint_product,Facendo {product}: {points} punti l'una.
@@ -2227,7 +2240,6 @@ building_crop_reaping,"mietitura in corso ({mature} piante, {percent}%)"
 sow_blocked_harvest_pile,Prima va portato via il raccolto
 building_crop_auto,Coltiva in automatico:
 building_crop_auto_tooltip,"Sì: Semina e Mietitura di questo terreno escono da sole nella lista dei lavori, nelle loro stagioni. No: nessuno semina né miete qui (chi sta già lavorando finisce). ""Come la regola"" segue la regola del WM ""Coltiva in automatico tutti i terreni""; ""sempre sì"" e ""sempre no"" vincono sulla regola. Le piante mature non mietute marciscono comunque a fine stagione."
-warehouse_grain_reserve_note,"Il minimo delle granaglie è la riserva per la semina: zuppa e animali usano solo quello che c'è sopra, la semina può prendere tutto."
 building_crop_auto_rule,Come la regola ({state})
 building_crop_auto_yes,sì
 building_crop_auto_no,no
@@ -2250,5 +2262,5 @@ carried_resource_tooltip_oat_cake,Galletta d'avena
 carried_resource_tooltip_straw,Paglia
 building_field,Campo con capanno
 build_bar_field_tooltip,Campo con capanno
-build_bar_field_description,"Un campo di 3×3 microcelle: terra dissodata dentro un recinto di pali e rami, con un cancellino e un piccolo capanno in un angolo per i bastoni da scavo e i falcetti. Ruota per scegliere l'angolo del capanno. Serve il piccone per dissodare. Otto lotti, uno per microcella di terra: ognuno si semina e si miete per conto suo, anche in più persone insieme. Solo semi domestici, 100 once per lotto."
+build_bar_field_description,"Un campo di 3×3 microcelle: terra dissodata dentro un recinto di pali e rami, con un cancellino e un piccolo capanno in un angolo per i bastoni da scavo e i falcetti. Ruota per scegliere l'angolo del capanno. Serve il piccone per dissodare. Otto lotti, uno per microcella di terra: ognuno si semina e si miete per conto suo, anche in più persone insieme. Solo semi domestici, 20 once per lotto."
 building_crop_lots_summary,"{total} lotti: vuoti {empty}, in semina {sowing}, seminati {sown}, germogliati {sprouted}, maturi {ready}"

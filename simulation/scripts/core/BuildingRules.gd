@@ -304,6 +304,12 @@ func can_be_village_center() -> bool:
 # risorsa domestica, si semina e si raccoglie quella, col nome domestico; nessun punto di addomesticazione (non servono
 # più). false = l'orto (semi selvatici, punti).
 @export var cultivation_domestic_only: bool = false
+# Appezzamenti (2026-11-15, richiesta utente — allargare il campo): lato massimo del quadrato, a partire dal capanno, dentro
+# cui il campo cresce (il campo 5; 0 = non si allarga). Agricoltura avanzata potrà alzarlo (fattoria).
+@export var field_max_side: int = 0
+# true = l'edificio è un appezzamento: si piazza solo accanto (un lato) a un campo finito, dentro il suo quadrato
+# field_max_side, mai toccando due campi (BuildingVerificationService.is_field_extension_spot, Criterio 15).
+@export var extends_field: bool = false
 
 # Moltiplicatore del recupero stamina per giorno quando un RestAction avviene in questo edificio
 # (2026-09-12, richiesta utente — campo base per la Rest Task esplicita: SOLO il dato in questo

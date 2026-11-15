@@ -16,7 +16,14 @@ extends RefCounted
 # mappa e anteprima con SmokehouseShape, qui solo l'icona (SmokehouseIcon).
 # Lo stesso per "drying_rack" (2026-10-31): mappa e anteprima con DryingRackShape, qui solo l'icona (DryingRackIcon).
 const TYPES: Array[String] = ["burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford",
-	"rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "clay_oven"]
+	"rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "clay_oven", "field_plot", "spinning_hut"]
+
+# Filatoio (2026-11-15, segnaposto), vista dall'alto: capanna col tetto di frasche e, davanti a est, un fuso piantato col
+# suo disco e una matassa di fibra di lino appesa a un paletto.
+const SPINNING_HUT_RECT := Rect2(-4.2, -3.2, 6.0, 6.0)
+const SPINNING_HUT_DOOR_RECT := Rect2(-2.0, 2.2, 1.6, 0.6)
+const SPINNING_FLAX_FIBER := Color(0.86, 0.82, 0.68, 1.0)
+const SPINNING_FLAX_FIBER_DARK := Color(0.70, 0.66, 0.52, 1.0)
 
 # Orto delle prove (2026-11-15, ramo piante), vista dall'alto: terra smossa a solchi, recinto alla buona di paletti storti
 # e radi (alcuni tratti legati, altri no) e un mucchietto di terra a est. Paletti: posizioni fisse un po' irregolari.
@@ -334,6 +341,33 @@ static func draw(
 			canvas.draw_line(p.call(COOP_ROOF_RECT.position.x, -1.9), p.call(COOP_ROOF_RECT.end.x, -1.9), tint.call(BRANCH_ROOF_DARK), w.call(0.35), true)
 			for grain in COOP_GRAIN:
 				canvas.draw_circle(p.call(grain.x, grain.y), w.call(0.25), tint.call(STRAW))
+		"spinning_hut":
+			var walls := Rect2(p.call(SPINNING_HUT_RECT.position.x, SPINNING_HUT_RECT.position.y), SPINNING_HUT_RECT.size * scale)
+			canvas.draw_rect(walls, tint.call(WOOD_DARK))
+			canvas.draw_rect(walls.grow(-float(w.call(0.45))), tint.call(BRANCH_ROOF))
+			canvas.draw_line(p.call(-1.2, SPINNING_HUT_RECT.position.y + 0.45), p.call(-1.2, SPINNING_HUT_RECT.end.y - 0.45),
+				tint.call(BRANCH_ROOF_DARK), w.call(0.35), true)
+			var door := Rect2(p.call(SPINNING_HUT_DOOR_RECT.position.x, SPINNING_HUT_DOOR_RECT.position.y), SPINNING_HUT_DOOR_RECT.size * scale)
+			canvas.draw_rect(door, tint.call(CLOTHING_HUT_DOOR))
+			# Fuso: asta col disco (fusaiola) e un po' di filo avvolto.
+			canvas.draw_line(p.call(3.2, -3.4), p.call(3.2, 1.4), tint.call(WOOD), w.call(0.3), true)
+			canvas.draw_circle(p.call(3.2, 0.6), w.call(0.8), tint.call(STONE))
+			canvas.draw_circle(p.call(3.2, -1.6), w.call(0.45), tint.call(SPINNING_FLAX_FIBER))
+			# Paletto con la matassa di fibra appesa.
+			canvas.draw_line(p.call(4.4, -1.0), p.call(4.4, 3.6), tint.call(WOOD_DARK), w.call(0.35), true)
+			for i in range(4):
+				var x := 3.8 + float(i) * 0.4
+				canvas.draw_line(p.call(4.4, -0.6), p.call(x, 2.6), tint.call(SPINNING_FLAX_FIBER if i % 2 == 0 else SPINNING_FLAX_FIBER_DARK),
+					w.call(0.22), true)
+		"field_plot":
+			# Appezzamento (2026-11-15): la stessa terra a solchi del campo (FieldShape) su tutta la microcella, con quattro
+			# paletti agli angoli dove arriverà il recinto.
+			canvas.draw_rect(Rect2(p.call(-5.0, -5.0), Vector2(10.0, 10.0) * scale), tint.call(GARDEN_SOIL))
+			for i in range(3):
+				var furrow_y := -2.8 + float(i) * 2.8
+				canvas.draw_line(p.call(-4.0, furrow_y), p.call(4.0, furrow_y + 0.15), tint.call(GARDEN_FURROW), w.call(0.4), true)
+			for stake in [Vector2(-4.3, -4.3), Vector2(4.3, -4.3), Vector2(4.3, 4.3), Vector2(-4.3, 4.3)]:
+				canvas.draw_circle(p.call(stake.x, stake.y), w.call(0.55), tint.call(WOOD_DARK))
 		"trial_garden":
 			var bed := Rect2(p.call(GARDEN_BED_RECT.position.x, GARDEN_BED_RECT.position.y), GARDEN_BED_RECT.size * scale)
 			canvas.draw_rect(bed, tint.call(GARDEN_SOIL))

@@ -8,6 +8,7 @@
 ; nel campo, l'orto ha il tetto 3). Soglia 3000
 ; (il cereale più difficile; segale 2500, avena 2000).
 ; Paglia: 1 ogni 10 misure di grano domestico mietuto (2026-11-15), quando avrà il seme domestico.
+; Scala (2026-11-15, richiesta utente: un lotto è 10×10 m): semina dell'orto 20 (era 50); punti orto 2/2/5 (erano 1/1/2) per compensare, paglia 0,5 per misura (era 0,1).
 [resource]
 script = ExtResource("1_wheat")
 species_name = "wheat"
@@ -21,11 +22,12 @@ points_per_meal = 5
 wild_points_cap = 900
 sowing_season = 3
 harvest_season = 2
-sown_units_per_lot = 50
+sown_units_per_lot = 20
 yield_per_unit = 10.0
-straw_per_unit = 0.1
-points_per_sown_unit = 1
-points_per_sprout = 1
-points_per_mature_plant = 2
+byproduct_resource_name = "straw"
+byproduct_per_unit = 0.5
+points_per_sown_unit = 2
+points_per_sprout = 2
+points_per_mature_plant = 5
 points_per_rotten_plant = 1
 crop_color = Color(0.86, 0.7, 0.32, 1)

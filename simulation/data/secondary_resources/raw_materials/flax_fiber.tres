@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_flax_fiber"]
+
+; Fibra di lino (2026-11-15, richiesta utente — ramo piante): gli steli del lino domestico, lasciati dalla Mietitura nello
+; stesso mucchio dei semi sul lotto come la paglia dei cereali (DomesticPlantRules.byproduct_per_unit). Il lino si coltiva
+; soprattutto per questa. Materia grezza, solo con la Filatura; va in un magazzino qualunque. Spazio 1, 365 giorni.
+; Serve alla corda di lino (flax_rope); più avanti filo e tela.
+[resource]
+script = ExtResource("1_flax_fiber")
+secondary_resource_name = "flax_fiber"
+calories_per_unit = 0.0
+category = 1
+required_idea_id = "spinning"
+day_durability = 365
+space_per_unit = 1.0

@@ -50,6 +50,11 @@ const ZONE_WEIGHT_SCALE: float = 10.0
 const HERD_STREAM_BANK_ENABLED := true
 const HERD_STREAM_BANK_DISTANCE: int = 4
 const HERD_STREAM_BANK_WEIGHT_FACTOR: float = 0.5
+# La griglia con la sponda porta questo segno: la lisciatura (simplify_path) non taglia una scorciatoia che costa più del
+# tratto saltato (tolleranza RESPECT_COST_TOLERANCE), altrimenti la linea dritta cancellerebbe la curva lungo la sponda.
+const RESPECT_COST_META := &"respect_cost"
+const RESPECT_COST_TOLERANCE: float = 0.02
+const COST_SAMPLE_STEP: float = 0.25
 # Nessuna macrocella per move_with_collision: niente rallentamento del guado.
 const NO_MACRO := Vector2i(-2147483648, -2147483648)
 # Preferenza per le strade (2026-10-16, richiesta utente): il vantaggio sul terreno normale (1 − costo) moltiplicato, solo
@@ -227,6 +232,7 @@ static func build_zone_grid(macro_coords: Vector2i, zone: PackedByteArray) -> AS
 	var grid := _build_animal_grid(cell, zone)
 	if with_banks:
 		_apply_stream_banks(cell, grid)
+		grid.set_meta(RESPECT_COST_META, true)
 	return grid
 
 
@@ -583,12 +589,20 @@ static func simplify_path(cell: LiveMacroCell, path: Array[Vector2i], zone_grid:
 	var first: Vector2i = path[0]
 	var last: Vector2i = path[path.size() - 1]
 	var result: Array[Vector2i] = [first]
+	# Griglia delle mandrie con la sponda (2026-11-15, HERD_STREAM_BANK_*): una scorciatoia vale solo se non costa più del
+	# pezzo di percorso che salta, così la curva lungo la sponda resta. Costo cumulato del percorso originale in `cumulative`.
+	var respect_cost := zone_grid != null and zone_grid.has_meta(RESPECT_COST_META)
+	var cumulative: PackedFloat32Array = _cumulative_cost(cell, path, zone_grid) if respect_cost else PackedFloat32Array()
 	var anchor := 0
 	var probe := anchor + 1
 	var max_weight := maxf(_weight_of(cell, path[anchor], zone_grid), _weight_of(cell, path[probe], zone_grid))
 	while probe < path.size() - 1:
 		var next_weight := maxf(max_weight, _weight_of(cell, path[probe + 1], zone_grid))
-		if _segment_clear(cell, path[anchor], path[probe + 1], next_weight, first, last, zone_grid):
+		var clear := _segment_clear(cell, path[anchor], path[probe + 1], next_weight, first, last, zone_grid)
+		if clear and respect_cost:
+			var span_cost := cumulative[probe + 1] - cumulative[anchor]
+			clear = _segment_cost(cell, path[anchor], path[probe + 1], zone_grid) <= span_cost * (1.0 + RESPECT_COST_TOLERANCE)
+		if clear:
 			probe += 1
 			max_weight = next_weight
 			continue
@@ -598,6 +612,34 @@ static func simplify_path(cell: LiveMacroCell, path: Array[Vector2i], zone_grid:
 		max_weight = maxf(_weight_of(cell, path[anchor], zone_grid), _weight_of(cell, path[probe], zone_grid))
 	result.append(last)
 	return result
+
+
+# Costo cumulato lungo `path`: a ogni passo la lunghezza per la media dei pesi delle due microcelle.
+static func _cumulative_cost(cell: LiveMacroCell, path: Array[Vector2i], zone_grid: AStarGrid2D) -> PackedFloat32Array:
+	var result := PackedFloat32Array()
+	result.resize(path.size())
+	result[0] = 0.0
+	for i in range(1, path.size()):
+		var step := Vector2(path[i] - path[i - 1]).length()
+		var weight := (_weight_of(cell, path[i - 1], zone_grid) + _weight_of(cell, path[i], zone_grid)) * 0.5
+		result[i] = result[i - 1] + step * weight
+	return result
+
+
+# Costo del segmento dritto dal centro di `a` al centro di `b`: campioni ogni COST_SAMPLE_STEP, peso della microcella sotto.
+static func _segment_cost(cell: LiveMacroCell, a: Vector2i, b: Vector2i, zone_grid: AStarGrid2D) -> float:
+	var start := Vector2(a) + Vector2(0.5, 0.5)
+	var direction := Vector2(b - a)
+	var length := direction.length()
+	if length <= 0.0:
+		return 0.0
+	var samples := maxi(ceili(length / COST_SAMPLE_STEP), 1)
+	var piece := length / float(samples)
+	var total := 0.0
+	for i in range(samples):
+		var point := start + direction * ((float(i) + 0.5) / float(samples))
+		total += piece * _weight_of(cell, Vector2i(point.floor()), zone_grid)
+	return total
 
 
 static func _weight_of(cell: LiveMacroCell, microcell: Vector2i, zone_grid: AStarGrid2D = null) -> float:

@@ -230,8 +230,17 @@ static func complete_demolition(ctx: GameContext, building: Building, demolisher
 		return rubbles
 	var salvaged: Dictionary = {}
 	if building.rules != null:
-		for material_name in building.rules.required_materials.keys():
-			var salvaged_quantity: int = floori(float(building.rules.required_materials[material_name]) / 2.0)
+		# Materiali davvero usati (2026-11-15, Building.built_materials: anche i sostituti e gli appezzamenti entrati);
+		# sconosciuti (salvataggi di prima) = quelli della scheda più gli appezzamenti.
+		var spent: Dictionary = building.built_materials.duplicate() if not building.built_materials.is_empty() \
+			else building.rules.required_materials.duplicate()
+		var plot_rules := BuildingCalculator.get_building_rules(FieldShape.PLOT_TYPE) \
+			if building.built_materials.is_empty() and not building.field_extra_cells.is_empty() else null
+		if plot_rules != null:
+			for material_name in plot_rules.required_materials.keys():
+				spent[material_name] = int(spent.get(material_name, 0)) + int(plot_rules.required_materials[material_name]) * building.field_extra_cells.size()
+		for material_name in spent.keys():
+			var salvaged_quantity: int = floori(float(spent[material_name]) / 2.0)
 			if salvaged_quantity > 0:
 				salvaged[material_name] = salvaged_quantity
 	var debris: int = WasteDisposalService.demolition_debris_quantity(building.rules)
@@ -321,7 +330,9 @@ static func demolish(ctx: GameContext, building: Building, effects: GameEffects,
 		var state := ctx.world.get_cell_state_at(building.macro_x, building.macro_y)
 		if state != null:
 			var current_building_space := state.get_dedicated_space(GameTypes.WorldObjectType.BUILDING)
-			state.set_dedicated_space(GameTypes.WorldObjectType.BUILDING, max(0, current_building_space - building.rules.required_space))
+			# Appezzamenti (2026-11-15): un campo allargato libera anche le sue microcelle in più.
+			var freed_space: int = building.rules.required_space + building.field_extra_cells.size()
+			state.set_dedicated_space(GameTypes.WorldObjectType.BUILDING, max(0, current_building_space - freed_space))
 	# 5) Rimozione vera dall'unica fonte di verità — is_demolished prima dell'erase, sullo stesso oggetto (chi ha una Task
 	# in corso verso questo edificio tiene un riferimento diretto che resta valido anche dopo, Building.is_demolished).
 	building.is_demolished = true
@@ -819,10 +830,18 @@ static func _consume_build_materials(building: Building) -> void:
 	if building.rules == null:
 		return
 	var used: Dictionary = {}
+	# Materiali con opzioni (2026-11-15): si consumano anche i sostituti arrivati al posto del materiale chiesto, e si
+	# ricorda cosa è stato usato davvero (Building.built_materials; un miglioramento resta sui materiali della scheda).
 	for resource_name in building.rules.required_materials.keys():
-		if building.stored_resources.has(resource_name):
-			used[resource_name] = int(building.stored_resources[resource_name].get("quantity", 0))
-		building.stored_resources.erase(resource_name)
+		for option_name in MaterialOptionsService.option_names(String(resource_name)):
+			if building.stored_resources.has(option_name):
+				used[option_name] = int(used.get(option_name, 0)) + int(building.stored_resources[option_name].get("quantity", 0))
+			building.stored_resources.erase(option_name)
+	# Il consumo passa due volte (enter_finishing e finish_building): la seconda, a cantiere vuoto, non cancella il conto.
+	if BuildingUpgradeService.is_upgrade_site(building):
+		building.built_materials = {}
+	elif not used.is_empty():
+		building.built_materials = used.duplicate()
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[MATERIAL USE] Building #%d %s: costruzione finita, consumati %s." % [building.id, building.get_display_name(), str(used)])
 
@@ -877,6 +896,44 @@ static func complete_construction(ctx: GameContext, building: Building, effects:
 		effects.refresh_panel(GameEffects.PanelKind.POPULATION)
 	effects.refresh_neighbors(building)
 	effects.refresh_building_cell(building)
+	if building.rules != null and building.rules.extends_field:
+		merge_field_plot(ctx, building, effects)
+
+
+# Appezzamento finito (2026-11-15, richiesta utente — passo 2): a terra tutta dissodata la sua microcella entra nel campo che
+# tocca (Building.field_extra_cells, in celle di base) e l'appezzamento sparisce come edificio. Lo spazio dedicato resta
+# riservato: passa al campo (la demolizione del campo lo libera tutto). Il lotto nuovo nasce vuoto (CultivationService.lots)
+# e si semina alla prossima Semina. Se nel frattempo il campo non c'è più (o ce ne sono due), resta un edificio a sé.
+static func merge_field_plot(ctx: GameContext, plot: Building, effects: GameEffects) -> void:
+	var macro_coords := Vector2i(plot.macro_x, plot.macro_y)
+	var microcell := Vector2i(plot.micro_x, plot.micro_y)
+	var field := BuildingVerificationService.find_extended_field(ctx.world, macro_coords, microcell)
+	if field == null or not field.is_complete:
+		return
+	var base := FieldShape.base_cell_of(field, microcell)
+	# Materiali usati (2026-11-15): quelli dell'appezzamento passano al campo, per il recupero della demolizione. Un campo
+	# senza conto (salvataggio di prima) parte dalla sua scheda più gli appezzamenti già entrati.
+	if field.built_materials.is_empty() and field.rules != null:
+		field.built_materials = field.rules.required_materials.duplicate()
+		var plot_rules := plot.rules
+		for material_name in plot_rules.required_materials.keys():
+			field.built_materials[material_name] = int(field.built_materials.get(material_name, 0)) \
+				+ int(plot_rules.required_materials[material_name]) * field.field_extra_cells.size()
+	var plot_used: Dictionary = plot.built_materials if not plot.built_materials.is_empty() else plot.rules.required_materials
+	for material_name in plot_used.keys():
+		field.built_materials[material_name] = int(field.built_materials.get(material_name, 0)) + int(plot_used[material_name])
+	if not field.field_extra_cells.has(base):
+		field.field_extra_cells.append(base)
+	plot.is_demolished = true
+	ctx.world.buildings.erase(plot)
+	effects.building_removed(plot.id)
+	effects.refresh_building_cell(plot)
+	effects.refresh_neighbors(plot)
+	effects.refresh_neighbors(field)
+	effects.refresh_panel(GameEffects.PanelKind.BUILDINGS)
+	DebugLogging.print_event("[FIELD] Appezzamento #%d entrato nel campo #%d (cella di base %s, %d lotti)." % [
+		plot.id, field.id, str(base), CultivationService.lots(field).size()
+	])
 
 
 # --- Villaggio (2026-10-12, Folk/Village) ---

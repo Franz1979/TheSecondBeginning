@@ -10,7 +10,8 @@ extends RefCounted
 # Rimetti in coda restano alla scena.
 # Roccia (collect_rock, tipo "clear_quarry", conta come la Cava): un lavoro ogni CHUNK estrazioni rimaste, ciascuno una
 # serie da CHUNK estrazioni sulla roccia per chiunque abbia il piccone; chi ha già un'estrazione su quella roccia
-# (ClearOrderService.rock_claimers) tiene uno dei lavori. Roccia esaurita: il segno si toglie qui.
+# (ClearOrderService.rock_claimers) tiene uno dei lavori. Roccia esaurita: il segno si toglie qui. Lo stesso per l'argilla
+# (KIND_CLAY, scavi sul giacimento, stesso tipo di lavoro).
 
 const KIND := "clear_cut"
 const ROCK_KIND := "clear_quarry"
@@ -88,26 +89,28 @@ static func collect_rock(ctx: GameContext, provider: Dictionary, _assigned: Dict
 	var order_index := 0
 	for order in ctx.game_data.clear_orders.values():
 		order_index += 1
-		if String(order.get("kind", "")) != ClearOrderService.KIND_ROCK:
+		var kind := String(order.get("kind", ""))
+		if kind != ClearOrderService.KIND_ROCK and kind != ClearOrderService.KIND_CLAY:
 			continue
+		var source := ClearOrderService.source_of(kind)
 		var macro := ClearOrderService.order_macro(order)
 		var lot := ClearOrderService.order_lot(order)
 		if not ctx.live_cells.has(macro):
 			continue
-		var extractions := ClearOrderService.count_extractions(ctx.live_cells, macro, lot)
-		var claimers := ClearOrderService.rock_claimers(ctx.individuals, macro, lot)
+		var extractions := ClearOrderService.count_extractions(ctx.live_cells, macro, lot, source)
+		var claimers := ClearOrderService.rock_claimers(ctx.individuals, macro, lot, source)
 		if extractions <= 0 and claimers.is_empty():
 			emptied.append(order)
 			continue
 		var job_count := maxi(ClearOrderService.jobs_for(extractions), claimers.size())
-		var name := GameContext.tr_text("job_clear_rock").format({"count": extractions})
+		var name := GameContext.tr_text("job_clear_clay" if kind == ClearOrderService.KIND_CLAY else "job_clear_rock").format({"count": extractions})
 		for i in range(job_count):
 			var job_claimers: Array[HumanIndividual] = []
 			if i < claimers.size():
 				job_claimers.append(claimers[i])
 			jobs.append({
 				"key": job_key(macro, lot, i, ROCK_KIND), "kind": ROCK_KIND, "name": name, "text": name,
-				"log_name": "sgombero della roccia %s in %s, lavoro %d" % [str(lot), str(macro), i + 1],
+				"log_name": "sgombero (%s) %s in %s, lavoro %d" % [kind, str(lot), str(macro), i + 1], "source": source,
 				"icon": {"command": "quarry"}, "macro": macro, "microcell": lot,
 				"reach_target": {"macro_x": macro.x, "macro_y": macro.y, "micro_x": lot.x, "micro_y": lot.y},
 				"entry_kind": "clear_order", "id": order_index, "sort": SORT_OFFSET + float(order_index) + float(i) * 0.01,
@@ -127,11 +130,12 @@ static func rejection_rock(ctx: GameContext, worker: HumanIndividual, job: Dicti
 		return tool_rejection
 	var macro: Vector2i = job["macro"]
 	var lot: Vector2i = job["cell"]
-	if ClearOrderService.count_extractions(ctx.live_cells, macro, lot) <= 0:
-		return "roccia esaurita"
+	var source := String(job.get("source", ExtractionSourceService.SOURCE_ROCK))
+	if ClearOrderService.count_extractions(ctx.live_cells, macro, lot, source) <= 0:
+		return "roccia o argilla esaurita"
 	if not HaulZoneService.is_cell_reachable(worker, macro, lot):
 		return "roccia non raggiungibile"
-	var probe := TaskBuilderService.build_quarry_task(worker, macro, lot, -1, {})
+	var probe := TaskBuilderService.build_quarry_task(worker, macro, lot, -1, {}, source)
 	if probe == null:
 		return "roccia non raggiungibile"
 	return worker.get_assign_rejection_reason(probe, ctx.age_band_of(worker))

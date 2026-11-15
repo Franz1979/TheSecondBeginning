@@ -53,7 +53,9 @@ const CLUSTER_BUILDING_PUSH_SPEED: float = 80.0
 const CLUSTER_SPAWN_MAX_ATTEMPTS: int = 20
 
 # Durata della fuga in giorni di gioco: 0.2 = 1.6 s reali a 1x (coniglio: ~7.6 microcelle a hop_speed 38).
-const FLEE_DURATION_DAYS: float = 0.1
+# 0.25 dal 2026-11-15 (era 0.1, richiesta utente — la fuga del cinghiale era un guizzo di 0.8 s): 2 s reali a 1x, una
+# corsa che si vede; il cinghiale insieme passa da hop_speed 25 a 15 (~3.75 microcelle di fuga).
+const FLEE_DURATION_DAYS: float = 0.25
 
 # Ferito più lento (2026-10-31, richiesta utente): velocità del singolo × (MIN + (1 - MIN) × salute/salute massima),
 # solo per lui, non per il suo gruppetto. 1.0 a salute piena, 0.75 a metà, verso WOUNDED_SPEED_MIN quasi morto.

@@ -1401,15 +1401,6 @@ func _rebuild_rows(names: Array[String]) -> void:
 				continue
 			if rules != null and rules.category == category:
 				category_names.append(resource_name)
-		if category == SecondaryResourceTypes.Category.GRAIN:
-			# Riserva per la semina (2026-11-15, StockReserveService): cosa vuol dire il minimo delle granaglie.
-			var grain_note := Label.new()
-			grain_note.text = tr("warehouse_grain_reserve_note")
-			grain_note.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 1)
-			grain_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			grain_note.custom_minimum_size.x = 0.0
-			grain_note.modulate = ZERO_QUANTITY_COLOR
-			box.add_child(grain_note)
 		var groups := _panel_groups(category_names)
 		if groups.is_empty():
 			box.add_child(_build_column_header())

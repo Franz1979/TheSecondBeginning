@@ -229,14 +229,15 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 		# file), fino al proprio tetto esatto ciascuna. STESSA struttura del ramo setup site sopra,
 		# fonte diversa (required_materials, non setup_site_material_name/per_cell) — un cantiere in
 		# Clear/Build NON è comunque un vero magazzino generico, accetta solo ciò che gli serve.
-		if not building.rules.required_materials.has(resource_name):
+		# Materiali con opzioni (2026-11-15): anche un sostituto di un materiale chiesto, finché il suo posto non è pieno
+		# (MaterialOptionsService).
+		var build_slot := MaterialOptionsService.slot_for(building.rules.required_materials, resource_name)
+		if build_slot == "":
 			return false
-		var required_build_quantity: int = int(building.rules.required_materials[resource_name])
+		var required_build_quantity: int = int(building.rules.required_materials[build_slot])
 		if required_build_quantity <= 0:
 			return false
-		var stored_build_entry: Dictionary = building.stored_resources.get(resource_name, {})
-		var stored_build_quantity: int = int(stored_build_entry.get("quantity", 0))
-		return stored_build_quantity < required_build_quantity
+		return MaterialOptionsService.missing(building.stored_resources, build_slot, required_build_quantity) > 0
 	# RAMO PRODUZIONE (2026-09-23, richiesta utente — ProduceAction): con una produzione in corso
 	# (Building.production_progress), i materiali di QUELLA ricetta sono accettati solo fino alla
 	# quantità esatta mancante, come un cantiere — indipendentemente dai filtri di categoria sotto
@@ -651,10 +652,14 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 			return max(required_quantity - current_quantity, 0)
 		# RAMO BUILD (2026-09-14, richiesta utente — "step 2 della build") — STESSO ramo/STESSA
 		# formula di can_accept sopra: rules.required_materials, non più setup_site_material_*.
-		if not building.rules.required_materials.has(resource_name):
+		# Materiali con opzioni (2026-11-15): un sostituto entra fino a riempire il posto del materiale chiesto, contato
+		# nelle sue unità (MaterialOptionsService).
+		var build_slot := MaterialOptionsService.slot_for(building.rules.required_materials, resource_name)
+		if build_slot == "":
 			return 0
-		var required_build_quantity: int = int(building.rules.required_materials[resource_name])
-		return max(required_build_quantity - current_quantity, 0)
+		var required_build_quantity: int = int(building.rules.required_materials[build_slot])
+		var slot_missing := MaterialOptionsService.missing(building.stored_resources, build_slot, required_build_quantity)
+		return MaterialOptionsService.units_needed(build_slot, resource_name, float(slot_missing))
 
 	# Ramo PRODUZIONE (2026-09-23, richiesta utente) — STESSA condizione di can_accept sopra: un input
 	# della ricetta in corso entra solo fino alla quantità esatta mancante, senza consultare gli slot.

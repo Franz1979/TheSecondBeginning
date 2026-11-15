@@ -3,7 +3,7 @@
 [ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_straw"]
 
 ; Paglia (2026-11-15, richiesta utente — ramo piante): steli secchi dei cereali DOMESTICI, lasciati dalla Mietitura nello
-; stesso mucchio dei semi sul lotto (DomesticPlantRules.straw_per_unit: orzo 1 ogni 10 misure). Materia grezza, solo con
+; stesso mucchio dei semi sul lotto (DomesticPlantRules.byproduct_per_unit: orzo 1 ogni 2 misure, dal 2026-11-15). Materia grezza, solo con
 ; l'Agricoltura. Si tiene solo nel pagliaio (storage_building_types, "haystack", edificio del passo 2): finché non c'è
 ; resta nel mucchio, che blocca la Semina del lotto, e marcisce (240 giorni, a terra il doppio più in fretta: ~120).
 ; Spazio 1 (leggera ma voluminosa). Usi futuri: tetti degli edifici agricoli avanzati, lettiera, stuoie, mattoni crudi.

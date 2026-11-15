@@ -109,6 +109,10 @@ static func is_position_buildable(
 		if rules.requires_narrow_stream and not StreamMicrocellService.is_ford_site(cell.stream_positions, microcell):
 			return false
 
+		# Criterio 15 (2026-11-15, appezzamenti): accanto a un campo finito, dentro il suo quadrato, mai tra due campi.
+		if rules.extends_field and not is_field_extension_spot(macro_world, macro_coords, microcell):
+			return false
+
 		# Criterio 11 (2026-10-16, Ceppo dell'insegnamento): serve almeno un ceppo d'albero sulla microcella.
 		if rules.requires_tree_stump and not has_required_tree_stump(cell.macro_state, microcell):
 			return false
@@ -135,6 +139,43 @@ static func is_position_buildable(
 		return false
 
 	return true
+
+
+# Criterio 15 (2026-11-15, richiesta utente — appezzamenti): `microcell` tocca per un lato (non di sbieco) le microcelle di
+# UN SOLO campo, finito, e sta dentro il suo quadrato di lato BuildingRules.field_max_side che parte dal capanno
+# (FieldShape.base_cell_of). Un campo ancora in costruzione accanto conta come "secondo campo": rifiuto. Le altre regole
+# (microcella libera, mucchi, piante) restano quelle di sempre.
+static func is_field_extension_spot(macro_world: World, macro_coords: Vector2i, microcell: Vector2i) -> bool:
+	var touched := find_extended_field(macro_world, macro_coords, microcell)
+	if touched == null or not touched.is_complete or touched.rules == null:
+		return false
+	var side := touched.rules.field_max_side
+	var base := FieldShape.base_cell_of(touched, microcell)
+	return base.x >= 0 and base.y >= 0 and base.x < side and base.y < side and not touched.field_extra_cells.has(base)
+
+
+# Campo che la microcella tocca per un lato (2026-11-15, appezzamenti): null se nessuno o se ne tocca due (anche un
+# cantiere di campo conta). Lo usa anche la fusione a costruzione finita (BuildingLifecycleService.merge_field_plot).
+static func find_extended_field(macro_world: World, macro_coords: Vector2i, microcell: Vector2i) -> Building:
+	if macro_world == null:
+		return null
+	var touched: Building = null
+	for building in macro_world.buildings:
+		if building.building_type_name != FieldShape.TYPE or building.is_demolished:
+			continue
+		if building.macro_x != macro_coords.x or building.macro_y != macro_coords.y:
+			continue
+		var touches := false
+		for cell in FieldShape.field_cells(building):
+			if absi(cell.x - microcell.x) + absi(cell.y - microcell.y) == 1:
+				touches = true
+				break
+		if not touches:
+			continue
+		if touched != null:
+			return null
+		touched = building
+	return touched
 
 
 # Rettangolo dell'edificio col mouse al centro (2026-10-17, ingombro): {"cell": LiveMacroCell, "anchor": Vector2i,

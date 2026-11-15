@@ -6477,20 +6477,23 @@ func _refresh_microcell_clear_action() -> void:
 		micro_cell_inspection_panel.set_clear_action(MicroCellInspectionPanel.CLEAR_ACTION_NONE)
 		return
 	var order := ClearOrderService.get_order(game_data, macro, lot)
-	var rock := ClearOrderService.is_rock_lot(live_cells, macro, lot)
+	var kind := ClearOrderService.kind_for_lot(live_cells, macro, lot)
 	if not order.is_empty():
-		rock = String(order.get("kind", "")) == ClearOrderService.KIND_ROCK
-	var amount := ClearOrderService.count_plants(live_cells, macro, lot)
-	if rock:
-		amount = ClearOrderService.count_extractions(live_cells, macro, lot)
+		kind = String(order.get("kind", ClearOrderService.KIND_PLANTS))
+	var amount := ClearOrderService.count_for(live_cells, macro, lot, kind) if kind != "" else 0
 	if not order.is_empty():
+		var status_key := "microcell_clear_status"
+		if kind == ClearOrderService.KIND_ROCK:
+			status_key = "microcell_clear_rock_status"
+		elif kind == ClearOrderService.KIND_CLAY:
+			status_key = "microcell_clear_clay_status"
 		micro_cell_inspection_panel.set_clear_action(MicroCellInspectionPanel.CLEAR_ACTION_UNMARK,
-			tr("microcell_clear_rock_status" if rock else "microcell_clear_status").format({"count": amount}), rock)
+			tr(status_key).format({"count": amount}), kind)
 		return
 	var can_mark := amount > 0 and _find_building_at_microcell(macro, lot) == null
 	can_mark = can_mark and FogOfWarVerificationService.is_detail_visible(live_cells, macro, lot, game_data.get_absolute_day())
 	micro_cell_inspection_panel.set_clear_action(
-		MicroCellInspectionPanel.CLEAR_ACTION_MARK if can_mark else MicroCellInspectionPanel.CLEAR_ACTION_NONE, "", rock)
+		MicroCellInspectionPanel.CLEAR_ACTION_MARK if can_mark else MicroCellInspectionPanel.CLEAR_ACTION_NONE, "", kind)
 
 
 # Comando manuale di scarico "U + destro" RIMOSSO (2026-09-27, richiesta utente): non serviva più e il suo bugfix
@@ -9360,7 +9363,7 @@ func _missing_materials_text(building: Building, for_repair: bool = false, recip
 		missing = MaterialSupplyService.get_missing_materials(building)
 	for resource_name in missing.keys():
 		# Combustibile (MaterialSupplyService.FUEL_KEY): una quantità di fuoco, non una risorsa.
-		var material_name := tr("material_fuel_label") if String(resource_name) == MaterialSupplyService.FUEL_KEY 			else IconRegistry.get_resource_display_name(String(resource_name))
+		var material_name := tr("material_fuel_label") if String(resource_name) == MaterialSupplyService.FUEL_KEY 			else MaterialOptionsService.display_name(String(resource_name))
 		parts.append("%d %s" % [ceili(float(missing[resource_name])), material_name])
 	return ", ".join(parts)
 
@@ -9929,10 +9932,19 @@ func _assign_clear_order_job(worker: HumanIndividual, job: Dictionary) -> void:
 func _assign_clear_rock_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var macro: Vector2i = job["macro"]
 	var lot: Vector2i = job["cell"]
-	if ClearOrderService.count_extractions(live_cells, macro, lot) <= 0:
+	var source := String(job.get("source", ExtractionSourceService.SOURCE_ROCK))
+	if ClearOrderService.count_extractions(live_cells, macro, lot, source) <= 0:
 		return
 	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, ClearOrderService.ROCK_TOOL_CATEGORIES)
-	_assign_quarry_task(worker, {"macro_coords": macro, "position": lot}, -1, ClearOrderService.make_rock_series(macro, lot), true)
+	var target := {"macro_coords": macro, "position": lot}
+	var series := ClearOrderService.make_rock_series(macro, lot, source)
+	# Argilla (2026-11-15): stesso lavoro, scavo del giacimento invece dell'estrazione dalla roccia.
+	if source == ExtractionSourceService.SOURCE_CLAY:
+		var effects := GameEffects.new()
+		ExtractionCommandService.assign_dig_clay(_game_context(), worker, target, effects, -1, series, true)
+		_apply_effects(effects)
+	else:
+		_assign_quarry_task(worker, target, -1, series, true)
 	var job_keys: Array[String] = [String(job["key"])]
 	_forget_job_board_wait(job_keys)
 	_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
@@ -9943,11 +9955,13 @@ func _assign_clear_rock_job(worker: HumanIndividual, job: Dictionary) -> void:
 # lampeggia sulla microcella. Chi sta già lavorando lì finisce la sua serie da 5.
 func _toggle_clear_order(macro: Vector2i, lot: Vector2i, marked: bool) -> void:
 	if marked:
-		var rock := ClearOrderService.is_rock_lot(live_cells, macro, lot)
-		ClearOrderService.mark(game_data, macro, lot, ClearOrderService.KIND_ROCK if rock else ClearOrderService.KIND_PLANTS)
+		var kind := ClearOrderService.kind_for_lot(live_cells, macro, lot)
+		if kind == "":
+			return
+		ClearOrderService.mark(game_data, macro, lot, kind)
 		var cell: LiveMacroCell = live_cells.get(macro)
 		if cell != null:
-			_spawn_command_icon_at_microcell(cell, lot, "quarry" if rock else "cut")
+			_spawn_command_icon_at_microcell(cell, lot, "cut" if kind == ClearOrderService.KIND_PLANTS else "quarry")
 	else:
 		ClearOrderService.unmark(game_data, macro, lot)
 	if _selection_kind == SelectionKind.MICROCELL and not selected_microcell.is_empty() \
@@ -10962,9 +10976,9 @@ func _shared_building_link_text(other: Building) -> String:
 			var required := 0
 			for material_name in other.rules.required_materials:
 				required += int(other.rules.required_materials[material_name])
-				var stored: Variant = other.stored_resources.get(material_name, {})
-				if stored is Dictionary:
-					delivered += int((stored as Dictionary).get("quantity", 0))
+				# Materiali con opzioni (2026-11-15): anche i sostituti consegnati.
+				delivered += mini(floori(MaterialOptionsService.covered(other.stored_resources, String(material_name)) + 0.0001),
+					int(other.rules.required_materials[material_name]))
 			parts.append(tr("building_layer_materials").format({"delivered": delivered, "required": required}))
 		if other.is_awaiting_material:
 			parts.append(tr("building_layer_awaiting_material"))
@@ -14971,6 +14985,12 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Forno d'argilla (2026-11-15) — azione cablata in BuildBar._ready.
 		&"build_clay_oven":
 			return "clay_oven"
+		# Appezzamento (2026-11-15) — azione cablata in BuildBar._ready.
+		&"build_field_plot":
+			return "field_plot"
+		# Filatoio (2026-11-15, segnaposto) — azione cablata in BuildBar._ready.
+		&"build_spinning_hut":
+			return "spinning_hut"
 		_:
 			return ""
 
@@ -16447,6 +16467,15 @@ func _is_placement_buildable_or_report(world_position: Vector2, rules: BuildingR
 		_report_command_rejection(stump_selected[0] if not stump_selected.is_empty() else null, tr("build_blocked_needs_tree_stump"))
 		_spawn_command_icon_at_microcell(footprint_placement["cell"], stump_micro, "task_rejected")
 		return false
+	# Appezzamento (2026-11-15): fuori posto rispetto al campo, il motivo con lo stesso canale.
+	if rules.extends_field and not footprint_placement.is_empty():
+		var plot_cell: LiveMacroCell = footprint_placement["cell"]
+		var plot_micro: Vector2i = footprint_placement["anchor"]
+		if not BuildingVerificationService.is_field_extension_spot(macro_world, Vector2i(plot_cell.macro_x, plot_cell.macro_y), plot_micro):
+			var plot_selected := _get_selected_individuals()
+			_report_command_rejection(plot_selected[0] if not plot_selected.is_empty() else null, tr("build_blocked_plot_needs_field"))
+			_spawn_command_icon_at_microcell(plot_cell, plot_micro, "task_rejected")
+			return false
 	# Porta su un ostacolo (2026-10-17): prima non c'era nessun messaggio.
 	if BuildingVerificationService.is_door_blocked(
 		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
@@ -17576,6 +17605,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"size": BuildingFootprint.size_of(building),
 				"rotation": building.rotation,
 				"id": building.id,
+				# Campo (2026-11-15, appezzamenti): la sua forma in celle di base, che il recinto segue (FieldShape.draw).
+				"field_cells": FieldShape.base_cells_of(building) if building.building_type_name == FieldShape.TYPE else ([] as Array[Vector2i]),
 				# "building_type_name" (2026-09-07, richiesta utente, Pebble Circle) — prima di
 				# questo passo tutti gli edifici erano capanne, quindi MicroCellRenderer._draw_
 				# buildings non aveva bisogno di distinguere: ora sì, vedi lì.

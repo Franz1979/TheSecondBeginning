@@ -498,6 +498,10 @@ func save_game_to_json(
 			# Terreno coltivato (2026-11-15, CultivationService).
 			"crop_species": building.crop_species,
 			"crop_lots": building.crop_lots.map(func(lot: CropLot) -> Dictionary: return lot.to_dict()),
+			# Appezzamenti entrati nel campo (2026-11-15).
+			"field_extra_cells": building.field_extra_cells.map(func(cell: Vector2i) -> Array: return [cell.x, cell.y]),
+			# Materiali davvero usati (2026-11-15, materiali con opzioni).
+			"built_materials": building.built_materials,
 			"crop_auto_mode": building.crop_auto_mode,
 			"soil_fertility": building.soil_fertility,
 			"fertility_tracking": building.fertility_tracking,

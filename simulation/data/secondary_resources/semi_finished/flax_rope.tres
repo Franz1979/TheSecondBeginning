@@ -3,8 +3,11 @@
 [ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_flax_rope"]
 
 ; Corda di lino (2026-11-15, richiesta utente): risorsa a sé, non sostituisce la corda di fibre; i suoi usi verranno
-; dopo. 3 lino selvatico, alla Capanna del vestiario (dove andranno anche filo e tela), coltello come la corda di fibre.
-; Ogni corda fatta dà 5 punti al Lino (flax.tres, points_per_product), dentro il tetto della raccolta.
+; dopo. 3 fibra di lino, alla Capanna del vestiario (dove andranno anche filo e tela), coltello come la corda di fibre.
+; Dal 2026-11-15 (richiesta utente) solo dalla fibra del lino domestico (flax_fiber), non più dal lino selvatico; niente
+; più punti al Lino per corda.
+; Sostituisce la corda di fibre alla pari (2026-11-15, richiesta utente — MaterialOptionsService): ovunque serve corda di
+; fibre si può portare anche corda di lino, la più vicina.
 [resource]
 script = ExtResource("1_flax_rope")
 secondary_resource_name = "flax_rope"
@@ -15,8 +18,12 @@ generation_source = 2
 day_durability = 1000
 space_per_unit = 2.0
 recipe_inputs = {
-"wild_flax": 3
+"flax_fiber": 3
 }
 recipe_labor = 150.0
 recipe_workstation_types = Array[String](["clothing_hut"])
 recipe_required_tool_categories = Array[int]([1])
+required_domesticated_species = Array[String](["flax"])
+substitutes = {
+"fiber_rope": 1.0
+}

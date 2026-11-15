@@ -51,8 +51,9 @@ func try_select(event: InputEvent, live_cells: Dictionary, buildings: Array, req
 			# CLICK_RADIUS_PX invece di 0 — un individuo, un mucchio o un altro oggetto sotto il click (entro il raggio) vince
 			# sempre, altrimenti dentro lo spiazzo non si selezionerebbe nient'altro. 1x1: dal centro, come prima.
 			if building.rules != null and BuildingFootprint.is_large(building.rules):
-				var rect := Rect2(Vector2(building.micro_x, building.micro_y) * CELL_SIZE, Vector2(BuildingFootprint.size_of(building)) * CELL_SIZE)
-				distance = LARGE_BUILDING_HIT_DISTANCE_PX if rect.has_point(local_mouse) else INF
+				# Appezzamenti (2026-11-15): le microcelle vere dell'edificio, non solo il rettangolo.
+				var hit_micro := Vector2i(floori(local_mouse.x / CELL_SIZE), floori(local_mouse.y / CELL_SIZE))
+				distance = LARGE_BUILDING_HIT_DISTANCE_PX if BuildingFootprint.covers(building, coords, hit_micro) else INF
 			# Strada sotto il cancello (2026-10-24): a pari distanza (stessa microcella) vince lo strato sopra, non di suolo.
 			var is_ground: bool = building.rules != null and building.rules.walkable
 			var beats_ground: bool = is_equal_approx(distance, best_distance) and not is_ground and best.get("is_ground", false)

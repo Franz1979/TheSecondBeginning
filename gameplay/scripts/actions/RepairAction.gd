@@ -105,8 +105,10 @@ static func get_supply_missing(building: Building) -> Dictionary:
 		materials = building.repair_plan.get(PLAN_MATERIALS, {})
 		consumed = building.repair_plan.get(PLAN_CONSUMED, {})
 	for material_name in materials.keys():
-		var units: int = int(materials[material_name]) - int(consumed.get(material_name, 0)) \
-			- int(building.repair_materials.get(material_name, 0))
+		# Materiali con opzioni (2026-11-15, passo 3): nel contenitore contano anche i sostituti (MaterialOptionsService);
+		# i consumati sono in unità del materiale chiesto.
+		var units: int = ceili(float(materials[material_name]) - float(consumed.get(material_name, 0))
+			- MaterialOptionsService.covered(building.repair_materials, String(material_name)) - PLAN_EPSILON)
 		if units > 0:
 			missing[String(material_name)] = units
 	return missing
@@ -161,22 +163,35 @@ func _allowed_repaired() -> float:
 	var allowed_ratio: float = 1.0
 	for material_name in materials.keys():
 		var required: int = int(materials[material_name])
-		var used: int = int(consumed.get(material_name, 0))
+		var used: float = float(consumed.get(material_name, 0))
+		# Materiali con opzioni (2026-11-15, passo 3): l'unità successiva è del materiale chiesto se c'è, altrimenti di un
+		# suo sostituto (in ordine di nome), che vale il suo valore (MaterialOptionsService).
+		var options := MaterialOptionsService.options_for(String(material_name))
+		var option_order: Array[String] = MaterialOptionsService.option_names(String(material_name))
+		option_order.erase(String(material_name))
+		option_order.sort()
+		option_order.push_front(String(material_name))
 		# Fetta corrente finita (o mai cominciata): consuma l'unità successiva, se c'è nel contenitore.
-		while used < required and repaired >= float(used) / float(required) * plan_range - PLAN_EPSILON \
-				and int(target_building.repair_materials.get(material_name, 0)) > 0:
-			var left: int = int(target_building.repair_materials[material_name]) - 1
+		while used < float(required) - PLAN_EPSILON and repaired >= used / float(required) * plan_range - PLAN_EPSILON:
+			var option_used := ""
+			for option_name in option_order:
+				if int(target_building.repair_materials.get(option_name, 0)) > 0:
+					option_used = option_name
+					break
+			if option_used == "":
+				break
+			var left: int = int(target_building.repair_materials[option_used]) - 1
 			if left > 0:
-				target_building.repair_materials[material_name] = left
+				target_building.repair_materials[option_used] = left
 			else:
-				target_building.repair_materials.erase(material_name)
-			used += 1
+				target_building.repair_materials.erase(option_used)
+			used += float(options[option_used])
 			if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
-				print("[MATERIAL USE] Building #%d %s: riparazione, consumata 1 unità di '%s' (%d/%d, ne restano %d nel contenitore)." % [
-					target_building.id, target_building.get_display_name(), material_name, used, required, maxi(left, 0)
+				print("[MATERIAL USE] Building #%d %s: riparazione, consumata 1 unità di '%s' per '%s' (%.1f/%d, ne restano %d nel contenitore)." % [
+					target_building.id, target_building.get_display_name(), option_used, material_name, used, required, maxi(left, 0)
 				])
 		consumed[material_name] = used
-		allowed_ratio = minf(allowed_ratio, float(used) / float(required))
+		allowed_ratio = minf(allowed_ratio, minf(used / float(required), 1.0))
 	plan[PLAN_CONSUMED] = consumed
 	return allowed_ratio * plan_range
 

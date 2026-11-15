@@ -549,10 +549,9 @@ static func _rubble_blocked_cells(game_data: GameData, world: World, macro_coord
 	for building in world.buildings:
 		if building.is_demolished or building.macro_x != macro_coords.x or building.macro_y != macro_coords.y:
 			continue
-		var rect_size := BuildingFootprint.size_of(building)
-		for dy in range(rect_size.y):
-			for dx in range(rect_size.x):
-				blocked[Vector2i(building.micro_x + dx, building.micro_y + dy)] = true
+		# Tutte le microcelle dell'edificio (2026-11-15: anche gli appezzamenti di un campo).
+		for microcell in BuildingFootprint.cells_of(building):
+			blocked[microcell] = true
 	return blocked
 
 

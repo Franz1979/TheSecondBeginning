@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_flax_seeds"]
+
+; Semi di lino (2026-11-15, richiesta utente — ramo piante): il seme del lino domestico (scheda
+; gameplay/domestic_plants/data/flax.tres, domestic_resource_name). Non si trova in natura: nasce dalla Mietitura dell'orto
+; seminato coi semi di lino selvatico dopo l'addomesticazione, poi dai campi. Granaglia nei vasi da semi, 1000 giorni; non
+; si mangia. Serve a ripiantare; più avanti l'olio. La parte grossa del raccolto è la fibra (flax_fiber).
+[resource]
+script = ExtResource("1_flax_seeds")
+secondary_resource_name = "flax_seeds"
+calories_per_unit = 0.0
+category = 6
+required_idea_id = "plant_domestication"
+day_durability = 1000
+space_per_unit = 0.5
+stored_in_container = "seed_jar"

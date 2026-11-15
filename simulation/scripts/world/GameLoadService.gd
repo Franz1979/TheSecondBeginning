@@ -843,6 +843,15 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			else:
 				building.crop_auto_mode = 0 if bool(building_data.get("crop_auto", true)) else 2
 			building.soil_fertility = float(building_data.get("soil_fertility", 1.0))
+			# Appezzamenti entrati nel campo (2026-11-15): assenti nei salvataggi precedenti.
+			building.field_extra_cells.clear()
+			for cell_data in building_data.get("field_extra_cells", []):
+				building.field_extra_cells.append(Vector2i(int(cell_data[0]), int(cell_data[1])))
+			# Materiali davvero usati (2026-11-15): assenti nei salvataggi precedenti (vale required_materials).
+			building.built_materials.clear()
+			var saved_built: Dictionary = building_data.get("built_materials", {})
+			for material_name in saved_built.keys():
+				building.built_materials[String(material_name)] = int(saved_built[material_name])
 			var saved_tracking = building_data.get("fertility_tracking", {})
 			building.fertility_tracking = saved_tracking if saved_tracking is Dictionary else {}
 			building.slaughter_above = maxi(int(building_data.get("slaughter_above", 0)), 0)

@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_flax_thread"]
+
+; Filo di lino (2026-11-15, richiesta utente — ricetta segnaposto, lasciata vuota apposta): si farà al Filatoio
+; (spinning_hut) torcendo la fibra di lino col fuso. Ingredienti, lavoro, attrezzi e usi (tessitura, vestiti) da decidere.
+; Oggi non si può produrre: il Filatoio non è ancora una postazione di lavoro (ProductionService.can_produce_at).
+[resource]
+script = ExtResource("1_flax_thread")
+secondary_resource_name = "flax_thread"
+calories_per_unit = 0.0
+category = 3
+required_idea_id = "spinning"
+generation_source = 2
+day_durability = 1000
+space_per_unit = 1.0
+recipe_workstation_types = Array[String](["spinning_hut"])

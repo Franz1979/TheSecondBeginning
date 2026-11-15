@@ -29,9 +29,21 @@ static func max_capacity(building: Building) -> int:
 	return BuildingToolkitService.units_for_rules(building.rules, CONTAINER) * StorageContainerService.unit_capacity(CONTAINER)
 
 
-# Livello della regola generale per il seme di questo campo (regola del WM "Semi nei campi").
+# Livello della regola generale per il seme di questo campo (regola del WM "Semi nei campi"). Senza un valore scritto nel WM
+# (2026-11-15, appezzamenti): la semina di TUTTI i lotti di questo campo (sowing_need), così un campo allargato tiene il
+# seme anche per gli appezzamenti; il WM mostra come riferimento default_level (il 3×3 di base).
 static func rule_level(game_data: GameData, building: Building) -> int:
-	return general_level(game_data, CultivationService.seed_resource(building))
+	var seed_name := CultivationService.seed_resource(building)
+	if game_data != null and game_data.stock_field_seeds.has(seed_name):
+		return int(game_data.stock_field_seeds[seed_name])
+	return sowing_need(building)
+
+
+# Once che servono per seminare tutti i lotti del campo adesso (2026-11-15, appezzamenti): lotti veri × once per lotto.
+static func sowing_need(building: Building) -> int:
+	if building == null or building.rules == null:
+		return 0
+	return CultivationService.lots(building).size() * building.rules.cultivation_units_per_lot
 
 
 # Valore della regola generale per `seed_name`: quello scritto nel WM, altrimenti default_level.
@@ -46,7 +58,7 @@ static var _default_level := 0
 static var _max_type_capacity := 0
 
 
-# Valore iniziale della regola: la semina di tutti i lotti di un campo, entro i suoi vasi (oggi 8 × 100, 8 vasi da 100 → 800).
+# Valore iniziale della regola: la semina di tutti i lotti di un campo, entro i suoi vasi (oggi 8 lotti × 20 = 160, entro 10 vasi da 50 = 500).
 static func default_level() -> int:
 	_prepare_type_cache()
 	return _default_level

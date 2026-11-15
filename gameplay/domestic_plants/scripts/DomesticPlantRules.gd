@@ -41,10 +41,12 @@ extends Resource
 @export var sown_units_per_lot: int = 0
 # Resa a regime: once raccolte per pianta matura con la specie domestica. Nell'orto: 1 + (resa - 1) × avanzamento.
 @export var yield_per_unit: float = 0.0
-# Paglia (2026-11-15, richiesta utente): once di paglia ("straw") per oncia di seme DOMESTICO mietuto (orzo 0,1 = 1 ogni
-# 10 misure), nell'orto e nel campo, nello stesso mucchio del raccolto sul lotto; solo con l'Agricoltura (la risorsa è
-# bloccata prima). 0 = niente paglia (il lino).
-@export var straw_per_unit: float = 0.0
+# Resa secondaria (2026-11-15, richiesta utente — era solo la paglia): risorsa che la Mietitura lascia nello stesso mucchio
+# del raccolto sul lotto, `byproduct_per_unit` once per oncia di seme DOMESTICO mietuto, nell'orto e nel campo; solo
+# quando la risorsa è sbloccata (la sua idea). Cereali: paglia ("straw"); lino: fibra di lino ("flax_fiber").
+# "" o 0 = nessuna.
+@export var byproduct_resource_name: String = ""
+@export var byproduct_per_unit: float = 0.0
 @export var points_per_sown_unit: int = 0
 @export var points_per_sprout: int = 0
 # Dal 2026-11-15 (richiesta utente) i punti della pianta matura si danno solo alla Mietitura, per pianta mietuta: chi non

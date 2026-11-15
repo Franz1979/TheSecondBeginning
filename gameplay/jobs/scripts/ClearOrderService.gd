@@ -14,6 +14,9 @@ extends RefCounted
 
 const KIND_PLANTS := "plants"
 const KIND_ROCK := "rock"
+# Argilla (2026-11-15, passo 3): come la roccia, serie da CHUNK scavi sul giacimento (fonte SOURCE_CLAY). Libera la
+# microcella per costruirci (BuildingVerificationService, criterio 14).
+const KIND_CLAY := "clay"
 # Segno sulla serie di estrazione di uno sgombero: la roccia presa da altri non ferma né rifiuta (ExtractionCommandService,
 # WorkFollowUpService.continue_quarry_rock_series).
 const SERIES_FLAG := "clear_order"
@@ -89,12 +92,41 @@ static func is_rock_lot(live_cells: Dictionary, macro_coords: Vector2i, lot: Vec
 	return cell != null and RockStoneService.is_standing_rock(cell.macro_state, lot)
 
 
-# Estrazioni che restano per esaurire la roccia della microcella. 0 se la cella non è viva o la roccia è finita.
-static func count_extractions(live_cells: Dictionary, macro_coords: Vector2i, lot: Vector2i) -> int:
+# true se sulla microcella c'è argilla da scavare (cella viva, nessun edificio sopra).
+static func is_clay_lot(live_cells: Dictionary, macro_coords: Vector2i, lot: Vector2i) -> bool:
+	var cell: LiveMacroCell = live_cells.get(macro_coords)
+	return cell != null and ClayDepositService.get_remaining(cell.macro_state, lot) > 0 and not QuarryZoneService.is_under_building(macro_coords, lot)
+
+
+# Tipo d'ordine che la microcella avrebbe: roccia, poi argilla, poi piante ("" se niente da togliere).
+static func kind_for_lot(live_cells: Dictionary, macro_coords: Vector2i, lot: Vector2i) -> String:
+	if is_rock_lot(live_cells, macro_coords, lot):
+		return KIND_ROCK
+	if is_clay_lot(live_cells, macro_coords, lot):
+		return KIND_CLAY
+	if count_plants(live_cells, macro_coords, lot) > 0:
+		return KIND_PLANTS
+	return ""
+
+
+# Fonte di estrazione di un ordine di roccia o d'argilla.
+static func source_of(kind: String) -> String:
+	return ExtractionSourceService.SOURCE_CLAY if kind == KIND_CLAY else ExtractionSourceService.SOURCE_ROCK
+
+
+# Estrazioni (o scavi) che restano per esaurire la fonte della microcella. 0 se la cella non è viva o è finita.
+static func count_extractions(live_cells: Dictionary, macro_coords: Vector2i, lot: Vector2i, source: String = ExtractionSourceService.SOURCE_ROCK) -> int:
 	var cell: LiveMacroCell = live_cells.get(macro_coords)
 	if cell == null or cell.macro_state == null:
 		return 0
-	return QuarryZoneService.extractions_to_deplete(cell.macro_state, lot)
+	return QuarryZoneService.extractions_to_deplete_source(source, cell.macro_state, lot)
+
+
+# Quanto resta da togliere per un ordine del tipo `kind`: piante, estrazioni o scavi.
+static func count_for(live_cells: Dictionary, macro_coords: Vector2i, lot: Vector2i, kind: String) -> int:
+	if kind == KIND_PLANTS:
+		return count_plants(live_cells, macro_coords, lot)
+	return count_extractions(live_cells, macro_coords, lot, source_of(kind))
 
 
 # Lavori per la microcella: uno ogni CHUNK piante o estrazioni, da 1 a MAX_WORKERS.
@@ -102,8 +134,8 @@ static func jobs_for(amount: int) -> int:
 	return clampi(ceili(float(amount) / float(CHUNK)), 1, MAX_WORKERS)
 
 
-# Chi ha un'estrazione sulla roccia (in corso o in coda), nell'ordine di `individuals`.
-static func rock_claimers(individuals: Array, macro_coords: Vector2i, rock: Vector2i) -> Array[HumanIndividual]:
+# Chi ha un'estrazione sulla roccia o sul giacimento (in corso o in coda), nell'ordine di `individuals`.
+static func rock_claimers(individuals: Array, macro_coords: Vector2i, rock: Vector2i, source: String = ExtractionSourceService.SOURCE_ROCK) -> Array[HumanIndividual]:
 	var result: Array[HumanIndividual] = []
 	for member in individuals:
 		var tasks: Array = member.task_queue.duplicate()
@@ -112,7 +144,7 @@ static func rock_claimers(individuals: Array, macro_coords: Vector2i, rock: Vect
 		var holds := false
 		for task in tasks:
 			for step in task.steps:
-				if step is QuarryAction and (step as QuarryAction).is_same_rock(macro_coords, rock):
+				if step is QuarryAction and (step as QuarryAction).is_same_rock(macro_coords, rock, source):
 					holds = true
 					break
 			if holds:
@@ -133,8 +165,8 @@ static func make_series(macro_coords: Vector2i, lot: Vector2i) -> Dictionary:
 
 
 # Serie di un lavoro sulla roccia: CHUNK estrazioni sulla roccia della microcella (finisce prima se si esaurisce).
-static func make_rock_series(macro_coords: Vector2i, lot: Vector2i) -> Dictionary:
-	var series := QuarryZoneService.make_rock_series(macro_coords, lot, CHUNK)
+static func make_rock_series(macro_coords: Vector2i, lot: Vector2i, source: String = ExtractionSourceService.SOURCE_ROCK) -> Dictionary:
+	var series := QuarryZoneService.make_rock_series(macro_coords, lot, CHUNK, source)
 	series[SERIES_FLAG] = true
 	return series
 

@@ -36,6 +36,11 @@ const KIND_CLEAR_PLANTS := "clear_plants"
 const KIND_CANCEL_CLEAR_PLANTS := "cancel_clear_plants"
 const KIND_CLEAR_ROCK := "clear_rock"
 const KIND_CANCEL_CLEAR_ROCK := "cancel_clear_rock"
+# Argilla (2026-11-15): chiazza d'argilla bassa con lo stesso piccone sopra.
+const KIND_CLEAR_CLAY := "clear_clay"
+const KIND_CANCEL_CLEAR_CLAY := "cancel_clear_clay"
+const CLAY := Color(0.72, 0.46, 0.30, 1.0)
+const CLAY_DARK := Color(0.55, 0.33, 0.20, 1.0)
 
 # Il disegno è pensato in un quadrato di DRAWING_SPAN unità, scalato al lato minore del rettangolo.
 const DRAWING_SPAN: float = 20.0
@@ -138,6 +143,11 @@ func _draw() -> void:
 		KIND_CANCEL_CLEAR_ROCK:
 			_draw_clear_rock()
 			_draw_cancel_cross()
+		KIND_CLEAR_CLAY:
+			_draw_clear_clay()
+		KIND_CANCEL_CLEAR_CLAY:
+			_draw_clear_clay()
+			_draw_cancel_cross()
 
 
 # Rimuovi tutto, piante: alberello a sinistra (chioma a punta e tronco), ascia inclinata a destra con la lama in alto.
@@ -160,6 +170,24 @@ func _draw_clear_rock() -> void:
 	], STONE)
 	var angle: float = -PI / 5.0
 	var pivot := Vector2(10.0, 7.0)
+	var handle: Array = [Vector2(-0.8, -2.0), Vector2(0.8, -2.0), Vector2(0.8, 11.0), Vector2(-0.8, 11.0)]
+	var head: Array = [
+		Vector2(-7.5, -1.0), Vector2(-3.0, -3.4), Vector2(3.0, -3.4), Vector2(7.5, -1.0), Vector2(3.0, -1.6),
+		Vector2(-3.0, -1.6),
+	]
+	_shape(_rotated(handle, angle, pivot), HAMMER_HANDLE)
+	_shape(_rotated(head, angle, pivot), HAMMER_HEAD)
+
+
+# Rimuovi tutto, argilla: chiazza piatta nella metà bassa con una zolla scavata più scura, piccone inclinato sopra.
+func _draw_clear_clay() -> void:
+	_shape([
+		Vector2(1.0, 17.0), Vector2(3.0, 14.0), Vector2(8.0, 13.0), Vector2(14.0, 13.5), Vector2(18.5, 15.5),
+		Vector2(18.0, 18.5), Vector2(10.0, 19.2), Vector2(2.5, 18.8),
+	], CLAY)
+	_shape([Vector2(7.0, 16.0), Vector2(9.5, 14.8), Vector2(12.5, 15.4), Vector2(11.5, 17.2), Vector2(8.2, 17.4)], CLAY_DARK)
+	var angle: float = -PI / 5.0
+	var pivot := Vector2(10.0, 6.0)
 	var handle: Array = [Vector2(-0.8, -2.0), Vector2(0.8, -2.0), Vector2(0.8, 11.0), Vector2(-0.8, 11.0)]
 	var head: Array = [
 		Vector2(-7.5, -1.0), Vector2(-3.0, -3.4), Vector2(3.0, -3.4), Vector2(7.5, -1.0), Vector2(3.0, -1.6),

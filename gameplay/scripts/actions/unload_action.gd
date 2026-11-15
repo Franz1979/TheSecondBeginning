@@ -240,7 +240,12 @@ func _is_physical() -> bool:
 
 # Unità di `resource_name` che il contenitore della riparazione accetta ancora (DepositKind.REPAIR).
 func _repair_room(resource_name: String) -> int:
-	return int(RepairAction.get_supply_missing(target_building).get(resource_name, 0))
+	# Materiali con opzioni (2026-11-15, passo 3): anche un sostituto, fino a riempire il posto che copre.
+	var missing := RepairAction.get_supply_missing(target_building)
+	var slot := MaterialOptionsService.slot_for(missing, resource_name)
+	if slot == "":
+		return 0
+	return MaterialOptionsService.units_needed(slot, resource_name, float(missing[slot]))
 
 
 # Scarico nel contenitore della riparazione: fino a quanto chiede ancora; ritorna le unità depositate.

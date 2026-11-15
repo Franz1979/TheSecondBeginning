@@ -121,9 +121,8 @@ func get_missing_materials() -> Dictionary:
 		var required: int = int(target_building.rules.required_materials[resource_name])
 		if required <= 0:
 			continue
-		var stored_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
-		var stored: int = int(stored_entry.get("quantity", 0))
-		var missing_quantity: int = max(required - stored, 0)
+		# Materiali con opzioni (2026-11-15): il posto conta anche i sostituti consegnati (MaterialOptionsService).
+		var missing_quantity: int = MaterialOptionsService.missing(target_building.stored_resources, String(resource_name), required)
 		if missing_quantity > 0:
 			missing[resource_name] = missing_quantity
 	return missing

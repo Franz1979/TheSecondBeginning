@@ -126,6 +126,9 @@ const RESOURCE_ICON_NODES := {
 	"wild_oats": preload("res://simulation/scripts/ui/WildOatsIcon.gd"),
 	# Lino selvatico (2026-11-15): steli con fiorellino azzurro (WildFlaxIcon).
 	"wild_flax": preload("res://simulation/scripts/ui/WildFlaxIcon.gd"),
+	"flax_seeds": preload("res://simulation/scripts/ui/FlaxSeedsIcon.gd"),
+	"flax_fiber": preload("res://simulation/scripts/ui/FlaxFiberIcon.gd"),
+	"flax_thread": preload("res://simulation/scripts/ui/FlaxThreadIcon.gd"),
 	# Attrezzi agricoli (2026-11-15): bastone da scavo e falcetto di selce, disegnati.
 	"digging_stick": preload("res://simulation/scripts/ui/DiggingStickIcon.gd"),
 	"flint_sickle": preload("res://simulation/scripts/ui/FlintSickleIcon.gd"),
@@ -252,6 +255,10 @@ const BUILDING_ICONS := {
 	"small_granary": "🌾",
 	# Forno d'argilla (2026-11-15) — emoji di riserva, la barra usa ClayOvenIcon.
 	"clay_oven": "🍞",
+	# Appezzamento (2026-11-15) — emoji di riserva, la barra usa FieldPlotIcon.
+	"field_plot": "🟫",
+	# Filatoio (2026-11-15, segnaposto) — emoji di riserva, la barra usa SpinningHutIcon.
+	"spinning_hut": "🧵",
 	# Capanna del contadino (2026-11-15) — emoji di riserva, la barra usa FarmerHutIcon.
 	"farmer_hut": "🧑‍🌾",
 	# Orto delle prove (2026-11-15) — emoji di riserva, la barra usa TrialGardenIcon.
@@ -330,6 +337,10 @@ const BUILDING_ICON_NODES := {
 	"small_granary": preload("res://simulation/scripts/ui/SmallGranaryIcon.gd"),
 	# Forno d'argilla (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
 	"clay_oven": preload("res://simulation/scripts/ui/ClayOvenIcon.gd"),
+	# Appezzamento (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
+	"field_plot": preload("res://simulation/scripts/ui/FieldPlotIcon.gd"),
+	# Filatoio (2026-11-15, segnaposto): lo stesso disegno della mappa (PlaceholderBuildingShapes).
+	"spinning_hut": preload("res://simulation/scripts/ui/SpinningHutIcon.gd"),
 	# Capanna del contadino (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
 	"farmer_hut": preload("res://simulation/scripts/ui/FarmerHutIcon.gd"),
 	# Orto delle prove (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).

@@ -108,6 +108,10 @@ extends Resource
 # Lista e non stringa come BuildingRules.required_domesticated_species, perché un attrezzo può servire a più specie.
 # Letto da ProductionService.is_species_ready (can_produce_at / is_recipe_known).
 @export var required_domesticated_species: Array[String] = []
+# Materiali che questa risorsa può sostituire (2026-11-15, richiesta utente — MaterialOptionsService): {chiesto: valore},
+# valore = quante unità del chiesto vale una unità di questa (1,0 = alla pari). Si dichiara sul sostituto, mai sul
+# materiale chiesto; vale in un senso solo. Es. corda di lino: {"fiber_rope": 1.0}.
+@export var substitutes: Dictionary = {}
 
 # Vedi SecondaryResourceTypes.GenerationSource — PURAMENTE descrittivo (documenta la provenienza
 # dello stock: pianta/animale vs sparso sul terreno), nessuna logica lo consulta. Default

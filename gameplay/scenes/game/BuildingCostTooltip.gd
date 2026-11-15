@@ -82,6 +82,14 @@ static func _build_materials_row(materials: Dictionary) -> HBoxContainer:
 		var item := HBoxContainer.new()
 		item.add_theme_constant_override("separation", ICON_QUANTITY_SEPARATION)
 		item.add_child(_build_resource_icon(String(material_name)))
+		# Materiali con opzioni (2026-11-15): "/" e l'icona di ogni sostituto già disponibile (MaterialOptionsService).
+		for substitute_name in MaterialOptionsService.known_substitute_names(String(material_name)):
+			var slash := Label.new()
+			slash.text = "/"
+			slash.add_theme_font_size_override("font_size", QUANTITY_FONT_SIZE)
+			slash.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			item.add_child(slash)
+			item.add_child(_build_resource_icon(substitute_name))
 		var quantity_label := Label.new()
 		quantity_label.text = str(quantity)
 		quantity_label.add_theme_font_size_override("font_size", QUANTITY_FONT_SIZE)

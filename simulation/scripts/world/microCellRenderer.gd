@@ -1713,7 +1713,9 @@ func _draw_buildings(canvas: CanvasItem) -> void:
 			continue
 		# Campo con capanno (2026-11-15): terra a solchi, capanno nell'angolo, recinto e cancellino (FieldShape).
 		if building_type_name == FieldShape.TYPE:
-			FieldShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH))
+			var field_cells: Array[Vector2i] = []
+			field_cells.assign(entry.get("field_cells", []))
+			FieldShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH), false, 1.0, field_cells)
 			continue
 		# Capanna del vestiario (2026-10-20): vista dall'alto, ruota con la porta (ClothingHutShape).
 		if building_type_name == ClothingHutShape.TYPE:

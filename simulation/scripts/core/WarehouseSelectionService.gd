@@ -381,7 +381,15 @@ static func _get_matching_stock(building: Building, criterion: Variant, min_quan
 			return matching_stock
 	var auto_rules := workstation_products_only and BuildingStorageService.is_workstation_source(building)
 	var candidate_names: Array = [single_name] if single_name != "" else building.stored_resources.keys()
-	if single_name == "":
+	# Elenco di nomi (2026-11-15, materiali con opzioni — MaterialOptionsService): solo quelli, come per il nome singolo.
+	if criterion is Array:
+		candidate_names = []
+		for option_name in criterion:
+			if building.stored_resources.has(String(option_name)) or building.production_output.has(String(option_name)):
+				candidate_names.append(String(option_name))
+		if candidate_names.is_empty():
+			return matching_stock
+	elif single_name == "":
 		for output_name in building.production_output.keys():
 			if not candidate_names.has(output_name):
 				candidate_names.append(output_name)
@@ -405,6 +413,8 @@ static func _get_matching_stock(building: Building, criterion: Variant, min_quan
 		elif criterion is String or criterion is StringName:
 			if resource_name == String(criterion):
 				matching_stock[resource_name] = quantity
+		elif criterion is Array:
+			matching_stock[resource_name] = quantity
 		else:
 			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
 			if rules != null and rules.category == int(criterion):

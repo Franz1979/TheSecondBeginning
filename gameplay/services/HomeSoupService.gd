@@ -253,13 +253,11 @@ static func plan_cooking(individual: HumanIndividual, world: World, verbose: boo
 			totals[resource_name] = int(totals.get(resource_name, 0)) + int(stock[resource_name])
 	if int(totals.get(BONE, 0)) < SOUP_BONES:
 		return _no(verbose, individual, "%s nei magazzini %d < %d" % [BONE, int(totals.get(BONE, 0)), SOUP_BONES])
-	# Riserva per la semina (2026-11-15): la zuppa usa solo le granaglie sopra il minimo del WM (StockReserveService).
-	var grain_totals := totals.duplicate()
-	for seed_name in seed_names:
-		grain_totals[seed_name] = StockReserveService.usable(GameSettings.active_game_data, seed_name, int(totals.get(seed_name, 0)))
-	var seeds := _pick_seeds(seed_names, grain_totals)
+	# Niente riserva per la semina (tolta il 2026-11-15, richiesta utente): il minimo del WM fa partire le raccolte e non può
+	# anche bloccare la zuppa; i semi dei campi stanno nei loro capanni (FieldSeedStoreService).
+	var seeds := _pick_seeds(seed_names, totals)
 	if seeds.is_empty():
-		return _no(verbose, individual, "granaglie sopra la riserva per la semina meno di %d once" % SOUP_SEEDS)
+		return _no(verbose, individual, "granaglie nei magazzini meno di %d once" % SOUP_SEEDS)
 	if take_bowl and int(totals.get(BOWL, 0)) < 1:
 		return _no(verbose, individual, "in casa non c'è la ciotola e nei magazzini nemmeno")
 	var ingredients := {BONE: SOUP_BONES}
@@ -373,14 +371,31 @@ static func _stock_at(building: Building, names: Array) -> Dictionary:
 	return stock
 
 
-# Magazzino più vicino a `origin` (riferimento di `individual`) che ha almeno una delle cose in `needs`; null se nessuno.
+# Magazzino per la prossima tappa: tra quelli che hanno almeno una delle cose in `needs`, quello che ne ha più tipi
+# (2026-11-15, richiesta utente: meno tappe — prima il più vicino con una cosa sola, es. ossa al deposito, poi l'orzo
+# altrove anche se un magazzino aveva entrambi); a parità il più vicino a `origin`. Se nessuno di quelli con più tipi è
+# raggiungibile, si scende di un tipo. null se nessuno.
 static func _nearest_with(individual: HumanIndividual, world: World, origin: Vector2, needs: Dictionary, excluded: Array) -> Building:
 	var names := needs.keys()
-	var has_some := func(building: Building) -> bool:
-		return _is_source(building) and not _stock_at(building, names).is_empty()
-	return SpatialSelectionService.find_nearest(
-		world.buildings, origin, individual.home_macro_coords, has_some, excluded, PathfindingService.reachability_for(individual)
-	) as Building
+	var kinds_by_id: Dictionary = {}
+	var most := 0
+	for building in world.buildings:
+		if excluded.has(building.id) or not _is_source(building):
+			continue
+		var kinds := _stock_at(building, names).size()
+		if kinds > 0:
+			kinds_by_id[building.id] = kinds
+			most = maxi(most, kinds)
+	var reachable := PathfindingService.reachability_for(individual)
+	for wanted in range(most, 0, -1):
+		var has_wanted := func(building: Building) -> bool:
+			return int(kinds_by_id.get(building.id, 0)) == wanted
+		var found := SpatialSelectionService.find_nearest(
+			world.buildings, origin, individual.home_macro_coords, has_wanted, excluded, reachable
+		) as Building
+		if found != null:
+			return found
+	return null
 
 
 # Percorso di raccolta: dal punto dell'individuo il magazzino più vicino con qualcosa che manca, poi il più vicino da lì,

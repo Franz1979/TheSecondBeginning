@@ -41,11 +41,12 @@ static func make_series(area_id: int, target: int, source: String = ExtractionSo
 # stesse chiavi della serie in zona, con "work_area_id" -1 e la roccia fissata ("rock_macro_x/y" più "rock_x/y"), come la
 # serie di cella del taglio (CutZoneService.make_cell_series). `target` senza il limite COUNT_MAX: per tutta la roccia le
 # estrazioni che le restano all'ordine. Finisce senza messaggi quando la roccia è esaurita, anche prima di `target`.
-static func make_rock_series(macro_coords: Vector2i, rock: Vector2i, target: int) -> Dictionary:
+# `source` (2026-11-15, sgombero dell'argilla): anche un giacimento d'argilla, sempre la stessa microcella.
+static func make_rock_series(macro_coords: Vector2i, rock: Vector2i, target: int, source: String = ExtractionSourceService.SOURCE_ROCK) -> Dictionary:
 	return {
 		"id": "%d-%d" % [Time.get_ticks_usec(), randi()], "work_area_id": -1,
 		"done": 0, "target": maxi(target, 1), "rock_x": rock.x, "rock_y": rock.y,
-		"rock_macro_x": macro_coords.x, "rock_macro_y": macro_coords.y, "source": ExtractionSourceService.SOURCE_ROCK,
+		"rock_macro_x": macro_coords.x, "rock_macro_y": macro_coords.y, "source": source,
 	}
 
 
@@ -63,6 +64,16 @@ static func get_rock_series_rock(series: Dictionary) -> Vector2i:
 
 # Estrazioni che servono per esaurire la roccia in `position` (regole di estrazione di rock_density.tres): pietra rimasta
 # diviso quanta ne toglie un'estrazione, per eccesso. 0 = roccia esaurita o pietra non estraibile.
+# Come extractions_to_deplete per qualunque fonte (roccia o argilla).
+static func extractions_to_deplete_source(source: String, macro_state: MacroCellState, position: Vector2i) -> int:
+	if source == ExtractionSourceService.SOURCE_ROCK:
+		return extractions_to_deplete(macro_state, position)
+	var per_extraction := ExtractionSourceService.units_per_extraction(source)
+	if per_extraction <= 0:
+		return 0
+	return ceili(float(ExtractionSourceService.get_remaining(source, macro_state, position)) / float(per_extraction))
+
+
 static func extractions_to_deplete(macro_state: MacroCellState, position: Vector2i) -> int:
 	var rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
 	if rules == null or rules.extraction_units_per_extraction <= 0:

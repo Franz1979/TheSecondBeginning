@@ -13,6 +13,8 @@ extends RefCounted
 # `center`: centro del rettangolo 3×3 nello spazio del canvas; `scale`: pixel per unità (1.0 sulla mappa: 10 px a cella).
 
 const TYPE := "field"
+# Appezzamento (2026-11-15): l'edificio 1×1 che, finito, entra nel campo (BuildingLifecycleService.merge_field_plot).
+const PLOT_TYPE := "field_plot"
 const CELL := 10.0
 const SHED_CELL := Vector2i(0, 0)
 const GATE_CELL := Vector2i(1, 0)
@@ -37,7 +39,7 @@ static func world_cells(building: Building, include_shed: bool = false) -> Array
 	var result: Array[Vector2i] = []
 	var turns := posmod(int(building.rotation) - int(GameTypes.Direction.SOUTH), 4)
 	var center := Vector2i(building.micro_x, building.micro_y) + BASE_SIZE / 2
-	for cell in base_cells():
+	for cell in base_cells_of(building):
 		if cell == SHED_CELL and not include_shed:
 			continue
 		var offset := cell - BASE_SIZE / 2
@@ -45,6 +47,34 @@ static func world_cells(building: Building, include_shed: bool = false) -> Array
 			offset = Vector2i(-offset.y, offset.x)
 		result.append(center + offset)
 	return result
+
+
+# Tutte le microcelle del campo nella macrocella, capanno compreso (2026-11-15, appezzamenti): il 3×3 e gli appezzamenti
+# entrati (Building.field_extra_cells).
+static func field_cells(building: Building) -> Array[Vector2i]:
+	return world_cells(building, true)
+
+
+# Celle del campo in coordinate di griglia NON ruotate (2026-11-15, appezzamenti): il 3×3 di base più gli appezzamenti
+# entrati. È la forma che il disegno (draw, `cells`) segue col recinto.
+static func base_cells_of(building: Building) -> Array[Vector2i]:
+	var cells := base_cells()
+	if building != null:
+		for cell in building.field_extra_cells:
+			if not cells.has(cell):
+				cells.append(cell)
+	return cells
+
+
+# Inverso di world_cells (2026-11-15, appezzamenti): la microcella `microcell` della macrocella nelle coordinate di griglia
+# NON ruotate del campo, (0,0) = il capanno; fuori dal 3×3 continua (es. (4,4) = l'angolo opposto del quadrato 5×5).
+static func base_cell_of(building: Building, microcell: Vector2i) -> Vector2i:
+	var turns := posmod(int(building.rotation) - int(GameTypes.Direction.SOUTH), 4)
+	var center := Vector2i(building.micro_x, building.micro_y) + BASE_SIZE / 2
+	var offset := microcell - center
+	for i in range(turns):
+		offset = Vector2i(offset.y, -offset.x)
+	return offset + BASE_SIZE / 2
 
 
 static func base_cells() -> Array[Vector2i]:

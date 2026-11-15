@@ -71,16 +71,27 @@ func _ready() -> void:
 
 
 # `action`: CLEAR_ACTION_MARK ("Rimuovi tutto"), CLEAR_ACTION_UNMARK ("Annulla rimozione") o CLEAR_ACTION_NONE (nascosto).
-# `status`: riga sopra il pulsante ("" = nessuna). `rock`: icona e testi della roccia (piccone) invece delle piante (ascia).
-func set_clear_action(action: String, status: String = "", rock: bool = false) -> void:
+# `status`: riga sopra il pulsante ("" = nessuna). `kind`: tipo d'ordine (ClearOrderService.KIND_*), sceglie icona e testi:
+# piante (ascia), roccia (piccone) o argilla (piccone sulla chiazza).
+func set_clear_action(action: String, status: String = "", kind: String = ClearOrderService.KIND_PLANTS) -> void:
 	_clear_action = action
 	_clear_row.visible = action != CLEAR_ACTION_NONE
-	if action == CLEAR_ACTION_UNMARK:
-		_clear_icon.kind = BuildingCommandIcon.KIND_CANCEL_CLEAR_ROCK if rock else BuildingCommandIcon.KIND_CANCEL_CLEAR_PLANTS
+	var cancel := action == CLEAR_ACTION_UNMARK
+	match kind:
+		ClearOrderService.KIND_ROCK:
+			_clear_icon.kind = BuildingCommandIcon.KIND_CANCEL_CLEAR_ROCK if cancel else BuildingCommandIcon.KIND_CLEAR_ROCK
+		ClearOrderService.KIND_CLAY:
+			_clear_icon.kind = BuildingCommandIcon.KIND_CANCEL_CLEAR_CLAY if cancel else BuildingCommandIcon.KIND_CLEAR_CLAY
+		_:
+			_clear_icon.kind = BuildingCommandIcon.KIND_CANCEL_CLEAR_PLANTS if cancel else BuildingCommandIcon.KIND_CLEAR_PLANTS
+	if cancel:
 		_clear_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("microcell_clear_cancel_button"), tr("microcell_clear_cancel_detail")])
 	else:
-		_clear_icon.kind = BuildingCommandIcon.KIND_CLEAR_ROCK if rock else BuildingCommandIcon.KIND_CLEAR_PLANTS
-		var detail := tr("microcell_clear_rock_detail") if rock else tr("microcell_clear_plants_detail")
+		var detail := tr("microcell_clear_plants_detail")
+		if kind == ClearOrderService.KIND_ROCK:
+			detail = tr("microcell_clear_rock_detail")
+		elif kind == ClearOrderService.KIND_CLAY:
+			detail = tr("microcell_clear_clay_detail")
 		_clear_button.tooltip_text = TooltipText.wrap("%s\n%s" % [tr("microcell_clear_button"), detail])
 	_clear_status_label.text = status
 	_clear_status_label.visible = status != ""

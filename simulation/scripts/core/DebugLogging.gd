@@ -275,7 +275,7 @@ const SHOW_REST_CHOICE_LOGS := false
 const SHOW_TRANSPORT_BUILD_LOGS := false
 # Zuppa di casa (2026-11-07, HomeSoupService): piano, tappe, prese, cottura e, col tasto M di debug, il motivo per cui
 # non si può cucinare.
-const SHOW_SOUP_LOGS := false
+const SHOW_SOUP_LOGS := true
 # FISH — [FISH] pesca (2026-10-31, prove della pesca nelle zone): tentativi, fine sessione o viaggio, cambio di punto
 # (FishAction), pesci consegnati (unload_action.gd), pesca successiva e fine della serie (WorkFollowUpService). Temporaneo:
 # da spegnere quando la pesca nelle zone funziona.
@@ -358,11 +358,11 @@ const SHOW_PATHFINDING_LOGS := false
 # tempo medio per frame speso nel _process di TUTTI gli AnimalGroupRenderer, e di cui nel controllo
 # periodico di disagio (AnimalGroupRenderer._run_disturbance_check), con numero di renderer e individui.
 # Solo misura, nessun effetto sul comportamento.
-const SHOW_ANIMAL_PROCESS_TIMING := true
+const SHOW_ANIMAL_PROCESS_TIMING := false
 
 # HERD_HABIT — [HERD] (2026-11-14, mete abituali delle mandrie passo 1, TEMPORANEO): mete scelte (HerdHabitService),
 # partenza verso una meta, arrivo e sosta (AnimalGroupRenderer, "Mete abituali").
-const SHOW_HERD_HABIT_LOGS := true
+const SHOW_HERD_HABIT_LOGS := false
 
 
 # SAFETY — [ZOMBIE GUARD] (TaskQueueService/HumanIndividualActionService/HumanIndividual),
@@ -468,7 +468,7 @@ const SHOW_SOCIAL_RITE_LOGS := false
 
 # Trappole (2026-11-07, TrapService — rete per uccelli): una riga [TRAP] quando cambia il posto scelto in una zona (o non
 # ce n'è), alla presa della trappola all'edificio e al montaggio (dove, usi, indice). Acceso per le prime prove.
-const SHOW_TRAP_LOGS := true
+const SHOW_TRAP_LOGS := false
 
 # Guardia dei cani (DomesticAnimalGuardService): righe [DOMESTIC GUARD] (abbaia, va incontro, morde, torna dal branco).
 const SHOW_DOMESTIC_GUARD_LOGS := false

@@ -2,9 +2,13 @@
 
 [ext_resource type="Script" path="res://gameplay/domestic_plants/scripts/DomesticPlantRules.gd" id="1_flax"]
 
-; Lino (2026-11-15, richiesta utente — ramo piante): dal lino selvatico (wild_flax, dopo Filatura). Raccolta (1 punto
-; ogni 5) e corda di lino (5 punti l'una, al posto della zuppa) fino a 1200 punti (30%), poi solo l'orto delle prove:
-; semina in primavera, raccolto in estate (50, punti 1/1/2, resa a regime 5, TrialGardenService). Soglia 4000.
+; Lino (2026-11-15, richiesta utente — ramo piante): dai semi di lino selvatico (wild_flax, dopo Filatura). Fase selvatica
+; solo con la raccolta (1 punto ogni 2 semi, rivisto il 2026-11-15: la corda non si fa più col selvatico) fino a 1200 punti
+; (30%), poi solo l'orto delle prove: semina in primavera, raccolto in estate (TrialGardenService). Soglia 4000.
+; Domestico (2026-11-15, richiesta utente): si coltiva per la fibra. La Mietitura dà i semi di lino (flax_seeds, per
+; ripiantare e più avanti l'olio) e, come resa secondaria, la fibra di lino (flax_fiber, per la corda, poi filo e tela).
+; Quantità decise con l'utente: resa a regime 2 semi per seme (20 seminati -> 40), 4 di fibra per seme mietuto (160 a lotto).
+; Scala (2026-11-15, richiesta utente: un lotto è 10×10 m): semina dell'orto 20 (era 50); punti orto 2/2/5 (erano 1/1/2) per compensare.
 [resource]
 script = ExtResource("1_flax")
 species_name = "flax"
@@ -12,17 +16,18 @@ display_name = "domestic_plant_flax"
 wild_display_name = "wild_plant_flax"
 domestication_points_required = 4000
 harvest_resource_name = "wild_flax"
-harvested_units_per_point = 5
+harvested_units_per_point = 2
+domestic_resource_name = "flax_seeds"
 points_per_meal = 0
 wild_points_cap = 1200
-product_resource_name = "flax_rope"
-points_per_product = 5
 sowing_season = 1
 harvest_season = 2
-sown_units_per_lot = 50
-yield_per_unit = 5.0
-points_per_sown_unit = 1
-points_per_sprout = 1
-points_per_mature_plant = 2
+sown_units_per_lot = 20
+yield_per_unit = 2.0
+byproduct_resource_name = "flax_fiber"
+byproduct_per_unit = 4.0
+points_per_sown_unit = 2
+points_per_sprout = 2
+points_per_mature_plant = 5
 points_per_rotten_plant = 1
 crop_color = Color(0.5, 0.62, 0.95, 1)

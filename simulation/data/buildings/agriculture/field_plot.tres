@@ -1,0 +1,32 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_field_plot"]
+
+; Appezzamento (2026-11-15, richiesta utente — allargare il campo): una microcella di terra da dissodare accanto a un campo
+; finito, dentro il suo quadrato di 5×5 a partire dal capanno (field.tres field_max_side), mai toccando due campi
+; (extends_field, Criterio 15). Costi decisi: 6 legna, 6 bastoni, 6 corde (il pezzo di recinto), 500 di lavoro, piccone
+; obbligatorio come il campo. Passo 1: si piazza e si costruisce come un edificio a sé; col passo 2, finito, entrerà nel
+; campo come lotto nuovo. Le persone ci camminano a caro prezzo e gli animali no, come sul campo.
+[resource]
+script = ExtResource("1_field_plot")
+building_name = "building_field_plot"
+category = 12
+required_idea_id = "agriculture"
+min_construction_days = 1
+required_labor = 500
+max_builders = 1
+construction_tool_categories = Array[int]([2])
+lifespan_years = 20
+max_durability = 100
+defense = 5
+required_materials = {
+"fiber_rope": 6,
+"stick": 6,
+"wood": 6
+}
+required_space = 1
+has_door = false
+visibility_radius = 1
+extends_field = true
+people_path_weight_scale = 8.0
+closed_to_animals = true

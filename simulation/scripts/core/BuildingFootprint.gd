@@ -46,7 +46,11 @@ static func cells(anchor: Vector2i, rect_size: Vector2i) -> Array[Vector2i]:
 	return result
 
 
+# Appezzamenti (2026-11-15): un campo allargato occupa anche le sue microcelle in più (FieldShape.field_cells); il
+# rettangolo (size_of, ancora, centro) resta il 3×3 di base.
 static func cells_of(building: Building) -> Array[Vector2i]:
+	if not building.field_extra_cells.is_empty():
+		return FieldShape.field_cells(building)
 	return cells(Vector2i(building.micro_x, building.micro_y), size_of(building))
 
 
@@ -75,6 +79,8 @@ static func count_cells_in(building: Building, positions: Variant) -> int:
 static func covers(building: Building, macro: Vector2i, micro: Vector2i) -> bool:
 	if building.macro_x != macro.x or building.macro_y != macro.y:
 		return false
+	if not building.field_extra_cells.is_empty():
+		return cells_of(building).has(micro)
 	var rect_size := size_of(building)
 	return micro.x >= building.micro_x and micro.y >= building.micro_y \
 		and micro.x < building.micro_x + rect_size.x and micro.y < building.micro_y + rect_size.y

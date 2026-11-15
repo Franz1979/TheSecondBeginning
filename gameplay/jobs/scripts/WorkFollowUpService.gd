@@ -351,8 +351,9 @@ static func continue_quarry_series(ctx: GameContext, worker: HumanIndividual, se
 static func continue_quarry_rock_series(ctx: GameContext, worker: HumanIndividual, series: Dictionary, effects: GameEffects) -> void:
 	var macro_coords := QuarryZoneService.get_rock_series_macro_coords(series)
 	var rock := QuarryZoneService.get_rock_series_rock(series)
+	var source := QuarryZoneService.get_series_source(series)
 	var cell: LiveMacroCell = ctx.live_cells.get(macro_coords)
-	if cell == null or cell.macro_state == null or RockStoneService.get_remaining_stone(cell.macro_state, rock) <= 0:
+	if cell == null or cell.macro_state == null or ExtractionSourceService.get_remaining(source, cell.macro_state, rock) <= 0:
 		temp_series_log(worker, "cava: serie %s, roccia esaurita o cella spenta." % str(series))
 		return
 	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.DIGGING):
@@ -365,7 +366,7 @@ static func continue_quarry_rock_series(ctx: GameContext, worker: HumanIndividua
 	if not shared and QuarryZoneService.collect_reserved_rocks(ctx.individuals).has(QuarryZoneService.rock_reservation_key(macro_coords, rock)):
 		temp_series_log(worker, "cava: serie %s, roccia presa da un altro." % str(series))
 		return
-	var task := TaskBuilderService.build_quarry_task(worker, macro_coords, rock, -1, series)
+	var task := TaskBuilderService.build_quarry_task(worker, macro_coords, rock, -1, series, source)
 	if task == null:
 		return
 	TaskQueueService.push_suspended_task(worker, task)

@@ -8,6 +8,7 @@
 ; Domestica (2026-11-15, richiesta utente): domestic_oats, il cereale degli animali (15 calorie contro 10). Nel campo resa
 ; a regime 10 per pianta e paglia 0,1 come gli altri cereali. Si pesta col mortaio (in comune con l'orzo) in fiocchi
 ; d'avena, che al forno diventano gallette: il cibo umano più povero ma il più economico da cuocere.
+; Scala (2026-11-15, richiesta utente: un lotto è 10×10 m): semina dell'orto 20 (era 50); punti orto 2/2/5 (erano 1/1/2) per compensare, paglia 0,5 per misura (era 0,1).
 [resource]
 script = ExtResource("1_oats")
 species_name = "oats"
@@ -21,11 +22,12 @@ points_per_meal = 5
 wild_points_cap = 600
 sowing_season = 1
 harvest_season = 2
-sown_units_per_lot = 50
+sown_units_per_lot = 20
 yield_per_unit = 10.0
-straw_per_unit = 0.1
-points_per_sown_unit = 1
-points_per_sprout = 1
-points_per_mature_plant = 2
+byproduct_resource_name = "straw"
+byproduct_per_unit = 0.5
+points_per_sown_unit = 2
+points_per_sprout = 2
+points_per_mature_plant = 5
 points_per_rotten_plant = 1
 crop_color = Color(0.9, 0.85, 0.6, 1)

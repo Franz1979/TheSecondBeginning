@@ -16,6 +16,8 @@
 ; 2026-11-15: vasi da 100) e il capanno accetta solo
 ; il seme domestico della specie del campo, fino al livello del pannello (FieldSeedStoreService).
 ; Massimi per oggetto (2026-11-15, richiesta utente): 8 vasi da 100 (il seme di tutti i lotti), 10 bastoni e 10 falcetti.
+; Scala semirealistica (2026-11-15, richiesta utente: un lotto è 10×10 m): 20 misure seminate per lotto (era 100),
+; raccolto ~200 per lotto; capanno fino a 10 vasi da 50 (500 misure: il seme di 25 lotti).
 [resource]
 script = ExtResource("1_field")
 building_name = "building_field"
@@ -42,11 +44,12 @@ categories_locked = true
 toolkit_tool_types = 3
 toolkit_units_per_type = 10
 toolkit_units_by_tool = {
-"seed_jar": 8
+"seed_jar": 10
 }
 toolkit_extra_tools = Array[String](["digging_stick", "flint_sickle", "seed_jar"])
 cultivation_lots = 8
-cultivation_units_per_lot = 100
+cultivation_units_per_lot = 20
+field_max_side = 5
 cultivation_domestic_only = true
 people_path_weight_scale = 8.0
 closed_to_animals = true

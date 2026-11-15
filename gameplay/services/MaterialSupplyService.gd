@@ -104,8 +104,8 @@ static func get_missing_materials(target_building: Building) -> Dictionary:
 		var required_build: int = int(target_building.rules.required_materials[resource_name])
 		if required_build <= 0:
 			continue
-		var stored_build_entry: Dictionary = target_building.stored_resources.get(resource_name, {})
-		var missing_build: int = maxi(required_build - int(stored_build_entry.get("quantity", 0)), 0)
+		# Materiali con opzioni (2026-11-15): il posto conta anche i sostituti consegnati (MaterialOptionsService).
+		var missing_build: int = MaterialOptionsService.missing(target_building.stored_resources, String(resource_name), required_build)
 		if missing_build > 0:
 			missing[String(resource_name)] = missing_build
 	return missing
@@ -144,23 +144,42 @@ static func get_supply_need(
 	if not for_repair:
 		excluded = _get_excluded_source_ids(world, target_building)
 	var first_need: Dictionary = {}
+	# Materiali con opzioni (2026-11-15, passo 1: i cantieri): un posto del cantiere si riempie col materiale chiesto o coi
+	# suoi sostituti; la sorgente è la più vicina che ne ha uno qualunque, e si porta quello che ha (MaterialOptionsService).
+	# Passo 2 (2026-11-15): anche gli ingredienti delle ricette di una postazione; passo 3: anche la riparazione.
+	var with_options: bool = true
 	for resource_name in missing.keys():
-		if carrier != null and resource_name != FUEL_KEY and not carrier.can_carry_one_unit_when_empty(String(resource_name)):
-			continue
 		var need: Dictionary
 		if resource_name == FUEL_KEY:
 			need = _get_fuel_need(world, target_building, float(missing[resource_name]), origin_position, origin_macro_coords, excluded, reachable)
 			if need.is_empty():
 				continue
 		else:
-			var quantity: int = int(missing[resource_name]) if for_repair \
-				else mini(int(missing[resource_name]), BuildingStorageService.get_max_depositable(target_building, String(resource_name)))
-			if quantity <= 0:
+			var names: Array[String] = [String(resource_name)]
+			if with_options:
+				names = MaterialOptionsService.option_names(String(resource_name))
+			var carried_names: Array[String] = []
+			for option_name in names:
+				if carrier == null or carrier.can_carry_one_unit_when_empty(option_name):
+					carried_names.append(option_name)
+			if carried_names.is_empty():
 				continue
 			var source := WarehouseSelectionService.find_source_for_retrieval(
-				world, origin_position, origin_macro_coords, String(resource_name), excluded, 1, -1, reachable, true
+				world, origin_position, origin_macro_coords, (carried_names[0] as Variant) if carried_names.size() == 1 else (carried_names as Variant),
+				excluded, 1, -1, reachable, true
 			)
-			need = {"resource_name": String(resource_name), "quantity": quantity, "source": source}
+			var chosen: String = carried_names[0]
+			if source != null and carried_names.size() > 1:
+				var stock := WarehouseSelectionService.get_matching_stock(source, carried_names, 1, true)
+				for option_name in carried_names:
+					if stock.has(option_name):
+						chosen = option_name
+						break
+			var units := MaterialOptionsService.units_needed(String(resource_name), chosen, float(missing[resource_name]))
+			var quantity: int = units if for_repair else mini(units, BuildingStorageService.get_max_depositable(target_building, chosen))
+			if quantity <= 0:
+				continue
+			need = {"resource_name": chosen, "quantity": quantity, "source": source}
 		if need["source"] != null:
 			return need
 		if first_need.is_empty():
@@ -202,7 +221,12 @@ static func subtract_in_transit(building: Building, missing: Dictionary, exclude
 		if String(resource_name) == FUEL_KEY:
 			result[resource_name] = missing[resource_name]
 			continue
-		var left := int(missing[resource_name]) - get_in_transit(building, String(resource_name), excluded)
+		# Materiali con opzioni (2026-11-15): anche i sostituti in viaggio, pesati col loro valore.
+		var in_transit := 0.0
+		var options := MaterialOptionsService.options_for(String(resource_name))
+		for option_name in options.keys():
+			in_transit += float(get_in_transit(building, String(option_name), excluded)) * float(options[option_name])
+		var left := ceili(float(missing[resource_name]) - in_transit - 0.0001)
 		if left > 0:
 			result[resource_name] = left
 	return result
@@ -223,7 +247,15 @@ static func get_uncarryable_materials(individual: HumanIndividual, target_buildi
 		return names
 	var missing := RepairAction.get_supply_missing(target_building) if for_repair else get_missing_materials(target_building)
 	for resource_name in missing.keys():
-		if resource_name != FUEL_KEY and not individual.can_carry_one_unit_when_empty(String(resource_name)):
+		if resource_name == FUEL_KEY:
+			continue
+		# Materiali con opzioni (2026-11-15): troppo pesante solo se nessuna opzione si porta.
+		var carriable := false
+		for option_name in MaterialOptionsService.option_names(String(resource_name)):
+			if individual.can_carry_one_unit_when_empty(option_name):
+				carriable = true
+				break
+		if not carriable:
 			names.append(String(resource_name))
 	return names
 
@@ -400,7 +432,11 @@ static func try_supply_at_level_zero(individual: HumanIndividual, task: Task, wo
 # FUEL_KEY — una qualunque risorsa con fuel_value > 0 che il bersaglio accetta ancora.
 static func _is_carrying_for(individual: HumanIndividual, target_building: Building, key: String) -> bool:
 	if key != FUEL_KEY:
-		return individual.get_carried_quantity(key) > 0
+		# Materiali con opzioni (2026-11-15): anche un sostituto nello zaino copre la voce.
+		for option_name in MaterialOptionsService.option_names(key):
+			if individual.get_carried_quantity(option_name) > 0:
+				return true
+		return false
 	for raw_name in individual.carried_resources.keys():
 		var carried_name := String(raw_name)
 		if individual.get_carried_quantity(carried_name) > 0 and ProductionService.get_fuel_value(carried_name) > 0.0 \

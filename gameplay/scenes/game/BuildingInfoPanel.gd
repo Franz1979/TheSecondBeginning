@@ -1606,10 +1606,13 @@ func _refresh_repair_materials(building: Building) -> void:
 	_repair_materials_caption.text = tr("building_repair_materials_caption")
 	for resource_name in required.keys():
 		var needed: int = int(required[resource_name])
-		var brought: int = mini(int(consumed.get(resource_name, 0)) + int(building.repair_materials.get(resource_name, 0)), needed)
+		# Materiali con opzioni (2026-11-15, passo 3): anche i sostituti portati e consumati.
+		var brought: int = mini(floori(float(consumed.get(resource_name, 0))
+			+ MaterialOptionsService.covered(building.repair_materials, String(resource_name)) + 0.0001), needed)
 		var quantity_color: Color = MATERIAL_COMPLETE_COLOR if brought >= needed else Color(1, 1, 1, 1)
 		_repair_materials_grid.add_child(
-			_build_missing_material_chip(String(resource_name), brought, "%d/%d" % [brought, needed], quantity_color)
+			_build_missing_material_chip(String(resource_name), brought, "%d/%d" % [brought, needed], quantity_color,
+				MaterialOptionsService.display_name(String(resource_name)))
 		)
 
 
@@ -2503,8 +2506,10 @@ func _refresh_production_status(
 	production_needs_caption.text = tr("building_production_materials_caption")
 	for resource_name in required_inputs.keys():
 		var required: int = int(required_inputs[resource_name])
-		var available: int = mini(ProductionService.get_input_available(building, resource_name), required)
-		production_needs_grid.add_child(_build_missing_material_chip(resource_name, available, "%d/%d" % [available, required]))
+		# Materiali con opzioni (2026-11-15, passo 3): anche i sostituti presenti.
+		var available: int = mini(floori(ProductionService.get_input_covered(building, resource_name) + 0.0001), required)
+		production_needs_grid.add_child(_build_missing_material_chip(resource_name, available, "%d/%d" % [available, required],
+			Color(1, 1, 1, 1), MaterialOptionsService.display_name(resource_name)))
 	if required_fuel > 0.0:
 		var available_fuel: float = minf(ProductionService.get_available_fuel(building, reserved_inputs), required_fuel)
 		production_needs_grid.add_child(_build_fuel_chip(
@@ -2605,11 +2610,13 @@ func _refresh_delivered_materials(building: Building) -> void:
 		delivered_materials_caption.text = tr("building_site_materials_progress_caption")
 		for resource_name in requirements.keys():
 			var required: int = int(requirements[resource_name])
-			var delivered: int = mini(int(entries.get(resource_name, 0)), required)
+			# Materiali con opzioni (2026-11-15): conta anche i sostituti consegnati.
+			var delivered: int = mini(floori(MaterialOptionsService.covered(entries, String(resource_name)) + 0.0001), required)
 			# Materiale completo (2026-10-02, richiesta utente): numero in verde.
 			var quantity_color: Color = MATERIAL_COMPLETE_COLOR if delivered >= required else Color(1, 1, 1, 1)
 			delivered_materials_grid.add_child(
-				_build_missing_material_chip(resource_name, delivered, "%d/%d" % [delivered, required], quantity_color)
+				_build_missing_material_chip(resource_name, delivered, "%d/%d" % [delivered, required], quantity_color,
+					MaterialOptionsService.display_name(String(resource_name)))
 			)
 		return
 	var show_section: bool = (is_workstation and not has_storage) and not entries.is_empty()
@@ -2652,8 +2659,11 @@ const MISSING_MATERIAL_CHIP_SIZE: float = 24.0
 # allarga per contenerlo. "" = la sola quantità, come sempre. `quantity_color` (2026-10-02): colore del numero.
 const MATERIAL_COMPLETE_COLOR := Color(0.45, 0.95, 0.45, 1.0)
 
+# `shown_name` (2026-11-15, materiali con opzioni): nome nel tooltip al posto di quello della risorsa (es. "Corda di fibre /
+# Corda di lino", MaterialOptionsService.display_name); "" = il nome della risorsa.
 func _build_missing_material_chip(
-	resource_name: String, quantity: int, quantity_text: String = "", quantity_color: Color = Color(1, 1, 1, 1)
+	resource_name: String, quantity: int, quantity_text: String = "", quantity_color: Color = Color(1, 1, 1, 1),
+	shown_name: String = ""
 ) -> Control:
 	var box := ColorRect.new()
 	var shown_text: String = quantity_text if quantity_text != "" else str(quantity)
@@ -2661,7 +2671,7 @@ func _build_missing_material_chip(
 	box.color = IconRegistry.get_resource_color(resource_name)
 	# "%s (%s)" — STESSO formato già in uso in OptionChoiceDialog.gd per le voci dell'OptionButton,
 	# non una nuova convenzione per il solo tooltip di questa chip.
-	box.tooltip_text = TooltipText.wrap("%s (%s)" % [IconRegistry.get_resource_display_name(resource_name), shown_text])
+	box.tooltip_text = TooltipText.wrap("%s (%s)" % [shown_name if shown_name != "" else IconRegistry.get_resource_display_name(resource_name), shown_text])
 
 	var icon_node: Control = IconRegistry.get_resource_icon_node(resource_name)
 	if icon_node != null:
@@ -2940,7 +2950,8 @@ func _describe_recipe(building: Building, resource_name: String) -> String:
 		return lines[0]
 	var inputs: Array[String] = []
 	for input_name in recipe_rules.recipe_inputs.keys():
-		inputs.append("%d %s" % [int(recipe_rules.recipe_inputs[input_name]), IconRegistry.get_resource_display_name(String(input_name))])
+		# Materiali con opzioni (2026-11-15): anche il sostituto, se già disponibile.
+		inputs.append("%d %s" % [int(recipe_rules.recipe_inputs[input_name]), MaterialOptionsService.display_name(String(input_name))])
 	lines.append(tr("recipe_tooltip_ingredients").format({"items": ", ".join(inputs) if not inputs.is_empty() else "-"}))
 	var fuel := ProductionService.get_required_fuel(building, resource_name)
 	if fuel > 0.0:

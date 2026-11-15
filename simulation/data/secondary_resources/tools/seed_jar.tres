@@ -8,6 +8,7 @@
 ; ogni misura che entra o esce (max_uses): a zero si rompe. Per ora solo l'oggetto: i semi arrivano al passo 1b.
 ; 50 misure (2026-11-15, richiesta utente, erano 40). 100 misure e spazio 10 (2026-11-15, richiesta utente, erano 50 e 20):
 ; un orcio da circa 35 litri; un lotto di campo (100 misure) sta in un vaso, il capanno (10 vasi) tiene il seme di tutto il campo.
+; Capienza 50 misure (2026-11-15, richiesta utente, era 100: scala dei campi ridotta, un vaso semina 2,5 lotti).
 [resource]
 script = ExtResource("1_seed_jar")
 secondary_resource_name = "seed_jar"
@@ -25,4 +26,4 @@ recipe_labor = 600.0
 recipe_fuel_required = 3.0
 recipe_workstation_types = Array[String](["potter_hut"])
 max_uses = 2000
-seed_capacity = 100
+seed_capacity = 50

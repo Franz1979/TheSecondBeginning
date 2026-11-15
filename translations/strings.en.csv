@@ -1499,6 +1499,7 @@ build_bar_teaching_stump_tooltip,"Teaching stump: built where a tree has been cu
 building_category_cultural,Cultural
 building_category_recreational,Recreational
 build_blocked_needs_tree_stump,Needs a microcell with at least one cut tree (a stump)
+build_blocked_plot_needs_field,"A field plot goes next to a finished field, inside the 5×5 square starting from the shed, and never between two fields"
 rite_oral_lesson_name,Lesson
 social_rite_reject_no_convocable,Nobody to call in the village (a lesson needs children)
 building_pebble_path,Pebble path
@@ -1606,6 +1607,7 @@ task_assignment_kind_clear_cut,Microcell clearing
 job_clear_plants,"Cutting · Remove everything ({count} plants)"
 task_assignment_kind_clear_quarry,Rock clearing
 job_clear_rock,"Quarry · Remove the whole rock ({count} extractions)"
+job_clear_clay,"Quarry · Remove all the clay ({count} digs)"
 clear_order_cancel_tooltip,"Cancel the removal: the microcell is no longer marked. Whoever is already working there finishes their job of 5."
 job_butcher,"Butchering · {species}"
 task_assignment_kind_butcher,Butchering
@@ -1876,9 +1878,11 @@ microcell_clear_button,Remove everything
 microcell_clear_cancel_button,Cancel removal
 microcell_clear_plants_detail,"Mark the microcell for clearing: the job list gets one job every 5 plants, for whoever has an axe, up to 4 people at once."
 microcell_clear_rock_detail,"Mark the whole rock for removal: the job list gets one job every 5 extractions, for whoever has a pickaxe, up to 4 people at once."
+microcell_clear_clay_detail,"Mark the deposit to be dug out completely, so it can be built on: the job list gets one job every 5 digs, for whoever has a pickaxe, up to 4 people at once. The clay goes to storage."
 microcell_clear_cancel_detail,"The microcell is no longer marked: whoever is already working there finishes their job of 5."
 microcell_clear_status,"To remove: {count} plants"
 microcell_clear_rock_status,"To remove: {count} extractions"
+microcell_clear_clay_status,"To remove: {count} digs"
 bird_presence_none,none
 bird_presence_few,few
 bird_presence_some,several
@@ -1975,6 +1979,9 @@ idea_animal_husbandry_summary,"Buildings to keep and raise domesticated animals,
 idea_animal_husbandry_description,"Those who have learned to catch animals alive and keep them in cages realize that, with the right shelter and steady care, they can live and multiply beside the village. Each domesticated species will have its own building."
 building_rabbit_hutch,Rabbit hutch
 build_bar_rabbit_hutch_tooltip,Rabbit hutch
+building_spinning_hut,Spinning hut
+build_bar_spinning_hut_tooltip,Spinning hut
+build_bar_spinning_hut_description,"A hut with a roof of branches where flax fibre will be twisted into thread with a spindle. It can be built after Spinning. For now it is only the building: thread will come later."
 build_bar_rabbit_hutch_description,"A wooden box with a roof of branches where domestic rabbits will live. It can be built once the rabbit is domesticated."
 building_chicken_coop,Chicken coop
 build_bar_chicken_coop_tooltip,Chicken coop
@@ -1985,7 +1992,7 @@ building_info_toolkit_seed_jars,"Holds seed jars: only the ones set up here take
 carried_resource_tooltip_wild_seeds,Wild barley
 toolkit_reject_container_in_use,{tool}: it holds seeds that won't fit elsewhere. Take them out of the storage first.
 toolkit_reject_container_category,{tool}: this storage doesn't accept Grain so the seeds couldn't go in. Enable the category to set it up.
-toolkit_storage_tooltip,"Storage toolkit: seed jars are set up here (click a jar in the storage, or the stock manager rule «Restock the toolkits»). Only jars set up here take in seeds, 100 ounces each, and the seeds take no other room. A jar can be set up only if the storage accepts Raw materials; if you turn them off later, the seeds already inside stay but no more come in. Every ounce going in or out wears the jar: when it breaks, the seeds that don't fit in the other jars are lost. A jar can't be removed if its seeds wouldn't fit in the others."
+toolkit_storage_tooltip,"Storage toolkit: seed jars are set up here (click a jar in the storage, or the stock manager rule «Restock the toolkits»). Only jars set up here take in seeds, 50 ounces each, and the seeds take no other room. A jar can be set up only if the storage accepts Raw materials; if you turn them off later, the seeds already inside stay but no more come in. Every ounce going in or out wears the jar: when it breaks, the seeds that don't fit in the other jars are lost. A jar can't be removed if its seeds wouldn't fit in the others."
 discovery_grant_waiting_title,Idea waiting: {idea}
 discovery_grant_waiting_line,"The village is ready for «{idea}», but it still needs {missing}. It will come on its own once that is completed."
 domestic_plant_barley,Barley
@@ -2009,7 +2016,7 @@ building_feeder_choose_species,(choose the species to fill it)
 building_feeder_tooltip,"Feeder for: {species}. Accepts: {foods} (calories per unit). Delivered food takes its space, becomes calories and can't be taken back. Changing species empties the feeder and the food is lost."
 building_feeder_tooltip_no_species,"The feeder only accepts the food of the kept species: choose the species, or wait for the first animal. Changing species empties the feeder and the food is lost."
 warehouse_rule_feeder,Restock the feeders (days of food)
-warehouse_rule_feeder_tooltip,"Days of food to keep in the feeders of the penned animals. At the inventory the WM works out how much the animals of each feeder eat and, if short, sends food from the warehouses: in the order of the species' diet, never below that food's minimum level, and at least a full backpack each trip. 0 = rule off."
+warehouse_rule_feeder_tooltip,"Days of food to keep in the feeders of the penned animals. At the inventory the WM works out how much the animals of each feeder eat and, if short, sends food from the warehouses: in the order of the species' diet, from the whole village stock, and at least a full backpack each trip. 0 = rule off."
 drawer_order_feeder_row,"{building}: feeder, bring {quantity} {resource}"
 warehouse_rule_field_seeds,Seeds in the fields
 warehouse_rule_field_seeds_tooltip,"Ounces of each domestic seed to keep in the shed of every field that sows it: the WM brings them from the granary and takes away seeds the shed no longer keeps. A field can have its own value. 0 = none."
@@ -2017,7 +2024,7 @@ warehouse_rule_field_seeds_empty,No plant domesticated yet.
 drawer_order_field_seed_row,"{building}: shed, bring {quantity} {resource}"
 drawer_order_field_seed_remove_row,"{building}: shed, take away {quantity} {resource}"
 pending_stock_feeder,Feeders to restock
-pending_stock_feeder_missing,"No diet food above the minimum for: {buildings}"
+pending_stock_feeder_missing,"No diet food in the warehouses for: {buildings}"
 building_feeder_days_general,Days of food: general rule
 building_feeder_days_excluded,Days of food: excluded from the WM
 building_feeder_days_own,Days of food: own value
@@ -2085,6 +2092,9 @@ build_bar_haystack_description,"Four wooden trestles tied with rope, where the h
 building_clay_oven,Clay oven
 build_bar_clay_oven_tooltip,Clay oven
 build_bar_clay_oven_description,"A dome of fireproof clay on a stone base, with its mouth at the front. A fire is lit inside, then the embers are raked out and food is baked on the hot stone: flatbread from barley groats, bread from wheat flour, dark bread from rye flour, oatcakes from oat flakes. It keeps a stock of firewood; groats and flour are brought for each order."
+building_field_plot,Field plot
+build_bar_field_plot_tooltip,Field plot
+build_bar_field_plot_description,"A microcell of soil to till next to a finished field, to make it bigger: it must touch one side of the field, inside the 5×5 square starting from the shed, and never between two fields. A pick is needed."
 building_farmer_hut,Farm tools hut
 build_bar_farmer_hut_tooltip,Farm tools hut
 build_bar_farmer_hut_description,"A wooden hut with a roof of branches where farming tools are made: the digging stick and the sickle."
@@ -2114,13 +2124,16 @@ discovery_first_wild_oats_p2,"It grows like a weed wherever the ground has been 
 idea_spinning,Spinning
 idea_spinning_summary,Some plants have long fibres that can be twisted into thread.
 idea_spinning_description,"Looking at the stems of wild plants, the group notices that some hold long, strong fibres: beaten and twisted, they become a thin thread. People learn to recognise flax."
-carried_resource_tooltip_wild_flax,Wild flax
+carried_resource_tooltip_wild_flax,Wild flax seeds
 carried_resource_tooltip_flax_rope,Flax rope
+carried_resource_tooltip_flax_seeds,Flax seeds
+carried_resource_tooltip_flax_fiber,Flax fibre
+carried_resource_tooltip_flax_thread,Flax thread
 domestic_plant_flax,Flax
 wild_plant_flax,Wild flax
 discovery_first_wild_flax_title,Wild flax
-discovery_first_wild_flax_p1,"Among the summer grass someone pulls thin stems with small blue flowers: inside are the long fibres Spinning spoke of. It's wild flax."
-discovery_first_wild_flax_p2,"At the clothing hut it becomes flax rope, and every rope teaches something about the plant. Thread and cloth will come only from domestic flax, to be obtained in the domestication garden."
+discovery_first_wild_flax_p1,"Among the summer grass someone notices thin stems with small blue flowers: inside are the long fibres Spinning spoke of. It's wild flax, and its flat, shiny seeds can be gathered."
+discovery_first_wild_flax_p2,"Wild plants are too few and scattered to make fibre. Gathering their seeds teaches something about the plant, and sown in the domestication garden they will lead to domestic flax: its fields will give the fibre for flax rope, then thread and cloth."
 domestication_plant_hint_gather,Gathering {resource}: 1 point every {units}.
 domestication_plant_hint_meal,Cooking the soup with seeds: {meal} points per pot.
 domestication_plant_hint_product,Making {product}: {points} points each.
@@ -2173,7 +2186,6 @@ building_crop_reaping,"reaping in progress ({mature} plants, {percent}%)"
 sow_blocked_harvest_pile,The harvest must be carried away first
 building_crop_auto,Cultivate automatically:
 building_crop_auto_tooltip,"Yes: Sowing and Reaping for this plot appear on their own in the job list, in their seasons. No: nobody sows or reaps here (whoever is already working finishes). ""As the rule"" follows the WM rule ""Cultivate all plots automatically""; ""always yes"" and ""always no"" override the rule. Ripe plants not reaped still rot at the end of the season."
-warehouse_grain_reserve_note,"The grain minimum is the reserve kept for sowing: soup and animals only use what is above it, sowing can take everything."
 building_crop_auto_rule,As the rule ({state})
 building_crop_auto_yes,yes
 building_crop_auto_no,no
@@ -2196,5 +2208,5 @@ carried_resource_tooltip_oat_cake,Oatcake
 carried_resource_tooltip_straw,Straw
 building_field,Field with shed
 build_bar_field_tooltip,Field with shed
-build_bar_field_description,"A 3×3 microcell field: tilled soil inside a fence of posts and branches, with a small gate and a little shed in one corner for digging sticks and sickles. Rotate to choose the shed's corner. A pick is needed to till. Eight lots, one per microcell of soil: each is sown and reaped on its own, even by several people at once. Domestic seeds only, 100 ounces per lot."
+build_bar_field_description,"A 3×3 microcell field: tilled soil inside a fence of posts and branches, with a small gate and a little shed in one corner for digging sticks and sickles. Rotate to choose the shed's corner. A pick is needed to till. Eight lots, one per microcell of soil: each is sown and reaped on its own, even by several people at once. Domestic seeds only, 20 ounces per lot."
 building_crop_lots_summary,"{total} lots: empty {empty}, being sown {sowing}, sown {sown}, sprouted {sprouted}, ripe {ready}"

@@ -8,7 +8,8 @@ extends RefCounted
 # (AnimalFeederService.daily_calories_needed) × giorni. Se la mangiatoia (con quanto già in viaggio e gli ordini aperti)
 # sta sotto l'obiettivo, ordini "transport" deposito → mangiatoia, scelti così:
 # - cibi nell'ordine della dieta della specie (DomesticAnimalRules.accepted_foods = preferenza);
-# - mai sotto il livello minimo di quel cibo in magazzino (le persone prima);
+# - da tutta la scorta del villaggio: il minimo del gestore scorte non si tiene da parte (2026-11-15, richiesta utente —
+#   il minimo è la soglia che fa partire le raccolte, non una riserva; stessa scelta della zuppa);
 # - se ci si muove, almeno uno zaino pieno (decisione utente "B", spazio medio dei portatori) anche oltre l'obiettivo,
 #   fin dove c'è posto nella mangiatoia: niente viaggi a zaino semivuoto con pochi animali;
 # - senza nessun cibo disponibile, un avviso in campanella (StockRuntimeState.feeder_warnings).
@@ -63,9 +64,9 @@ static func traveling(individuals: Array) -> Dictionary:
 
 # Ordini da togliere (id), da creare ({FEEDER_TARGET_KEY, FEEDER_FOOD_KEY, "quantity", "building"}) e avvisi (id degli
 # edifici senza cibo da ricevere). `open_orders`: ordini del cassetto con FEEDER_TARGET_KEY non presi; `in_transit`:
-# traveling(); `stock`: scorta del villaggio; `min_levels`: livelli minimi che agiscono; `load_space`: uno zaino pieno.
+# traveling(); `stock`: scorta del villaggio; `load_space`: uno zaino pieno.
 static func plan_orders(world: World, game_data: GameData, open_orders: Array, in_transit: Dictionary, stock: Dictionary,
-		min_levels: Dictionary, load_space: float) -> Dictionary:
+		load_space: float) -> Dictionary:
 	var result := {"remove": [], "create": [], "warnings": []}
 	var open_by_target: Dictionary = {}
 	for order in open_orders:
@@ -103,7 +104,7 @@ static func plan_orders(world: World, game_data: GameData, open_orders: Array, i
 			if not open.is_empty():
 				continue
 			var created := _plan_loads(building, game_data, missing, float(AnimalFeederService.capacity(building)) - space_taken,
-				load_space, stock, min_levels, promised)
+				load_space, stock, promised)
 			if created.is_empty():
 				(result["warnings"] as Array).append(building.id)
 			(result["create"] as Array).append_array(created)
@@ -114,10 +115,10 @@ static func plan_orders(world: World, game_data: GameData, open_orders: Array, i
 	return result
 
 
-# Cibi per una mangiatoia: nell'ordine della dieta, sopra il minimo, finché coprono `missing` calorie e almeno uno zaino
+# Cibi per una mangiatoia: nell'ordine della dieta, finché coprono `missing` calorie e almeno uno zaino
 # pieno (`load_space`), entro lo spazio libero `room`. Aggiorna `promised`.
 static func _plan_loads(building: Building, game_data: GameData, missing: float, room: float, load_space: float,
-		stock: Dictionary, min_levels: Dictionary, promised: Dictionary) -> Array:
+		stock: Dictionary, promised: Dictionary) -> Array:
 	var created: Array = []
 	var load_left := load_space
 	for food in AnimalFeederService.accepted_foods(game_data, building):
@@ -127,7 +128,7 @@ static func _plan_loads(building: Building, game_data: GameData, missing: float,
 		var space := AnimalFeederService.unit_space(food)
 		if calories <= 0.0 or room < space:
 			continue
-		var available := int(stock.get(food, 0)) - int(min_levels.get(food, 0)) - int(promised.get(food, 0))
+		var available := int(stock.get(food, 0)) - int(promised.get(food, 0))
 		if available <= 0:
 			continue
 		var for_need := ceili(maxf(missing, 0.0) / calories - 0.000001)

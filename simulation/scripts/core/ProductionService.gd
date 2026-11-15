@@ -308,7 +308,8 @@ static func is_workstation_ingredient(building: Building, resource_name: String)
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
 		if recipe_rules == null or not recipe_rules.recipe_workstation_types.has(building.building_type_name):
 			continue
-		if recipe_rules.recipe_inputs.has(resource_name):
+		# Materiali con opzioni (2026-11-15): anche un sostituto di un ingrediente (MaterialOptionsService).
+		if MaterialOptionsService.slot_for(recipe_rules.recipe_inputs, resource_name) != "":
 			return true
 		if is_fuel and recipe_rules.recipe_fuel_required > 0.0:
 			return true
@@ -698,12 +699,48 @@ static func get_input_available(building: Building, input_name: String) -> int:
 	return int(stored_entry.get("quantity", 0)) + int(building.production_output.get(input_name, 0))
 
 
+# Quanto dell'ingrediente `input_name` coprono, presso `building`, lui stesso e i suoi sostituti (2026-11-15, materiali
+# con opzioni — MaterialOptionsService): get_input_available di ogni opzione × il suo valore, in unità di `input_name`.
+static func get_input_covered(building: Building, input_name: String) -> float:
+	if building == null:
+		return 0.0
+	var covered := 0.0
+	var options := MaterialOptionsService.options_for(input_name)
+	for option_name in options.keys():
+		covered += float(get_input_available(building, String(option_name))) * float(options[option_name])
+	return covered
+
+
 # Consuma `required` unità dell'ingrediente `input_name`: prima da stored_resources, poi dal buffer di uscita per
 # quello che manca (2026-09-27). Il chiamante ha già verificato la disponibilità (get_missing_inputs_for).
 static func _consume_input(building: Building, input_name: String, required: int) -> void:
 	var from_storage := BuildingStorageService.withdraw_stored(building, input_name, required)
 	if from_storage < required:
 		withdraw_output(building, input_name, required - from_storage)
+
+
+# Consuma `required` unità del posto `input_name` (2026-11-15, materiali con opzioni): prima il materiale chiesto, poi i
+# sostituti presenti (in ordine di nome), ognuno pesato col suo valore, anche mescolati. Il chiamante ha già verificato
+# la copertura (get_missing_inputs_for).
+static func _consume_input_options(building: Building, input_name: String, required: int) -> void:
+	var own: int = mini(get_input_available(building, input_name), required)
+	if own > 0:
+		_consume_input(building, input_name, own)
+	var remaining := float(required - own)
+	if remaining <= 0.0:
+		return
+	var substitutes: Array[String] = MaterialOptionsService.option_names(input_name)
+	substitutes.erase(input_name)
+	substitutes.sort()
+	for substitute_name in substitutes:
+		if remaining <= 0.0001:
+			break
+		var units: int = mini(get_input_available(building, substitute_name),
+			MaterialOptionsService.units_needed(input_name, substitute_name, remaining))
+		if units <= 0:
+			continue
+		_consume_input(building, substitute_name, units)
+		remaining -= float(units) * float(MaterialOptionsService.options_for(input_name)[substitute_name])
 
 
 # Materiali mancanti per UN ciclo della ricetta di `resource_name`: recipe_inputs meno quanto è già disponibile
@@ -720,7 +757,8 @@ static func get_missing_inputs_for(building: Building, resource_name: String) ->
 		var required: int = int(recipe_rules.recipe_inputs[input_name])
 		if required <= 0:
 			continue
-		var missing_quantity: int = max(required - get_input_available(building, String(input_name)), 0)
+		# Materiali con opzioni (2026-11-15): contano anche i sostituti presenti (get_input_covered).
+		var missing_quantity: int = maxi(ceili(float(required) - get_input_covered(building, String(input_name)) - 0.0001), 0)
 		if missing_quantity > 0:
 			missing[String(input_name)] = missing_quantity
 	return missing
@@ -751,8 +789,9 @@ static func get_missing_inputs_for_recipes(building: Building, recipe_names: Arr
 			if required > 0:
 				required_totals[String(input_name)] = int(required_totals.get(String(input_name), 0)) + required
 	# Disponibile = storage più buffer di uscita (2026-09-27, get_input_available).
+	# Materiali con opzioni (2026-11-15): contano anche i sostituti presenti (get_input_covered).
 	for input_name in required_totals.keys():
-		var missing_quantity: int = max(int(required_totals[input_name]) - get_input_available(building, String(input_name)), 0)
+		var missing_quantity: int = maxi(ceili(float(required_totals[input_name]) - get_input_covered(building, String(input_name)) - 0.0001), 0)
 		if missing_quantity > 0:
 			missing[input_name] = missing_quantity
 	return missing
@@ -876,7 +915,13 @@ static func is_production_demand(building: Building, resource_name: String) -> b
 # Unità di `resource_name` che mancano alle produzioni in corso: materiale mancante + unità intere
 # necessarie a coprire il combustibile mancante (se è un combustibile). 0 = nulla da accettare.
 static func get_production_demand(building: Building, resource_name: String) -> int:
-	var demand: int = int(get_missing_inputs(building).get(resource_name, 0))
+	var missing_inputs := get_missing_inputs(building)
+	var demand: int = int(missing_inputs.get(resource_name, 0))
+	# Materiali con opzioni (2026-11-15): un sostituto copre il posto che manca, nelle sue unità.
+	if demand == 0:
+		var slot := MaterialOptionsService.slot_for(missing_inputs, resource_name)
+		if slot != "":
+			demand = MaterialOptionsService.units_needed(slot, resource_name, float(missing_inputs[slot]))
 	var fuel_value := get_fuel_value(resource_name)
 	if fuel_value > 0.0:
 		var missing_fuel := get_missing_fuel(building)
@@ -928,7 +973,7 @@ static func _consume_fuel(building: Building, required: float) -> float:
 static func is_recipe_input_of(building: Building, resource_name: String) -> bool:
 	for recipe_name in get_producible_resources(building):
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
-		if recipe_rules != null and recipe_rules.recipe_inputs.has(resource_name):
+		if recipe_rules != null and MaterialOptionsService.slot_for(recipe_rules.recipe_inputs, resource_name) != "":
 			return true
 	return false
 
@@ -942,7 +987,8 @@ static func is_recipe_material(building: Building, resource_name: String) -> boo
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(recipe_name)
 		if recipe_rules == null:
 			continue
-		if recipe_rules.recipe_inputs.has(resource_name):
+		# Materiali con opzioni (2026-11-15): anche un sostituto di un ingrediente.
+		if MaterialOptionsService.slot_for(recipe_rules.recipe_inputs, resource_name) != "":
 			return true
 		if is_fuel and recipe_rules.recipe_fuel_required > 0.0:
 			return true
@@ -956,7 +1002,8 @@ static func is_active_recipe_input(building: Building, input_name: String) -> bo
 		return false
 	for active_name in get_active_resource_names(building):
 		var recipe_rules := CaloricCalculator.get_caloric_source_rules(active_name)
-		if recipe_rules != null and recipe_rules.recipe_inputs.has(input_name):
+		# Materiali con opzioni (2026-11-15): anche un sostituto di un ingrediente.
+		if recipe_rules != null and MaterialOptionsService.slot_for(recipe_rules.recipe_inputs, input_name) != "":
 			return true
 	return false
 
@@ -1110,8 +1157,9 @@ static func complete_production(building: Building, order_key: String) -> int:
 	for input_name in recipe_rules.recipe_inputs.keys():
 		var required: int = int(recipe_rules.recipe_inputs[input_name])
 		if required > 0:
-			# Prima lo storage, poi il buffer di uscita della stessa postazione (2026-09-27, _consume_input).
-			_consume_input(building, String(input_name), required)
+			# Prima lo storage, poi il buffer di uscita della stessa postazione (2026-09-27, _consume_input); anche i
+			# sostituti (2026-11-15, _consume_input_options).
+			_consume_input_options(building, String(input_name), required)
 	_consume_fuel(building, get_required_fuel(building, active_name))
 
 	var produced: int = max(recipe_rules.recipe_output_quantity, 0)

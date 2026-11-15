@@ -73,7 +73,8 @@ static func build(rules: SecondaryResourceRules, name_prefix: Callable = Callabl
 		var quantity := int(rules.recipe_inputs[input_name])
 		if quantity > 0:
 			var prefix := String(name_prefix.call(String(input_name))) if name_prefix.is_valid() else ""
-			inputs.append("%d %s%s" % [quantity, prefix, IconRegistry.get_resource_display_name(String(input_name))])
+			# Materiali con opzioni (2026-11-15): anche il sostituto, se già disponibile.
+			inputs.append("%d %s%s" % [quantity, prefix, MaterialOptionsService.display_name(String(input_name))])
 	if not inputs.is_empty():
 		lines.append(_tr("recipe_tooltip_ingredients").format({"items": ", ".join(inputs)}))
 	if rules.recipe_output_quantity > 1:
