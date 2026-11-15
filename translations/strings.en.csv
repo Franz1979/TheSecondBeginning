@@ -144,7 +144,7 @@ era_paleolithic,Paleolithic
 era_neolithic,Neolithic
 idea_agriculture,Palaeolithic agriculture
 idea_agriculture_summary,Growing plants instead of gathering them.
-idea_agriculture_description,The group learns to sow and harvest in the same place.
+idea_agriculture_description,"The group learns to sow and harvest in the same place. Fields are sown only with domestic seeds, those harvested in the domestication gardens."
 tech_tree_unknown_idea,Unknown idea
 notification_ok,OK
 tech_tree_cost,Cost: {cost} thoughts
@@ -1004,6 +1004,9 @@ quarry_choice_dialog_title,Rock
 quarry_choice_dialog_message,What do you want to do with this rock?
 quarry_choice_gather,Gather pebbles
 quarry_choice_quarry,Quarry stone
+quarry_count_item_one,"1 extraction"
+quarry_count_item,"{count} extractions"
+quarry_all_rock_item,"The whole rock ({count} extractions) — a very long job"
 quarry_reject_reserved,This rock is already in {name}'s work.
 quarry_reject_exhausted,Rock exhausted
 building_info_output_to_storage,Finished products: to storage
@@ -1599,6 +1602,11 @@ rubble_origin_village,Village waste
 job_site_cut,"Cutting · {building} site"
 job_site_cut_cell,"Cutting · {building} site (cell {index}/{count})"
 task_assignment_kind_site_cut,Site clearing cuts
+task_assignment_kind_clear_cut,Microcell clearing
+job_clear_plants,"Cutting · Remove everything ({count} plants)"
+task_assignment_kind_clear_quarry,Rock clearing
+job_clear_rock,"Quarry · Remove the whole rock ({count} extractions)"
+clear_order_cancel_tooltip,"Cancel the removal: the microcell is no longer marked. Whoever is already working there finishes their job of 5."
 job_butcher,"Butchering · {species}"
 task_assignment_kind_butcher,Butchering
 job_postponed_site_cut,"Postponed by {name}: waiting for the trees to be cut"
@@ -1862,6 +1870,15 @@ drawer_transport_reject_not_needed,Transport not ordered: {building} has no room
 drawer_order_player_transport_row,Transport {quantity} {resource} · {source} → {target}
 drawer_order_player_transport_blocked,Nothing to take at the source or no room at the destination
 microcell_inspection_birds,"Birds: {level}"
+microcell_inspection_pasture,"Usual grazing ground of large animals"
+microcell_inspection_pasture_hint,"Tip: place suitable traps in the area"
+microcell_clear_button,Remove everything
+microcell_clear_cancel_button,Cancel removal
+microcell_clear_plants_detail,"Mark the microcell for clearing: the job list gets one job every 5 plants, for whoever has an axe, up to 4 people at once."
+microcell_clear_rock_detail,"Mark the whole rock for removal: the job list gets one job every 5 extractions, for whoever has a pickaxe, up to 4 people at once."
+microcell_clear_cancel_detail,"The microcell is no longer marked: whoever is already working there finishes their job of 5."
+microcell_clear_status,"To remove: {count} plants"
+microcell_clear_rock_status,"To remove: {count} extractions"
 bird_presence_none,none
 bird_presence_few,few
 bird_presence_some,several
@@ -1958,7 +1975,7 @@ idea_animal_husbandry_summary,"Buildings to keep and raise domesticated animals,
 idea_animal_husbandry_description,"Those who have learned to catch animals alive and keep them in cages realize that, with the right shelter and steady care, they can live and multiply beside the village. Each domesticated species will have its own building."
 building_rabbit_hutch,Rabbit hutch
 build_bar_rabbit_hutch_tooltip,Rabbit hutch
-build_bar_rabbit_hutch_description,"A wooden box with a straw roof where domestic rabbits will live. It can be built once the rabbit is domesticated."
+build_bar_rabbit_hutch_description,"A wooden box with a roof of branches where domestic rabbits will live. It can be built once the rabbit is domesticated."
 building_chicken_coop,Chicken coop
 build_bar_chicken_coop_tooltip,Chicken coop
 build_bar_chicken_coop_description,"A covered little house with a fence of stakes where chickens will live. It can be built once the chicken is domesticated."
@@ -1968,7 +1985,7 @@ building_info_toolkit_seed_jars,"Holds seed jars: only the ones set up here take
 carried_resource_tooltip_wild_seeds,Wild barley
 toolkit_reject_container_in_use,{tool}: it holds seeds that won't fit elsewhere. Take them out of the storage first.
 toolkit_reject_container_category,{tool}: this storage doesn't accept Grain so the seeds couldn't go in. Enable the category to set it up.
-toolkit_storage_tooltip,"Storage toolkit: seed jars are set up here (click a jar in the storage, or the stock manager rule «Restock the toolkits»). Only jars set up here take in seeds, 40 ounces each, and the seeds take no other room. A jar can be set up only if the storage accepts Raw materials; if you turn them off later, the seeds already inside stay but no more come in. Every ounce going in or out wears the jar: when it breaks, the seeds that don't fit in the other jars are lost. A jar can't be removed if its seeds wouldn't fit in the others."
+toolkit_storage_tooltip,"Storage toolkit: seed jars are set up here (click a jar in the storage, or the stock manager rule «Restock the toolkits»). Only jars set up here take in seeds, 100 ounces each, and the seeds take no other room. A jar can be set up only if the storage accepts Raw materials; if you turn them off later, the seeds already inside stay but no more come in. Every ounce going in or out wears the jar: when it breaks, the seeds that don't fit in the other jars are lost. A jar can't be removed if its seeds wouldn't fit in the others."
 discovery_grant_waiting_title,Idea waiting: {idea}
 discovery_grant_waiting_line,"The village is ready for «{idea}», but it still needs {missing}. It will come on its own once that is completed."
 domestic_plant_barley,Barley
@@ -1982,6 +1999,10 @@ discovery_first_domesticated_barley_gift_title,A new idea: {idea}
 discovery_first_domesticated_barley_gift_p1,"If a plant can change like this, perhaps the best seeds can be chosen and planted again."
 container_no_room_reason,"{resource}: needs a free {container}, set up in the toolkit of a Storage hut."
 toolkit_container_fill,"Seeds in the jars: {quantity} / {capacity} ounces"
+toolkit_containers_caption,"Jars ({count}/{max}) · seeds {stored}/{capacity} ounces"
+toolkit_containers_empty,no jars set up
+toolkit_tooltip_max,At most {max} here
+building_info_toolkit_seed_jar_count,"Seed jars: up to {max} ({capacity} ounces)"
 carried_resource_tooltip_hay,Hay
 building_feeder_line,Feeder: {space} / {max} space ({calories} calories)
 building_feeder_choose_species,(choose the species to fill it)
@@ -2055,35 +2076,41 @@ building_kept_animal_to_slaughter_wm,to slaughter (manager)
 category_name_grain,Grain
 pickup_choice_category_grain,Grain
 pickup_choice_all_grain,All grain
-building_small_granary,Small granary
-build_bar_small_granary_tooltip,Small granary
-build_bar_small_granary_description,"A round granary raised on stones, with clay walls: it holds up to 30 seed jars and keeps grain two and a half times longer. It accepts grain only."
+building_small_granary,Grain house
+build_bar_small_granary_tooltip,Grain house
+build_bar_small_granary_description,"A round granary raised on stones, with clay walls, next to a hut where people work. Grain is kept loose, without jars, and lasts two and a half times longer: it holds about one field's harvest. It accepts grain only. Here barley is pounded with a mortar: the groats go into jars."
+building_haystack,Haystack
+build_bar_haystack_tooltip,Haystack
+build_bar_haystack_description,"Four wooden trestles tied with rope, where the harvest's straw is spread out: it keeps there until the next year. It holds about 1000 straw, and you can see how full it is. It is the only place where straw is kept."
+building_clay_oven,Clay oven
+build_bar_clay_oven_tooltip,Clay oven
+build_bar_clay_oven_description,"A dome of fireproof clay on a stone base, with its mouth at the front. A fire is lit inside, then the embers are raked out and food is baked on the hot stone: flatbread from barley groats, bread from wheat flour, dark bread from rye flour, oatcakes from oat flakes. It keeps a stock of firewood; groats and flour are brought for each order."
 building_farmer_hut,Farm tools hut
 build_bar_farmer_hut_tooltip,Farm tools hut
-build_bar_farmer_hut_description,"A wooden hut with a thatched roof where farming tools are made. It has no work yet."
-building_trial_garden,Trial garden
-build_bar_trial_garden_tooltip,Trial garden
-build_bar_trial_garden_description,"A patch of dug soil inside a makeshift fence, where a wild plant can be tried out. It has no work yet."
+build_bar_farmer_hut_description,"A wooden hut with a roof of branches where farming tools are made: the digging stick and the sickle."
+building_trial_garden,Domestication garden
+build_bar_trial_garden_tooltip,Domestication garden
+build_bar_trial_garden_description,"A patch of dug soil inside a makeshift fence. It is sown with wild seeds: year after year the species becomes domestic, and from then on the harvest gives the domestic seeds for the fields."
 building_category_agriculture,Agriculture
 carried_resource_tooltip_wild_wheat,Wild wheat
 discovery_first_wild_wheat_title,Wild wheat
 discovery_first_wild_wheat_p1,"Among the seeds gathered from the grass someone notices that some are bigger and heavier than the others, with a different ear: it isn't barley, it's wild wheat."
-discovery_first_wild_wheat_p2,"It is kept in seed jars, apart from barley, and can be given to animals. One day, in the trial garden, people may try to domesticate it."
-discovery_first_domesticated_barley_gift_p2,"Barley is now domestic and opens the way to new ideas. Keep gathering from wild plants: in every season you may recognise seeds you couldn't tell apart before."
+discovery_first_wild_wheat_p2,"It is kept in seed jars, apart from barley, and can be given to animals. One day, in the domestication garden, people may try to domesticate it."
+discovery_first_domesticated_barley_gift_p2,"Barley is now domestic and opens the way to new ideas. Build a domestication garden and sow it with wild barley: it will now yield domestic barley. Keep it in the seed jars of the storage hut, where it lasts almost three years: it will be needed to sow the fields, once the village discovers Agriculture. Other wild seeds the village has learned to recognise can be tried in the garden too: sown year after year, they will become domestic as well. Keep gathering from wild plants: in every season you may recognise seeds you couldn't tell apart before."
 domestic_plant_wheat,Wheat
 wild_plant_wheat,Wild wheat
-carried_resource_tooltip_wild_millet,Wild millet
-domestic_plant_millet,Millet
-wild_plant_millet,Wild millet
-discovery_first_wild_millet_title,Wild millet
-discovery_first_wild_millet_p1,"Among the autumn grass someone gathers clusters of tiny, round, shiny seeds, unlike barley or wheat: it's wild millet."
-discovery_first_wild_millet_p2,"It is kept in seed jars, apart from the others, and can be given to animals. It grows fast: one day, in the trial garden, it could be sown in spring and harvested in autumn."
+carried_resource_tooltip_wild_rye,Wild rye
+domestic_plant_rye,Rye
+wild_plant_rye,Wild rye
+discovery_first_wild_rye_title,Wild rye
+discovery_first_wild_rye_p1,"Among the autumn grass someone gathers long, thin ears with greyish, elongated grains, unlike barley or wheat: it's wild rye."
+discovery_first_wild_rye_p2,"It is kept in seed jars, apart from the others, and can be given to animals. One day, in the domestication garden, it could be sown in spring and harvested in autumn."
 carried_resource_tooltip_wild_oats,Wild oats
 domestic_plant_oats,Oats
 wild_plant_oats,Wild oats
 discovery_first_wild_oats_title,Wild oats
 discovery_first_wild_oats_p1,"Near the Pit, among the barley and other plants sprung from the refuse, light drooping ears appear, unlike any other: it's wild oats."
-discovery_first_wild_oats_p2,"It grows like a weed wherever the ground has been disturbed. It is kept in seed jars, goes into soup and animals like it. One day, in the trial garden, it could be sown in spring and harvested in summer."
+discovery_first_wild_oats_p2,"It grows like a weed wherever the ground has been disturbed. It is kept in seed jars, goes into soup and animals like it. One day, in the domestication garden, it could be sown in spring and harvested in summer."
 idea_spinning,Spinning
 idea_spinning_summary,Some plants have long fibres that can be twisted into thread.
 idea_spinning_description,"Looking at the stems of wild plants, the group notices that some hold long, strong fibres: beaten and twisted, they become a thin thread. People learn to recognise flax."
@@ -2093,14 +2120,16 @@ domestic_plant_flax,Flax
 wild_plant_flax,Wild flax
 discovery_first_wild_flax_title,Wild flax
 discovery_first_wild_flax_p1,"Among the summer grass someone pulls thin stems with small blue flowers: inside are the long fibres Spinning spoke of. It's wild flax."
-discovery_first_wild_flax_p2,"At the clothing hut it becomes flax rope, and every rope teaches something about the plant. Thread and cloth will come only from domestic flax, to be obtained in the trial garden."
+discovery_first_wild_flax_p2,"At the clothing hut it becomes flax rope, and every rope teaches something about the plant. Thread and cloth will come only from domestic flax, to be obtained in the domestication garden."
 domestication_plant_hint_gather,Gathering {resource}: 1 point every {units}.
 domestication_plant_hint_meal,Cooking the soup with seeds: {meal} points per pot.
 domestication_plant_hint_product,Making {product}: {points} points each.
-domestication_plant_hint_cap,"Up to {cap} points this way, then only in the trial garden."
+domestication_plant_hint_cap,"Up to {cap} points this way, then only in the domestication garden."
 building_info_construction_tools,Building it needs: {tools}
 carried_resource_tooltip_digging_stick,Digging stick
 carried_resource_tooltip_flint_sickle,Flint sickle
+carried_resource_tooltip_grain_mortar,Mortar
+carried_resource_tooltip_saddle_quern,Saddle quern
 tool_category_sowing,sowing
 tool_category_reaping,reaping
 building_crop_species,Crop:
@@ -2153,6 +2182,18 @@ building_crop_auto_never,Always no
 warehouse_rule_cultivation,Cultivate all plots automatically
 warehouse_rule_cultivation_tooltip,"On: Sowing and Reaping of gardens and fields appear on their own in the job list, in their seasons. Applies to plots left on ""as the rule""; those set to ""always yes"" or ""always no"" do as they chose."
 carried_resource_tooltip_domestic_barley,Barley
+carried_resource_tooltip_barley_groats,Barley groats
+carried_resource_tooltip_domestic_wheat,Wheat
+carried_resource_tooltip_wheat_flour,Wheat flour
+carried_resource_tooltip_barley_pita,Barley flatbread
+carried_resource_tooltip_wheat_bread,Wheat bread
+carried_resource_tooltip_domestic_rye,Rye
+carried_resource_tooltip_rye_flour,Rye flour
+carried_resource_tooltip_rye_bread,Rye bread
+carried_resource_tooltip_domestic_oats,Oats
+carried_resource_tooltip_oat_flakes,Oat flakes
+carried_resource_tooltip_oat_cake,Oatcake
+carried_resource_tooltip_straw,Straw
 building_field,Field with shed
 build_bar_field_tooltip,Field with shed
 build_bar_field_description,"A 3×3 microcell field: tilled soil inside a fence of posts and branches, with a small gate and a little shed in one corner for digging sticks and sickles. Rotate to choose the shed's corner. A pick is needed to till. Eight lots, one per microcell of soil: each is sown and reaped on its own, even by several people at once. Domestic seeds only, 100 ounces per lot."

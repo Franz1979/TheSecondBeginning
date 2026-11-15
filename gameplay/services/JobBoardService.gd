@@ -57,22 +57,24 @@ const STATE_LOCKED := "locked"
 # "rite" (2026-10-14): riti ordinati dal pannello edificio ("rite:<id edificio>", Building.requested_rite_id).
 # "heal" (2026-10-25): cura dei malati allettati ("heal:<id malato>", HealJobProvider.collect).
 # "trap" (2026-11-07): trappole da piazzare nelle zone ("trap:<id zona>:<trappola>", TrapJobProvider.collect).
-const DEFAULT_STATE_BY_KIND := {"butcher": STATE_LISTED, "build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED, "quarry": STATE_LISTED, "gather": STATE_LISTED, "hunt": STATE_LISTED, "fish": STATE_LISTED, "repair": STATE_LISTED, "inventory": STATE_LISTED, "rite": STATE_LISTED, "site_cut": STATE_LISTED, "heal": STATE_LISTED, "trap": STATE_LISTED, "cultivate": STATE_LISTED}
+const DEFAULT_STATE_BY_KIND := {"butcher": STATE_LISTED, "build": STATE_LISTED, "upgrade": STATE_LISTED, "demolish": STATE_LISTED, "body": STATE_LISTED, "pile": STATE_LISTED, "output": STATE_LISTED, "produce": STATE_LISTED, "cut": STATE_LISTED, "quarry": STATE_LISTED, "gather": STATE_LISTED, "hunt": STATE_LISTED, "fish": STATE_LISTED, "repair": STATE_LISTED, "inventory": STATE_LISTED, "rite": STATE_LISTED, "site_cut": STATE_LISTED, "clear_cut": STATE_LISTED, "clear_quarry": STATE_LISTED, "heal": STATE_LISTED, "trap": STATE_LISTED, "cultivate": STATE_LISTED}
 # Tipo di lavoro -> chiave di SkillEffectService (skill_action_effects.tres) della sua skill (modo "Più adatto").
-const SKILL_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": HuntService.SKILL_EFFECT_KEY, "fish": "fish", "repair": "build", "inventory": InventoryAction.SKILL_EFFECT_KEY, "rite": RiteAction.SKILL_EFFECT_KEY, "site_cut": "cut", "heal": RemedyAction.SKILL_EFFECT_KEY, "trap": TrapService.SKILL_EFFECT_KEY, "transport": "walk_loaded", "cultivate": CultivationService.SKILL_EFFECT_KEY}
+const SKILL_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "build", "body": RiteAction.SKILL_EFFECT_KEY, "pile": "pickup", "output": "pickup", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": HuntService.SKILL_EFFECT_KEY, "fish": "fish", "repair": "build", "inventory": InventoryAction.SKILL_EFFECT_KEY, "rite": RiteAction.SKILL_EFFECT_KEY, "site_cut": "cut", "clear_cut": "cut", "clear_quarry": "quarry", "heal": RemedyAction.SKILL_EFFECT_KEY, "trap": TrapService.SKILL_EFFECT_KEY, "transport": "walk_loaded", "cultivate": CultivationService.SKILL_EFFECT_KEY}
 # Categorie della priorità (2026-11-07, richiesta utente): i mucchi a terra ("pile") contano come la Raccolta, i Prodotti
 # finiti da consegnare ("output") come i Trasporti. Il tipo del lavoro resta il suo (stato, chiave, fornitore); qui solo
 # "Più adatto" (skill) e "Personalizzata" (ordine dei tipi). Gli ordini "transport" del cassetto (magazzino, Riempi giare,
 # Trasporta del giocatore) hanno già il tipo "transport" (DrawerOrderJobProvider._transport_job), con la skill Trasportatore.
 # Taglio per i cantieri ("site_cut", 2026-11-12, richiesta utente) conta come il Taglio: una sola riga nelle priorità;
 # dentro il Taglio prima i cantieri (PRIORITY_FIRST_KINDS).
-const PRIORITY_KIND_BY_KIND := {"pile": "gather", "output": "transport", "site_cut": "cut"}
+# Sgombero di una microcella ("clear_cut", 2026-11-15, ClearOrderJobProvider) conta come il Taglio, senza passare prima;
+# quello della roccia ("clear_quarry") come la Cava.
+const PRIORITY_KIND_BY_KIND := {"pile": "gather", "output": "transport", "site_cut": "cut", "clear_cut": "cut", "clear_quarry": "quarry"}
 # Dentro la stessa categoria della priorità, questi tipi passano prima degli altri (poi il più vecchio): i tagli dei
 # cantieri bloccano una costruzione. Un singolo lavoro può chiederlo anche con "priority_first": true (2026-11-12: il giro
 # delle trappole con un animale vivo in un cesto, che dopo pochi giorni muore). Vedi is_priority_first.
 const PRIORITY_FIRST_KINDS: Array[String] = ["site_cut"]
 # Tipo di lavoro -> icona di comando (IconRegistry) che lampeggia sull'edificio durante l'attesa per l'assegnazione a mano.
-const ICON_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt", "fish": "fish", "repair": "build", "inventory": "transport", "rite": "rite", "site_cut": "cut", "heal": "heal", "trap": "trap", "transport": "transport", "cultivate": "sow"}
+const ICON_KEY_BY_KIND := {"butcher": "butcher", "build": "build", "upgrade": "build", "demolish": "demolish", "body": "bury", "pile": "pickup", "output": "transport", "produce": "produce", "cut": "cut", "quarry": "quarry", "gather": "pickup", "hunt": "hunt", "fish": "fish", "repair": "build", "inventory": "transport", "rite": "rite", "site_cut": "cut", "clear_cut": "cut", "clear_quarry": "quarry", "heal": "heal", "trap": "trap", "transport": "transport", "cultivate": "sow"}
 
 # Modi di priorità (valori salvati in GameData.job_board_priority_mode, mai cambiarli).
 const PRIORITY_BEST_FIT := "best_fit"
@@ -99,6 +101,8 @@ const DEFAULT_KIND_ORDER: Array[String] = ["inventory", "heal", "body", "build",
 # Tipo -> chiave tr() del nome nell'elenco dei tipi e nel log.
 const KIND_NAME_KEYS := {
 	"site_cut": "task_assignment_kind_site_cut",
+	"clear_cut": "task_assignment_kind_clear_cut",
+	"clear_quarry": "task_assignment_kind_clear_quarry",
 	"butcher": "task_assignment_kind_butcher",
 	"body": "task_assignment_kind_body",
 	"build": "task_assignment_kind_build",

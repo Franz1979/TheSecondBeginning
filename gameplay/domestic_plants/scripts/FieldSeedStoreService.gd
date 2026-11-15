@@ -26,7 +26,7 @@ static func capacity(building: Building) -> int:
 static func max_capacity(building: Building) -> int:
 	if building == null or building.rules == null:
 		return 0
-	return building.rules.toolkit_units_per_type * StorageContainerService.unit_capacity(CONTAINER)
+	return BuildingToolkitService.units_for_rules(building.rules, CONTAINER) * StorageContainerService.unit_capacity(CONTAINER)
 
 
 # Livello della regola generale per il seme di questo campo (regola del WM "Semi nei campi").
@@ -46,7 +46,7 @@ static var _default_level := 0
 static var _max_type_capacity := 0
 
 
-# Valore iniziale della regola: la semina di tutti i lotti di un campo, entro i suoi vasi (oggi 8 × 100, vasi 500 → 500).
+# Valore iniziale della regola: la semina di tutti i lotti di un campo, entro i suoi vasi (oggi 8 × 100, 8 vasi da 100 → 800).
 static func default_level() -> int:
 	_prepare_type_cache()
 	return _default_level
@@ -66,7 +66,7 @@ static func _prepare_type_cache() -> void:
 		var rules := BuildingCalculator.get_building_rules(type_name)
 		if rules == null or not rules.cultivation_domestic_only or not rules.toolkit_extra_tools.has(CONTAINER):
 			continue
-		var type_capacity := rules.toolkit_units_per_type * StorageContainerService.unit_capacity(CONTAINER)
+		var type_capacity := BuildingToolkitService.units_for_rules(rules, CONTAINER) * StorageContainerService.unit_capacity(CONTAINER)
 		_max_type_capacity = maxi(_max_type_capacity, type_capacity)
 		_default_level = maxi(_default_level, mini(rules.cultivation_lots * rules.cultivation_units_per_lot, type_capacity))
 

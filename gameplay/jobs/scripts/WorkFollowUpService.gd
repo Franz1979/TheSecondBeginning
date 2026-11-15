@@ -314,6 +314,9 @@ static func continue_quarry_series(ctx: GameContext, worker: HumanIndividual, se
 		temp_series_log(worker, "cava: serie %s finita o pipottino assente." % str(series))
 		return
 	temp_series_log(worker, "cava: prosegue la serie %s." % str(series))
+	if QuarryZoneService.is_rock_series(series):
+		continue_quarry_rock_series(ctx, worker, series, effects)
+		return
 	var area := WorkAreaService.find_by_id(game_data, int(series.get("work_area_id", -1)))
 	if area == null or not QuarryZoneService.list_quarry_work_areas(game_data).has(area):
 		series_stopped(game_data, worker, QuarryZoneService.SERIES_STOPPED_KEY, series, GameContext.tr_text("series_stop_zone_gone"), effects)
@@ -334,6 +337,35 @@ static func continue_quarry_series(ctx: GameContext, worker: HumanIndividual, se
 		series_stopped(game_data, worker, QuarryZoneService.SERIES_STOPPED_KEY, series, GameContext.tr_text(stop_key), effects)
 		return
 	var task := TaskBuilderService.build_quarry_task(worker, area.macro_coords, rock, area.id, series, source)
+	if task == null:
+		return
+	TaskQueueService.push_suspended_task(worker, task)
+	effects.wire_task(GameEffects.WireKind.BUILD_STEPS, task, worker)
+	effects.refresh_panel(GameEffects.PanelKind.SELECTED_INDIVIDUAL)
+
+
+# Estrazione successiva della serie su una roccia sola (2026-11-15, popup del clic destro): sempre la stessa roccia. Roccia
+# esaurita: la serie finisce senza messaggi (come la serie di cella del taglio). Niente attrezzo per scavare: "serie
+# interrotta". Roccia presa da un altro pipottino: la serie si ferma lì, senza messaggi (non nello sgombero della microcella,
+# ClearOrderService.SERIES_FLAG).
+static func continue_quarry_rock_series(ctx: GameContext, worker: HumanIndividual, series: Dictionary, effects: GameEffects) -> void:
+	var macro_coords := QuarryZoneService.get_rock_series_macro_coords(series)
+	var rock := QuarryZoneService.get_rock_series_rock(series)
+	var cell: LiveMacroCell = ctx.live_cells.get(macro_coords)
+	if cell == null or cell.macro_state == null or RockStoneService.get_remaining_stone(cell.macro_state, rock) <= 0:
+		temp_series_log(worker, "cava: serie %s, roccia esaurita o cella spenta." % str(series))
+		return
+	if not ToolGateService.has_tool_for(worker, TaskTypes.ToolCategory.DIGGING):
+		series_stopped(ctx.game_data, worker, QuarryZoneService.SERIES_STOPPED_KEY, series, GameContext.tr_text("series_stop_no_tool").format({
+			"tools": ToolFetchService.describe_missing_categories([TaskTypes.ToolCategory.DIGGING]),
+		}), effects)
+		return
+	# Sgombero della microcella: gli altri sulla stessa roccia lavorano con lui.
+	var shared := ClearOrderService.is_clear_series(series)
+	if not shared and QuarryZoneService.collect_reserved_rocks(ctx.individuals).has(QuarryZoneService.rock_reservation_key(macro_coords, rock)):
+		temp_series_log(worker, "cava: serie %s, roccia presa da un altro." % str(series))
+		return
+	var task := TaskBuilderService.build_quarry_task(worker, macro_coords, rock, -1, series)
 	if task == null:
 		return
 	TaskQueueService.push_suspended_task(worker, task)

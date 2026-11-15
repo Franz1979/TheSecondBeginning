@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_saddle_quern"]
+
+; Macina a sella (2026-11-15, richiesta utente — ramo piante): una pietra piatta incavata e un macinello, per macinare il
+; grano e la segale in farina (categoria Macinatura). Capanna degli attrezzi agricoli, senza attrezzi (si picchietta
+; pietra con pietra), con l'Agricoltura e solo col grano o la segale addomesticati (required_domesticated_species). Sta nell'attrezzeria della
+; Casa delle granaglie (3). Un uso = una partita di 10 misure: 2000 usi = 20000 misure, 2-3 raccolti (decisione utente). Pesante (spazio 10).
+[resource]
+script = ExtResource("1_saddle_quern")
+secondary_resource_name = "saddle_quern"
+calories_per_unit = 0.0
+category = 4
+panel_group = "work"
+required_idea_id = "agriculture"
+required_domesticated_species = Array[String](["wheat", "rye"])
+generation_source = 2
+space_per_unit = 10.0
+recipe_inputs = {
+"pebble": 1,
+"stone": 4
+}
+recipe_labor = 800.0
+recipe_workstation_types = Array[String](["farmer_hut"])
+tool_categories = Array[int]([18])
+max_uses = 2000
+work_efficiency = 1.0

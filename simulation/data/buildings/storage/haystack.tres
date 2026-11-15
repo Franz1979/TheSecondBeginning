@@ -1,0 +1,31 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_haystack"]
+
+; Pagliaio (2026-11-15, richiesta utente): quattro trespoli di legno legati con la corda su una microcella, dove si stende
+; la paglia (e più avanti il fieno). Magazzini, Agricoltura. 4 posti da 250 = 1000 di paglia (circa il raccolto di un
+; campo), uno per trespolo; conservazione x1,5 sui Materiali grezzi (240 giorni -> 360, fino al raccolto dopo). Solo
+; paglia e fieno (storage_accepted_resources; la paglia accetta solo questo tipo, SecondaryResourceRules.
+; storage_building_types). Sulla mappa un trespolo pieno ogni 200 (HaystackShape.racks_full). Senza porta.
+[resource]
+script = ExtResource("1_haystack")
+building_name = "building_haystack"
+category = 2
+required_idea_id = "agriculture"
+required_labor = 800
+lifespan_years = 10
+max_durability = 40
+defense = 10
+required_materials = {
+"fiber_rope": 8,
+"wood": 12
+}
+required_space = 1
+has_door = false
+visibility_radius = 2
+storage_slot_count = 4
+storage_space_per_slot = 250
+storage_accepted_resources = Array[String](["straw", "hay"])
+accepted_categories = Array[int]([1])
+categories_locked = true
+durability_multiplier_by_category = Array[float]([1.0, 1.5, 1.0, 1.0, 1.0, 1.0, 1.0])

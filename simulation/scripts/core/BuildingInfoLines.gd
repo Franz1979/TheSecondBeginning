@@ -52,7 +52,19 @@ static func build(rules: BuildingRules) -> Array[Dictionary]:
 		add_row.call(_tr("building_info_waste_capacity").format({"capacity": rules.waste_capacity}), false)
 	# Attrezzeria (2026-10-04): letta dai dati, su ogni edificio che ce l'ha; con la regola d'uso.
 	if rules.toolkit_tool_types > 0 and rules.toolkit_units_per_type > 0:
-		add_row.call(_tr("building_info_toolkit").format({"types": rules.toolkit_tool_types, "units": rules.toolkit_units_per_type}), false)
+		# Vasi a parte (2026-11-15, richiesta utente — massimo per oggetto): "Vasi da semi: fino a 8 (800 once)", e i tipi
+		# di attrezzo senza i contenitori.
+		var container_types: Array[String] = []
+		for tool_name in rules.toolkit_extra_tools:
+			if StorageContainerService.unit_capacity(tool_name) > 0:
+				container_types.append(tool_name)
+		var tool_types := rules.toolkit_tool_types - container_types.size()
+		if tool_types > 0:
+			add_row.call(_tr("building_info_toolkit").format({"types": tool_types, "units": rules.toolkit_units_per_type}), false)
+		for container in container_types:
+			var max_units := BuildingToolkitService.units_for_rules(rules, container)
+			add_row.call(_tr("building_info_toolkit_seed_jar_count").format({"max": max_units,
+				"capacity": max_units * StorageContainerService.unit_capacity(container)}), false)
 		# Magazzino (2026-11-13, attrezzeria dei vasi da semi): non ci lavora nessuno, la riga dice a cosa serve.
 		add_row.call(_tr("building_info_toolkit_usage" if rules.toolkit_extra_tools.is_empty() else "building_info_toolkit_seed_jars"), true)
 	if rules.is_workstation:

@@ -58,6 +58,11 @@ extends Resource
 # nessuno storage, comportamento "innocuo" per un tipo che non lo valorizza esplicitamente.
 @export var storage_slot_count: int = 0
 @export var storage_space_per_slot: int = 0
+# Categorie tenute SFUSE negli slot (2026-11-15, Casa delle granaglie, richiesta utente): una risorsa di queste categorie
+# che altrove va nei contenitori dell'Attrezzeria (SecondaryResourceRules.stored_in_container, es. le Granaglie nei vasi da
+# semi) qui sta negli slot come ogni altra risorsa, senza vasi e senza usurarli. Vuoto = sempre nei contenitori.
+# Letto solo da StorageContainerService.is_loose_in.
+@export var loose_categories: Array[int] = []
 
 # Categorie stoccabili in questo edificio (2026-09-09, richiesta utente, BuildingStorageService
 # Step 1) — vuoto = accetta qualunque categoria (SecondaryResourceTypes.Category), stesso
@@ -428,6 +433,10 @@ func can_be_village_center() -> bool:
 # (0 = nessuna Attrezzeria) e quanti pezzi per tipo. Chi produce qui usa questi attrezzi prima dei propri.
 @export var toolkit_tool_types: int = 0
 @export var toolkit_units_per_type: int = 0
+# Massimo per singolo oggetto dell'Attrezzeria (2026-11-15, richiesta utente): nome -> pezzi, al posto di
+# toolkit_units_per_type per quell'oggetto (campo: vasi 8, bastoni e falcetti 10). Chi non c'è usa toolkit_units_per_type.
+# Letto solo da BuildingToolkitService.units_for_rules.
+@export var toolkit_units_by_tool: Dictionary = {}
 # Attrezzi che l'Attrezzeria accetta oltre a quelli delle ricette (2026-11-13, richiesta utente — attrezzeria del
 # magazzino: la Capanna di stoccaggio tiene i vasi da semi, ["seed_jar"]). Vuoto = solo la regola delle ricette.
 @export var toolkit_extra_tools: Array[String] = []

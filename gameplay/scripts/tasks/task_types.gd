@@ -209,4 +209,9 @@ enum ToolCategory {
 	# non deve valere per la cava né il falcetto come coltello. Nessuna Action le richiede ancora.
 	SOWING,
 	REAPING,
+	# POUNDING e GRINDING (2026-11-15, richiesta utente — mortaio e macina a sella, Casa delle granaglie) aggiunte IN FONDO,
+	# stesso motivo: pestare orzo e avena col mortaio, macinare grano e segale con la sella. Separate perché il mortaio
+	# non deve valere come macina né viceversa. Nessuna Action le richiede ancora.
+	POUNDING,
+	GRINDING,
 }

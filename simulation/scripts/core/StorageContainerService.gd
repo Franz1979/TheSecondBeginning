@@ -21,6 +21,24 @@ static func is_container_resource(resource_name: String) -> bool:
 	return container_of(resource_name) != ""
 
 
+# Granaglie sfuse (2026-11-15, Casa delle granaglie — BuildingRules.loose_categories): in `building` la categoria della
+# risorsa sta sfusa negli slot, non nei contenitori.
+static func is_loose_in(building: Building, resource_rules: SecondaryResourceRules) -> bool:
+	return building != null and building.rules != null and resource_rules != null and not resource_rules.always_in_container \
+		and building.rules.loose_categories.has(int(resource_rules.category))
+
+
+# true se in `building` la risorsa sta nei contenitori dell'Attrezzeria (ha un contenitore e lì non è sfusa).
+static func uses_container(building: Building, resource_rules: SecondaryResourceRules) -> bool:
+	return resource_rules != null and resource_rules.stored_in_container != "" and not is_loose_in(building, resource_rules)
+
+
+# Stessa cosa per nome, ristretta al contenitore `container`.
+static func _held_in(building: Building, resource_name: String, container: String) -> bool:
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	return rules != null and rules.stored_in_container == container and not is_loose_in(building, rules)
+
+
 # Misure che tiene un pezzo del contenitore (0 = non è un contenitore).
 static func unit_capacity(container: String) -> int:
 	var rules := CaloricCalculator.get_caloric_source_rules(container)
@@ -39,7 +57,7 @@ static func stored_in(building: Building, container: String) -> int:
 	if building == null or container == "":
 		return 0
 	for resource_name in building.stored_resources.keys():
-		if container_of(String(resource_name)) == container:
+		if _held_in(building, String(resource_name), container):
 			total += int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0))
 	return total
 
@@ -59,7 +77,7 @@ static func units_used(building: Building, container: String, except_resource: S
 	if building == null or container == "":
 		return 0
 	for resource_name in building.stored_resources.keys():
-		if String(resource_name) == except_resource or container_of(String(resource_name)) != container:
+		if String(resource_name) == except_resource or not _held_in(building, String(resource_name), container):
 			continue
 		total += units_for(int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0)), container)
 	return total
@@ -69,7 +87,7 @@ static func units_used(building: Building, container: String, except_resource: S
 # liberi (un contenitore, una risorsa).
 static func room(building: Building, resource_name: String) -> int:
 	var container := container_of(resource_name)
-	if building == null or container == "":
+	if building == null or container == "" or is_loose_in(building, CaloricCalculator.get_caloric_source_rules(resource_name)):
 		return 0
 	var own := 0
 	if building.stored_resources.has(resource_name):
@@ -87,7 +105,10 @@ static func village_has_room(resource_name: String) -> bool:
 	for building in world.buildings:
 		if building.is_demolished or not building.is_complete or building.is_out_of_service():
 			continue
-		if room(building, resource_name) > 0 and BuildingStorageService.can_accept(building, resource_name):
+		# Casa delle granaglie (2026-11-15): dove la risorsa sta sfusa conta il posto negli slot.
+		var free := BuildingStorageService.get_max_depositable(building, resource_name) \
+			if is_loose_in(building, CaloricCalculator.get_caloric_source_rules(resource_name)) else room(building, resource_name)
+		if free > 0 and BuildingStorageService.can_accept(building, resource_name):
 			return true
 	return false
 
@@ -105,7 +126,8 @@ static func no_room_reason(resource_name: String) -> String:
 # capienza si perdono.
 static func wear(building: Building, resource_name: String, amount: int) -> void:
 	var container := container_of(resource_name)
-	if building == null or container == "" or amount <= 0:
+	if building == null or container == "" or amount <= 0 \
+			or is_loose_in(building, CaloricCalculator.get_caloric_source_rules(resource_name)):
 		return
 	var broke := 0
 	for i in range(amount):
@@ -132,7 +154,7 @@ static func trim_overflow(building: Building, container: String) -> int:
 		var emptiest := ""
 		var emptiest_amount := per_unit + 1
 		for resource_name in building.stored_resources.keys():
-			if container_of(String(resource_name)) != container:
+			if not _held_in(building, String(resource_name), container):
 				continue
 			var quantity := int((building.stored_resources[resource_name] as Dictionary).get("quantity", 0))
 			if quantity <= 0:
@@ -189,6 +211,8 @@ static func blocks_removal(building: Building, container: String) -> bool:
 static func type_can_hold_category(building: Building, category: int) -> bool:
 	if building == null or building.rules == null:
 		return false
+	if building.rules.loose_categories.has(category):
+		return true
 	var found := false
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)

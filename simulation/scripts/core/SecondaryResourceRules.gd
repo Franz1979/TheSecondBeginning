@@ -103,6 +103,11 @@ extends Resource
 # anche dal cassetto Scorte (WarehousePanel._visible_resource_names): regola unica per le risorse future da scoperta
 # (grano, birra...).
 @export var required_idea_id: String = ""
+# Specie addomesticate (GameData.domesticated_species) di cui ne basta UNA perché la ricetta compaia (2026-11-15,
+# richiesta utente — la macina a sella aspetta il grano o la segale domestici), oltre a required_idea_id; vuota = nessuna.
+# Lista e non stringa come BuildingRules.required_domesticated_species, perché un attrezzo può servire a più specie.
+# Letto da ProductionService.is_species_ready (can_produce_at / is_recipe_known).
+@export var required_domesticated_species: Array[String] = []
 
 # Vedi SecondaryResourceTypes.GenerationSource — PURAMENTE descrittivo (documenta la provenienza
 # dello stock: pianta/animale vs sparso sul terreno), nessuna logica lo consulta. Default
@@ -136,6 +141,10 @@ extends Resource
 # Solo rifiuto (2026-10-18, richiesta utente — detriti delle macerie): nessun magazzino lo accetta, non compare tra le
 # scorte né nel cassetto del magazzino; si porta solo alla Fossa dei rifiuti (WasteDisposalService.is_waste_only).
 @export var waste_only: bool = false
+
+# Solo in questi tipi di edificio (2026-11-15, richiesta utente — paglia: solo nel pagliaio, "haystack"): nessun altro
+# magazzino la accetta (BuildingStorageService._free_storage_allows). Vuoto = qualunque magazzino che ne accetti la categoria.
+@export var storage_building_types: Array[String] = []
 
 # Effetto del cibo su felicità e salute di chi lo carica (2026-10-03, richiesta utente): punti ogni 100 calorie
 # caricate, applicati SOLO al rifornimento (RestockPouchAction.on_complete, riserva corporea e provviste, sorgente
@@ -295,6 +304,10 @@ extends Resource
 # Contenitore in cui la risorsa sta in magazzino (2026-11-13, punto 1d — wild_seeds -> "seed_jar"): entra solo fino alla
 # capienza dei contenitori montati nell'Attrezzeria e non occupa slot (StorageContainerService). "" = magazzino normale.
 @export var stored_in_container: String = ""
+# Sempre nel contenitore (2026-11-15, richiesta utente — semola d'orzo, poi farina): anche negli edifici che tengono sfusa la
+# sua categoria (BuildingRules.loose_categories, la Casa delle granaglie) resta nei vasi. Letto da
+# StorageContainerService.is_loose_in.
+@export var always_in_container: bool = false
 # Calorie di gioco per unità quando la mangia un animale (2026-11-13, punto 4): per i cibi che l'uomo non mangia crudi
 # (semi, carne e pesce crudi, ossa), che hanno calories_per_unit 0. 0 = per gli animali vale calories_per_unit.
 @export var animal_calories_per_unit: float = 0.0

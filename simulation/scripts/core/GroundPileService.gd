@@ -436,6 +436,8 @@ static func _rot_carcasses(pile: GroundPile, carcass_rules: ExpiredObjectRules, 
 	for carcass in pile.carcasses:
 		if not ExpiredObjectCalculator.is_expired(GroundPile.get_carcass_expiry_record(carcass), carcass_rules, game_data.year, game_data.current_day):
 			kept.append(carcass)
+		elif bool(carcass.get(HuntTrapStatsService.CARCASS_HUNTED_KEY, false)):
+			HuntTrapStatsService.add_hunt(game_data, String(carcass.get("species", "")), HuntTrapStatsService.HUNT_ROTTED)
 	if kept.size() != pile.carcasses.size():
 		pile.carcasses = kept
 		pile.revision += 1
@@ -513,6 +515,7 @@ static func from_save_data(data: Dictionary, parse_resources: Callable) -> Groun
 					"killed_year": int(raw_carcass.get("killed_year", 0)),
 					"killed_day": int(raw_carcass.get("killed_day", 0)),
 					"butcherable": bool(raw_carcass.get("butcherable", true)),
+					HuntTrapStatsService.CARCASS_HUNTED_KEY: bool(raw_carcass.get(HuntTrapStatsService.CARCASS_HUNTED_KEY, false)),
 				})
 				# Compagni di caccia (2026-11-11, ButcherAction.CARCASS_HELPERS_KEY): .get per i salvataggi precedenti.
 				var raw_helpers = raw_carcass.get("helpers", [])

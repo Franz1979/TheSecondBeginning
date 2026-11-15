@@ -3,9 +3,11 @@
 [ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_seed_jar"]
 
 ; Vaso da semi (2026-11-13, richiesta utente — ramo delle piante, punto 1a): vaso di terracotta dove si conservano i semi
-; selvatici in magazzino. Ogni vaso tiene seed_capacity misure; occupa sempre 20, pieno o vuoto. Si consuma di un uso per
+; selvatici in magazzino. Ogni vaso tiene seed_capacity misure; occupa sempre 10, pieno o vuoto (in magazzino i semi
+; dentro non contano; pieno, a conti fatti, peserebbe 10 + 100 × 0,5 = 60). Si consuma di un uso per
 ; ogni misura che entra o esce (max_uses): a zero si rompe. Per ora solo l'oggetto: i semi arrivano al passo 1b.
-; 50 misure (2026-11-15, richiesta utente, erano 40): un lotto di campo (100 once) sta in 2 vasi esatti.
+; 50 misure (2026-11-15, richiesta utente, erano 40). 100 misure e spazio 10 (2026-11-15, richiesta utente, erano 50 e 20):
+; un orcio da circa 35 litri; un lotto di campo (100 misure) sta in un vaso, il capanno (10 vasi) tiene il seme di tutto il campo.
 [resource]
 script = ExtResource("1_seed_jar")
 secondary_resource_name = "seed_jar"
@@ -14,7 +16,7 @@ category = 4
 panel_group = "containers"
 required_idea_id = "pottery"
 generation_source = 2
-space_per_unit = 20.0
+space_per_unit = 10.0
 recipe_inputs = {
 "clay": 30,
 "pebble": 1
@@ -23,4 +25,4 @@ recipe_labor = 600.0
 recipe_fuel_required = 3.0
 recipe_workstation_types = Array[String](["potter_hut"])
 max_uses = 2000
-seed_capacity = 50
+seed_capacity = 100

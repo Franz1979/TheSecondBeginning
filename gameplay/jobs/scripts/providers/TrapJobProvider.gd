@@ -15,7 +15,8 @@ const JOB_PLACE := "place"
 const JOB_EMPTY := "empty"
 # Giro delle reti di una zona (2026-11-07): "trap:round:<id zona>", un lavoratore, quando una trappola della zona va
 # svuotata; chi lo prende passa da tutte quelle della zona con prede (le più vicine prima, finché la resa sta nello zaino)
-# e consegna una volta sola. Le trappole fuori zona (piazzate a mano) restano col lavoro di una sola (JOB_EMPTY).
+# e consegna una volta sola. Le trappole fuori zona (piazzate a mano) restano col lavoro di una sola (JOB_EMPTY), e così
+# quelle a preda grossa anche dentro una zona (2026-11-15, TrapService.is_emptied_alone: fuori dal giro).
 const JOB_ROUND := "round"
 # Spinta verso le fosse (2026-11-14, PitDriveService): "trap:drive:<id zona>", un lavoratore, nessun attrezzo.
 const JOB_DRIVE := "drive"
@@ -126,7 +127,8 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 				"priority_first": with_live > 0,
 			})
 	for trap in ctx.game_data.placed_traps:
-		if WorkAreaService.find_by_id(ctx.game_data, trap.work_area_id) != null:
+		# Le trappole di una zona le svuota il giro, tranne quelle a preda grossa (_zone_job_of "", lavoro proprio).
+		if WorkAreaService.find_by_id(ctx.game_data, trap.work_area_id) != null and _zone_job_of(trap) != "":
 			continue
 		var is_assigned: bool = (taken["empty"] as Dictionary).has(trap.id)
 		if not is_assigned and not TrapService.needs_emptying(ctx.game_data, trap):
@@ -146,6 +148,9 @@ static func collect(ctx: GameContext, provider: Dictionary, _assigned: Dictionar
 			"entry_kind": "work_area", "id": trap.work_area_id, "sort": 0.0,
 			"assigned": is_assigned, "hidden": false, "blocked_reason": empty_blocked,
 			"trap_id": trap.id, "trap_name": trap.trap_name, "provider": provider, "job_type": JOB_EMPTY,
+			# Preda grossa (2026-11-15, richiesta utente): dentro le Trappole passa prima, come il giro col cesto vivo; da
+			# ultimo arrivato (il più vecchio passa prima) la fossa aspettava fino a marcire.
+			"priority_first": TrapService.is_emptied_alone(rules),
 		})
 	_append_drive_jobs(ctx, provider, taken["drive"], jobs)
 	_no_site_last = no_site
@@ -312,7 +317,7 @@ static func _build_empty_task(ctx: GameContext, worker: HumanIndividual, job: Di
 # le aggiunge EmptyTrapAction a fine tappa (next_round_trap), così entrano anche le trappole riempite strada facendo.
 static func build_round_task(ctx: GameContext, worker: HumanIndividual, area_id: int, zone_job: String) -> Task:
 	var exclude: Array[int] = []
-	var first := next_round_trap(ctx.game_data, ctx.individuals, worker, area_id, zone_job, worker.position, INF, exclude)
+	var first := next_round_trap(ctx.game_data, ctx.individuals, worker, area_id, zone_job, worker.position, INF, exclude, true)
 	if first == null:
 		return null
 	var task := build_empty_task(ctx, worker, first.id)
@@ -326,19 +331,25 @@ static func build_round_task(ctx: GameContext, worker: HumanIndividual, area_id:
 
 # Prossima tappa del giro della zona `area_id` per `worker`: la trappola del lavoro di zona `zone_job` più vicina a `from`
 # con prede, non già nella Task di svuotamento di un altro né in `exclude`, la cui resa entra in `free_space`. null se nessuna.
+# `most_urgent` (2026-11-15, richiesta utente — prima tappa del giro): quella con meno giorni prima che marcisca una preda
+# (TrapService.days_to_first_spoil), a parità la più vicina; così le trappole lontane non restano indietro a marcire.
 static func next_round_trap(game_data: GameData, individuals: Array[HumanIndividual], worker: HumanIndividual, area_id: int,
-		zone_job: String, from: Vector2, free_space: float, exclude: Array[int]) -> PlacedTrap:
+		zone_job: String, from: Vector2, free_space: float, exclude: Array[int], most_urgent: bool = false) -> PlacedTrap:
 	if game_data == null:
 		return null
 	var busy := TrapService.trap_ids_being_emptied(individuals, worker)
 	var best: PlacedTrap = null
 	var best_distance := INF
+	var best_days := INF
+	var day := game_data.get_absolute_day()
 	for trap in game_data.placed_traps:
 		if trap.work_area_id != area_id or trap.get_caught() <= 0 or busy.has(trap.id) or exclude.has(trap.id) \
 				or _zone_job_of(trap) != zone_job or catch_space(trap) > free_space:
 			continue
 		var distance := site_point(worker, trap).distance_squared_to(from)
-		if distance < best_distance:
+		var days := TrapService.days_to_first_spoil(trap, day) if most_urgent else 0.0
+		if days < best_days or (days == best_days and distance < best_distance):
+			best_days = days
 			best_distance = distance
 			best = trap
 	return best
@@ -354,9 +365,13 @@ static func _has_live_catch(trap: PlacedTrap) -> bool:
 	return false
 
 
+# Lavoro di zona del giro che svuota `trap`; "" se nessun giro la prende (2026-11-15: preda grossa, TrapService.
+# is_emptied_alone, col suo lavoro "Svuota").
 static func _zone_job_of(trap: PlacedTrap) -> String:
 	var rules := TrapService.get_rules(trap.trap_name)
-	return rules.trap_zone_job if rules != null else ""
+	if rules == null or TrapService.is_emptied_alone(rules):
+		return ""
+	return rules.trap_zone_job
 
 
 # Punto d'arrivo alla trappola, nelle coordinate di `worker`.

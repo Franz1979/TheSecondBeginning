@@ -27,7 +27,7 @@ static func get_rule_rows(game_data: GameData, completed_ideas: Array) -> Array[
 		for tool_name in BuildingToolkitService.accepted_tools_for_type(type_name):
 			tools.append({
 				"tool": tool_name, "level": get_target(game_data, type_name, tool_name),
-				"max": BuildingToolkitService.units_per_type_for(type_name),
+				"max": BuildingToolkitService.units_per_type_for(type_name, tool_name),
 			})
 		if not tools.is_empty():
 			rows.append({"type": type_name, "name": rules.building_name, "tools": tools})
@@ -92,7 +92,7 @@ static func mount_from_own_storage(world: World, game_data: GameData, in_transit
 			var tool := String(tool_name)
 			if not BuildingToolkitService.is_accepted_tool(building, tool):
 				continue
-			var desired := mini(int(targets[tool_name]), BuildingToolkitService.get_units_per_type(building))
+			var desired := mini(int(targets[tool_name]), BuildingToolkitService.get_units_per_type(building, tool))
 			var missing := desired - BuildingToolkitService.get_quantity(building, tool) - int(in_transit.get(order_key(building.id, tool), 0))
 			while missing > 0 and BuildingToolkitService.can_add(building, tool):
 				var instance := BuildingStorageService.take_stored_tool_unit(building, tool)
@@ -126,7 +126,7 @@ static func plan_orders(world: World, game_data: GameData, open_orders: Array, i
 					continue
 				var key := order_key(building.id, tool)
 				served[key] = true
-				var desired := mini(int(targets[tool_name]), BuildingToolkitService.get_units_per_type(building))
+				var desired := mini(int(targets[tool_name]), BuildingToolkitService.get_units_per_type(building, tool))
 				var missing := desired - BuildingToolkitService.get_quantity(building, tool) - int(in_transit.get(key, 0))
 				missing = mini(missing, BuildingToolkitService.get_max_toolkit_depositable(building, tool))
 				if missing <= 0:

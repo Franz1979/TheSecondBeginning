@@ -74,6 +74,7 @@ func save_game_to_json(
 			"domestication_points": game_data.domestication_points,
 			"domesticated_species": game_data.domesticated_species,
 			"domestication_years": game_data.domestication_years,
+			"hunt_trap_stats": game_data.hunt_trap_stats,
 			"domestication_harvest_units": game_data.domestication_harvest_units,
 			"pit_sowing_units": game_data.pit_sowing_units,
 			"discovered_domestic_species": game_data.discovered_domestic_species,
@@ -110,6 +111,8 @@ func save_game_to_json(
 			),
 			# Registro delle mete abituali delle mandrie (2026-11-15, vedi GameData) — soli tipi JSON-nativi.
 			"herd_habit_goals": game_data.herd_habit_goals,
+			# Microcelle da sgomberare (2026-11-15, vedi GameData) — soli tipi JSON-nativi.
+			"clear_orders": game_data.clear_orders,
 			# Visite in corso (2026-10-30, vedi WildAnimalVisit.to_save_data).
 			"wild_animal_visits": game_data.wild_animal_visits.map(
 				func(visit: WildAnimalVisit) -> Dictionary: return visit.to_save_data()

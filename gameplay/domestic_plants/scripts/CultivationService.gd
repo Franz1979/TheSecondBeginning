@@ -36,6 +36,7 @@ const SOWING_TOOLS: Array[TaskTypes.ToolCategory] = [TaskTypes.ToolCategory.SOWI
 # granaio), points_per_mature_plant per pianta mietuta, terreno vuoto. Finita la stagione prima: mietuta la parte fatta,
 # il resto marcisce (-points_per_rotten_plant ciascuna).
 const REAP_TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/reap.tres"
+const STRAW_RESOURCE := "straw"
 const REAP_SKILL_EFFECT_KEY := "reap"
 const REAPING_TOOLS: Array[TaskTypes.ToolCategory] = [TaskTypes.ToolCategory.REAPING]
 const CONTEXT_BUILDING_ID := "sow_building_id"
@@ -251,15 +252,29 @@ static func finish_reaping(game_data: GameData, world: World, building: Building
 		building.rules.cultivation_yield_cap)
 	var seed_name := rules.domestic_resource_name if is_domestic_only(building) else harvest_resource(game_data, species)
 	# Sul lotto stesso (2026-11-15, richiesta utente): finché non si porta via, il lotto non si risemina (harvest_pile).
+	var straw := straw_units(rules, seed_name, units)
 	if units > 0 and seed_name != "":
-		GroundPileService.drop_at(game_data, Vector2i(building.macro_x, building.macro_y), lot.microcell,
-			{seed_name: {"quantity": units, "decay_fraction": 0.0}})
-	log_line("%s #%d lotto %s: mietute %d piante di %s (%d once a terra), marcite %d" % [
-		building.building_type_name, building.id, lot.microcell, reaped, species, units, rotten])
+		var drop := {seed_name: {"quantity": units, "decay_fraction": 0.0}}
+		# Paglia (2026-11-15, richiesta utente): nello stesso mucchio, blocca la Semina finché non va al pagliaio.
+		if straw > 0:
+			drop[STRAW_RESOURCE] = {"quantity": straw, "decay_fraction": 0.0}
+		GroundPileService.drop_at(game_data, Vector2i(building.macro_x, building.macro_y), lot.microcell, drop)
+	log_line("%s #%d lotto %s: mietute %d piante di %s (%d once e %d paglia a terra), marcite %d" % [
+		building.building_type_name, building.id, lot.microcell, reaped, species, units, straw, rotten])
 	_clear(building, lot)
 	lot.labor = 0.0
 	var points := TrialGardenService.mature_points(rules, reaped) + TrialGardenService.rotten_points(rules, rotten)
 	return _points_of(building, {species: points} if points != 0 else {})
+
+
+# Paglia della Mietitura: solo dal seme domestico (DomesticPlantRules.straw_per_unit) e solo con l'idea della paglia
+# (Agricoltura, required_idea_id della risorsa).
+static func straw_units(rules: DomesticPlantRules, seed_name: String, units: int) -> int:
+	if rules == null or units <= 0 or rules.straw_per_unit <= 0.0 or seed_name == "" or seed_name != rules.domestic_resource_name:
+		return 0
+	if TerrainScatteredResourceService.is_resource_locked(STRAW_RESOURCE):
+		return 0
+	return int(floor(float(units) * rules.straw_per_unit))
 
 
 # Mucchio del raccolto ancora sul lotto (con qualcosa dentro), o null: finché c'è, la Semina del lotto è bloccata.

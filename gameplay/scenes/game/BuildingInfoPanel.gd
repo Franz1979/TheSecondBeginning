@@ -365,6 +365,9 @@ const ORDER_OUTPUT_WARNING_COLOR := Color(0.95, 0.75, 0.1, 1.0)
 var _toolkit_box: VBoxContainer = null
 var _toolkit_caption: Label = null
 var _toolkit_grid: HFlowContainer = null
+# Vasi dell'Attrezzeria in una sezione loro (2026-11-15, richiesta utente): stessi pezzi, didascalia "Vasi (n/max)".
+var _container_caption: Label = null
+var _container_grid: HFlowContainer = null
 
 
 # Elenco dei sepolti di un cumulo (2026-10-04, cumulo sepolcrale passo 3b): nel corpo del pannello, subito sotto lo stato
@@ -3238,10 +3241,13 @@ func _make_toolkit_deposit_target(box: Control, resource_name: String, from_outp
 # "Di scorta: …" per gli altri (il numero e il valore pieno se tutti nuovi, altrimenti gli usi di ciascuno; assente con
 # un pezzo solo) e cosa fa il clic. `uses_list`: usi rimasti di ogni pezzo, dal più consumato. `click_line` (2026-11-14,
 # contenitori) sostituisce la riga del clic.
-func _toolkit_tooltip(tool_name: String, quantity: int, uses_list: Array[int], max_uses: int, click_line: String = "") -> String:
+func _toolkit_tooltip(tool_name: String, quantity: int, uses_list: Array[int], max_uses: int, click_line: String = "",
+		max_units: int = 0) -> String:
 	var lines: Array[String] = []
 	var display_name := IconRegistry.get_resource_display_name(tool_name)
 	lines.append(tr("toolkit_tooltip_count_one" if quantity == 1 else "toolkit_tooltip_count").format({"name": display_name, "count": quantity}))
+	if max_units > 0:
+		lines.append(tr("toolkit_tooltip_max").format({"max": max_units}))
 	if not uses_list.is_empty():
 		lines.append(tr("toolkit_tooltip_in_use").format({"uses": uses_list[0], "max": max_uses}))
 	if uses_list.size() > 1:
@@ -3307,59 +3313,112 @@ func _build_toolkit_box() -> void:
 	_toolkit_grid.add_theme_constant_override("h_separation", 4)
 	_toolkit_grid.add_theme_constant_override("v_separation", 4)
 	_toolkit_box.add_child(_toolkit_grid)
+	_container_caption = Label.new()
+	_container_caption.add_theme_font_size_override("font_size", 10)
+	_container_caption.clip_text = true
+	_container_caption.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_toolkit_box.add_child(_container_caption)
+	_container_grid = HFlowContainer.new()
+	_container_grid.add_theme_constant_override("h_separation", 4)
+	_container_grid.add_theme_constant_override("v_separation", 4)
+	_toolkit_box.add_child(_container_grid)
 
 
 func _refresh_toolkit(building: Building) -> void:
-	for child in _toolkit_grid.get_children():
-		_toolkit_grid.remove_child(child)
-		child.queue_free()
+	for grid in [_toolkit_grid, _container_grid]:
+		for child in (grid as Control).get_children():
+			grid.remove_child(child)
+			child.queue_free()
 	_toolkit_box.visible = building != null and building.is_complete and BuildingToolkitService.has_toolkit(building)
 	if not _toolkit_box.visible:
 		return
-	var tool_names := BuildingToolkitService.get_tool_names(building)
-	_toolkit_caption.text = tr("toolkit_caption").format({
-		"used": tool_names.size(), "types": BuildingToolkitService.get_type_capacity(building),
-	})
-	# Attrezzeria del magazzino (2026-11-13, richiesta utente): spiegazione dei vasi da semi nel tooltip del titolo.
-	var is_storage_toolkit := not building.rules.toolkit_extra_tools.is_empty()
-	_toolkit_caption.tooltip_text = TooltipText.wrap(tr("toolkit_storage_tooltip")) if is_storage_toolkit else ""
-	_toolkit_caption.mouse_filter = Control.MOUSE_FILTER_STOP if is_storage_toolkit else Control.MOUSE_FILTER_IGNORE
-	if tool_names.is_empty():
-		var empty_label := Label.new()
-		empty_label.text = tr("toolkit_empty")
-		empty_label.add_theme_font_size_override("font_size", 10)
-		_toolkit_grid.add_child(empty_label)
+	# Attrezzi e vasi separati (2026-11-15, richiesta utente): i vasi hanno la loro sezione e non contano tra i tipi.
+	var container_types := BuildingToolkitService.get_container_types(building)
+	var tools: Array[String] = []
+	var containers: Array[String] = []
+	for tool_name in BuildingToolkitService.get_tool_names(building):
+		if StorageContainerService.unit_capacity(tool_name) > 0:
+			containers.append(tool_name)
+		else:
+			tools.append(tool_name)
+	var tool_types := maxi(BuildingToolkitService.get_type_capacity(building) - container_types.size(), 0)
+	var show_tools := tool_types > 0 or not tools.is_empty()
+	_toolkit_caption.visible = show_tools
+	_toolkit_grid.visible = show_tools
+	if show_tools:
+		_toolkit_caption.text = tr("toolkit_caption").format({"used": tools.size(), "types": tool_types})
+		if tools.is_empty():
+			_toolkit_grid.add_child(_toolkit_empty_label("toolkit_empty"))
+		for tool_name in tools:
+			_toolkit_grid.add_child(_build_toolkit_chip(building, tool_name))
+	var names: Array[String] = container_types.duplicate()
+	for container in containers:
+		if not names.has(container):
+			names.append(container)
+	var show_containers := not names.is_empty()
+	_container_caption.visible = show_containers
+	_container_grid.visible = show_containers
+	if not show_containers:
 		return
-	for tool_name in tool_names:
-		var quantity := BuildingToolkitService.get_quantity(building, tool_name)
-		var chip := _build_missing_material_chip(tool_name, quantity)
-		var uses_list := BuildingToolkitService.get_remaining_uses_list(building, tool_name)
-		var max_uses := ToolInstance.get_max_uses(tool_name)
-		chip.tooltip_text = TooltipText.wrap(_toolkit_tooltip(tool_name, quantity, uses_list, max_uses))
-		# Barra degli usi del pezzo in uso (il più consumato), come in cintura al pipottino.
-		if max_uses > 0 and not uses_list.is_empty():
-			chip.add_child(_build_uses_bar(float(uses_list[0]) / float(max_uses)))
-		# Contenitore (2026-11-13, richiesta utente — vasi da semi): il contenuto si vede nel vaso stesso, con il livello
-		# a sinistra e le once nel tooltip, invece di un riquadro a parte.
-		var container_capacity := StorageContainerService.capacity_of(building, tool_name)
-		if container_capacity > 0:
-			var contained := StorageContainerService.stored_in(building, tool_name)
-			chip.add_child(_build_container_fill_bar(float(contained) / float(container_capacity)))
-			# Riga del clic dei vasi (2026-11-14, richiesta utente): "di scorta" faceva pensare a vasi liberi; il clic toglie
-			# solo un vaso che si può svuotare, ed è rifiutato quando i semi non ci starebbero più (blocks_removal).
-			var container_click := tr("toolkit_container_click_blocked" if StorageContainerService.blocks_removal(building, tool_name)
-				else "toolkit_container_click_return")
-			chip.tooltip_text = TooltipText.wrap(_toolkit_tooltip(tool_name, quantity, uses_list, max_uses, container_click) + "\n"
-				+ tr("toolkit_container_fill").format({"quantity": contained, "capacity": container_capacity}))
-		chip.mouse_filter = Control.MOUSE_FILTER_STOP
-		chip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		var chip_tool := tool_name
-		chip.gui_input.connect(func(event: InputEvent) -> void:
-			if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-				accept_event()
-				toolkit_withdraw_requested.emit(building, chip_tool)
-		)
-		_toolkit_grid.add_child(chip)
+	var count := 0
+	var max_count := 0
+	var stored := 0
+	var capacity := 0
+	for container in names:
+		count += BuildingToolkitService.get_quantity(building, container)
+		max_count += BuildingToolkitService.get_units_per_type(building, container)
+		stored += StorageContainerService.stored_in(building, container)
+		capacity += StorageContainerService.capacity_of(building, container)
+	_container_caption.text = tr("toolkit_containers_caption").format({"count": count, "max": max_count,
+		"stored": stored, "capacity": capacity})
+	# Spiegazione dei vasi da semi nel tooltip del titolo (2026-11-13, richiesta utente).
+	_container_caption.tooltip_text = TooltipText.wrap(tr("toolkit_storage_tooltip"))
+	_container_caption.mouse_filter = Control.MOUSE_FILTER_STOP
+	if containers.is_empty():
+		_container_grid.add_child(_toolkit_empty_label("toolkit_containers_empty"))
+	for container in containers:
+		_container_grid.add_child(_build_toolkit_chip(building, container))
+
+
+func _toolkit_empty_label(key: String) -> Label:
+	var label := Label.new()
+	label.text = tr(key)
+	label.add_theme_font_size_override("font_size", 10)
+	return label
+
+
+# Icona di un pezzo dell'Attrezzeria: quantità, barra degli usi, livello del contenitore (vasi), tooltip col massimo del
+# suo tipo; clic sinistro = il pezzo meno usato torna nel magazzino.
+func _build_toolkit_chip(building: Building, tool_name: String) -> Control:
+	var quantity := BuildingToolkitService.get_quantity(building, tool_name)
+	var max_units := BuildingToolkitService.get_units_per_type(building, tool_name)
+	var chip := _build_missing_material_chip(tool_name, quantity)
+	var uses_list := BuildingToolkitService.get_remaining_uses_list(building, tool_name)
+	var max_uses := ToolInstance.get_max_uses(tool_name)
+	chip.tooltip_text = TooltipText.wrap(_toolkit_tooltip(tool_name, quantity, uses_list, max_uses, "", max_units))
+	# Barra degli usi del pezzo in uso (il più consumato), come in cintura al pipottino.
+	if max_uses > 0 and not uses_list.is_empty():
+		chip.add_child(_build_uses_bar(float(uses_list[0]) / float(max_uses)))
+	# Contenitore (2026-11-13, richiesta utente — vasi da semi): il contenuto si vede nel vaso stesso, con il livello
+	# a sinistra e le once nel tooltip, invece di un riquadro a parte.
+	var container_capacity := StorageContainerService.capacity_of(building, tool_name)
+	if container_capacity > 0:
+		var contained := StorageContainerService.stored_in(building, tool_name)
+		chip.add_child(_build_container_fill_bar(float(contained) / float(container_capacity)))
+		# Riga del clic dei vasi (2026-11-14, richiesta utente): "di scorta" faceva pensare a vasi liberi; il clic toglie
+		# solo un vaso che si può svuotare, ed è rifiutato quando i semi non ci starebbero più (blocks_removal).
+		var container_click := tr("toolkit_container_click_blocked" if StorageContainerService.blocks_removal(building, tool_name)
+			else "toolkit_container_click_return")
+		chip.tooltip_text = TooltipText.wrap(_toolkit_tooltip(tool_name, quantity, uses_list, max_uses, container_click, max_units)
+			+ "\n" + tr("toolkit_container_fill").format({"quantity": contained, "capacity": container_capacity}))
+	chip.mouse_filter = Control.MOUSE_FILTER_STOP
+	chip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	chip.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			accept_event()
+			toolkit_withdraw_requested.emit(building, tool_name)
+	)
+	return chip
 
 
 # Livello di un contenitore dell'Attrezzeria (2026-11-13, vasi da semi): barra verticale a sinistra, piena dal basso.

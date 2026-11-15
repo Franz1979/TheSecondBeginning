@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="DiscoveryHintRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/discoveries/scripts/DiscoveryHintRules.gd" id="1_rules"]
+
+; Segale selvatica (2026-11-15, richiesta utente; era il miglio selvatico): la prima volta che qualcuno lo raccoglie da terra.
+[resource]
+script = ExtResource("1_rules")
+id = "first_wild_rye"
+title_key = "discovery_first_wild_rye_title"
+paragraph_keys = Array[String](["discovery_first_wild_rye_p1", "discovery_first_wild_rye_p2"])
+trigger_type = 3
+collected_resource = "wild_rye"

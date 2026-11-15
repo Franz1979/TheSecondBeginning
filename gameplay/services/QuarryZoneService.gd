@@ -37,6 +37,40 @@ static func make_series(area_id: int, target: int, source: String = ExtractionSo
 	}
 
 
+# Serie su una roccia sola (2026-11-15, popup del clic destro "Estrai pietra": 1-5 o "Tutta la roccia"): stessa serie e
+# stesse chiavi della serie in zona, con "work_area_id" -1 e la roccia fissata ("rock_macro_x/y" più "rock_x/y"), come la
+# serie di cella del taglio (CutZoneService.make_cell_series). `target` senza il limite COUNT_MAX: per tutta la roccia le
+# estrazioni che le restano all'ordine. Finisce senza messaggi quando la roccia è esaurita, anche prima di `target`.
+static func make_rock_series(macro_coords: Vector2i, rock: Vector2i, target: int) -> Dictionary:
+	return {
+		"id": "%d-%d" % [Time.get_ticks_usec(), randi()], "work_area_id": -1,
+		"done": 0, "target": maxi(target, 1), "rock_x": rock.x, "rock_y": rock.y,
+		"rock_macro_x": macro_coords.x, "rock_macro_y": macro_coords.y, "source": ExtractionSourceService.SOURCE_ROCK,
+	}
+
+
+static func is_rock_series(series: Dictionary) -> bool:
+	return series.has("rock_macro_x")
+
+
+static func get_rock_series_macro_coords(series: Dictionary) -> Vector2i:
+	return Vector2i(int(series.get("rock_macro_x", 0)), int(series.get("rock_macro_y", 0)))
+
+
+static func get_rock_series_rock(series: Dictionary) -> Vector2i:
+	return Vector2i(int(series.get("rock_x", -1)), int(series.get("rock_y", -1)))
+
+
+# Estrazioni che servono per esaurire la roccia in `position` (regole di estrazione di rock_density.tres): pietra rimasta
+# diviso quanta ne toglie un'estrazione, per eccesso. 0 = roccia esaurita o pietra non estraibile.
+static func extractions_to_deplete(macro_state: MacroCellState, position: Vector2i) -> int:
+	var rules := ResourceCalculator.get_density_rules(GameTypes.WorldObjectType.ROCK)
+	if rules == null or rules.extraction_units_per_extraction <= 0:
+		return 0
+	var per_extraction: int = rules.extraction_units_per_extraction * maxi(rules.extraction_primary_per_unit, 1)
+	return ceili(float(RockStoneService.get_remaining_stone(macro_state, position)) / float(per_extraction))
+
+
 # Fonte della serie (2026-11-04); senza, una serie di un salvataggio precedente: la roccia.
 static func get_series_source(series: Dictionary) -> String:
 	return String(series.get("source", ExtractionSourceService.SOURCE_ROCK))

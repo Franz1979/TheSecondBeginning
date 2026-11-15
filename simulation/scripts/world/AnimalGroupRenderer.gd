@@ -1706,7 +1706,8 @@ func _refresh_building_zone() -> void:
 # Griglia dei percorsi con la zona attuale, rifatta se è cambiata la zona o la griglia della cella. Null senza edifici vicini:
 # il percorso normale va già bene.
 func _get_herd_zone_grid() -> AStarGrid2D:
-	if _building_zone.is_empty():
+	# Sponda del ruscello (2026-11-15, PathfindingService.HERD_STREAM_BANK_*): la griglia serve anche senza edifici.
+	if _building_zone.is_empty() and not PathfindingService.herd_prefers_streams(macro_coords):
 		return null
 	var version := PathfindingService.get_grid_version(macro_coords)
 	if _herd_zone_grid == null or _herd_zone_grid_version != version or _herd_zone_grid_revision != _building_zone_revision:

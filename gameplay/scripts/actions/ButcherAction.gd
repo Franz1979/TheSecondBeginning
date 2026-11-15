@@ -138,6 +138,12 @@ func _finish_butchering(individual: Variant, context: Dictionary) -> void:
 	if not entries.is_empty():
 		GroundPileService.drop_entries(game_data, pile_macro_coords, Vector2(pile_microcell) + Vector2(0.5, 0.5), entries)
 	GroundPileService.remove_carcass(game_data, pile_macro_coords, pile_microcell, carcass_id)
+	# Contatori di debug (2026-11-15, HuntTrapStatsService): carcassa di caccia macellata e pelli prodotte.
+	var hunted := bool(carcass.get(HuntTrapStatsService.CARCASS_HUNTED_KEY, false))
+	if hunted:
+		HuntTrapStatsService.add_hunt(game_data, String(carcass["species"]), HuntTrapStatsService.HUNT_BUTCHERED)
+	HuntTrapStatsService.add_hides_produced(game_data,
+		HuntTrapStatsService.HIDE_SOURCE_HUNT if hunted else HuntTrapStatsService.HIDE_SOURCE_OTHER, int(yields.get("hide", 0)))
 	var helper_ids: Array = carcass.get(CARCASS_HELPERS_KEY, [])
 	if not helper_ids.is_empty() and not entries.is_empty():
 		context[CONTEXT_PENDING_HELPERS] = {

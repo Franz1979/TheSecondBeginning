@@ -157,6 +157,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	var saved_harvest_units: Dictionary = data["game"].get("domestication_harvest_units", {})
 	for species in saved_harvest_units:
 		game_data.domestication_harvest_units[String(species)] = int(saved_harvest_units[species])
+	# Contatori di debug di caccia e trappole (2026-11-15) — .get() per i save precedenti: vuoti.
+	game_data.hunt_trap_stats = HuntTrapStatsService.from_save(data["game"].get("hunt_trap_stats", {}))
 	game_data.domestication_years.clear()
 	var saved_domestication_years: Dictionary = data["game"].get("domestication_years", {})
 	for species in saved_domestication_years:
@@ -237,6 +239,16 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		game_data.wild_fauna[WildFaunaService.region_key(entry.species, entry.region)] = entry
 	# Registro delle mete abituali (2026-11-15) — .get() per i save precedenti: vuoto, le mete si scelgono entrando.
 	game_data.herd_habit_goals = (data["game"].get("herd_habit_goals", {}) as Dictionary).duplicate(true)
+	# Microcelle da sgomberare (2026-11-15) — .get() per i save precedenti: nessuna. Numeri riletti come interi.
+	game_data.clear_orders.clear()
+	var saved_clear_orders: Dictionary = data["game"].get("clear_orders", {})
+	for order_key in saved_clear_orders:
+		var saved_order: Dictionary = saved_clear_orders[order_key]
+		game_data.clear_orders[String(order_key)] = {
+			"macro_x": int(saved_order.get("macro_x", 0)), "macro_y": int(saved_order.get("macro_y", 0)),
+			"x": int(saved_order.get("x", 0)), "y": int(saved_order.get("y", 0)), "kind": String(saved_order.get("kind", "")),
+		}
+	game_data.clear_orders_revision += 1
 	# Visite in corso (2026-10-30) — .get() per i save precedenti: nessuna visita. Le ricostruisce alla prima mossa
 	# WildAnimalVisitService (collisione, edifici, animali usciti dal branco).
 	game_data.wild_animal_visits.clear()

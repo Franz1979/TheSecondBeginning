@@ -140,7 +140,7 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	"rabbit_hutch": 30,
 	"chicken_coop": 31,
 	# Piccolo granaio (2026-11-15, richiesta utente) — slot 32, submenu_row.slot_count portato a 34; Hut resta l'ultimo
-	# (slot 33). Categoria STORAGE, richiede plant_domestication.
+	# (slot 33). Dal 2026-11-15 Casa delle granaglie: categoria PRODUCTION, richiede agriculture.
 	"small_granary": 32,
 	# Capanna del contadino (2026-11-15, richiesta utente) — slot 33, submenu_row.slot_count portato a 35; Hut resta
 	# l'ultimo (slot 34). Categoria PRODUCTION, richiede plant_domestication.
@@ -151,7 +151,13 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Campo con capanno (2026-11-15, richiesta utente) — slot 35, submenu_row.slot_count portato a 37; Hut resta l'ultimo
 	# (slot 36). Categoria AGRICULTURE, richiede agriculture (Agricoltura paleolitica).
 	"field": 35,
-	"hut": 36,
+	# Pagliaio (2026-11-15, richiesta utente) — slot 36, submenu_row.slot_count portato a 38; Hut resta l'ultimo
+	# (slot 37). Categoria STORAGE, richiede agriculture.
+	"haystack": 36,
+	# Forno d'argilla (2026-11-15, richiesta utente) — slot 37, submenu_row.slot_count portato a 39; Hut resta l'ultimo
+	# (slot 38). Categoria PRODUCTION, richiede agriculture.
+	"clay_oven": 37,
+	"hut": 38,
 }
 
 # Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 12). RUINS esclusa:
@@ -288,7 +294,7 @@ func _ready() -> void:
 	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
 	# Legnaia (2026-10-08): richiede advanced_paleolithic_constructions, disabilitata da _refresh_building_slots_buildable.
 	# Capanna del vestiario (2026-10-11): richiede advanced_paleolithic_constructions, come la legnaia.
-	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack", "healer_hut", "star_circle", "stone_ford", "potter_hut", "water_shelter", "trapper_hut", "cage_shelter", "rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "field"]:
+	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack", "healer_hut", "star_circle", "stone_ford", "potter_hut", "water_shelter", "trapper_hut", "cage_shelter", "rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "field", "haystack", "clay_oven"]:
 		submenu_row.configure_slot(
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)

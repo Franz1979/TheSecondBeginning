@@ -1,0 +1,19 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_domestic_rye"]
+
+; Segale (domestica) (2026-11-15, richiesta utente — ramo piante): le misure della pianta domestica (scheda
+; gameplay/domestic_plants/data/rye.tres, domestic_resource_name), come il grano domestico. Non si trova in natura: nasce
+; dalla Mietitura dell'orto seminato con la segale selvatica dopo l'addomesticazione, poi dai campi. Granaglia nei vasi da
+; semi (sfusa nella Casa delle granaglie), 1000 giorni, 10 calorie per gli animali; cruda non si mangia. Alla Casa si
+; macina in farina di segale (rye_flour).
+[resource]
+script = ExtResource("1_domestic_rye")
+secondary_resource_name = "domestic_rye"
+calories_per_unit = 0.0
+category = 6
+required_idea_id = "plant_domestication"
+day_durability = 1000
+space_per_unit = 0.5
+stored_in_container = "seed_jar"
+animal_calories_per_unit = 10.0

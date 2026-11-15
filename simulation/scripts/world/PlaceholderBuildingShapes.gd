@@ -16,7 +16,7 @@ extends RefCounted
 # mappa e anteprima con SmokehouseShape, qui solo l'icona (SmokehouseIcon).
 # Lo stesso per "drying_rack" (2026-10-31): mappa e anteprima con DryingRackShape, qui solo l'icona (DryingRackIcon).
 const TYPES: Array[String] = ["burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford",
-	"rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden"]
+	"rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "clay_oven"]
 
 # Orto delle prove (2026-11-15, ramo piante), vista dall'alto: terra smossa a solchi, recinto alla buona di paletti storti
 # e radi (alcuni tratti legati, altri no) e un mucchietto di terra a est. Paletti: posizioni fisse un po' irregolari.
@@ -41,9 +41,24 @@ const FARMER_HUT_DOOR_RECT := Rect2(-0.8, 2.0, 1.6, 0.6)
 
 # Piccolo granaio (2026-11-15, ramo piante), vista dall'alto: tondo, rialzato su quattro pietre che sporgono, muro
 # d'argilla e tetto conico di paglia con le falde e il nodo in cima.
-const GRANARY_STILT_RADIUS: float = 3.9
-const GRANARY_WALL_RADIUS: float = 3.6
-const GRANARY_ROOF_RADIUS: float = 3.1
+# Casa delle granaglie (2026-11-15, 2x1 con porta, ruota con la direzione): a ovest il granaio tondo rialzato su pietre,
+# a est la capanna dove si lavora, porta a sud sulla microcella di destra (door_offset 1). Tetti di frasche, niente paglia.
+const GRANARY_SILO_CENTER := Vector2(-5.0, 0.0)
+const GRANARY_STILT_RADIUS: float = 4.2
+const GRANARY_WALL_RADIUS: float = 3.9
+const GRANARY_ROOF_RADIUS: float = 3.3
+const GRANARY_HOUSE_RECT := Rect2(0.4, -4.2, 9.0, 8.4)
+const GRANARY_HOUSE_ROOF_RECT := Rect2(1.0, -3.6, 7.8, 7.2)
+const GRANARY_DOOR_RECT := Rect2(4.1, 3.6, 1.8, 0.7)
+const BRANCH_ROOF := Color(0.45, 0.38, 0.22, 1.0)
+# Forno d'argilla (2026-11-15), vista dall'alto: base di pietre tonda, cupola d'argilla più chiara in cima, la bocca scura
+# sul lato sud (+y, ruota con la direzione) e un'apertura per il fumo in cima.
+const OVEN_BASE_RADIUS: float = 4.3
+const OVEN_DOME_RADIUS: float = 3.5
+const OVEN_MOUTH_RECT := Rect2(-1.2, 2.6, 2.4, 1.6)
+const OVEN_CLAY_LIGHT := Color(0.82, 0.62, 0.44, 1.0)
+const OVEN_MOUTH := Color(0.14, 0.10, 0.08, 1.0)
+const BRANCH_ROOF_DARK := Color(0.31, 0.26, 0.14, 1.0)
 const CLAY_WALL := Color(0.72, 0.52, 0.36, 1.0)
 
 # Conigliera e pollaio (2026-11-13, idea Allevamento — segnaposto), viste dall'alto.
@@ -297,15 +312,16 @@ static func draw(
 				stone_outline.append(stone[0])
 				canvas.draw_polyline(stone_outline, tint.call(RUBBLE_OUTLINE), rw.call(0.2), true)
 		"rabbit_hutch":
-			# Cassone di legno con il tetto di paglia e le stecche della gabbia sul davanti.
+			# Cassone di legno con il tetto di frasche (2026-11-15: niente paglia prima dell'Agricoltura) e le stecche della
+			# gabbia sul davanti.
 			var hutch := Rect2(p.call(HUTCH_RECT.position.x, HUTCH_RECT.position.y), HUTCH_RECT.size * scale)
 			canvas.draw_rect(hutch, tint.call(WOOD_DARK))
-			canvas.draw_rect(hutch.grow(-w.call(0.5)), tint.call(STRAW))
+			canvas.draw_rect(hutch.grow(-w.call(0.5)), tint.call(BRANCH_ROOF))
 			for i in range(5):
 				var x: float = HUTCH_RECT.position.x + 1.2 + float(i) * 1.2
 				canvas.draw_line(p.call(x, 0.6), p.call(x, HUTCH_RECT.end.y), tint.call(WOOD_DARK), w.call(0.3), true)
 			canvas.draw_line(p.call(HUTCH_RECT.position.x, 0.6), p.call(HUTCH_RECT.end.x, 0.6), tint.call(WOOD_DARK), w.call(0.4), true)
-			canvas.draw_line(p.call(-3.0, -1.2), p.call(3.0, -1.2), tint.call(STRAW_DARK), w.call(0.25), true)
+			canvas.draw_line(p.call(-3.0, -1.2), p.call(3.0, -1.2), tint.call(BRANCH_ROOF_DARK), w.call(0.25), true)
 		"chicken_coop":
 			# Recinto di terra battuta coi paletti, la casetta coperta e qualche chicco a terra.
 			canvas.draw_circle(center, w.call(COOP_PEN_RADIUS), tint.call(EARTH))
@@ -313,8 +329,9 @@ static func draw(
 				var angle := TAU * float(i) / 12.0
 				canvas.draw_circle(center + Vector2(cos(angle), sin(angle)) * w.call(COOP_PEN_RADIUS), w.call(0.4), tint.call(WOOD_DARK))
 			var roof := Rect2(p.call(COOP_ROOF_RECT.position.x, COOP_ROOF_RECT.position.y), COOP_ROOF_RECT.size * scale)
-			canvas.draw_rect(roof, tint.call(STRAW_DARK))
-			canvas.draw_line(p.call(COOP_ROOF_RECT.position.x, -1.9), p.call(COOP_ROOF_RECT.end.x, -1.9), tint.call(WOOD_DARK), w.call(0.35), true)
+			# Tetto di frasche (2026-11-15: niente paglia prima dell'Agricoltura); i chicchi a terra restano gialli.
+			canvas.draw_rect(roof, tint.call(BRANCH_ROOF))
+			canvas.draw_line(p.call(COOP_ROOF_RECT.position.x, -1.9), p.call(COOP_ROOF_RECT.end.x, -1.9), tint.call(BRANCH_ROOF_DARK), w.call(0.35), true)
 			for grain in COOP_GRAIN:
 				canvas.draw_circle(p.call(grain.x, grain.y), w.call(0.25), tint.call(STRAW))
 		"trial_garden":
@@ -335,9 +352,10 @@ static func draw(
 		"farmer_hut":
 			var walls := Rect2(p.call(FARMER_HUT_RECT.position.x, FARMER_HUT_RECT.position.y), FARMER_HUT_RECT.size * scale)
 			canvas.draw_rect(walls, tint.call(WOOD_DARK))
-			canvas.draw_rect(walls.grow(-float(w.call(0.45))), tint.call(STRAW))
+			# Tetto di frasche (2026-11-15: niente paglia prima dell'Agricoltura).
+			canvas.draw_rect(walls.grow(-float(w.call(0.45))), tint.call(BRANCH_ROOF))
 			canvas.draw_line(p.call(0.0, FARMER_HUT_RECT.position.y + 0.45), p.call(0.0, FARMER_HUT_RECT.end.y - 0.45),
-				tint.call(STRAW_DARK), w.call(0.35), true)
+				tint.call(BRANCH_ROOF_DARK), w.call(0.35), true)
 			var door := Rect2(p.call(FARMER_HUT_DOOR_RECT.position.x, FARMER_HUT_DOOR_RECT.position.y), FARMER_HUT_DOOR_RECT.size * scale)
 			canvas.draw_rect(door, tint.call(CLOTHING_HUT_DOOR))
 			# Attrezzi appoggiati a est: due manici, uno con la pietra forata, uno con la lama.
@@ -349,20 +367,51 @@ static func draw(
 			for i in range(3):
 				var y := -1.4 + float(i) * 0.5
 				canvas.draw_line(p.call(-4.6, y), p.call(-3.2, y + 0.3), tint.call(WOOD), w.call(0.3), true)
+		"clay_oven":
+			# Base di pietre: un anello di sassi attorno alla cupola.
+			for i in range(10):
+				var angle := TAU * float(i) / 10.0
+				var stone_pos: Vector2 = center + Vector2(cos(angle), sin(angle)) * w.call(OVEN_BASE_RADIUS)
+				canvas.draw_circle(stone_pos, w.call(0.9), tint.call(SLAB_EDGE))
+				canvas.draw_circle(stone_pos, w.call(0.7), tint.call(STONE))
+			canvas.draw_circle(center, w.call(OVEN_DOME_RADIUS), tint.call(CLAY_WALL))
+			canvas.draw_circle(p.call(-0.5, -0.6), w.call(OVEN_DOME_RADIUS * 0.6), tint.call(OVEN_CLAY_LIGHT))
+			var mouth := Rect2(p.call(OVEN_MOUTH_RECT.position.x, OVEN_MOUTH_RECT.position.y), OVEN_MOUTH_RECT.size * scale)
+			canvas.draw_rect(mouth, tint.call(OVEN_MOUTH))
+			canvas.draw_circle(center, w.call(0.6), tint.call(OVEN_MOUTH))
 		"small_granary":
+			# Granaio tondo a ovest: quattro pietre, muro d'argilla, tetto conico di frasche col nodo in cima.
+			var silo: Vector2 = p.call(GRANARY_SILO_CENTER.x, GRANARY_SILO_CENTER.y)
 			for i in range(4):
 				var angle := TAU * (float(i) + 0.5) / 4.0
-				var stilt: Vector2 = center +Vector2(cos(angle), sin(angle)) * w.call(GRANARY_STILT_RADIUS)
+				var stilt: Vector2 = silo + Vector2(cos(angle), sin(angle)) * w.call(GRANARY_STILT_RADIUS)
 				canvas.draw_circle(stilt, w.call(0.9), tint.call(SLAB_EDGE))
 				canvas.draw_circle(stilt, w.call(0.7), tint.call(STONE))
-			canvas.draw_circle(center, w.call(GRANARY_WALL_RADIUS), tint.call(CLAY_WALL))
-			canvas.draw_circle(center, w.call(GRANARY_ROOF_RADIUS), tint.call(STRAW))
+			canvas.draw_circle(silo, w.call(GRANARY_WALL_RADIUS), tint.call(CLAY_WALL))
+			canvas.draw_circle(silo, w.call(GRANARY_ROOF_RADIUS), tint.call(BRANCH_ROOF))
 			for i in range(8):
 				var angle := TAU * float(i) / 8.0
 				var dir := Vector2(cos(angle), sin(angle))
-				canvas.draw_line(center + dir * w.call(0.6), center + dir * w.call(GRANARY_ROOF_RADIUS),
-					tint.call(STRAW_DARK), w.call(0.2), true)
-			canvas.draw_circle(center, w.call(0.7), tint.call(WOOD_DARK))
+				canvas.draw_line(silo + dir * w.call(0.6), silo + dir * w.call(GRANARY_ROOF_RADIUS),
+					tint.call(BRANCH_ROOF_DARK), w.call(0.2), true)
+			canvas.draw_circle(silo, w.call(0.7), tint.call(WOOD_DARK))
+			# Capanna del lavoro a est: muro d'argilla, tetto di frasche a due falde, porta a sud.
+			var house := Rect2(p.call(GRANARY_HOUSE_RECT.position.x, GRANARY_HOUSE_RECT.position.y), GRANARY_HOUSE_RECT.size * scale)
+			canvas.draw_rect(house, tint.call(CLAY_WALL))
+			var roof := Rect2(p.call(GRANARY_HOUSE_ROOF_RECT.position.x, GRANARY_HOUSE_ROOF_RECT.position.y),
+				GRANARY_HOUSE_ROOF_RECT.size * scale)
+			canvas.draw_rect(roof, tint.call(BRANCH_ROOF))
+			var ridge_y := GRANARY_HOUSE_ROOF_RECT.get_center().y
+			canvas.draw_line(p.call(GRANARY_HOUSE_ROOF_RECT.position.x, ridge_y), p.call(GRANARY_HOUSE_ROOF_RECT.end.x, ridge_y),
+				tint.call(WOOD_DARK), w.call(0.35), true)
+			for i in range(5):
+				var x := GRANARY_HOUSE_ROOF_RECT.position.x + 0.8 + float(i) * 1.55
+				canvas.draw_line(p.call(x, GRANARY_HOUSE_ROOF_RECT.position.y + 0.3), p.call(x + 0.3, ridge_y - 0.3),
+					tint.call(BRANCH_ROOF_DARK), w.call(0.2), true)
+				canvas.draw_line(p.call(x, ridge_y + 0.3), p.call(x + 0.3, GRANARY_HOUSE_ROOF_RECT.end.y - 0.3),
+					tint.call(BRANCH_ROOF_DARK), w.call(0.2), true)
+			var door := Rect2(p.call(GRANARY_DOOR_RECT.position.x, GRANARY_DOOR_RECT.position.y), GRANARY_DOOR_RECT.size * scale)
+			canvas.draw_rect(door, tint.call(CLOTHING_HUT_DOOR))
 		"waste_pit":
 			# Bordo di terra, fondo scuro, poi gli scarti sopra il fondo.
 			canvas.draw_colored_polygon(_blob_polygon(center, w.call(WASTE_PIT_RIM_RADIUS), 500, 12, 0.9, 1.06), tint.call(WASTE_PIT_RIM))

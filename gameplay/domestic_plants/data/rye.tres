@@ -1,0 +1,30 @@
+[gd_resource type="Resource" script_class="DomesticPlantRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/domestic_plants/scripts/DomesticPlantRules.gd" id="1_rye"]
+
+; Segale (2026-11-15, richiesta utente — ramo piante, cereali; prima era il miglio, sostituito perché la segale va al
+; forno): dalla segale selvatica (wild_rye), a ciclo sfalsato: semina in primavera, raccolto in autunno. Raccolta (1
+; punto ogni 10 once) e zuppa (5) fino a 750 punti (30%), poi solo l'orto dell'addomesticazione. Soglia 2500. Nel campo
+; resa a regime 10 per pianta e paglia 0,1 come orzo e grano. Domestica: domestic_rye -> farina di segale (macina a
+; sella, sbloccata da grano o segale) -> pane nero al forno, che dura 60 giorni.
+[resource]
+script = ExtResource("1_rye")
+species_name = "rye"
+display_name = "domestic_plant_rye"
+wild_display_name = "wild_plant_rye"
+domestication_points_required = 2500
+harvest_resource_name = "wild_rye"
+domestic_resource_name = "domestic_rye"
+harvested_units_per_point = 10
+points_per_meal = 5
+wild_points_cap = 750
+sowing_season = 1
+harvest_season = 3
+sown_units_per_lot = 50
+yield_per_unit = 10.0
+straw_per_unit = 0.1
+points_per_sown_unit = 1
+points_per_sprout = 1
+points_per_mature_plant = 2
+points_per_rotten_plant = 1
+crop_color = Color(0.68, 0.66, 0.5, 1)

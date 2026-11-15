@@ -30,6 +30,12 @@ const KIND_CLOSE_GATE := "close_gate"
 const KIND_MOVE_VILLAGE_CENTER := "move_village_center"
 # Dai un nome al villaggio (2026-10-26): pietra ritta con segni incisi.
 const KIND_NAME_VILLAGE := "name_village"
+# Rimuovi tutto (2026-11-15, pannello della microcella — ClearOrderService): ascia su un alberello (piante), piccone su una
+# roccia (roccia); gli annullamenti con la croce rossa.
+const KIND_CLEAR_PLANTS := "clear_plants"
+const KIND_CANCEL_CLEAR_PLANTS := "cancel_clear_plants"
+const KIND_CLEAR_ROCK := "clear_rock"
+const KIND_CANCEL_CLEAR_ROCK := "cancel_clear_rock"
 
 # Il disegno è pensato in un quadrato di DRAWING_SPAN unità, scalato al lato minore del rettangolo.
 const DRAWING_SPAN: float = 20.0
@@ -59,6 +65,8 @@ const SHOVEL_HANDLE := HAMMER_HANDLE
 const PIT_RIM := Color(0.62, 0.50, 0.36, 1.0)
 const PIT_HOLE := Color(0.20, 0.16, 0.12, 1.0)
 const STONE := Color(0.72, 0.70, 0.66, 1.0)
+const TREE_CANOPY := Color(0.42, 0.72, 0.36, 1.0)
+const TREE_TRUNK := Color(0.62, 0.44, 0.26, 1.0)
 
 var kind: String = KIND_UPGRADE:
 	set(value):
@@ -120,6 +128,45 @@ func _draw() -> void:
 			_draw_move_village_center()
 		KIND_NAME_VILLAGE:
 			_draw_name_village()
+		KIND_CLEAR_PLANTS:
+			_draw_clear_plants()
+		KIND_CANCEL_CLEAR_PLANTS:
+			_draw_clear_plants()
+			_draw_cancel_cross()
+		KIND_CLEAR_ROCK:
+			_draw_clear_rock()
+		KIND_CANCEL_CLEAR_ROCK:
+			_draw_clear_rock()
+			_draw_cancel_cross()
+
+
+# Rimuovi tutto, piante: alberello a sinistra (chioma a punta e tronco), ascia inclinata a destra con la lama in alto.
+func _draw_clear_plants() -> void:
+	_shape([Vector2(4.6, 13.0), Vector2(6.6, 13.0), Vector2(6.6, 19.0), Vector2(4.6, 19.0)], TREE_TRUNK)
+	_shape([Vector2(5.6, 2.0), Vector2(10.4, 14.0), Vector2(0.8, 14.0)], TREE_CANOPY)
+	var angle: float = PI / 6.0
+	var pivot := Vector2(14.5, 10.5)
+	var handle: Array = [Vector2(-0.8, -6.5), Vector2(0.8, -6.5), Vector2(0.8, 8.5), Vector2(-0.8, 8.5)]
+	var blade: Array = [Vector2(0.8, -7.0), Vector2(4.6, -8.6), Vector2(4.6, -2.4), Vector2(0.8, -4.0)]
+	_shape(_rotated(handle, angle, pivot), HAMMER_HANDLE)
+	_shape(_rotated(blade, angle, pivot), HAMMER_HEAD)
+
+
+# Rimuovi tutto, roccia: masso nella metà bassa, piccone inclinato sopra con la testa a due punte.
+func _draw_clear_rock() -> void:
+	_shape([
+		Vector2(1.5, 18.5), Vector2(2.5, 13.0), Vector2(6.0, 10.5), Vector2(11.5, 10.0), Vector2(16.0, 12.0),
+		Vector2(18.5, 18.5),
+	], STONE)
+	var angle: float = -PI / 5.0
+	var pivot := Vector2(10.0, 7.0)
+	var handle: Array = [Vector2(-0.8, -2.0), Vector2(0.8, -2.0), Vector2(0.8, 11.0), Vector2(-0.8, 11.0)]
+	var head: Array = [
+		Vector2(-7.5, -1.0), Vector2(-3.0, -3.4), Vector2(3.0, -3.4), Vector2(7.5, -1.0), Vector2(3.0, -1.6),
+		Vector2(-3.0, -1.6),
+	]
+	_shape(_rotated(handle, angle, pivot), HAMMER_HANDLE)
+	_shape(_rotated(head, angle, pivot), HAMMER_HEAD)
 
 
 # Dai un nome al villaggio (2026-10-26): pietra ritta arrotondata in cima, con tre righe di segni incisi.

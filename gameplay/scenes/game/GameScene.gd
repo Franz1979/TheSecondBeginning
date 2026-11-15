@@ -568,6 +568,8 @@ var _warehouse_panel: WarehousePanel = null
 @onready var tech_tree_panel: TechTreePanel = $TechTreePanel
 # Pannello delle Addomesticazioni (2026-10-26, passo 3b): istanziato in _ready, bloccante come tech_tree_panel.
 var domestication_panel: DomesticationPanel
+# Scheda di debug «Caccia grossi animali» (2026-11-15): riquadro in alto a sinistra, si apre e chiude dal bottone 🏹 della DebugBar.
+var hunt_trap_stats_panel: HuntTrapStatsPanel
 @onready var demolish_confirmation_dialog: DemolishConfirmationDialog = $DemolishConfirmationDialog
 @onready var transport_source_dialog: OptionChoiceDialog = $TransportSourceDialog
 # pickup_choice_dialog (2026-09-17, richiesta utente, "no priorità fissa, scegli sempre se 2+
@@ -796,6 +798,11 @@ func _ready() -> void:
 	# SelectionTab, stesso identico principio "componente muto" degli altri sei.
 	micro_cell_inspection_panel = MICRO_CELL_INSPECTION_PANEL_SCENE.instantiate()
 	game_info_tabs.selection_content.add_child(micro_cell_inspection_panel)
+	# "Rimuovi tutto" (2026-11-15, ClearOrderService): segna o toglie lo sgombero della microcella selezionata.
+	micro_cell_inspection_panel.clear_toggled.connect(func(marked: bool) -> void:
+		if not selected_microcell.is_empty():
+			_toggle_clear_order(selected_microcell["macro_coords"], selected_microcell["lot"], marked)
+	)
 	# "🎯 centra" (Step 3, richiesta utente 2026-09-04): non più un bottone per-pannello (era dentro
 	# human_individual_info_panel, funzionava solo per individui) — un solo bottone condiviso
 	# nell'header di GameInfoTabs.SelectionTab, sopra a qualunque pannello selection_content stia
@@ -885,6 +892,9 @@ func _ready() -> void:
 	domestication_panel.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(domestication_panel))
 	domestication_panel.debug_add_points_requested.connect(_on_domestication_debug_add_points)
 	domestication_panel.debug_add_animal_requested.connect(_on_domestication_debug_add_animal)
+	# Non bloccante (2026-11-15, richiesta utente): resta aperta mentre si gioca.
+	hunt_trap_stats_panel = HuntTrapStatsPanel.new()
+	add_child(hunt_trap_stats_panel)
 	demolish_confirmation_dialog.demolish_confirmed.connect(_on_demolish_confirmed)
 	demolish_confirmation_dialog.visibility_changed.connect(_on_blocking_dialog_visibility_changed.bind(demolish_confirmation_dialog))
 	# NESSUN visibility_changed collegato a _on_blocking_dialog_visibility_changed per questi due
@@ -998,6 +1008,8 @@ func _ready() -> void:
 		push_warning("Nessun game_data condiviso: creo un anno locale di riserva.")
 		game_data = GameData.new()
 	sim.game_data = game_data
+	# Pannello 🏹 (2026-11-15): inizio del periodo "Dal caricamento".
+	HuntTrapStatsService.mark_session_start(game_data)
 	# Slot 💧 della barra di debug (2026-10-31): stato della sete di questa partita (GameData.thirst_enabled).
 	debug_bar.set_thirst_enabled(game_data.thirst_enabled)
 	sim.world = macro_world
@@ -5359,6 +5371,8 @@ const EXTRACTION_CHOICE_CUT := "cut"
 # Riga "Tutte le piante (N)" in testa all'elenco sotto "Taglia" (2026-10-07): serie su tutta la microcella cliccata.
 const CUT_ALL_PLANTS_KEY := "all_plants"
 const EXTRACTION_CHOICE_QUARRY := "quarry"
+# Riga "Tutta la roccia (N)" in fondo all'elenco sotto "Estrai pietra" (2026-11-15): serie fino a roccia esaurita.
+const QUARRY_ALL_ROCK_KEY := "all_rock"
 # Scheda "Trappole" (2026-11-07): elenco delle trappole piazzabili sulla microcella (_right_click_trap).
 const EXTRACTION_CHOICE_TRAP := "trap"
 # Pesca con la lenza nel popup delle trappole, sul ruscello (2026-11-08).
@@ -5551,19 +5565,33 @@ func _right_click_quarry(targets: RightClickTargets) -> bool:
 		if int(candidate["available_quantity"]) > 0:
 			has_pebbles = true
 			break
-	if not has_pebbles:
+	# Quante estrazioni (2026-11-15, richiesta utente): il popup si apre sempre su una roccia con pietra, con sotto "Estrai
+	# pietra" l'elenco 1..COUNT_MAX (ricordato in UserOptions.work_area_quarry_count, come il comando della zona) e "Tutta la
+	# roccia", serie senza limite fino a roccia esaurita. Roccia esaurita: estrazione diretta, che la rifiuta col messaggio.
+	var rock_cell: LiveMacroCell = live_cells.get(rock["macro_coords"])
+	var to_deplete := QuarryZoneService.extractions_to_deplete(rock_cell.macro_state, rock["position"]) \
+		if rock_cell != null and rock_cell.macro_state != null else 0
+	if to_deplete <= 0:
 		_assign_quarry_task(individual, rock)
 		return true
-	_extraction_pending = {"individual": individual, "rock": rock, "candidates": candidates}
+	_extraction_pending = {"individual": individual, "rock": rock, "candidates": candidates, "rock_extractions": to_deplete}
+	var count_items: Array = []
+	for count in range(QuarryZoneService.COUNT_MIN, mini(QuarryZoneService.COUNT_MAX, to_deplete) + 1):
+		count_items.append({"key": str(count), "text": tr("quarry_count_item_one") if count == 1 else tr("quarry_count_item").format({"count": count}), "enabled": true, "icon": ""})
+	if to_deplete > 1:
+		count_items.append({"key": QUARRY_ALL_ROCK_KEY, "text": tr("quarry_all_rock_item").format({"count": to_deplete}), "enabled": true, "icon": ""})
+	var default_count := clampi(UserOptions.work_area_quarry_count, QuarryZoneService.COUNT_MIN, mini(QuarryZoneService.COUNT_MAX, to_deplete))
+	var row_options := {EXTRACTION_CHOICE_QUARRY: {"type": "list", "items": count_items, "selected": str(default_count)}}
 	# Spunta "Ripeti" sotto "Raccogli sassi" (2026-10-05): parte dall'opzione globale, il valore confermato vale per quella
 	# raccolta.
-	var gather_options := {EXTRACTION_CHOICE_GATHER: {
-		"type": "check", "text": tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_TRIPS}),
-		"value": UserOptions.repeat_default,
-	}}
+	if has_pebbles:
+		row_options[EXTRACTION_CHOICE_GATHER] = {
+			"type": "check", "text": tr("task_repeat_checkbox").format({"count": TaskRepeatRules.MAX_TRIPS}),
+			"value": UserOptions.repeat_default,
+		}
 	_open_extraction_choice(
 		EXTRACTION_CHOICE_QUARRY, tr("quarry_choice_dialog_title"), tr("quarry_choice_dialog_message"),
-		tr("quarry_choice_gather"), tr("quarry_choice_quarry"), "quarry", true, gather_options
+		tr("quarry_choice_gather"), tr("quarry_choice_quarry"), "quarry", has_pebbles, row_options
 	)
 	return true
 
@@ -5610,7 +5638,8 @@ func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -
 	elif choice == EXTRACTION_CHOICE_QUARRY and pending.has("clay"):
 		_assign_dig_clay_task(worker, pending["clay"])
 	elif choice == EXTRACTION_CHOICE_QUARRY:
-		_assign_quarry_task(worker, pending["rock"])
+		_assign_quarry_count(worker, pending["rock"], extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_QUARRY),
+			int(pending.get("rock_extractions", 1)))
 	elif choice == EXTRACTION_CHOICE_GATHER and worker == individual and pending.has("pickup_resources"):
 		# Menu della raccolta dentro il popup del taglio (2026-10-05): stessa conferma di PickupChoiceDialog.
 		var pickup_choice: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_GATHER)
@@ -5627,6 +5656,21 @@ func _on_extraction_choice_made(choice: String, _quantity: int, _repeat: bool) -
 		# la spunta del popup delle rocce se c'è, altrimenti l'opzione globale.
 		var repeat_value: Variant = extraction_choice_dialog.get_option_value(EXTRACTION_CHOICE_GATHER)
 		_dispatch_pickup_candidates(pending["candidates"], -1 if repeat_value == null else (1 if bool(repeat_value) else 0))
+
+
+# Estrazioni scelte nel popup della roccia (2026-11-15): `chosen` = "1".."5" (ricordato come il comando della zona) o
+# QUARRY_ALL_ROCK_KEY (`to_deplete` estrazioni, fino a roccia esaurita). Una sola: estrazione semplice, come prima; di più:
+# serie su quella roccia (QuarryZoneService.make_rock_series).
+func _assign_quarry_count(worker: HumanIndividual, rock: Dictionary, chosen: Variant, to_deplete: int) -> void:
+	var key := String(chosen) if chosen != null else ""
+	var count := to_deplete if key == QUARRY_ALL_ROCK_KEY else maxi(int(key), 1)
+	if key != QUARRY_ALL_ROCK_KEY and key.is_valid_int():
+		UserOptions.work_area_quarry_count = count
+		UserOptions.save_to_disk()
+	if count <= 1:
+		_assign_quarry_task(worker, rock)
+		return
+	_assign_quarry_task(worker, rock, -1, QuarryZoneService.make_rock_series(rock["macro_coords"], rock["position"], count))
 
 
 # "Taglia tutto qui" (2026-10-24, 5B.3 — ExtractionCommandService.assign_cut_all_plants).
@@ -5919,7 +5963,7 @@ func _find_pickup_pending_entry(source_kind: int, category: int, resource_name: 
 # TREE_INDIVIDUAL con risorse che invece lo richiedono, quindi questo resta un elenco a parte,
 # consultato dai blocchi per-lot_source di _resolve_pickup_candidates con `resource_name in
 # REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES` invece di un terzo parametro hardcoded per chiamata.
-const REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES: Array[String] = ["eggs", "mushroom", "wild_vegetables", "medicinal_herbs", "wild_seeds", "wild_wheat", "wild_millet", "wild_oats", "wild_flax"]
+const REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES: Array[String] = ["eggs", "mushroom", "wild_vegetables", "medicinal_herbs", "wild_seeds", "wild_wheat", "wild_rye", "wild_oats", "wild_flax"]
 
 # `include_locked` (2026-10-03, richiesta utente — "Risorsa sconosciuta"): solo l'ispezione microcella lo passa
 # true. Una risorsa bloccata entra allora come candidato marcato "locked" (quantità 0), purché sia davvero presente
@@ -6116,7 +6160,16 @@ func _remembered_microcell_lines(macro_coords: Vector2i, lot: Vector2i) -> Array
 	if cell.renderer != null and cell.renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, []).has(lot):
 		types.append(tr("microcell_inspection_grass"))
 	lines.append(", ".join(types) if not types.is_empty() else tr("microcell_inspection_nothing_remembered"))
+	_append_pasture_lines(lines, cell, macro_coords, lot)
 	return lines
+
+
+# Pascolo abituale delle mandrie (2026-11-15): stessa regola della chiazza disegnata (HerdSignLayer, memoria del terreno),
+# senza dire quale specie, con il suggerimento sulle trappole.
+func _append_pasture_lines(lines: Array[String], cell: LiveMacroCell, macro_coords: Vector2i, lot: Vector2i) -> void:
+	if HerdSignLayer.is_known_pasture(game_data, cell, macro_coords, lot):
+		lines.append(tr("microcell_inspection_pasture"))
+		lines.append(tr("microcell_inspection_pasture_hint"))
 
 
 # true se la microcella dell'oggetto selezionato è visibile adesso (stesso tier "dettaglio" dei comandi,
@@ -6275,6 +6328,7 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 			SeasonCalculator.get_season_for_day(game_data.current_day), lot)
 		MicroCellInspectionPanel.append_separator(lines)
 		lines.append(tr("microcell_inspection_birds").format({"level": tr(BIRD_PRESENCE_LEVEL_KEYS[bird_level])}))
+	_append_pasture_lines(lines, cell, macro_coords, lot)
 	# Trappole montate sulla microcella (2026-11-07, TrapService), sotto gli uccelli: prede prese ora su quante ne tiene.
 	for trap in TrapService.traps_at(game_data, macro_coords, lot):
 		var trap_rules := TrapService.get_rules(trap.trap_name)
@@ -6409,7 +6463,34 @@ func _clear_microcell_selection() -> void:
 func _refresh_microcell_panel() -> void:
 	var lot: Vector2i = selected_microcell["lot"]
 	micro_cell_inspection_panel.show_inspection(selected_microcell.get("lines", []))
+	_refresh_microcell_clear_action()
 	game_info_tabs.set_selection_title(tr("microcell_inspection_title").format({"x": lot.x, "y": lot.y}))
+
+
+# Pulsante "Rimuovi tutto" del pannello della microcella (2026-11-15, ClearOrderService): solo con la lista dei lavori
+# sbloccata. Microcella segnata: "Annulla rimozione" con le piante o le estrazioni che restano. Altrimenti "Rimuovi tutto"
+# se la microcella, vista adesso, ha una roccia in piedi oppure alberi o cespugli vivi, e nessun edificio.
+func _refresh_microcell_clear_action() -> void:
+	var macro: Vector2i = selected_microcell["macro_coords"]
+	var lot: Vector2i = selected_microcell["lot"]
+	if not JobBoardService.is_enabled(human_folk):
+		micro_cell_inspection_panel.set_clear_action(MicroCellInspectionPanel.CLEAR_ACTION_NONE)
+		return
+	var order := ClearOrderService.get_order(game_data, macro, lot)
+	var rock := ClearOrderService.is_rock_lot(live_cells, macro, lot)
+	if not order.is_empty():
+		rock = String(order.get("kind", "")) == ClearOrderService.KIND_ROCK
+	var amount := ClearOrderService.count_plants(live_cells, macro, lot)
+	if rock:
+		amount = ClearOrderService.count_extractions(live_cells, macro, lot)
+	if not order.is_empty():
+		micro_cell_inspection_panel.set_clear_action(MicroCellInspectionPanel.CLEAR_ACTION_UNMARK,
+			tr("microcell_clear_rock_status" if rock else "microcell_clear_status").format({"count": amount}), rock)
+		return
+	var can_mark := amount > 0 and _find_building_at_microcell(macro, lot) == null
+	can_mark = can_mark and FogOfWarVerificationService.is_detail_visible(live_cells, macro, lot, game_data.get_absolute_day())
+	micro_cell_inspection_panel.set_clear_action(
+		MicroCellInspectionPanel.CLEAR_ACTION_MARK if can_mark else MicroCellInspectionPanel.CLEAR_ACTION_NONE, "", rock)
 
 
 # Comando manuale di scarico "U + destro" RIMOSSO (2026-09-27, richiesta utente): non serviva più e il suo bugfix
@@ -8918,6 +8999,30 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _site_cut_job_release,
 		})
+		# Sgombero di una microcella (2026-11-15): lavori da 5 piante, vedi ClearOrderJobProvider.
+		_job_board_provider_list.append({
+			"name": "clear_cut",
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return ClearOrderJobProvider.collect(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return ClearOrderJobProvider.rejection(_game_context(), worker, job),
+			"assign": _assign_clear_order_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return ClearOrderJobProvider.workers(_game_context(), job),
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("clear_order_cancel_tooltip")},
+			"cancel": func(job: Dictionary) -> void: _toggle_clear_order(job["macro"], job["cell"], false),
+			"release": _site_cut_job_release,
+		})
+		# Sgombero della roccia di una microcella (2026-11-15): lavori da 5 estrazioni, vedi ClearOrderJobProvider.collect_rock.
+		_job_board_provider_list.append({
+			"name": "clear_quarry",
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return ClearOrderJobProvider.collect_rock(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return ClearOrderJobProvider.rejection_rock(_game_context(), worker, job),
+			"assign": _assign_clear_rock_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return ClearOrderJobProvider.workers(_game_context(), job),
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": false, "cancel_tooltip": tr("clear_order_cancel_tooltip")},
+			"cancel": func(job: Dictionary) -> void: _toggle_clear_order(job["macro"], job["cell"], false),
+			"release": _site_cut_job_release,
+		})
 		# Macellazione (2026-11-01): una carcassa per lavoro, vedi CarcassJobProvider.
 		_job_board_provider_list.append({
 			"name": "butcher",
@@ -9418,7 +9523,9 @@ var _job_board_candidates_valid: bool = false
 
 # Firma delle condizioni che invalidano la lista (vedi sopra).
 func _job_board_candidates_signature_of(assigned: Dictionary) -> int:
-	return [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0, JobBoardService.take_revision].hash()
+	# clear_orders_revision (2026-11-15): un "Rimuovi tutto" fa nascere subito i suoi lavori.
+	return [assigned.hash(), game_data.drawer_orders.hash() if game_data != null else 0, JobBoardService.take_revision,
+		game_data.clear_orders_revision if game_data != null else 0].hash()
 
 
 func _current_job_board_candidates() -> Dictionary:
@@ -9800,6 +9907,52 @@ func _assign_site_cut_job(worker: HumanIndividual, job: Dictionary) -> void:
 	var job_keys: Array[String] = [String(job["key"])]
 	_forget_job_board_wait(job_keys)
 	_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
+
+
+# Lavoro "Sgombero della microcella" preso dalla coda (2026-11-15, ClearOrderJobProvider): l'ascia da prendere in deposito
+# (se serve), poi una serie "taglia tutto qui" da ClearOrderService.CHUNK piante, come il taglio per il cantiere.
+func _assign_clear_order_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var macro: Vector2i = job["macro"]
+	var lot: Vector2i = job["cell"]
+	var plant := ClearOrderService.pick_plant(_game_context(), worker, macro, lot)
+	if plant.is_empty():
+		return
+	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, ClearOrderService.TOOL_CATEGORIES)
+	_assign_cut_task(worker, plant, -1, ClearOrderService.make_series(macro, lot), true)
+	var job_keys: Array[String] = [String(job["key"])]
+	_forget_job_board_wait(job_keys)
+	_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
+
+
+# Lavoro "Sgombero della roccia" preso dalla coda (2026-11-15, ClearOrderJobProvider.collect_rock): il piccone da prendere
+# in deposito (se serve), poi una serie da ClearOrderService.CHUNK estrazioni sulla roccia, insieme agli altri.
+func _assign_clear_rock_job(worker: HumanIndividual, job: Dictionary) -> void:
+	var macro: Vector2i = job["macro"]
+	var lot: Vector2i = job["cell"]
+	if ClearOrderService.count_extractions(live_cells, macro, lot) <= 0:
+		return
+	var fetch_plan := ToolFetchService.plan_fetch(macro_world, worker, ClearOrderService.ROCK_TOOL_CATEGORIES)
+	_assign_quarry_task(worker, {"macro_coords": macro, "position": lot}, -1, ClearOrderService.make_rock_series(macro, lot), true)
+	var job_keys: Array[String] = [String(job["key"])]
+	_forget_job_board_wait(job_keys)
+	_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
+
+
+# Segna (`marked` true) o toglie lo sgombero della microcella (pulsante del pannello della microcella, X della lista):
+# roccia se sulla microcella c'è una roccia in piedi, altrimenti piante. Segnando, l'icona del taglio o della cava
+# lampeggia sulla microcella. Chi sta già lavorando lì finisce la sua serie da 5.
+func _toggle_clear_order(macro: Vector2i, lot: Vector2i, marked: bool) -> void:
+	if marked:
+		var rock := ClearOrderService.is_rock_lot(live_cells, macro, lot)
+		ClearOrderService.mark(game_data, macro, lot, ClearOrderService.KIND_ROCK if rock else ClearOrderService.KIND_PLANTS)
+		var cell: LiveMacroCell = live_cells.get(macro)
+		if cell != null:
+			_spawn_command_icon_at_microcell(cell, lot, "quarry" if rock else "cut")
+	else:
+		ClearOrderService.unmark(game_data, macro, lot)
+	if _selection_kind == SelectionKind.MICROCELL and not selected_microcell.is_empty() \
+			and selected_microcell["macro_coords"] == macro and selected_microcell["lot"] == lot:
+		_refresh_microcell_panel()
 
 
 # Rimetti in coda / Blocca di un taglio per il cantiere: chi lo sta facendo smette (salta la lista una volta).
@@ -12432,6 +12585,14 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	cell.renderer = MicroCellRenderer.new()
 	cell.container.add_child(cell.renderer)
 	cell.renderer.setup(cell.world)
+	# Segni dei pascoli abituali delle mandrie (2026-11-15, HerdSignLayer): sopra il renderer, sotto trappole e nebbia.
+	var herd_sign_layer := HerdSignLayer.new()
+	cell.container.add_child(herd_sign_layer)
+	herd_sign_layer.setup(Vector2i(mx, my), cell)
+	# Microcelle da sgomberare (2026-11-15, ClearOrderLayer): riquadro tratteggiato, sotto trappole e nebbia.
+	var clear_order_layer := ClearOrderLayer.new()
+	cell.container.add_child(clear_order_layer)
+	clear_order_layer.setup(Vector2i(mx, my))
 	# Trappole montate (2026-11-07, TrapService): sopra il terreno, sotto la nebbia (aggiunta dopo).
 	var trap_layer := PlacedTrapLayer.new()
 	# Sopra chiome e oggetti del renderer, sotto la nebbia (z 2).
@@ -14622,6 +14783,9 @@ func _on_debug_action_pressed(action_id: StringName) -> void:
 			if game_data != null:
 				game_data.thirst_enabled = not game_data.thirst_enabled
 				debug_bar.set_thirst_enabled(game_data.thirst_enabled)
+		&"hunt_trap_stats":
+			if game_data != null:
+				hunt_trap_stats_panel.toggle(game_data, macro_world)
 		&"world_debug":
 			_on_world_debug_pressed()
 		&"macro_cell_debug":
@@ -14801,6 +14965,12 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		# Campo con capanno (2026-11-15) — azione cablata in BuildBar._ready.
 		&"build_field":
 			return "field"
+		# Pagliaio (2026-11-15) — azione cablata in BuildBar._ready.
+		&"build_haystack":
+			return "haystack"
+		# Forno d'argilla (2026-11-15) — azione cablata in BuildBar._ready.
+		&"build_clay_oven":
+			return "clay_oven"
 		_:
 			return ""
 
@@ -17426,6 +17596,8 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"gate_open": building.gate_open,
 				# Appoggio per travois (2026-10-23): quanti travois disegnare appoggiati.
 				"travois_count": int((building.stored_resources.get("travois", {}) as Dictionary).get("quantity", 0)),
+				# Pagliaio (2026-11-15): trespoli coperti di paglia.
+				"haystack_full": HaystackShape.racks_full(building) if building.building_type_name == HaystackShape.TYPE else 0,
 				# Tettoia dell'acqua (2026-11-06): le giare sotto il tetto, ognuna con la sua acqua.
 				"jar_waters": WaterJarService.shelter_jar_waters(building),
 				# Casa riscaldata oggi (2026-10-22, HouseHeatingService): fumo fermo sul tetto.

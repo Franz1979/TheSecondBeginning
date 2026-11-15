@@ -1,0 +1,53 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_small_granary"]
+
+; Casa delle granaglie (2026-11-15, richiesta utente; nome interno small_granary invariato, era il Piccolo granaio):
+; edificio di Produzione sbloccato con l'Agricoltura, 2 microcelle (2x1) con porta, ruotabile. Le Granaglie stanno SFUSE
+; nei 4 posti da 1000 (loose_categories: orzo a 0,5 = circa 8000 misure, un raccolto di un campo), conservate x2,5;
+; niente paglia nei materiali (arriva solo col primo raccolto del campo). Attrezzeria: vasi da semi (vedi sotto), vuoti finché non
+; ci sarà la semola; dal 2026-11-15 20 vasi (semola e farina, circa 2 mesi a testa), 3 mortai e 3 macine a sella
+; (toolkit_units_by_tool). Vita 30 anni, argilla 200.
+; Postazione (2026-11-15): semola d'orzo col mortaio (barley_groats), fino a 3 ordini insieme (un mortaio ciascuno); la
+; semola va nei vasi della Casa stessa (production_output_to_storage), il buffer di uscita tiene due partite. Massimo 40
+; semola per ordine (5 partite, ~2,5 giorni; decisione utente): anche gli ordini del WM si fermano a 40.
+[resource]
+script = ExtResource("1_small_granary")
+lifespan_years = 30
+max_durability = 140
+defense = 40
+building_name = "building_small_granary"
+category = 4
+required_idea_id = "agriculture"
+required_labor = 3000
+storage_slot_count = 4
+storage_space_per_slot = 1000
+loose_categories = Array[int]([6])
+accepted_categories = Array[int]([6])
+categories_locked = true
+durability_multiplier_by_category = Array[float]([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.5])
+required_materials = {
+"clay": 200,
+"fiber_rope": 10,
+"pebble": 20,
+"stick": 60,
+"stone": 30,
+"wood": 30
+}
+required_space = 2
+footprint = Vector2i(2, 1)
+door_offset = 1
+is_workstation = true
+production_output_slots = 16
+production_concurrent_orders = 3
+production_max_orders = 6
+production_max_quantity = 40
+toolkit_tool_types = 3
+toolkit_units_per_type = 10
+toolkit_units_by_tool = {
+"grain_mortar": 3,
+"saddle_quern": 3,
+"seed_jar": 20
+}
+toolkit_extra_tools = Array[String](["seed_jar", "grain_mortar", "saddle_quern"])
+visibility_radius = 2

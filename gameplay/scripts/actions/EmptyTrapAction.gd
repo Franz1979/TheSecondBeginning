@@ -65,7 +65,12 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 # Attrezzi richiesti dalla trappola di questa tappa (non salvati: si ricavano dalle regole).
 func refresh_required_tools(context: Dictionary) -> void:
 	var trap := TrapService.find_trap(GameSettings.active_game_data, resolve_trap_id(context))
-	required_tool_categories = TrapService.empty_tool_categories(trap.trap_name) if trap != null else []
+	# Lista vuota tipizzata se la trappola non c'è più (rotta o tolta a giro iniziato): un [] generico qui fa fermare il
+	# gioco ("Array" in "Array[int]", 2026-11-15).
+	var tools: Array[TaskTypes.ToolCategory] = []
+	if trap != null:
+		tools = TrapService.empty_tool_categories(trap.trap_name)
+	required_tool_categories = tools
 
 
 # Attrezzi spariti a metà giro: via le tappe che restano, questa tappa diventa la consegna.
@@ -147,7 +152,7 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		# Fossa con pali (2026-11-11): una preda grossa non sta nello zaino; il resto resta a terra in un mucchio accanto
 		# alla fossa (lista dei lavori, "mucchi"), invece di perderlo.
 		var left_on_ground := 0
-		if added < quantity and rules != null and rules.trap_quarry == TrapService.QUARRY_BIG_GAME:
+		if added < quantity and TrapService.is_big_game_quarry(rules):
 			left_on_ground = quantity - added
 			var pile := GroundPileService.drop_entries(game_data, trap.macro_coords, Vector2(trap.lot) + Vector2(0.5, 0.5), {
 				resource_name: {"quantity": left_on_ground, "decay_fraction": float(product["decay_fraction"])}

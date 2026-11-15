@@ -27,8 +27,29 @@ static func get_type_capacity(building: Building) -> int:
 	return building.get_effective_capacity(maxi(building.rules.toolkit_tool_types, 0)) if has_toolkit(building) else 0
 
 
-static func get_units_per_type(building: Building) -> int:
-	return maxi(building.rules.toolkit_units_per_type, 0) if has_toolkit(building) else 0
+# Pezzi massimi di `tool_name` (BuildingRules.toolkit_units_by_tool, altrimenti toolkit_units_per_type); "" = il generale.
+static func get_units_per_type(building: Building, tool_name: String = "") -> int:
+	return units_for_rules(building.rules, tool_name) if has_toolkit(building) else 0
+
+
+static func units_for_rules(rules: BuildingRules, tool_name: String = "") -> int:
+	if rules == null:
+		return 0
+	if tool_name != "" and rules.toolkit_units_by_tool.has(tool_name):
+		return maxi(int(rules.toolkit_units_by_tool[tool_name]), 0)
+	return maxi(rules.toolkit_units_per_type, 0)
+
+
+# Contenitori che l'Attrezzeria accetta (toolkit_extra_tools con seed_capacity > 0: i vasi da semi). Nel pannello stanno
+# in una sezione loro ("Vasi") e non contano tra i tipi di attrezzo.
+static func get_container_types(building: Building) -> Array[String]:
+	var names: Array[String] = []
+	if not has_toolkit(building):
+		return names
+	for tool_name in building.rules.toolkit_extra_tools:
+		if StorageContainerService.unit_capacity(tool_name) > 0:
+			names.append(tool_name)
+	return names
 
 
 static func get_quantity(building: Building, tool_name: String) -> int:
@@ -105,7 +126,7 @@ static func can_add(building: Building, tool_name: String) -> bool:
 		return false
 	var quantity := get_quantity(building, tool_name)
 	if quantity > 0:
-		return quantity < get_units_per_type(building)
+		return quantity < get_units_per_type(building, tool_name)
 	return get_tool_names(building).size() < get_type_capacity(building)
 
 
@@ -116,8 +137,8 @@ static func get_free_units_for(building: Building, tool_name: String) -> int:
 		return 0
 	var quantity := get_quantity(building, tool_name)
 	if quantity > 0:
-		return maxi(get_units_per_type(building) - quantity, 0)
-	return get_units_per_type(building) if get_tool_names(building).size() < get_type_capacity(building) else 0
+		return maxi(get_units_per_type(building, tool_name) - quantity, 0)
+	return get_units_per_type(building, tool_name) if get_tool_names(building).size() < get_type_capacity(building) else 0
 
 
 # Pezzi di `tool_name` che un trasporto può lasciare nell'Attrezzeria (2026-10-18, richiesta utente — Transport manuale
@@ -268,9 +289,8 @@ static func type_has_toolkit(type_name: String) -> bool:
 	return rules != null and rules.toolkit_tool_types > 0 and rules.toolkit_units_per_type > 0
 
 
-static func units_per_type_for(type_name: String) -> int:
-	var rules := BuildingCalculator.get_building_rules(type_name)
-	return maxi(rules.toolkit_units_per_type, 0) if rules != null else 0
+static func units_per_type_for(type_name: String, tool_name: String = "") -> int:
+	return units_for_rules(BuildingCalculator.get_building_rules(type_name), tool_name)
 
 
 # Attrezzi che l'Attrezzeria del tipo accetta: stessa regola di is_accepted_tool (una categoria d'uso richiesta dalle

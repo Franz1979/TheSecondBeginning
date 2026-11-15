@@ -41,6 +41,8 @@ var _last_fps: int = -1
 # Sete (2026-10-31, richiesta utente): in fondo a destra, tra i controlli da togliere — accende/spegne
 # GameData.thirst_enabled (action_pressed &"toggle_thirst"; lo stato lo rimette GameScene con set_thirst_enabled).
 @onready var thirst_button: Button = $MarginContainer/HBoxContainer/ContentGroup/ThirstButton
+# Scheda «Caccia grossi animali» (2026-11-15, richiesta utente): primo bottone a sinistra, action_pressed &"hunt_trap_stats".
+@onready var hunt_stats_button: Button = $MarginContainer/HBoxContainer/ContentGroup/HuntStatsButton
 
 signal action_pressed(action_id: StringName)
 # Evento casuale da scatenare subito (id di RandomEventRules), dal menu a tendina degli eventi.
@@ -85,6 +87,8 @@ func _ready() -> void:
 	herd_button.pressed.connect(func() -> void: action_pressed.emit(&"spawn_herd"))
 	thirst_button.tooltip_text = TooltipText.wrap(tr("toggle_thirst_tooltip") + ": " + tr("toggle_thirst_description"))
 	thirst_button.pressed.connect(func() -> void: action_pressed.emit(&"toggle_thirst"))
+	hunt_stats_button.tooltip_text = TooltipText.wrap("Caccia grossi animali: tentativi e prede uccise per specie, trappole in gioco e catture per specie (totale e per anno)")
+	hunt_stats_button.pressed.connect(func() -> void: action_pressed.emit(&"hunt_trap_stats"))
 	_apply_state()
 
 

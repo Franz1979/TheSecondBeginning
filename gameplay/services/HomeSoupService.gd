@@ -290,12 +290,13 @@ static func plan_cooking(individual: HumanIndividual, world: World, verbose: boo
 const TASK_NAME := "task_cook_soup_name"
 
 
-# Granaglie buone per la zuppa (2026-11-15): tutte le risorse della categoria GRAIN.
+# Granaglie buone per la zuppa (2026-11-15): tutte le risorse della categoria GRAIN, tranne quelle lavorate che stanno
+# sempre nel vaso (semola e farina, always_in_container: decisione utente, servono solo per pita e pane).
 static func soup_seed_names() -> Array[String]:
 	var names: Array[String] = []
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
-		if rules != null and int(rules.category) == SecondaryResourceTypes.Category.GRAIN:
+		if rules != null and int(rules.category) == SecondaryResourceTypes.Category.GRAIN and not rules.always_in_container:
 			names.append(resource_name)
 	return names
 

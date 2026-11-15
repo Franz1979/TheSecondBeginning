@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_rye_bread"]
+
+; Pane nero di segale (2026-11-15, richiesta utente — ramo piante): pane di farina di segale cotto al forno d'argilla
+; (clay_oven). Una partita: 8 farina + 2 combustibile -> 4 pani (2 farina a pane), 60 di lavoro. 50 calorie a pane: un
+; campo di segale (7200 macinate -> 5760 farina -> 2880 pani) sfama circa 13 persone. Il suo carattere: dura 60 giorni
+; (pita 30, pane di grano 20), l'unico cibo cotto da fare in anticipo per l'inverno; meno buono del pane di grano.
+; Spazio 3 (decisione utente 2026-11-15, come il pane di grano).
+[resource]
+script = ExtResource("1_rye_bread")
+secondary_resource_name = "rye_bread"
+calories_per_unit = 50.0
+category = 0
+required_idea_id = "agriculture"
+required_domesticated_species = Array[String](["rye"])
+consuming_depletes_primary = false
+generation_source = 2
+day_durability = 60
+space_per_unit = 3.0
+eat_happiness_per_100_calories = 4.0
+recipe_inputs = {
+"rye_flour": 8
+}
+recipe_output_quantity = 4
+recipe_labor = 60.0
+recipe_fuel_required = 2.0
+recipe_workstation_types = Array[String](["clay_oven"])

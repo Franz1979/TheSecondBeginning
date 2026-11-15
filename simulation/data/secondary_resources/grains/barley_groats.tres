@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_barley_groats"]
+
+; Semola d'orzo (2026-11-15, richiesta utente — ramo piante): orzo domestico pestato col mortaio alla Casa delle granaglie.
+; Una partita (un ciclo): 10 orzo -> 8 semola (il 20% è pula, persa), 75 di lavoro, 1 uso del mortaio (categoria
+; Pestatura). Granaglia, ma sempre nei vasi da semi (always_in_container), anche nella Casa dove le Granaglie stanno
+; sfuse: 100 per vaso. Si guasta presto (120 giorni, x2,5 nella Casa). Cruda non si mangia; nella zuppa conta come ogni
+; Granaglia. Servirà alla pita d'orzo al forno (circa 25 calorie per semola = 20 per misura d'orzo pestata).
+[resource]
+script = ExtResource("1_barley_groats")
+secondary_resource_name = "barley_groats"
+calories_per_unit = 0.0
+category = 6
+required_idea_id = "agriculture"
+generation_source = 2
+day_durability = 120
+space_per_unit = 0.5
+stored_in_container = "seed_jar"
+always_in_container = true
+recipe_inputs = {
+"domestic_barley": 10
+}
+recipe_output_quantity = 8
+recipe_labor = 75.0
+recipe_workstation_types = Array[String](["small_granary"])
+recipe_required_tool_categories = Array[int]([17])

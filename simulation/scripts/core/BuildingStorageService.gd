@@ -101,7 +101,7 @@ static func get_used_space(building: Building) -> float:
 		var quantity: int = int(entry.get("quantity", 0))
 		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
 		# Nei contenitori dell'Attrezzeria (2026-11-13, StorageContainerService): nessuno spazio di magazzino.
-		if resource_rules == null or resource_rules.stored_in_container != "":
+		if resource_rules == null or StorageContainerService.uses_container(building, resource_rules):
 			continue
 		used += float(quantity) * resource_rules.space_per_unit
 	return used
@@ -154,7 +154,7 @@ static func get_slots_used(building: Building) -> int:
 			continue
 		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
 		# Nei contenitori dell'Attrezzeria (2026-11-13): nessuno slot.
-		if resource_rules == null or resource_rules.stored_in_container != "":
+		if resource_rules == null or StorageContainerService.uses_container(building, resource_rules):
 			continue
 		total += _slots_for_quantity(quantity, _units_per_slot(building, resource_rules.space_per_unit))
 	return total
@@ -260,7 +260,7 @@ static func can_accept(building: Building, resource_name: String) -> bool:
 	if not _free_storage_allows(building, resource_name, resource_rules):
 		return false
 	# Contenitori dell'Attrezzeria (2026-11-13, vasi da semi): solo con posto nei contenitori montati.
-	if resource_rules.stored_in_container != "" and StorageContainerService.room(building, resource_name) <= 0:
+	if StorageContainerService.uses_container(building, resource_rules) and StorageContainerService.room(building, resource_name) <= 0:
 		return false
 	# Capanno del campo (2026-11-15, passo 3a): solo fino al livello dei semi.
 	if FieldSeedStoreService.is_seed_store(building) and FieldSeedStoreService.room(building, resource_name) <= 0:
@@ -284,7 +284,7 @@ static func shows_contents_on_map(building: Building) -> bool:
 	if building == null:
 		return false
 	match building.building_type_name:
-		"deposit_site", "covered_depot", TravoisRackShape.TYPE, WaterJarService.SHELTER_TYPE:
+		"deposit_site", "covered_depot", TravoisRackShape.TYPE, WaterJarService.SHELTER_TYPE, HaystackShape.TYPE:
 			return true
 	return false
 
@@ -301,7 +301,7 @@ static func get_slot_breakdown(building: Building) -> Array:
 			continue
 		var resource_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
 		# Nei contenitori dell'Attrezzeria (2026-11-13): si vedono nell'Attrezzeria del pannello, non negli slot.
-		if resource_rules == null or resource_rules.stored_in_container != "":
+		if resource_rules == null or StorageContainerService.uses_container(building, resource_rules):
 			continue
 		var space_per_unit: float = resource_rules.space_per_unit
 		var units_per_slot := _units_per_slot(building, space_per_unit)
@@ -669,7 +669,7 @@ static func get_max_depositable(building: Building, resource_name: String) -> in
 	if not _free_storage_allows(building, resource_name, resource_rules):
 		return production_quota
 	# Contenitori dell'Attrezzeria (2026-11-13, vasi da semi): il posto nei contenitori montati, niente slot.
-	if resource_rules.stored_in_container != "":
+	if StorageContainerService.uses_container(building, resource_rules):
 		var container_room := StorageContainerService.room(building, resource_name)
 		# Capanno del campo (2026-11-15, passo 3a): solo fino al livello dei semi.
 		if FieldSeedStoreService.is_seed_store(building):
@@ -724,6 +724,10 @@ static func _free_storage_allows(building: Building, resource_name: String, reso
 		return false
 	# Rifiuti (2026-10-18, detriti): nessun magazzino li accetta, vanno solo alla Fossa (WasteDisposalService).
 	if resource_rules != null and resource_rules.waste_only:
+		return false
+	# Solo in certi edifici (2026-11-15, SecondaryResourceRules.storage_building_types — la paglia nel pagliaio).
+	if resource_rules != null and not resource_rules.storage_building_types.is_empty() \
+			and not resource_rules.storage_building_types.has(building.building_type_name):
 		return false
 	# Risorse ammesse per nome (2026-10-16, BuildingRules.storage_accepted_resources — legnaia).
 	if not building.rules.storage_accepted_resources.is_empty() and not building.rules.storage_accepted_resources.has(resource_name):

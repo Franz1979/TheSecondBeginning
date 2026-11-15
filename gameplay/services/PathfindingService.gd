@@ -40,6 +40,16 @@ const STONE_FORD_WEIGHT_SCALE: float = 1.5
 # Raggio degli edifici per le mandrie in cammino (2026-11-01, richiesta utente — build_zone_grid): un costo, non un divieto.
 # La mandria gira attorno al villaggio, ma se gli edifici chiudono ogni passaggio attraversa comunque invece di restare ferma.
 const ZONE_WEIGHT_SCALE: float = 10.0
+# Mandrie lungo il ruscello (2026-11-15, richiesta utente — prova, da poter cambiare facilmente): sulla griglia delle mandrie
+# in cammino (build_zone_grid: arrivo dal bordo, tratti verso i pascoli, uscita) le microcelle di sponda, entro
+# HERD_STREAM_BANK_DISTANCE dal ruscello (non il ruscello stesso), pesano HERD_STREAM_BANK_WEIGHT_FACTOR × il loro peso:
+# il percorso costeggia il ruscello quando gli conviene e poi devia verso la meta. Persone e altri animali: niente cambia.
+# HERD_STREAM_BANK_ENABLED = false rimette esattamente il comportamento di prima (griglia delle mandrie solo con edifici
+# nella cella, nessun peso di sponda). Più basso il fattore, più lunga la deviazione che accettano per stare sulla sponda
+# (0.5 = fino a circa il doppio della strada).
+const HERD_STREAM_BANK_ENABLED := true
+const HERD_STREAM_BANK_DISTANCE: int = 4
+const HERD_STREAM_BANK_WEIGHT_FACTOR: float = 0.5
 # Nessuna macrocella per move_with_collision: niente rallentamento del guado.
 const NO_MACRO := Vector2i(-2147483648, -2147483648)
 # Preferenza per le strade (2026-10-16, richiesta utente): il vantaggio sul terreno normale (1 − costo) moltiplicato, solo
@@ -209,9 +219,42 @@ static func _new_grid() -> AStarGrid2D:
 # Anche le microcelle chiuse agli animali (2026-11-15) vi sono bloccate: la usano solo le mandrie.
 static func build_zone_grid(macro_coords: Vector2i, zone: PackedByteArray) -> AStarGrid2D:
 	var cell := get_live_cell(macro_coords)
-	if cell == null or cell.path_grid == null or zone.size() != World.WIDTH * World.HEIGHT:
+	if cell == null or cell.path_grid == null:
 		return null
-	return _build_animal_grid(cell, zone)
+	var with_banks := herd_prefers_streams(macro_coords)
+	if zone.size() != World.WIDTH * World.HEIGHT and not with_banks:
+		return null
+	var grid := _build_animal_grid(cell, zone)
+	if with_banks:
+		_apply_stream_banks(cell, grid)
+	return grid
+
+
+# true se le mandrie in cammino nella cella `macro_coords` hanno la sponda del ruscello più comoda (interruttore acceso
+# e ruscello nella cella viva).
+static func herd_prefers_streams(macro_coords: Vector2i) -> bool:
+	if not HERD_STREAM_BANK_ENABLED:
+		return false
+	var cell := get_live_cell(macro_coords)
+	return cell != null and not cell.stream_positions.is_empty()
+
+
+# Sponde del ruscello (HERD_STREAM_BANK_*): ogni microcella libera entro HERD_STREAM_BANK_DISTANCE (quadrato attorno a
+# ogni microcella di ruscello), non di ruscello, una volta sola.
+static func _apply_stream_banks(cell: LiveMacroCell, grid: AStarGrid2D) -> void:
+	var done: Dictionary = {}
+	var reach := HERD_STREAM_BANK_DISTANCE
+	for stream_position in cell.stream_positions.keys():
+		var center: Vector2i = stream_position
+		for dy in range(-reach, reach + 1):
+			for dx in range(-reach, reach + 1):
+				var position := center + Vector2i(dx, dy)
+				if done.has(position) or not _in_bounds(position) or cell.stream_positions.has(position):
+					continue
+				if grid.is_point_solid(position):
+					continue
+				done[position] = true
+				grid.set_point_weight_scale(position, grid.get_point_weight_scale(position) * HERD_STREAM_BANK_WEIGHT_FACTOR)
 
 
 # Griglia degli animali della cella (2026-11-15, campo e orto): quella delle persone con in più bloccate le microcelle

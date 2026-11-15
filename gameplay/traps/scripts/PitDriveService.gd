@@ -96,6 +96,7 @@ static func drive(game_data: GameData, area_id: int, species: String, who: Strin
 		return 0
 	var renderer: AnimalGroupRenderer = points["renderer"]
 	var started := renderer.start_drive(points["herd"], points["pit"], DRIVE_RADIUS)
+	HuntTrapStatsService.add_drive(game_data, species, started)
 	TrapService.log_line("%s spinge %d %s verso la fossa in %s (zona #%d)" % [who, started, species, Vector2i((points["pit"] as Vector2).floor()), area_id])
 	return started
 

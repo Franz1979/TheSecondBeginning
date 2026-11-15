@@ -131,6 +131,8 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 		"colpo in mischia" if melee else ("lancio" if weapon_thrown else "tiro"), weapon_display, combat_target.describe(), distance
 	])
 
+	# Contatori di debug (2026-11-15, HuntTrapStatsService): arma partita, poi a segno e uccisa più sotto.
+	HuntTrapStatsService.add_hunt(GameSettings.active_game_data, combat_target.label, HuntTrapStatsService.HUNT_THROWS)
 	var skill_factor := SkillEffectService.get_factor_for_action(self, individual, context)
 	var hit_chance := HuntService.compute_hit_chance(attack_power, skill_factor, combat_target.label, animal.age_band)
 	var roll := randf()
@@ -151,6 +153,9 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 
 	var health_before: float = animal.health
 	animal.health = maxf(animal.health - attack_power, 0.0)
+	HuntTrapStatsService.add_hunt(GameSettings.active_game_data, combat_target.label, HuntTrapStatsService.HUNT_HITS)
+	if animal.health <= 0.0:
+		HuntTrapStatsService.add_hunt(GameSettings.active_game_data, combat_target.label, HuntTrapStatsService.HUNT_KILLS)
 	HuntService.log_event(individual, "COLPITO %s (probabilità %.0f%%, tiro %.2f): danno %.1f, salute %.1f -> %.1f." % [
 		combat_target.describe(), hit_chance * 100.0, roll, attack_power, health_before, animal.health
 	])
@@ -173,6 +178,8 @@ func _resolve(individual: Variant, context: Dictionary) -> bool:
 			GameSettings.active_game_data, animal.macro_coords, animal.position, combat_target.label, int(animal.age_band)
 		)
 		if carcass_pile != null:
+			# Contatori di debug (2026-11-15): carcassa di caccia, per contare macellate e marcite (HuntTrapStatsService).
+			carcass_pile.carcasses[-1][HuntTrapStatsService.CARCASS_HUNTED_KEY] = true
 			# Caccia di gruppo (2026-11-11): i compagni che inseguivano la stessa preda, sulla carcassa; a macellazione
 			# finita aiutano a portare i prodotti (ButcherAction, WorkFollowUpService.butcher_helpers).
 			var helper_ids := HuntZoneService.hunter_ids_on_prey(animal.id, individual)

@@ -103,6 +103,9 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	_log_elapsed_days = 0.0
 	_was_waiting_for_tools = false
 	_update_pursuit(individual, context)
+	# Contatori di debug (2026-11-15, HuntTrapStatsService): un tentativo per preda inseguita.
+	if not _prey_lost:
+		HuntTrapStatsService.add_hunt_attempt_once(GameSettings.active_game_data, context, prey_id, prey_species)
 	if HuntService.is_logging() and not _prey_lost and not _in_range and not _was_waiting_for_tools:
 		HuntService.log_event(individual, "avvicinamento iniziato: preda %s #%d a %.2f microcelle, soglia di arrivo %.2f (gittata × APPROACH_REACH_FRACTION)." % [
 			prey_species, prey_id, _last_distance, _last_reach

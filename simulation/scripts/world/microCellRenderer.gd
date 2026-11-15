@@ -1751,6 +1751,10 @@ func _draw_buildings(canvas: CanvasItem) -> void:
 		if building_type_name == TravoisRackShape.TYPE:
 			TravoisRackShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH), int(entry.get("travois_count", 0)))
 			continue
+		# Pagliaio (2026-11-15, 1x1): quattro trespoli, coperti di paglia secondo quanta ce n'è.
+		if building_type_name == HaystackShape.TYPE:
+			HaystackShape.draw(canvas, ground, int(entry.get("haystack_full", 0)))
+			continue
 		# Tettoia dell'acqua (2026-11-06, 1x1, rotonda: la rotazione non cambia niente): pali, tetto trasparente e le giare.
 		if building_type_name == WaterShelterShape.TYPE:
 			WaterShelterShape.draw(canvas, ground, entry.get("rotation", GameTypes.Direction.SOUTH), entry.get("jar_waters", []))

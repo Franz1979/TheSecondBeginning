@@ -4,7 +4,10 @@
 
 ; Avena (2026-11-15, richiesta utente — ramo piante, cereali): dall'avena selvatica (wild_oats), all'inizio rara (solo
 ; alla Fossa). Raccolta (1 punto ogni 10 once) e zuppa (5) fino a 600 punti (30%), poi solo l'orto delle prove: semina in
-; primavera, raccolto in estate (50 once, punti 1/1/2, resa a regime 5, TrialGardenService). Soglia 2000.
+; primavera, raccolto in estate (50 once, punti 1/1/2, TrialGardenService). Soglia 2000.
+; Domestica (2026-11-15, richiesta utente): domestic_oats, il cereale degli animali (15 calorie contro 10). Nel campo resa
+; a regime 10 per pianta e paglia 0,1 come gli altri cereali. Si pesta col mortaio (in comune con l'orzo) in fiocchi
+; d'avena, che al forno diventano gallette: il cibo umano più povero ma il più economico da cuocere.
 [resource]
 script = ExtResource("1_oats")
 species_name = "oats"
@@ -12,13 +15,15 @@ display_name = "domestic_plant_oats"
 wild_display_name = "wild_plant_oats"
 domestication_points_required = 2000
 harvest_resource_name = "wild_oats"
+domestic_resource_name = "domestic_oats"
 harvested_units_per_point = 10
 points_per_meal = 5
 wild_points_cap = 600
 sowing_season = 1
 harvest_season = 2
 sown_units_per_lot = 50
-yield_per_unit = 5.0
+yield_per_unit = 10.0
+straw_per_unit = 0.1
 points_per_sown_unit = 1
 points_per_sprout = 1
 points_per_mature_plant = 2

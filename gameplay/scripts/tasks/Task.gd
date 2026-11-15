@@ -544,6 +544,11 @@ func get_activity_description() -> String:
 		"task_quarry_name":
 			var quarry_area_id := int(context.get(QuarryZoneService.CONTEXT_WORK_AREA_ID, -1))
 			if quarry_area_id == -1:
+				# Serie su una roccia sola (2026-11-15, clic destro): "Estrazione 3/96", senza zona.
+				var rock_series := QuarryZoneService.get_series(context)
+				var rock_target := int(rock_series.get("target", 1))
+				if rock_target > 1:
+					return "%s %d/%d" % [base_text, mini(int(rock_series.get("done", 0)) + 1, rock_target), rock_target]
 				return base_text
 			var quarry_area: WorkArea = WorkAreaService.find_by_id(GameSettings.active_game_data, quarry_area_id)
 			if quarry_area == null:

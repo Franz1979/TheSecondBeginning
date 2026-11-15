@@ -54,9 +54,12 @@ static func assign_quarry(ctx: GameContext, worker: HumanIndividual, rock: Dicti
 		effects.command_icon_at_microcell(macro_coords, rock_position, "task_rejected")
 		CommandFeedback.reject(worker, GameContext.tr_text("quarry_reject_exhausted"), effects)
 		return
-	var holder := find_target_holder(ctx.individuals, func(step: Action) -> bool:
-		return step is QuarryAction and (step as QuarryAction).is_same_rock(macro_coords, rock_position)
-	)
+	# Sgombero della microcella (2026-11-15): più persone sulla stessa roccia, la prenotazione non vale.
+	var holder: HumanIndividual = null
+	if not ClearOrderService.is_clear_series(series):
+		holder = find_target_holder(ctx.individuals, func(step: Action) -> bool:
+			return step is QuarryAction and (step as QuarryAction).is_same_rock(macro_coords, rock_position)
+		)
 	if holder != null:
 		if silent:
 			return

@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_oat_cake"]
+
+; Galletta d'avena (2026-11-15, richiesta utente — ramo piante): sottile focaccina di fiocchi d'avena cotta al forno
+; d'argilla (clay_oven). Una partita: 8 fiocchi + 1 combustibile -> 4 gallette (2 fiocchi a galletta), 30 di lavoro: la
+; più economica da cuocere. 30 calorie a galletta (15 per misura d'avena: avena 15, orzo 20, segale 25, grano 30): un
+; campo d'avena (7200 pestate -> 5040 fiocchi -> 2520 gallette) sfama circa 7 persone. Dura 30 giorni, poca felicità.
+; Spazio 1 (decisione utente: sottile, occupa poco, meno dei 5 per 100 calorie degli altri cibi cotti).
+[resource]
+script = ExtResource("1_oat_cake")
+secondary_resource_name = "oat_cake"
+calories_per_unit = 30.0
+category = 0
+required_idea_id = "agriculture"
+required_domesticated_species = Array[String](["oats"])
+consuming_depletes_primary = false
+generation_source = 2
+day_durability = 30
+space_per_unit = 1.0
+eat_happiness_per_100_calories = 1.0
+recipe_inputs = {
+"oat_flakes": 8
+}
+recipe_output_quantity = 4
+recipe_labor = 30.0
+recipe_fuel_required = 1.0
+recipe_workstation_types = Array[String](["clay_oven"])

@@ -381,6 +381,10 @@ func _draw_shape() -> void:
 	if building_type_name == TravoisRackShape.TYPE:
 		TravoisRackShape.draw(self, _footprint_offset, rotation_dir, 0, not is_buildable, COLOR.a)
 		return
+	# Pagliaio (2026-11-15): i trespoli vuoti.
+	if building_type_name == HaystackShape.TYPE:
+		HaystackShape.draw(self, _footprint_offset, 0, not is_buildable, COLOR.a)
+		return
 	# Tettoia dell'acqua (2026-11-06): pali e tetto, senza giare.
 	if building_type_name == WaterShelterShape.TYPE:
 		WaterShelterShape.draw(self, _footprint_offset, rotation_dir, [], not is_buildable, COLOR.a)

@@ -103,8 +103,25 @@ const RESOURCE_ICON_NODES := {
 	"wild_wheat": preload("res://simulation/scripts/ui/WildWheatIcon.gd"),
 	# Orzo domestico (2026-11-15): la stessa spiga, chicchi più pieni e dorati (DomesticBarleyIcon).
 	"domestic_barley": preload("res://simulation/scripts/ui/DomesticBarleyIcon.gd"),
-	# Miglio selvatico (2026-11-15): la stessa spiga, giallo paglia (WildMilletIcon).
-	"wild_millet": preload("res://simulation/scripts/ui/WildMilletIcon.gd"),
+	# Semola d'orzo (2026-11-15): chicchi spezzati chiari (BarleyGroatsIcon).
+	"barley_groats": preload("res://simulation/scripts/ui/BarleyGroatsIcon.gd"),
+	# Grano domestico, farina, pita e pane (2026-11-15).
+	"domestic_wheat": preload("res://simulation/scripts/ui/DomesticWheatIcon.gd"),
+	"wheat_flour": preload("res://simulation/scripts/ui/WheatFlourIcon.gd"),
+	"barley_pita": preload("res://simulation/scripts/ui/BarleyPitaIcon.gd"),
+	"wheat_bread": preload("res://simulation/scripts/ui/WheatBreadIcon.gd"),
+	# Segale domestica, farina di segale e pane nero (2026-11-15).
+	"domestic_rye": preload("res://simulation/scripts/ui/DomesticRyeIcon.gd"),
+	"rye_flour": preload("res://simulation/scripts/ui/RyeFlourIcon.gd"),
+	"rye_bread": preload("res://simulation/scripts/ui/RyeBreadIcon.gd"),
+	# Avena domestica, fiocchi d'avena e galletta (2026-11-15).
+	"domestic_oats": preload("res://simulation/scripts/ui/DomesticOatsIcon.gd"),
+	"oat_flakes": preload("res://simulation/scripts/ui/OatFlakesIcon.gd"),
+	"oat_cake": preload("res://simulation/scripts/ui/OatCakeIcon.gd"),
+	# Paglia (2026-11-15): covone di steli legati (StrawIcon).
+	"straw": preload("res://simulation/scripts/ui/StrawIcon.gd"),
+	# Segale selvatica (2026-11-15, era il miglio): la stessa spiga, grigio-verde (WildRyeIcon).
+	"wild_rye": preload("res://simulation/scripts/ui/WildRyeIcon.gd"),
 	# Avena selvatica (2026-11-15): la stessa spiga, beige-verdolina (WildOatsIcon).
 	"wild_oats": preload("res://simulation/scripts/ui/WildOatsIcon.gd"),
 	# Lino selvatico (2026-11-15): steli con fiorellino azzurro (WildFlaxIcon).
@@ -112,6 +129,9 @@ const RESOURCE_ICON_NODES := {
 	# Attrezzi agricoli (2026-11-15): bastone da scavo e falcetto di selce, disegnati.
 	"digging_stick": preload("res://simulation/scripts/ui/DiggingStickIcon.gd"),
 	"flint_sickle": preload("res://simulation/scripts/ui/FlintSickleIcon.gd"),
+	# Mortaio e macina a sella (2026-11-15, Casa delle granaglie).
+	"grain_mortar": preload("res://simulation/scripts/ui/GrainMortarIcon.gd"),
+	"saddle_quern": preload("res://simulation/scripts/ui/SaddleQuernIcon.gd"),
 	# Primi attrezzi (2026-09-24, richiesta utente — gli emoji 🔱/🔪 leggevano come forcone e coltello
 	# moderno): bastone appuntito con punta indurita al fuoco, e scheggia di selce senza manico — vedi
 	# WoodenSpearIcon.gd/StoneKnifeIcon.gd.
@@ -230,6 +250,8 @@ const BUILDING_ICONS := {
 	"chicken_coop": "🐔",
 	# Piccolo granaio (2026-11-15) — emoji di riserva, la barra usa SmallGranaryIcon.
 	"small_granary": "🌾",
+	# Forno d'argilla (2026-11-15) — emoji di riserva, la barra usa ClayOvenIcon.
+	"clay_oven": "🍞",
 	# Capanna del contadino (2026-11-15) — emoji di riserva, la barra usa FarmerHutIcon.
 	"farmer_hut": "🧑‍🌾",
 	# Orto delle prove (2026-11-15) — emoji di riserva, la barra usa TrialGardenIcon.
@@ -287,6 +309,8 @@ const BUILDING_ICON_NODES := {
 	"woodshed": preload("res://simulation/scripts/ui/WoodshedIcon.gd"),
 	# Appoggio per travois (2026-10-23).
 	"travois_rack": preload("res://simulation/scripts/ui/TravoisRackIcon.gd"),
+	# Pagliaio (2026-11-15): quattro trespoli pieni (HaystackShape).
+	"haystack": preload("res://simulation/scripts/ui/HaystackIcon.gd"),
 	# Capanna del vestiario (2026-10-11, segnaposto): stesso schema della legnaia.
 	"clothing_hut": preload("res://simulation/scripts/ui/ClothingHutIcon.gd"),
 	# Capanna del guaritore (2026-10-25): vista di fronte con i mazzetti di erbe appesi.
@@ -304,6 +328,8 @@ const BUILDING_ICON_NODES := {
 	"chicken_coop": preload("res://simulation/scripts/ui/ChickenCoopIcon.gd"),
 	# Piccolo granaio (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
 	"small_granary": preload("res://simulation/scripts/ui/SmallGranaryIcon.gd"),
+	# Forno d'argilla (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
+	"clay_oven": preload("res://simulation/scripts/ui/ClayOvenIcon.gd"),
 	# Capanna del contadino (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
 	"farmer_hut": preload("res://simulation/scripts/ui/FarmerHutIcon.gd"),
 	# Orto delle prove (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).

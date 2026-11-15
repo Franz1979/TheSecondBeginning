@@ -125,6 +125,9 @@ var domesticated_species: Array[String] = []
 # Anno (GameData.year) della prima addomesticazione per specie (2026-11-07, richiesta utente: la carta del pannello lo
 # mostra). Salvataggi più vecchi: chiave assente, la carta non dice l'anno. Scritto solo da DomesticationPointsService.
 var domestication_years: Dictionary = {}
+# Contatori di debug di caccia e trappole per anno (2026-11-15, «caccia grossi animali»): str(anno) -> dati. Scritti solo
+# da HuntTrapStatsService, letti da HuntTrapStatsPanel. Salvato.
+var hunt_trap_stats: Dictionary = {}
 # Unità raccolte non ancora diventate un punto (2026-11-13, piante: DomesticPlantRules.harvested_units_per_point, 1 punto
 # ogni 10 once di semi): specie -> resto. Scritto solo da DomesticPlantCalculator.units_to_points. Salvato.
 var domestication_harvest_units: Dictionary = {}
@@ -210,6 +213,11 @@ var wild_fauna: Dictionary = {}
 # Registro delle mete abituali delle mandrie (2026-11-15, HerdHabitService): chiave "x,y:specie" -> Array di
 # {"kind": "pascolo"|"acqua", "x": float, "y": float} (microcelle). Scelte una volta, poi sempre quelle. Salvato.
 var herd_habit_goals: Dictionary = {}
+# Microcelle da sgomberare (2026-11-15, ClearOrderService — pulsante "Rimuovi tutto" del pannello della microcella):
+# chiave ClearOrderService.order_key -> {"macro_x", "macro_y", "x", "y", "kind"}. Salvate ("clear_orders").
+# clear_orders_revision (non salvata) sale a ogni cambio: il segno sulla mappa si ridisegna.
+var clear_orders: Dictionary = {}
+var clear_orders_revision: int = 0
 # Una mandria ha cambiato cella nel giro di oggi (WildFaunaService.tick_day): la scena ridisegna gli animali delle celle
 # vive e lo rimette a false. Mai salvato.
 var wild_fauna_moved: bool = false

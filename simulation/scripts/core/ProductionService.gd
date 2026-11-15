@@ -68,7 +68,23 @@ static func can_produce_at(building: Building, resource_name: String) -> bool:
 		var folk: Folk = GameSettings.active_human_folk
 		if folk == null or not folk.completed_ideas.has(recipe_rules.required_idea_id):
 			return false
+	if not is_species_ready(recipe_rules):
+		return false
 	return recipe_rules.recipe_workstation_types.has(building.building_type_name)
+
+
+# Specie della ricetta addomesticata (2026-11-15, SecondaryResourceRules.required_domesticated_species — la macina a sella
+# col grano o la segale domestici): basta una delle specie elencate; true se la ricetta non ne chiede.
+static func is_species_ready(recipe_rules: SecondaryResourceRules) -> bool:
+	if recipe_rules == null or recipe_rules.required_domesticated_species.is_empty():
+		return true
+	var game_data := GameSettings.active_game_data
+	if game_data == null:
+		return false
+	for species in recipe_rules.required_domesticated_species:
+		if game_data.domesticated_species.has(species):
+			return true
+	return false
 
 
 # Ricetta conosciuta dal popolo (2026-10-22, richiesta utente — pelle affumicata ordinabile senza l'idea dell'affumicatoio):
@@ -80,6 +96,8 @@ static func is_recipe_known(resource_name: String, folk: Folk) -> bool:
 	if recipe_rules == null or recipe_rules.recipe_workstation_types.is_empty():
 		return true
 	if recipe_rules.required_idea_id != "" and (folk == null or not folk.completed_ideas.has(recipe_rules.required_idea_id)):
+		return false
+	if not is_species_ready(recipe_rules):
 		return false
 	for type_name in recipe_rules.recipe_workstation_types:
 		var building_rules := BuildingCalculator.get_building_rules(String(type_name))

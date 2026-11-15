@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_barley_pita"]
+
+; Pita d'orzo (2026-11-15, richiesta utente — ramo piante): focaccia bassa di semola d'orzo cotta al forno d'argilla
+; (clay_oven, edificio del passo dopo: finché non c'è la ricetta non compare). Una partita: 8 semola + 1 combustibile ->
+; 4 pite (2 semola a pita), 40 di lavoro. 40 calorie a pita: un campo d'orzo (7200 pestate) sfama circa 10-11 persone.
+; Dura 30 giorni, spazio 2 (5 per 100 calorie, come i cibi cotti).
+[resource]
+script = ExtResource("1_barley_pita")
+secondary_resource_name = "barley_pita"
+calories_per_unit = 40.0
+category = 0
+required_idea_id = "agriculture"
+consuming_depletes_primary = false
+generation_source = 2
+day_durability = 30
+space_per_unit = 2.0
+eat_happiness_per_100_calories = 2.0
+recipe_inputs = {
+"barley_groats": 8
+}
+recipe_output_quantity = 4
+recipe_labor = 40.0
+recipe_fuel_required = 1.0
+recipe_workstation_types = Array[String](["clay_oven"])

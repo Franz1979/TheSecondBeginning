@@ -12,8 +12,10 @@
 ; 100 once per lotto, resa piena, lavoro ×1, nessun punto. Attrezzi presi dal capanno (2c) e semi tenuti nel capanno (3)
 ; arriveranno dopo, poi gli appezzamenti. Le persone ci camminano sopra a caro prezzo (8 × il terreno: lo aggirano se non ci lavorano), gli animali
 ; no (closed_to_animals), come l'orto.
-; Semi nel capanno (2026-11-15, passo 3a): l'Attrezzeria tiene anche 10 vasi da semi (500 once) e il capanno accetta solo
+; Semi nel capanno (2026-11-15, passo 3a): l'Attrezzeria tiene anche 10 vasi da semi (1000 misure dal
+; 2026-11-15: vasi da 100) e il capanno accetta solo
 ; il seme domestico della specie del campo, fino al livello del pannello (FieldSeedStoreService).
+; Massimi per oggetto (2026-11-15, richiesta utente): 8 vasi da 100 (il seme di tutti i lotti), 10 bastoni e 10 falcetti.
 [resource]
 script = ExtResource("1_field")
 building_name = "building_field"
@@ -39,6 +41,9 @@ accepted_categories = Array[int]([6])
 categories_locked = true
 toolkit_tool_types = 3
 toolkit_units_per_type = 10
+toolkit_units_by_tool = {
+"seed_jar": 8
+}
 toolkit_extra_tools = Array[String](["digging_stick", "flint_sickle", "seed_jar"])
 cultivation_lots = 8
 cultivation_units_per_lot = 100

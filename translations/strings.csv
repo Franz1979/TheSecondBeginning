@@ -180,7 +180,7 @@ era_paleolithic,Paleolitico
 era_neolithic,Neolitico
 idea_agriculture,Agricoltura paleolitica
 idea_agriculture_summary,Coltivare le piante invece di raccoglierle.
-idea_agriculture_description,Il gruppo impara a seminare e a raccogliere nello stesso luogo.
+idea_agriculture_description,"Il gruppo impara a seminare e a raccogliere nello stesso luogo. I campi si seminano solo con semi domestici, quelli raccolti negli orti dell'addomesticazione."
 tech_tree_unknown_idea,Idea sconosciuta
 notification_ok,OK
 tech_tree_cost,Costo: {cost} pensieri
@@ -1061,6 +1061,9 @@ quarry_choice_dialog_title,Roccia
 quarry_choice_dialog_message,Cosa vuoi fare con questa roccia?
 quarry_choice_gather,Raccogli sassi
 quarry_choice_quarry,Estrai pietra
+quarry_count_item_one,"1 estrazione"
+quarry_count_item,"{count} estrazioni"
+quarry_all_rock_item,"Tutta la roccia ({count} estrazioni) — lavoro lunghissimo"
 quarry_reject_reserved,Questa roccia è già nel lavoro di {name}.
 quarry_reject_exhausted,Roccia esaurita
 building_info_output_to_storage,Prodotti finiti: nel magazzino
@@ -1653,6 +1656,11 @@ rubble_origin_village,Rifiuti del villaggio
 job_site_cut,"Taglio · Cantiere {building}"
 job_site_cut_cell,"Taglio · Cantiere {building} (cella {index}/{count})"
 task_assignment_kind_site_cut,Taglio per i cantieri
+task_assignment_kind_clear_cut,Sgombero delle microcelle
+job_clear_plants,"Taglio · Rimuovi tutto ({count} piante)"
+task_assignment_kind_clear_quarry,Sgombero delle rocce
+job_clear_rock,"Cava · Rimuovi tutta la roccia ({count} estrazioni)"
+clear_order_cancel_tooltip,"Annulla la rimozione: la microcella non è più segnata. Chi ci sta già lavorando finisce il suo lavoro da 5."
 job_butcher,"Macellazione · {species}"
 task_assignment_kind_butcher,Macellazione
 job_postponed_site_cut,"Rimandato da {name}: in attesa del taglio"
@@ -1916,6 +1924,15 @@ drawer_transport_reject_not_needed,Trasporto non ordinato: {building} non ha pos
 drawer_order_player_transport_row,Trasporta {quantity} {resource} · {source} → {target}
 drawer_order_player_transport_blocked,Niente da prendere nella partenza o nessun posto nella destinazione
 microcell_inspection_birds,"Uccelli: {level}"
+microcell_inspection_pasture,"Pascolo abituale di grossi animali"
+microcell_inspection_pasture_hint,"Suggerimento: piazza trappole adeguate nella zona"
+microcell_clear_button,Rimuovi tutto
+microcell_clear_cancel_button,Annulla rimozione
+microcell_clear_plants_detail,"Segna la microcella da sgomberare: nella lista dei lavori nasce un lavoro ogni 5 piante, per chi ha l'ascia, fino a 4 persone insieme."
+microcell_clear_rock_detail,"Segna la roccia da togliere tutta: nella lista dei lavori nasce un lavoro ogni 5 estrazioni, per chi ha il piccone, fino a 4 persone insieme."
+microcell_clear_cancel_detail,"La microcella non è più segnata: chi ci sta già lavorando finisce il suo lavoro da 5."
+microcell_clear_status,"Da rimuovere: {count} piante"
+microcell_clear_rock_status,"Da rimuovere: {count} estrazioni"
 bird_presence_none,nessuno
 bird_presence_few,pochi
 bird_presence_some,parecchi
@@ -2012,7 +2029,7 @@ idea_animal_husbandry_summary,"Edifici per tenere e far crescere gli animali add
 idea_animal_husbandry_description,"Chi ha imparato a prendere gli animali vivi e a tenerli nelle gabbie capisce che, con il riparo giusto e cure costanti, possono vivere e moltiplicarsi accanto al villaggio. Ogni specie addomesticata avrà il suo edificio."
 building_rabbit_hutch,Conigliera
 build_bar_rabbit_hutch_tooltip,Conigliera
-build_bar_rabbit_hutch_description,"Cassone di legno con il tetto di paglia dove vivranno i conigli domestici. Si costruisce quando il coniglio è addomesticato."
+build_bar_rabbit_hutch_description,"Cassone di legno con il tetto di frasche dove vivranno i conigli domestici. Si costruisce quando il coniglio è addomesticato."
 building_chicken_coop,Pollaio
 build_bar_chicken_coop_tooltip,Pollaio
 build_bar_chicken_coop_description,"Casetta coperta con un recinto di paletti dove vivranno le galline. Si costruisce quando la gallina è addomesticata."
@@ -2022,7 +2039,7 @@ building_info_toolkit_seed_jars,"Tiene i vasi da semi: solo quelli montati qui a
 carried_resource_tooltip_wild_seeds,Orzo selvatico
 toolkit_reject_container_in_use,{tool}: dentro ci sono dei semi che altrove non entrano. Prima prelevali dal magazzino.
 toolkit_reject_container_category,{tool}: questo magazzino non accetta le Granaglie e i semi non potrebbero entrare. Abilita la categoria per montarlo.
-toolkit_storage_tooltip,"Attrezzeria del magazzino: qui si montano i vasi da semi (clic sul vaso nel magazzino, oppure la regola del gestore scorte «Rifornisci le Attrezzerie»). Solo i vasi montati accolgono i semi, 40 once ciascuno, e i semi non occupano altro spazio. Un vaso si monta solo se il magazzino accetta i Materiali grezzi; se li spegni dopo, i semi già dentro restano ma non ne entrano altri. Ogni oncia che entra o esce consuma il vaso: quando si rompe, i semi che non stanno negli altri vasi vanno persi. Un vaso non si smonta se i suoi semi non entrerebbero negli altri."
+toolkit_storage_tooltip,"Attrezzeria del magazzino: qui si montano i vasi da semi (clic sul vaso nel magazzino, oppure la regola del gestore scorte «Rifornisci le Attrezzerie»). Solo i vasi montati accolgono i semi, 100 once ciascuno, e i semi non occupano altro spazio. Un vaso si monta solo se il magazzino accetta i Materiali grezzi; se li spegni dopo, i semi già dentro restano ma non ne entrano altri. Ogni oncia che entra o esce consuma il vaso: quando si rompe, i semi che non stanno negli altri vasi vanno persi. Un vaso non si smonta se i suoi semi non entrerebbero negli altri."
 discovery_grant_waiting_title,Idea in attesa: {idea}
 discovery_grant_waiting_line,"Il villaggio è pronto per «{idea}», ma serve ancora {missing}. Arriverà da sola appena completata."
 domestic_plant_barley,Orzo
@@ -2036,6 +2053,10 @@ discovery_first_domesticated_barley_gift_title,Una nuova idea: {idea}
 discovery_first_domesticated_barley_gift_p1,"Se una pianta può cambiare così, forse si possono scegliere i semi migliori e ripiantarli."
 container_no_room_reason,"{resource}: serve un {container} libero, montato nell'attrezzeria di una Capanna di stoccaggio."
 toolkit_container_fill,"Semi nei vasi: {quantity} / {capacity} once"
+toolkit_containers_caption,"Vasi ({count}/{max}) · semi {stored}/{capacity} once"
+toolkit_containers_empty,nessun vaso montato
+toolkit_tooltip_max,Al massimo {max} qui
+building_info_toolkit_seed_jar_count,"Vasi da semi: fino a {max} ({capacity} once)"
 carried_resource_tooltip_hay,Fieno
 building_feeder_line,Mangiatoia: {space} / {max} spazio ({calories} calorie)
 building_feeder_choose_species,(scegli la specie per riempirla)
@@ -2109,35 +2130,41 @@ building_kept_animal_to_slaughter_wm,da macellare (gestore)
 category_name_grain,Granaglie
 pickup_choice_category_grain,Granaglie
 pickup_choice_all_grain,Tutte le granaglie
-building_small_granary,Piccolo granaio
-build_bar_small_granary_tooltip,Piccolo granaio
-build_bar_small_granary_description,"Granaio tondo rialzato su pietre, coi muri d'argilla: tiene fino a 30 vasi da semi e conserva le granaglie due volte e mezzo più a lungo. Accetta solo granaglie."
+building_small_granary,Casa delle granaglie
+build_bar_small_granary_tooltip,Casa delle granaglie
+build_bar_small_granary_description,"Un granaio tondo rialzato su pietre, coi muri d'argilla, accanto a una capanna dove si lavora. Le granaglie ci stanno sfuse, senza vasi, e si conservano due volte e mezzo più a lungo: ci sta circa il raccolto di un campo. Accetta solo granaglie. Qui si pesta l'orzo col mortaio: la semola va nei vasi."
+building_haystack,Pagliaio
+build_bar_haystack_tooltip,Pagliaio
+build_bar_haystack_description,"Quattro trespoli di legno legati con la corda, dove si stende la paglia del raccolto: lì si conserva fino all'anno dopo. Ci stanno circa 1000 di paglia, e si vede quanto sono pieni. È l'unico posto dove si tiene la paglia."
+building_clay_oven,Forno d'argilla
+build_bar_clay_oven_tooltip,Forno d'argilla
+build_bar_clay_oven_description,"Una cupola d'argilla refrattaria su una base di pietre, con la bocca davanti. Dentro si fa il fuoco, poi si toglie la brace e si cuoce sulla pietra calda: la pita con la semola d'orzo, il pane con la farina di grano, il pane nero con quella di segale, le gallette con i fiocchi d'avena. Tiene una scorta di legna; semola e farina arrivano per ogni ordine."
 building_farmer_hut,Capanna degli attrezzi agricoli
 build_bar_farmer_hut_tooltip,Capanna degli attrezzi agricoli
-build_bar_farmer_hut_description,"Capanna di legno col tetto di paglia dove si fanno gli attrezzi per coltivare. Per ora non ha ancora lavori."
-building_trial_garden,Orto delle prove
-build_bar_trial_garden_tooltip,Orto delle prove
-build_bar_trial_garden_description,"Un fazzoletto di terra smossa dentro un recinto alla buona, dove provare a far crescere una pianta selvatica. Per ora non ha ancora lavori."
+build_bar_farmer_hut_description,"Capanna di legno col tetto di frasche dove si fanno gli attrezzi per coltivare: il bastone da scavo e il falcetto."
+building_trial_garden,Orto dell'addomesticazione
+build_bar_trial_garden_tooltip,Orto dell'addomesticazione
+build_bar_trial_garden_description,"Un fazzoletto di terra smossa dentro un recinto alla buona. Si semina con i semi selvatici: anno dopo anno la specie si addomestica, e da allora il raccolto dà i semi domestici per i campi."
 building_category_agriculture,Agricoltura
 carried_resource_tooltip_wild_wheat,Grano selvatico
 discovery_first_wild_wheat_title,Grano selvatico
 discovery_first_wild_wheat_p1,"Tra i semi raccolti dall'erba qualcuno nota che alcuni sono più grossi e pesanti degli altri, con una spiga diversa: non è orzo, è grano selvatico."
-discovery_first_wild_wheat_p2,"Si tiene nei vasi da semi, separato dall'orzo, e si può dare agli animali. Un giorno, nell'orto delle prove, si potrà provare a renderlo domestico."
-discovery_first_domesticated_barley_gift_p2,"L'orzo ora è domestico e apre la strada a idee nuove. Continuate a raccogliere dalle piante selvatiche: in ogni stagione potreste riconoscere semi che prima non distinguevate."
+discovery_first_wild_wheat_p2,"Si tiene nei vasi da semi, separato dall'orzo, e si può dare agli animali. Un giorno, nell'orto dell'addomesticazione, si potrà provare a renderlo domestico."
+discovery_first_domesticated_barley_gift_p2,"L'orzo ora è domestico e apre la strada a idee nuove. Costruite un orto dell'addomesticazione e seminatelo con l'orzo selvatico: ora darà orzo domestico. Conservatelo nei vasi da semi della Capanna di stoccaggio, dove dura quasi tre anni: servirà a seminare i campi, quando il villaggio scoprirà l'Agricoltura. Nell'orto si possono provare anche gli altri semi selvatici che il villaggio ha imparato a riconoscere: seminandoli anno dopo anno, diventeranno domestici anche loro. Continuate a raccogliere dalle piante selvatiche: in ogni stagione potreste riconoscere semi che prima non distinguevate."
 domestic_plant_wheat,Grano
 wild_plant_wheat,Grano selvatico
-carried_resource_tooltip_wild_millet,Miglio selvatico
-domestic_plant_millet,Miglio
-wild_plant_millet,Miglio selvatico
-discovery_first_wild_millet_title,Miglio selvatico
-discovery_first_wild_millet_p1,"Tra l'erba d'autunno qualcuno raccoglie grappoli di semi minuscoli, tondi e lucidi, diversi dall'orzo e dal grano: è miglio selvatico."
-discovery_first_wild_millet_p2,"Si tiene nei vasi da semi, separato dagli altri, e si può dare agli animali. Cresce in fretta: un giorno, nell'orto delle prove, si potrà seminarlo in primavera e raccoglierlo in autunno."
+carried_resource_tooltip_wild_rye,Segale selvatica
+domestic_plant_rye,Segale
+wild_plant_rye,Segale selvatica
+discovery_first_wild_rye_title,Segale selvatica
+discovery_first_wild_rye_p1,"Tra l'erba d'autunno qualcuno raccoglie spighe lunghe e sottili, con chicchi grigiastri e allungati, diverse dall'orzo e dal grano: è segale selvatica."
+discovery_first_wild_rye_p2,"Si tiene nei vasi da semi, separata dagli altri, e si può dare agli animali. Un giorno, nell'orto dell'addomesticazione, si potrà seminarla in primavera e raccoglierla in autunno."
 carried_resource_tooltip_wild_oats,Avena selvatica
 domestic_plant_oats,Avena
 wild_plant_oats,Avena selvatica
 discovery_first_wild_oats_title,Avena selvatica
 discovery_first_wild_oats_p1,"Vicino alla Fossa, tra l'orzo e le altre erbe nate dai rifiuti, spuntano spighe leggere e pendenti, diverse da tutte le altre: è avena selvatica."
-discovery_first_wild_oats_p2,"Cresce come un'erbaccia dove la terra è stata smossa. Si tiene nei vasi da semi, si mette nella zuppa e piace agli animali. Un giorno, nell'orto delle prove, si potrà seminarla in primavera e raccoglierla in estate."
+discovery_first_wild_oats_p2,"Cresce come un'erbaccia dove la terra è stata smossa. Si tiene nei vasi da semi, si mette nella zuppa e piace agli animali. Un giorno, nell'orto dell'addomesticazione, si potrà seminarla in primavera e raccoglierla in estate."
 idea_spinning,Filatura
 idea_spinning_summary,Certe piante hanno fibre lunghe che si torcono in filo.
 idea_spinning_description,"Osservando gli steli delle piante selvatiche, il gruppo nota che alcuni contengono fibre lunghe e resistenti: battute e torte diventano un filo sottile. Si impara a riconoscere il lino."
@@ -2147,14 +2174,16 @@ domestic_plant_flax,Lino
 wild_plant_flax,Lino selvatico
 discovery_first_wild_flax_title,Lino selvatico
 discovery_first_wild_flax_p1,"Tra l'erba d'estate qualcuno strappa steli sottili coi fiorellini azzurri: dentro hanno le fibre lunghe di cui parla la Filatura. È lino selvatico."
-discovery_first_wild_flax_p2,"Alla Capanna del vestiario se ne fa una corda di lino, e ogni corda insegna qualcosa sulla pianta. Il filo e la tela verranno solo dal lino domestico, da ottenere nell'orto delle prove."
+discovery_first_wild_flax_p2,"Alla Capanna del vestiario se ne fa una corda di lino, e ogni corda insegna qualcosa sulla pianta. Il filo e la tela verranno solo dal lino domestico, da ottenere nell'orto dell'addomesticazione."
 domestication_plant_hint_gather,Raccogliendo {resource}: 1 punto ogni {units}.
 domestication_plant_hint_meal,Cucinando la zuppa coi semi: {meal} punti a pentola.
 domestication_plant_hint_product,Facendo {product}: {points} punti l'una.
-domestication_plant_hint_cap,"Così fino a {cap} punti, poi solo nell'orto delle prove."
+domestication_plant_hint_cap,"Così fino a {cap} punti, poi solo nell'orto dell'addomesticazione."
 building_info_construction_tools,Per costruire serve: {tools}
 carried_resource_tooltip_digging_stick,Bastone da scavo
 carried_resource_tooltip_flint_sickle,Falcetto di selce
+carried_resource_tooltip_grain_mortar,Mortaio
+carried_resource_tooltip_saddle_quern,Macina a sella
 tool_category_sowing,semina
 tool_category_reaping,mietitura
 building_crop_species,Coltura:
@@ -2207,6 +2236,18 @@ building_crop_auto_never,Sempre no
 warehouse_rule_cultivation,Coltiva in automatico tutti i terreni
 warehouse_rule_cultivation_tooltip,"Accesa: Semina e Mietitura di orti e campi escono da sole nella lista dei lavori, nelle loro stagioni. Vale per i terreni lasciati su ""come la regola""; quelli con ""sempre sì"" o ""sempre no"" fanno come hanno scelto."
 carried_resource_tooltip_domestic_barley,Orzo
+carried_resource_tooltip_barley_groats,Semola d'orzo
+carried_resource_tooltip_domestic_wheat,Grano
+carried_resource_tooltip_wheat_flour,Farina di grano
+carried_resource_tooltip_barley_pita,Pita d'orzo
+carried_resource_tooltip_wheat_bread,Pane di grano
+carried_resource_tooltip_domestic_rye,Segale
+carried_resource_tooltip_rye_flour,Farina di segale
+carried_resource_tooltip_rye_bread,Pane nero di segale
+carried_resource_tooltip_domestic_oats,Avena
+carried_resource_tooltip_oat_flakes,Fiocchi d'avena
+carried_resource_tooltip_oat_cake,Galletta d'avena
+carried_resource_tooltip_straw,Paglia
 building_field,Campo con capanno
 build_bar_field_tooltip,Campo con capanno
 build_bar_field_description,"Un campo di 3×3 microcelle: terra dissodata dentro un recinto di pali e rami, con un cancellino e un piccolo capanno in un angolo per i bastoni da scavo e i falcetti. Ruota per scegliere l'angolo del capanno. Serve il piccone per dissodare. Otto lotti, uno per microcella di terra: ognuno si semina e si miete per conto suo, anche in più persone insieme. Solo semi domestici, 100 once per lotto."

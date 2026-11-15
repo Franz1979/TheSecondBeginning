@@ -1,0 +1,27 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_wheat_flour"]
+
+; Farina di grano (2026-11-15, richiesta utente — ramo piante): grano domestico macinato con la macina a sella alla Casa
+; delle granaglie. Una partita (un ciclo): 10 grano -> 9 farina (si perde meno che pestando l'orzo), 100 di lavoro (più
+; della semola: macinare fine è più lungo), 1 uso della macina (categoria Macinatura). Solo col grano addomesticato.
+; Granaglia sempre nei vasi (always_in_container), 120 giorni, 0 calorie, fuori dalla zuppa. Serve al pane di grano.
+[resource]
+script = ExtResource("1_wheat_flour")
+secondary_resource_name = "wheat_flour"
+calories_per_unit = 0.0
+category = 6
+required_idea_id = "agriculture"
+required_domesticated_species = Array[String](["wheat"])
+generation_source = 2
+day_durability = 120
+space_per_unit = 0.5
+stored_in_container = "seed_jar"
+always_in_container = true
+recipe_inputs = {
+"domestic_wheat": 10
+}
+recipe_output_quantity = 9
+recipe_labor = 100.0
+recipe_workstation_types = Array[String](["small_granary"])
+recipe_required_tool_categories = Array[int]([18])
