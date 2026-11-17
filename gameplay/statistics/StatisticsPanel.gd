@@ -71,6 +71,7 @@ const SKILL_DISPLAY := {
 	"medicine": {"name": "skill_medicine_label", "short": "skill_medicine_short", "color": Color(0.4, 0.75, 0.55)},
 	"fishing": {"name": "skill_fishing_label", "short": "skill_fishing_short", "color": Color(0.3, 0.55, 0.8)},
 	"farming": {"name": "skill_farming_label", "short": "skill_farming_short", "color": Color(0.75, 0.65, 0.25)},
+	"husbandry": {"name": "skill_husbandry_label", "short": "skill_husbandry_short", "color": Color(0.7, 0.45, 0.3)},
 }
 # Didascalie dei grafici nella scena: percorso del Label -> chiave di traduzione.
 const CHART_CAPTIONS := [
@@ -419,6 +420,12 @@ func _refresh_births_tab(
 
 	# Una sola passata su birth_events per donna fertile (mai due, una per la media e una per la
 	# lista sotto) — {"woman": HumanIndividual, "count": int}, ordine di human_individuals.
+	# Figli arrivati da fuori con la madre (2026-11-17, richiesta utente — Elu con Ozar): nessun birth_event, li si conta
+	# dai vivi con mother_id della donna, esclusi quelli già contati dai parti qui.
+	var born_here_ids: Dictionary = {}
+	for event in birth_events:
+		if int(event.get("individual_id", -1)) >= 0:
+			born_here_ids[int(event["individual_id"])] = true
 	var fertile_women_counts: Array[Dictionary] = []
 	for individual in human_individuals:
 		if individual.sex != HumanTypes.Sex.FEMALE:
@@ -430,6 +437,9 @@ func _refresh_births_tab(
 		var child_count := 0
 		for event in birth_events:
 			if int(event["mother_id"]) == individual.id and bool(event["child_survived"]):
+				child_count += 1
+		for other in human_individuals:
+			if other.mother_id == individual.id and not born_here_ids.has(other.id):
 				child_count += 1
 		fertile_women_counts.append({"woman": individual, "count": child_count})
 
@@ -559,13 +569,18 @@ func _refresh_parameters_chart() -> void:
 # ogni skill.
 func _refresh_skills_tab(human_individuals: Array[HumanIndividual]) -> void:
 	_skill_individuals = human_individuals
-	skills_bar_chart.set_bars(_build_bars(VitalsAverageService.SKILLS, SKILL_DISPLAY, VitalsAverageService.skill_averages(human_individuals)))
+	var skills := _discovered_skills()
+	for skill in _skill_checks:
+		(_skill_checks[skill] as CheckBox).visible = skills.has(skill)
+	skills_bar_chart.set_bars(_build_bars(skills, SKILL_DISPLAY, VitalsAverageService.skill_averages(human_individuals)))
 	_refresh_skills_chart()
 
 	for child in best_skills_container.get_children():
 		child.queue_free()
 	for i in range(VitalsAverageService.SKILLS.size()):
 		var skill := VitalsAverageService.SKILLS[i]
+		if not skills.has(skill):
+			continue
 		var best: HumanIndividual = null
 		var best_value := 0.0
 		for individual in human_individuals:
@@ -591,9 +606,19 @@ func _refresh_skills_chart() -> void:
 	if _scope_village_id != SCOPE_ALL:
 		history = _game_data.village_skill_snapshots.get(_scope_village_id, {})
 	skills_per_year_chart.set_series(_build_series(
-		VitalsAverageService.SKILLS, SKILL_DISPLAY, _skill_checks, history,
+		_discovered_skills(), SKILL_DISPLAY, _skill_checks, history,
 		VitalsAverageService.skill_average_percents(_skill_individuals), not _skill_individuals.is_empty()
 	))
+
+
+# Skill già comparse per il popolo del giocatore (HumanIndividual.SKILL_REQUIRED_IDEAS, 2026-11-16): le altre non hanno
+# barra, linea, casella né riga del migliore.
+func _discovered_skills() -> Array[String]:
+	var result: Array[String] = []
+	for i in range(VitalsAverageService.SKILLS.size()):
+		if HumanIndividual.is_skill_discovered(String(VitalsAverageService.SKILL_FIELDS[i]), GameSettings.active_human_folk):
+			result.append(VitalsAverageService.SKILLS[i])
+	return result
 
 
 # Caselle accese di default, una per chiave, col colore della sua linea; `on_toggled` ridisegna il grafico.

@@ -6,10 +6,11 @@
 ; bocca davanti (porta, ruotabile), 1 microcella. Produzione, Agricoltura. Cuoce la pita d'orzo (barley_pita) e il pane di
 ; grano (wheat_bread), a partite da 4. Tiene una scorta di combustibile (fuel_stock_min, come il focolare); semola e farina
 ; arrivano solo per l'ordine in corso (il forno non ha vasi); il prodotto resta nel buffer di uscita finché non si porta
-; in magazzino (buffer di 40 pezzi: ci stanno due ordini pieni). Un ordine alla volta più 2 in coda, al massimo 20 pezzi (5 partite) per ordine. Vita 30 anni.
+; in magazzino (buffer di 40 pezzi: ci stanno due ordini pieni). Giare per l'acqua (2026-11-16, richiesta utente — acqua come
+; risorsa, passo 3a): Attrezzeria con 4 giare (1600 d'acqua), arrivano con «Rifornisci le Attrezzerie». Un ordine alla volta più 2 in coda, al massimo 20 pezzi (5 partite) per ordine. Vita 30 anni.
 [resource]
 script = ExtResource("1_clay_oven")
-lifespan_years = 30
+lifespan_years = 40
 max_durability = 100
 defense = 20
 building_name = "building_clay_oven"
@@ -34,3 +35,6 @@ production_output_to_storage = false
 storage_accepts_recipe_materials_only = true
 production_max_quantity = 20
 production_max_orders = 3
+toolkit_tool_types = 1
+toolkit_units_per_type = 4
+toolkit_extra_tools = Array[String](["clay_jar"])

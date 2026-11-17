@@ -84,8 +84,6 @@ signal fuel_min_changed(type_name: String, level: int)
 # Regola "Acqua per tettoia" (2026-11-07, giare passo 3): valore da GameScene (set_water_rule, prima di _ready); i cambi
 # escono con water_per_shelter_changed. L'acqua di ogni tettoia si legge nel pannello della tettoia, non qui.
 signal water_per_shelter_changed(level: int)
-# Regola "Rifornisci le mangiatoie" (2026-11-14, FeederStockService): giorni di cibo, valore da GameScene (set_feeder_rule).
-signal feeder_days_changed(days: int)
 # Regola "Trappole per zona" (2026-11-07, TrapService): numero voluto in ogni zona per tipo di trappola; una zona può avere
 # il proprio numero (pannello della zona). Valori da GameScene (set_trap_rule), i cambi escono con trap_per_zone_changed.
 signal trap_per_zone_changed(trap_name: String, level: int)
@@ -106,7 +104,6 @@ var _fuel_rule_enabled: bool = false
 var _water_per_shelter: int = 0
 var _water_max: int = 0
 var _water_missing: int = 0
-var _feeder_days: int = 0
 # [{"trap": nome, "level": int}], una riga per tipo di trappola.
 var _trap_rows: Array[Dictionary] = []
 var _field_seed_rows: Array[Dictionary] = []
@@ -309,10 +306,6 @@ func set_fuel_rule(enabled: bool, rows: Array[Dictionary]) -> void:
 
 
 # `max_level`: capienza d'acqua di una tettoia; `missing`: giare che mancano nei magazzini (riga rossa), all'ultimo Inventario.
-func set_feeder_rule(days: int) -> void:
-	_feeder_days = days
-
-
 func set_water_rule(level: int, max_level: int, missing: int = 0) -> void:
 	_water_per_shelter = level
 	_water_max = max_level
@@ -516,27 +509,6 @@ func _build_water_rule_rows() -> Control:
 	return row
 
 
-# Regola "Rifornisci le mangiatoie": titolo con il campo compatto dei giorni (0 = spenta).
-func _build_feeder_rule_rows() -> Control:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	row.tooltip_text = TooltipText.wrap(tr("warehouse_rule_feeder_tooltip"))
-	var label := Label.new()
-	label.text = tr("warehouse_rule_feeder")
-	label.tooltip_text = TooltipText.wrap(row.tooltip_text)
-	label.mouse_filter = Control.MOUSE_FILTER_PASS
-	label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	row.add_child(label)
-	row.add_child(build_level_field(_feeder_days, func(days: int) -> void:
-		_feeder_days = days
-		feeder_days_changed.emit(days)
-	, "warehouse_rule_feeder_tooltip", 1, 0, true, LEVEL_NONE_TEXT, FEEDER_DAYS_MAX))
-	return row
-
-
 func set_banquet_rule(safe_only: bool) -> void:
 	_banquet_safe_only = safe_only
 
@@ -549,15 +521,15 @@ const RULE_WATER := "water"
 const RULE_TOOLKIT := "toolkit"
 # "Trappole per zona" (2026-11-07): con almeno un edificio finito che fabbrica una trappola (capanna del trappoliere).
 const RULE_TRAPS := "traps"
-# "Rifornisci le mangiatoie" (2026-11-14): con almeno un edificio finito con mangiatoia (AnimalFeederService).
-const RULE_FEEDER := "feeder"
 # "Coltiva in automatico tutti i terreni" (2026-11-15): con almeno un terreno coltivato finito (CultivationService).
 const RULE_CULTIVATION := "cultivation"
 # "Semi nei campi" (2026-11-15): con almeno un campo finito che tiene i semi (FieldSeedStoreService).
 const RULE_FIELD_SEEDS := "field_seeds"
+# Massimo dei giorni di cibo e di paglia (mangiatoie e lettiere: pannello Animali e pannello dell'edificio). Le due regole
+# stavano qui fino al 2026-11-17; ora sono per specie nel pannello Animali (richiesta utente).
 const FEEDER_DAYS_MAX := 60
 const BANQUET_BUILDING_TYPE := "feast_ground"
-var _available_rules: Dictionary = {RULE_BANQUET: true, RULE_WATER: true, RULE_TOOLKIT: true, RULE_TRAPS: true, RULE_FEEDER: true,
+var _available_rules: Dictionary = {RULE_BANQUET: true, RULE_WATER: true, RULE_TOOLKIT: true, RULE_TRAPS: true,
 	RULE_CULTIVATION: true, RULE_FIELD_SEEDS: true}
 
 
@@ -571,7 +543,7 @@ func get_available_rules() -> Dictionary:
 
 # {RULE_*: bool} dagli edifici finiti e non demoliti di `world`.
 static func available_rules_for(world: World) -> Dictionary:
-	var result := {RULE_BANQUET: false, RULE_WATER: false, RULE_TOOLKIT: false, RULE_TRAPS: false, RULE_FEEDER: false,
+	var result := {RULE_BANQUET: false, RULE_WATER: false, RULE_TOOLKIT: false, RULE_TRAPS: false,
 		RULE_CULTIVATION: false, RULE_FIELD_SEEDS: false}
 	if world == null:
 		return result
@@ -590,8 +562,6 @@ static func available_rules_for(world: World) -> Dictionary:
 			result[RULE_TOOLKIT] = true
 		if trap_workstations.has(building.building_type_name):
 			result[RULE_TRAPS] = true
-		if AnimalFeederService.has_feeder(building):
-			result[RULE_FEEDER] = true
 		if CultivationService.is_cultivated(building):
 			result[RULE_CULTIVATION] = true
 		if FieldSeedStoreService.is_seed_store(building):
@@ -982,8 +952,6 @@ func _build_rules_section() -> void:
 		DashedSeparator.add_item(_rules_box, _build_toolkit_rule_rows())
 	if bool(_available_rules.get(RULE_WATER, true)):
 		DashedSeparator.add_item(_rules_box, _build_water_rule_rows())
-	if bool(_available_rules.get(RULE_FEEDER, true)):
-		DashedSeparator.add_item(_rules_box, _build_feeder_rule_rows())
 	if bool(_available_rules.get(RULE_CULTIVATION, true)):
 		DashedSeparator.add_item(_rules_box, _build_cultivation_rule_row())
 	if bool(_available_rules.get(RULE_FIELD_SEEDS, true)):
@@ -1345,6 +1313,10 @@ func _visible_resource_names() -> Array[String]:
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		# Rifiuti (2026-10-18, detriti): mai in magazzino, nessuna riga.
 		# Ricette di postazioni non ancora scoperte (2026-10-22): nessuna riga (ProductionService.is_recipe_known).
+		# Acqua (2026-11-16, acqua come risorsa — passo 2): finché sta solo nelle tettoie si gestisce con la regola "Acqua per
+		# tettoia", nessuna riga di livello.
+		if resource_name == WaterJarService.WATER:
+			continue
 		if not TerrainScatteredResourceService.is_resource_locked(resource_name) and not WasteDisposalService.is_waste_only(resource_name) \
 				and ProductionService.is_recipe_known(resource_name, GameSettings.active_human_folk):
 			names.append(resource_name)

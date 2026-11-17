@@ -159,6 +159,13 @@ corner_radius_top_right = 4
 corner_radius_bottom_right = 4
 corner_radius_bottom_left = 4
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_husbandry_fill"]
+bg_color = Color(0.7, 0.45, 0.3, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_fishing_fill"]
 bg_color = Color(0.3, 0.55, 0.8, 1)
 corner_radius_top_left = 4
@@ -676,6 +683,33 @@ layout_mode = 2
 custom_minimum_size = Vector2(18, 70)
 
 [node name="FarmingCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FarmingColumn/FarmingCaptionWrapper"]
+layout_mode = 0
+offset_left = -25.0
+offset_top = 25.0
+offset_right = 43.0
+offset_bottom = 45.0
+pivot_offset = Vector2(34, 10)
+rotation_degrees = -90.0
+theme_override_font_sizes/font_size = 9
+horizontal_alignment = 2
+vertical_alignment = 1
+
+[node name="HusbandryColumn" type="VBoxContainer" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow"]
+layout_mode = 2
+
+[node name="HusbandryBar" type="ProgressBar" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HusbandryColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(14, 70)
+fill_mode = 3
+theme_override_styles/background = SubResource("StyleBoxFlat_stamina_bg")
+theme_override_styles/fill = SubResource("StyleBoxFlat_husbandry_fill")
+show_percentage = false
+
+[node name="HusbandryCaptionWrapper" type="Control" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HusbandryColumn"]
+layout_mode = 2
+custom_minimum_size = Vector2(18, 70)
+
+[node name="HusbandryCaption" type="Label" parent="SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HusbandryColumn/HusbandryCaptionWrapper"]
 layout_mode = 0
 offset_left = -25.0
 offset_top = 25.0

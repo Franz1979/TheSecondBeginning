@@ -18,11 +18,43 @@ static func domestic_species_for_wild(wild_species: String) -> String:
 	return ""
 
 
+# Scelta "Nessuna" (2026-11-16, richiesta utente): Building.kept_species = NO_SPECIES, la tettoia resta in piedi (per
+# un'emergenza) ma non accetta animali; i cesti la ignorano (TrapService.has_live_catch_building). Si sceglie solo a
+# edificio vuoto, come le altre.
+const NO_SPECIES := "none"
+
+
+static func accepts_none(building: Building) -> bool:
+	return building != null and fixed_species(building) == "" and building.kept_species == NO_SPECIES
+
+
+# Specie fissa dell'edificio (2026-11-16, conigliera passo 1): conigliera e pollaio tengono solo la specie che li sblocca
+# (BuildingRules.required_domesticated_species), senza scelta nel pannello e solo da addomesticata. "" = specie da scegliere
+# (la tettoia delle gabbie).
+static func fixed_species(building: Building) -> String:
+	if building == null or building.rules == null or building.rules.animal_capacity <= 0:
+		return ""
+	return building.rules.required_domesticated_species
+
+
+# Specie scelta: quella fissa dell'edificio, altrimenti quella del pannello ("" = Qualunque, NO_SPECIES = Nessuna).
+static func chosen_species(building: Building) -> String:
+	if building == null:
+		return ""
+	var fixed := fixed_species(building)
+	return fixed if fixed != "" else building.kept_species
+
+
 # Specie che l'edificio può tenere (scelta nel pannello), come specie domestiche di arrivo. La tettoia delle gabbie: le
 # prede piccole delle mandrie (AnimalRules.max_hunters == 1, la stessa regola dei lacci) che hanno una specie domestica.
+# Conigliera e pollaio: solo la loro specie fissa.
 static func selectable_species(building: Building) -> Array[String]:
 	var result: Array[String] = []
 	if building == null or building.rules == null or building.rules.animal_capacity <= 0:
+		return result
+	var fixed := fixed_species(building)
+	if fixed != "":
+		result.append(fixed)
 		return result
 	for wild_species in WildFaunaService.herd_species():
 		var wild_rules := AnimalCalculator.get_animal_rules(wild_species)
@@ -37,10 +69,10 @@ static func selectable_species(building: Building) -> Array[String]:
 # Specie tenuta adesso: quella scelta, altrimenti quella del primo animale dentro, altrimenti quella del primo posto
 # prenotato (`reserved`, voci make_entry), altrimenti "" (vuota e Qualunque).
 static func current_species(game_data: GameData, building: Building, reserved: Array = []) -> String:
-	if building == null:
+	if building == null or accepts_none(building):
 		return ""
-	if building.kept_species != "":
-		return building.kept_species
+	if chosen_species(building) != "":
+		return chosen_species(building)
 	var animals := DomesticAnimalService.get_kept_animals(game_data, building.id)
 	if not animals.is_empty():
 		return animals[0].species
@@ -59,7 +91,12 @@ static func capacity(building: Building) -> int:
 static func has_room_for(game_data: GameData, building: Building, species: String, reserved: Array = []) -> bool:
 	if building == null or not building.is_complete or capacity(building) <= 0 or building.is_out_of_service():
 		return false
+	if accepts_none(building):
+		return false
 	if not selectable_species(building).has(species):
+		return false
+	# Specie fissa (conigliera, pollaio): solo animali domestici, quindi solo a specie addomesticata.
+	if fixed_species(building) != "" and not DomesticAnimalService.is_domesticated(game_data, species):
 		return false
 	var current := current_species(game_data, building, reserved)
 	if current != "" and current != species:
@@ -72,14 +109,18 @@ static func has_room_for(game_data: GameData, building: Building, species: Strin
 
 
 # Edificio con posto per `species`, il più vicino a `macro_coords` (prima quelli della stessa macrocella). null se nessuno.
+# `same_kind_as` (2026-11-16): solo edifici dello stesso tipo di quello (tettoia → tettoie, allevamento → allevamenti):
+# lo spostamento istantaneo dei piccoli non porta mai in conigliera, ci si arriva col trasporto.
 static func find_building_with_room(game_data: GameData, world: World, species: String, macro_coords: Vector2i,
-		reserved: Array = []) -> Building:
+		reserved: Array = [], same_kind_as: Building = null) -> Building:
 	if world == null:
 		return null
 	var best: Building = null
 	var best_distance := INF
 	for building in world.buildings:
 		if not has_room_for(game_data, building, species, reserved):
+			continue
+		if same_kind_as != null and (fixed_species(building) != "") != (fixed_species(same_kind_as) != ""):
 			continue
 		var distance := Vector2(Vector2i(building.macro_x, building.macro_y) - macro_coords).length()
 		if distance < best_distance:
@@ -88,11 +129,14 @@ static func find_building_with_room(game_data: GameData, world: World, species: 
 	return best
 
 
-# Cambia la specie scelta: solo a edificio vuoto e fra quelle ammesse ("" = Qualunque). true se cambiata.
+# Cambia la specie scelta: solo a edificio vuoto e fra quelle ammesse ("" = Qualunque, NO_SPECIES = Nessuna). true se
+# cambiata.
 static func set_kept_species(game_data: GameData, building: Building, species: String) -> bool:
 	if building == null or not DomesticAnimalService.get_kept_animals(game_data, building.id).is_empty():
 		return false
-	if species != "" and not selectable_species(building).has(species):
+	if fixed_species(building) != "":
+		return false
+	if species != "" and species != NO_SPECIES and not selectable_species(building).has(species):
 		return false
 	building.kept_species = species
 	return true
@@ -115,11 +159,35 @@ static func species_display_name(species: String, wild: bool) -> String:
 # --- Trasporto dai cesti (passo B2, 2026-11-12) ---
 
 # Voce di un animale vivo portato in braccio verso la tettoia `building_id` (TrapService.CONTEXT_LIVE_ANIMALS e
-# KeepAnimalAction.entries). "space": lo spazio nello zaino (la sua carne, TrapService.prey_space).
+# KeepAnimalAction.entries). "space": lo spazio nello zaino (peso da vivo, live_space).
 static func make_entry(wild_species: String, species: String, is_male: bool, age_band: int, building_id: int,
 		trap_name: String) -> Dictionary:
 	return {"wild_species": wild_species, "species": species, "is_male": is_male, "age_band": age_band,
-		"building_id": building_id, "space": TrapService.prey_space(wild_species, age_band), "trap_name": trap_name}
+		"building_id": building_id, "space": live_space(species, age_band), "trap_name": trap_name}
+
+
+# Peso da vivo nello zaino di un animale di `species` (specie domestica) nella fascia `age_band` (2026-11-16):
+# DomesticAnimalRules.live_carry_space_young/_adult (vecchi come adulti); senza dato, la resa macellata (TrapService.prey_space).
+static func live_space(species: String, age_band: int) -> float:
+	var rules := DomesticAnimalCalculator.get_rules(species)
+	if rules != null:
+		var space := rules.live_carry_space_young if age_band == GameTypes.AgeBand.YOUNG else rules.live_carry_space_adult
+		if space > 0.0:
+			return space
+	return TrapService.prey_space(species, age_band)
+
+
+# Spazio degli animali vivi in braccio di chi fa `task` (2026-11-16): catture dei cesti nel context e tappe KeepAnimalAction
+# ancora da fare. Pesa nel cammino (HumanIndividual.get_walk_load_space).
+static func carried_live_space(task: Task) -> float:
+	if task == null:
+		return 0.0
+	var space := entries_space(task.context.get(TrapService.CONTEXT_LIVE_ANIMALS, []))
+	for i in range(task.current_step_index, task.steps.size()):
+		var step := task.steps[i]
+		if step is KeepAnimalAction:
+			space += entries_space((step as KeepAnimalAction).entries)
+	return space
 
 
 # Posti prenotati: gli animali in braccio di tutti (context dei giri e tappe KeepAnimalAction ancora da fare), tranne
@@ -157,7 +225,8 @@ static func capture_points(entry: Dictionary) -> int:
 	return rules.capture_points_adult_male if bool(entry.get("is_male", false)) else rules.capture_points_adult_female
 
 
-# Nasce l'individuo nella tettoia (arrivo, KeepAnimalAction): selvatico finché la specie non è addomesticata. Data di
+# Nasce l'individuo nella tettoia (arrivo, KeepAnimalAction): sempre selvatico, anche a specie addomesticata (2026-11-16,
+# richiesta utente — un coniglio preso nel bosco non diventa domestico: lo diventano i figli nati in cattività). Data di
 # nascita stimata a metà della sua fascia d'età (la trappola segna solo la fascia).
 static func keep_animal(game_data: GameData, building: Building, entry: Dictionary) -> DomesticAnimal:
 	var species := String(entry.get("species", ""))
@@ -174,7 +243,7 @@ static func keep_animal(game_data: GameData, building: Building, entry: Dictiona
 	var today := game_data.get_absolute_day()
 	var birth_day := today - int(age_years * GameData.DAYS_PER_YEAR)
 	var animal := DomesticAnimalService.add_kept_animal(game_data, species, bool(entry.get("is_male", false)), birth_day,
-		building.id, not DomesticAnimalService.is_domesticated(game_data, species))
+		building.id, true)
 	if animal != null:
 		animal.captured_day = today
 		count_stat(game_data, species, "captured")

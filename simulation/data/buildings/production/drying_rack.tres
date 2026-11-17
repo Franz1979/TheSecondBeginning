@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_drying_rack")
-lifespan_years = 10
+lifespan_years = 20
 max_durability = 100
 defense = 20
 building_name = "building_drying_rack"

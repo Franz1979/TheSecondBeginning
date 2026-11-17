@@ -20,5 +20,5 @@ recipe_labor = 250.0
 recipe_workstation_types = Array[String](["toolmaker_hut"])
 recipe_required_tool_categories = Array[int]([6])
 tool_categories = Array[int]([12])
-max_uses = 200
+max_uses = 400
 water_capacity = 90.0

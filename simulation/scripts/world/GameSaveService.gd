@@ -74,6 +74,7 @@ func save_game_to_json(
 			"domestication_points": game_data.domestication_points,
 			"domesticated_species": game_data.domesticated_species,
 			"domestication_years": game_data.domestication_years,
+			"domestic_species_present": game_data.domestic_species_present,
 			"hunt_trap_stats": game_data.hunt_trap_stats,
 			"domestication_harvest_units": game_data.domestication_harvest_units,
 			"pit_sowing_units": game_data.pit_sowing_units,
@@ -185,6 +186,11 @@ func save_game_to_json(
 			"stock_fuel_rule_enabled": game_data.stock_fuel_rule_enabled,
 			"stock_water_per_shelter": game_data.stock_water_per_shelter,
 			"stock_feeder_days": game_data.stock_feeder_days,
+			"stock_bedding_days": game_data.stock_bedding_days,
+			"stock_feeder_days_by_species": game_data.stock_feeder_days_by_species,
+			"stock_bedding_days_by_species": game_data.stock_bedding_days_by_species,
+			"stock_manure_clean_by_species": game_data.stock_manure_clean_by_species,
+			"stock_live_product_collect_by_species": game_data.stock_live_product_collect_by_species,
 			"stock_fuel_min_by_type": game_data.stock_fuel_min_by_type,
 			"stock_toolkit_rule_enabled": game_data.stock_toolkit_rule_enabled,
 			"stock_toolkit_targets": game_data.stock_toolkit_targets,
@@ -491,8 +497,21 @@ func save_game_to_json(
 			"feeder_space_used": building.feeder_space_used,
 			"feeder_calories": building.feeder_calories,
 			"feeder_species": building.feeder_species,
+			"feeder_foods": building.feeder_foods.duplicate(true),
 			"feeder_days_override": building.feeder_days_override,
+			# Lettiera (2026-11-17, BeddingService).
+			"bedding_straw": building.bedding_straw,
+			"bedding_days_override": building.bedding_days_override,
+			"bedding_days_with_animals": building.bedding_days_with_animals,
+			"bedding_days_empty": building.bedding_days_empty,
+			# Letame (2026-11-17, ManureService).
+			"manure_pending": building.manure_pending,
+			"manure_clean_override": building.manure_clean_override,
+			# Prodotti da vivi (2026-11-17, LiveProductService).
+			"live_product_pending": building.live_product_pending,
+			"live_product_collect_override": building.live_product_collect_override,
 			"field_seed_level": building.field_seed_level,
+			"production_deliver": building.production_deliver,
 			"field_care_remedy": building.field_care_remedy,
 			"field_care_threshold": building.field_care_threshold,
 			# Terreno coltivato (2026-11-15, CultivationService).
@@ -756,6 +775,7 @@ func save_game_to_json(
 				"skill_medicine": individual.skill_medicine,
 				"skill_fishing": individual.skill_fishing,
 				"skill_farming": individual.skill_farming,
+				"skill_husbandry": individual.skill_husbandry,
 				# Capacità di trasporto (2026-09-08, richiesta utente) — lo zaino è l'unico stato "posseduto"
 				# da un individuo che sparirebbe silenziosamente al reload senza persistenza (stesso
 				# principio di dependent_child_id sopra: un possesso, non un dato ricalcolabile al volo).

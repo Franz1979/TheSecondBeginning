@@ -28,7 +28,7 @@ func is_complete(individual: Variant, context: Dictionary) -> bool:
 
 
 func on_complete(individual: Variant, context: Dictionary) -> void:
-	var failure := WaterJarService.fill_carried_jar(individual)
+	var failure := WaterJarService.fill_carried_jar(individual, context)
 	if failure == "":
 		return
 	# Testo già tradotto, il giocatore lo vede come i rifiuti dei comandi. Correzione 2026-11-07 (richiesta utente): con la

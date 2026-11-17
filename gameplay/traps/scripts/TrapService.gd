@@ -99,12 +99,13 @@ static func is_big_game_quarry(rules: SecondaryResourceRules) -> bool:
 	return rules != null and BIG_GAME_QUARRIES.has(rules.trap_quarry)
 
 
-# true se nel mondo c'è almeno una tettoia delle gabbie completata (piena o vuota).
+# true se nel mondo c'è almeno una tettoia delle gabbie completata (piena o vuota) che accetta animali (non su "Nessuna",
+# 2026-11-16).
 static func has_live_catch_building(world: World) -> bool:
 	if world == null:
 		return false
 	for building in world.buildings:
-		if building != null and building.is_complete and building.building_type_name == LIVE_CATCH_BUILDING_TYPE:
+		if building != null and building.is_complete and building.building_type_name == LIVE_CATCH_BUILDING_TYPE 				and not KeptAnimalService.accepts_none(building):
 			return true
 	return false
 

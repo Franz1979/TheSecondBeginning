@@ -7,6 +7,8 @@
 ; misura ≈ 0,2 kg). Stagioni [inverno, primavera, estate, autunno]: piena estate, poco il resto. Crudi non si mangiano
 ; (calories_per_unit 0: altrimenti diventerebbero cibo per l'uomo); le calorie per gli animali arriveranno al punto 4.
 ; In magazzino solo nei vasi da semi montati in attrezzeria (stored_in_container, StorageContainerService).
+; Sconosciuto fino a Ceramica E Conoscenza delle piante (2026-11-16, richiesta utente): niente raccolta né punti prima, così
+; Addomesticazione delle piante, che ha Conoscenza delle piante come prerequisito, arriva sempre insieme all'orzo domestico.
 [resource]
 script = ExtResource("1_wild_seeds")
 secondary_resource_name = "wild_seeds"
@@ -14,6 +16,7 @@ calories_per_unit = 0.0
 seasonal_availability_multiplier = Array[float]([0.0, 0.2, 1.0, 0.5])
 category = 6
 required_idea_id = "pottery"
+also_required_idea_ids = Array[String](["plant_lore"])
 generation_source = 1
 day_durability = 365
 space_per_unit = 0.5

@@ -2,8 +2,12 @@
 
 [ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_rabbit_hutch"]
 
-; Conigliera (2026-11-13, richiesta utente — segnaposto): richiede l'idea Allevamento e la specie domestic_rabbit addomesticata. Per ora
-; solo l'edificio, senza funzioni: nessun animale ci entra ancora.
+; Conigliera (2026-11-13, richiesta utente — segnaposto): richiede l'idea Allevamento e la specie domestic_rabbit addomesticata.
+; Passo 1 (2026-11-16, richiesta utente): 2x1, una microcella coperta (tetto di paglia, fondo d'argilla battuta contro lo
+; scavo) e una recintata (steccato con le pietre alla base). 50 posti (erano 30 fino al 2026-11-17), mangiatoia 500 (era 300 fino al 2026-11-17), solo conigli domestici (specie
+; fissa = required_domesticated_species, KeptAnimalService.fixed_species). Corde di fibra o di lino (sostituto).
+; Lettiera (2026-11-17, richiesta utente): 100 paglia, 1 ogni 20 giorni per coniglio (BeddingService). Letame fino a 100
+; (ManureService), pulito dal gestore scorte (ManureStockService).
 [resource]
 script = ExtResource("1_rabbit_hutch")
 building_name = "building_rabbit_hutch"
@@ -11,17 +15,24 @@ category = 11
 required_idea_id = "animal_husbandry"
 required_domesticated_species = "domestic_rabbit"
 min_construction_days = 4
-required_labor = 3500
+required_labor = 4000
 max_builders = 2
-lifespan_years = 10
+lifespan_years = 25
 max_durability = 100
 defense = 10
 required_materials = {
-"fiber_rope": 20,
-"plant_fiber": 20,
-"stick": 60,
-"wood": 10
+"clay": 80,
+"fiber_rope": 16,
+"stick": 50,
+"stone": 20,
+"straw": 100,
+"wood": 20
 }
-required_space = 1
+required_space = 2
+footprint = Vector2i(2, 1)
 has_door = false
 visibility_radius = 2
+animal_capacity = 50
+feeder_space_capacity = 500
+bedding_capacity = 100
+manure_capacity = 100

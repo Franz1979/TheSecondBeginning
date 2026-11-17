@@ -7,13 +7,13 @@ script = ExtResource("1_hut")
 building_name = "building_hut"
 required_idea_id = "advanced_paleolithic_constructions"
 required_labor = 3000
-lifespan_years = 25
+lifespan_years = 30
 storage_slot_count = 6
 storage_space_per_slot = 100
 durability_multiplier_by_category = Array[float]([1.1, 1.1, 1.0, 1.0, 1.0, 1.8, 1.0])
 required_materials = {
 "dried_hide": 8,
-"fiber_rope": 10,
+"fiber_rope": 8,
 "stick": 60,
 "stone": 10,
 "wood": 30

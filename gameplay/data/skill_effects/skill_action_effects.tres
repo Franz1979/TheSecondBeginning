@@ -5,6 +5,11 @@
 [resource]
 script = ExtResource("1_sae")
 effects_by_action_key = {
+"husbandry": {
+"bonus": 0.5,
+"skill": "skill_husbandry",
+"skill_max": 1000.0
+},
 "reap": {
 "bonus": 0.5,
 "skill": "skill_farming",

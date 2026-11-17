@@ -159,6 +159,10 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		game_data.domestication_harvest_units[String(species)] = int(saved_harvest_units[species])
 	# Contatori di debug di caccia e trappole (2026-11-15) — .get() per i save precedenti: vuoti.
 	game_data.hunt_trap_stats = HuntTrapStatsService.from_save(data["game"].get("hunt_trap_stats", {}))
+	# Specie domestiche presenti ieri (2026-11-17, avviso di estinzione) — .get() per i save precedenti: nessuna.
+	game_data.domestic_species_present.clear()
+	for species in data["game"].get("domestic_species_present", []):
+		game_data.domestic_species_present.append(String(species))
 	game_data.domestication_years.clear()
 	var saved_domestication_years: Dictionary = data["game"].get("domestication_years", {})
 	for species in saved_domestication_years:
@@ -383,6 +387,30 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 	game_data.stock_water_per_shelter = maxi(int(data["game"].get("stock_water_per_shelter", 0)), 0)
 	# Rifornisci le mangiatoie (2026-11-14): default per i salvataggi precedenti.
 	game_data.stock_feeder_days = maxi(int(data["game"].get("stock_feeder_days", FeederStockService.DEFAULT_DAYS)), 0)
+	# Lettiera (2026-11-17): default per i salvataggi precedenti.
+	game_data.stock_bedding_days = maxi(int(data["game"].get("stock_bedding_days", BeddingStockService.DEFAULT_DAYS)), 0)
+	# Giorni per specie (2026-11-17): vuoti per i salvataggi precedenti (ogni specie usa il numero unico di allora).
+	game_data.stock_feeder_days_by_species = {}
+	var saved_feeder_days: Variant = data["game"].get("stock_feeder_days_by_species", {})
+	if saved_feeder_days is Dictionary:
+		for species in saved_feeder_days:
+			game_data.stock_feeder_days_by_species[String(species)] = maxi(int(saved_feeder_days[species]), 0)
+	game_data.stock_bedding_days_by_species = {}
+	var saved_bedding_days: Variant = data["game"].get("stock_bedding_days_by_species", {})
+	if saved_bedding_days is Dictionary:
+		for species in saved_bedding_days:
+			game_data.stock_bedding_days_by_species[String(species)] = maxi(int(saved_bedding_days[species]), 0)
+	# Pulizia del letame per specie (2026-11-17): vuota per i salvataggi precedenti.
+	game_data.stock_manure_clean_by_species = {}
+	var saved_manure_clean: Variant = data["game"].get("stock_manure_clean_by_species", {})
+	if saved_manure_clean is Dictionary:
+		for species in saved_manure_clean:
+			game_data.stock_manure_clean_by_species[String(species)] = maxi(int(saved_manure_clean[species]), 0)
+	game_data.stock_live_product_collect_by_species = {}
+	var saved_live_collect: Variant = data["game"].get("stock_live_product_collect_by_species", {})
+	if saved_live_collect is Dictionary:
+		for species in saved_live_collect:
+			game_data.stock_live_product_collect_by_species[String(species)] = clampi(int(saved_live_collect[species]), 0, 100)
 	# Regola dei banchetti spontanei (2026-10-17) — 500 e accesa per i salvataggi precedenti.
 	game_data.stock_banquet_safe_only = bool(data["game"].get("stock_banquet_safe_only", true))
 	# Carne lasciata nelle postazioni (2026-10-20) — accesa per i salvataggi precedenti.
@@ -819,8 +847,28 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			building.feeder_space_used = float(building_data.get("feeder_space_used", 0.0))
 			building.feeder_calories = float(building_data.get("feeder_calories", 0.0))
 			building.feeder_species = String(building_data.get("feeder_species", ""))
+			building.feeder_foods.clear()
+			var saved_feeder_foods: Dictionary = building_data.get("feeder_foods", {})
+			for food_name in saved_feeder_foods.keys():
+				var food_entry: Dictionary = saved_feeder_foods[food_name]
+				building.feeder_foods[String(food_name)] = {
+					"units": float(food_entry.get("units", 0.0)), "decay": float(food_entry.get("decay", 0.0)),
+				}
 			building.feeder_days_override = int(building_data.get("feeder_days_override", -1))
+			building.bedding_straw = float(building_data.get("bedding_straw", 0.0))
+			building.bedding_days_override = int(building_data.get("bedding_days_override", -1))
+			building.bedding_days_with_animals = int(building_data.get("bedding_days_with_animals", 0))
+			building.bedding_days_empty = int(building_data.get("bedding_days_empty", 0))
+			building.manure_pending = float(building_data.get("manure_pending", 0.0))
+			building.manure_clean_override = int(building_data.get("manure_clean_override", -1))
+			building.live_product_pending = {}
+			var saved_live_pending: Variant = building_data.get("live_product_pending", {})
+			if saved_live_pending is Dictionary:
+				for product in saved_live_pending:
+					building.live_product_pending[String(product)] = float(saved_live_pending[product])
+			building.live_product_collect_override = int(building_data.get("live_product_collect_override", -1))
 			building.field_seed_level = int(building_data.get("field_seed_level", -1))
+			building.production_deliver = int(building_data.get("production_deliver", -1))
 			building.field_care_remedy = int(building_data.get("field_care_remedy", -1))
 			building.field_care_threshold = int(building_data.get("field_care_threshold", -1))
 			# Terreno coltivato (2026-11-15): vuoto nei salvataggi precedenti.
@@ -902,6 +950,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			)
 			# Attrezzeria (2026-10-04): vuota per i save precedenti.
 			building.toolkit = BuildingToolkitService.load_toolkit(building_data.get("toolkit", {}) as Dictionary)
+			# Tettoia dell'acqua dei salvataggi vecchi (2026-11-16, acqua come risorsa): acqua dalle giare alla voce "water".
+			WaterJarService.convert_legacy_jars(building)
 			# production_output (2026-09-23, buffer di uscita): int() per voce, JSON rende ogni numero float.
 			var production_output: Dictionary = {}
 			var raw_production_output: Dictionary = building_data.get("production_output", {})
@@ -1194,6 +1244,8 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			individual.skill_fishing = float(individual_data.get("skill_fishing", 0.0))
 			# skill_farming (2026-11-15): 0.0 per i save precedenti alla skill.
 			individual.skill_farming = float(individual_data.get("skill_farming", 0.0))
+			# skill_husbandry (2026-11-16): 0.0 per i save precedenti alla skill.
+			individual.skill_husbandry = float(individual_data.get("skill_husbandry", 0.0))
 			# Capacità di trasporto (2026-09-08, richiesta utente) — .get() con default "non sta
 			# trasportando nulla": un save precedente a questo campo non può avere mai avuto un
 			# individuo in trasporto (nessun PickUp esiste ancora), quindi il default è sempre

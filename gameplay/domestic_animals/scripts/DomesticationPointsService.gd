@@ -8,17 +8,20 @@ extends RefCounted
 # scena con effects.animal_domesticated (-> scoperta ANIMAL_DOMESTICATED); il primo animale vero arriva al passo 4.
 
 
-# amount può essere negativo (lupi feriti o uccisi, passi futuri). Punti interi, mai sotto zero e senza tetto:
-# l'eccedenza oltre la soglia porterà altri animali. false = nulla cambiato (specie inesistente o idea non nota).
+# amount può essere negativo (lupi feriti o uccisi, passi futuri). Punti interi, mai sotto zero. Specie già addomesticata
+# (2026-11-16, richiesta utente, come già per le piante): i punti restano fermi, né in più né in meno. false = nulla
+# cambiato (specie inesistente, idea non nota o già addomesticata).
 # effects null = nessuna scoperta (il superamento resta comunque registrato).
-static func add_points(game_data: GameData, folk: Folk, species: String, amount: int, effects: GameEffects = null) -> bool:
+# reason: motivo per il log [DOMESTICATION POINTS] (2026-11-17, DebugLogging.SHOW_DOMESTICATION_POINTS_LOGS).
+static func add_points(game_data: GameData, folk: Folk, species: String, amount: int, effects: GameEffects = null,
+		reason: String = "") -> bool:
 	var rules := DomesticAnimalCalculator.get_rules(species)
 	# Pianta (2026-11-13, ramo delle piante: l'orzo): stesso registro, nessuna idea richiesta, niente punti dopo la soglia.
 	var plant_rules := DomesticPlantCalculator.get_rules(species) if rules == null else null
 	if rules == null and plant_rules == null:
 		push_warning("DomesticationPointsService: specie domestica '%s' inesistente" % species)
 		return false
-	if plant_rules != null and game_data.domesticated_species.has(species):
+	if game_data.domesticated_species.has(species):
 		return false
 	# Specie con idea richiesta (passo 3a): serve l'idea. Il cane (nessuna idea) accumula sempre: è addomesticando il lupo
 	# che nasce l'idea. Regola del primo incontro tolta il 2026-11-12 (sarà la prima cattura viva a sbloccare la specie).
@@ -26,8 +29,13 @@ static func add_points(game_data: GameData, folk: Folk, species: String, amount:
 		if folk == null or not folk.completed_ideas.has(rules.required_idea_id):
 			return false
 	var required := rules.domestication_points_required if rules != null else plant_rules.domestication_points_required
-	var points := maxi(get_points(game_data, species) + amount, 0)
+	var before := get_points(game_data, species)
+	var points := maxi(before + amount, 0)
 	game_data.domestication_points[species] = points
+	# Solo animali (le piante dell'orto delle prove darebbero una riga al giorno).
+	if rules != null and DebugLogging.ENABLED and DebugLogging.SHOW_DOMESTICATION_POINTS_LOGS:
+		print("[DOMESTICATION POINTS] anno=%d giorno=%d %s: %d -> %d (%+d) %s" % [
+			game_data.year, game_data.current_day, species, before, points, amount, reason])
 	DebugLogging.print_event("[DOMESTICATION] %s %d/%d (%+d)" % [species, points, required, amount])
 	if points >= required and not game_data.domesticated_species.has(species):
 		game_data.domesticated_species.append(species)

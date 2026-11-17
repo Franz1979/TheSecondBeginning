@@ -57,7 +57,8 @@ static func candidates(ctx: GameContext, worker: HumanIndividual, targets: Right
 	if not targets.pickup_candidates.is_empty():
 		commands.append(Command.PICKUP)
 	if targets.building != null:
-		if WaterJarService.is_shelter(targets.building) and targets.building.is_complete and not on_resumable_building:
+		# Giare degli edifici (2026-11-16, passo 3b): anche il forno.
+		if WaterJarService.is_fill_target(targets.building) and targets.building.is_complete and not on_resumable_building:
 			commands.append(Command.FILL_JAR)
 		commands.append(Command.BUILD)
 		commands.append(Command.TRANSPORT)

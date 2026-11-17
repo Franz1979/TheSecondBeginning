@@ -9,7 +9,7 @@ category = 4
 required_idea_id = "paleolithic_constructions"
 min_construction_days = 4
 required_labor = 2800
-lifespan_years = 20
+lifespan_years = 30
 storage_slot_count = 10
 storage_space_per_slot = 80
 accepted_categories = Array[int]([1, 3])
@@ -17,7 +17,7 @@ categories_locked = true
 durability_multiplier_by_category = Array[float]([1.0, 1.1, 1.0, 1.1, 1.1, 1.0, 1.0])
 required_materials = {
 "dried_hide": 10,
-"fiber_rope": 10,
+"fiber_rope": 8,
 "pebble": 20,
 "plant_fiber": 10,
 "stick": 40

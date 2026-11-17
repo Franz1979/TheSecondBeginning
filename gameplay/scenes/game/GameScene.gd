@@ -602,6 +602,8 @@ func _ready() -> void:
 	# Celle vive per le destinazioni casuali libere del pathfinding (2026-09-27, PathfindingService.pick_free_destination):
 	# stesso Dictionary per tutta la vita della scena (live_cells non viene mai riassegnato, solo modificato).
 	PathfindingService.register_live_cells(live_cells)
+	# Griglia delle microcelle (2026-11-17): cambiata dal menu Opzioni in partita, si applica subito.
+	UserOptions.show_grid_changed.connect(_apply_grid_visibility)
 
 	# Ripristina lo stato dei due toggle dalla sessione precedente (vedi GameSettings): senza
 	# questo, uscendo e rientrando in questa scena tornerebbero sempre al default "attivo",
@@ -919,7 +921,14 @@ func _ready() -> void:
 	building_info_panel.waste_closed_toggle_requested.connect(_on_waste_closed_toggle_requested)
 	building_info_panel.water_target_changed.connect(_on_water_target_changed)
 	building_info_panel.feeder_days_changed.connect(_on_feeder_days_changed)
+	building_info_panel.bedding_days_changed.connect(_on_bedding_days_changed)
+	building_info_panel.manure_clean_changed.connect(_on_manure_clean_changed)
+	building_info_panel.live_product_collect_changed.connect(_on_live_product_collect_changed)
 	building_info_panel.field_seed_level_changed.connect(_on_field_seed_level_changed)
+	building_info_panel.production_deliver_changed.connect(func(building: Building, value: int) -> void:
+		if building != null:
+			building.production_deliver = value
+	)
 	building_info_panel.field_care_remedy_changed.connect(func(building: Building, remedy: int) -> void:
 		if building != null and FieldFertilityService.applies_to(building):
 			building.field_care_remedy = remedy
@@ -2597,8 +2606,10 @@ func _right_click_fill_jar(targets: RightClickTargets) -> bool:
 		return true
 	_fill_jar_pending = {"individual": individual, "shelter": shelter}
 	fill_jar_count_dialog.popup_anchor = {}
+	# Giare di un edificio (2026-11-16, passo 3b): testo suo (niente giare dal magazzino, acqua alla riva o a una tettoia).
+	var message_key := "fill_jar_dialog_message" if WaterJarService.is_shelter(shelter) else "fill_jar_dialog_message_building"
 	fill_jar_count_dialog.open_dialog(
-		tr("fill_jar_dialog_title"), tr("fill_jar_dialog_message"), tr("fill_jar_dialog_count"), 1, room, room
+		tr("fill_jar_dialog_title"), tr(message_key), tr("fill_jar_dialog_count"), 1, room, room
 	)
 	return true
 
@@ -4023,6 +4034,7 @@ func _on_animal_slaughter_cancel_requested() -> void:
 func _cancel_animal_slaughter(animal: DomesticAnimal) -> void:
 	animal.slaughter_requested = false
 	animal.slaughter_by_wm = false
+	animal.slaughter_no_room = false
 	var job_keys: Array[String] = [SlaughterJobProvider.job_key(animal.id)]
 	_forget_job_board_wait(job_keys)
 	_close_slaughter_tasks(animal, false)
@@ -8649,6 +8661,7 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 	entries.append_array(_collect_tool_wait_entries())
 	# Pipottini senza vestito (2026-10-11, vestiario), esclusi i neonati.
 	entries.append_array(_collect_naked_entries())
+	entries.append_array(_collect_homeless_entries())
 	# Ordini del magazzino bloccati (2026-10-11): nessuno ha l'attrezzo o nessuna zona valida.
 	entries.append_array(WarehouseManagerService.collect_blocked_entries(_game_context(), board_jobs))
 	# Essiccatoio del magazzino (2026-10-11): manca l'ingrediente, essiccatoio pieno o assente.
@@ -8658,6 +8671,9 @@ func _refresh_pending_entries(round_result: Dictionary = {}) -> void:
 	entries.append_array(WarehouseManagerService.collect_water_entries(game_data))
 	# Mangiatoie senza cibo da ricevere (2026-11-14).
 	entries.append_array(WarehouseManagerService.collect_feeder_entries(_game_context()))
+	entries.append_array(WarehouseManagerService.collect_bedding_entries(_game_context()))
+	entries.append_array(WarehouseManagerService.collect_manure_entries(_game_context()))
+	entries.append_array(WarehouseManagerService.collect_live_product_entries(_game_context()))
 	# Inventario del magazzino scaduto da più di un'ora e nessuno che lo fa (2026-10-11).
 	entries.append_array(WarehouseManagerService.collect_inventory_entries(_game_context(), _job_board_now()))
 	# Ordini di caccia del cassetto senza prede (2026-10-09).
@@ -8860,6 +8876,21 @@ func _collect_naked_entries() -> Array[Dictionary]:
 			if no_stock:
 				detail = tr("pending_reason_naked_no_stock")
 		entries.append(_pending_entry("naked:%d" % member.id, "%s\n%s" % [member.name, detail], {
+			"kind": "individual", "id": member.id, "macro": member.home_macro_coords, "sort": float(member.id),
+			"name": member.name, "detail": detail,
+		}))
+	return entries
+
+
+# Senza casa (2026-11-17, richiesta utente — come i senza vestito): un pipottino con house_id -1, a qualunque età. La riga
+# sparisce da sola appena gli viene assegnata una casa (AssignHouseService). Clic: centra su di lui.
+func _collect_homeless_entries() -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var detail := tr("pending_reason_no_house")
+	for member in human_individuals:
+		if member.house_id != -1:
+			continue
+		entries.append(_pending_entry("homeless:%d" % member.id, "%s\n%s" % [member.name, detail], {
 			"kind": "individual", "id": member.id, "macro": member.home_macro_coords, "sort": float(member.id),
 			"name": member.name, "detail": detail,
 		}))
@@ -9172,6 +9203,18 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _cultivation_job_release,
 		})
+		# Trasferisci animali (2026-11-16, riga Allevamento): una tettoia delle gabbie per lavoro, vedi DomesticTransferJobProvider.
+		_job_board_provider_list.append({
+			"name": "husbandry",
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return DomesticTransferJobProvider.collect(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return String(job["key"]),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return DomesticTransferJobProvider.rejection(_game_context(), worker, job),
+			"assign": _assign_transfer_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return DomesticTransferJobProvider.workers(_game_context(), job),
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": true, "cancel_tooltip": ""},
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _transfer_job_release,
+		})
 	return _job_board_provider_list
 
 
@@ -9201,6 +9244,30 @@ func _cultivation_job_release(job: Dictionary) -> void:
 		if CultivationJobProvider.is_cultivation_task(member.current_task):
 			member.skip_job_board_once = true
 			_stop_member_task(member)
+
+
+# Trasferisci animali preso dalla lista (2026-11-16): un solo lavoratore per tettoia; gli animali li sceglie all'arrivo.
+func _assign_transfer_job(worker: HumanIndividual, job: Dictionary) -> void:
+	if not DomesticTransferJobProvider.workers(_game_context(), job).is_empty():
+		return
+	var task := DomesticTransferJobProvider.build_task(worker, job.get("target"))
+	if task == null:
+		return
+	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
+		return
+	_ensure_step_signals(task)
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
+# Rimetti in coda / Blocca: il trasporto si ferma e gli animali in braccio tornano in attesa nella tettoia.
+func _transfer_job_release(job: Dictionary) -> void:
+	for member in DomesticTransferJobProvider.workers(_game_context(), job):
+		if DomesticTransferJobProvider.is_transfer_task(member.current_task):
+			member.skip_job_board_once = true
+			_stop_member_task(member)
+	DomesticTransferService.release_orphans(game_data, human_individuals)
+	_refresh_selected_individual_panel()
 
 
 # Piazza trappola presa dalla lista (2026-11-07): un solo lavoratore per zona e trappola.
@@ -10348,7 +10415,8 @@ func _assign_drawer_order_job(worker: HumanIndividual, job: Dictionary) -> void:
 	if building == null or DrawerOrderService.find(game_data, order_id).is_empty():
 		return
 	var recipe := String(job["recipe"])
-	var deliver := bool((job["order"] as Dictionary).get("deliver_to_warehouse", true))
+	# L'edificio scelto con un "Porta al deposito" suo vince sull'ordine (2026-11-16, Building.production_deliver).
+	var deliver := building.deliver_to_warehouse_or(bool((job["order"] as Dictionary).get("deliver_to_warehouse", true)))
 	# Tutta la quantità (2026-10-09): l'edificio scelto la copre (DrawerOrderService.choose_produce_building), mai ridotta.
 	var quantity := int(job["quantity"])
 	if quantity > ProductionService.get_max_order_quantity(building):
@@ -10691,6 +10759,8 @@ func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
 		return "sepoltura"
 	if CarcassJobProvider.is_butchering_task(task) or SlaughterJobProvider.is_listed_task(task, game_data):
 		return "macellazione"
+	if DomesticTransferJobProvider.is_transfer_task(task):
+		return "trasferimento animali"
 	# Riparazione (2026-10-10): della coda solo se l'edificio ha la riparazione richiesta (col mirino è un comando diretto).
 	if JobWorkScanService.REPAIR_TASK_NAMES.has(task.task_name):
 		for step in task.steps:
@@ -11177,7 +11247,7 @@ func _update_individual_panel_content(target: HumanIndividual) -> void:
 		target.skill_leadership, target.skill_builder, target.skill_management,
 		target.skill_transporter, target.skill_gathering, target.skill_cognition,
 		target.skill_hunting, target.skill_crafting, target.skill_ritual, target.skill_social, target.skill_medicine,
-		target.skill_fishing, target.skill_farming,
+		target.skill_fishing, target.skill_farming, target.skill_husbandry,
 		queued_task_descriptions
 	)
 	# Titolo header consolidato (2026-09-13, richiesta utente — "perché la riga del center è
@@ -12597,6 +12667,7 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 	add_child(cell.container)
 
 	cell.renderer = MicroCellRenderer.new()
+	cell.renderer.show_grid = _is_grid_visible()
 	cell.container.add_child(cell.renderer)
 	cell.renderer.setup(cell.world)
 	# Segni dei pascoli abituali delle mandrie (2026-11-15, HerdSignLayer): sopra il renderer, sotto trappole e nebbia.
@@ -14868,6 +14939,7 @@ func _on_build_submenu_action_pressed(action_id: StringName) -> void:
 	# superfluo dirglielo esplicitamente.
 	_building_ghost.building_type_name = building_type_name
 	add_child(_building_ghost)
+	_apply_grid_visibility()
 
 
 # Mappatura action_id -> nome tipo edificio (per BuildingCalculator.get_building_rules) — tenuta
@@ -15001,6 +15073,20 @@ func _clear_building_ghost() -> void:
 	_building_ghost.queue_free()
 	_building_ghost = null
 	_selected_building_type_name = ""
+	_apply_grid_visibility()
+
+
+# Griglia delle microcelle (2026-11-17, richiesta utente): segue l'opzione UserOptions.show_grid, ma resta accesa
+# mentre si piazza un edificio (fantasma attivo), dove serve per allinearlo.
+func _is_grid_visible() -> bool:
+	return UserOptions.show_grid or _building_ghost != null
+
+
+func _apply_grid_visibility() -> void:
+	var visible_grid := _is_grid_visible()
+	for live_cell in live_cells.values():
+		if live_cell.renderer != null:
+			live_cell.renderer.show_grid = visible_grid
 
 
 # ============================================================================================
@@ -15163,9 +15249,66 @@ func _enter_upgrade_orientation_mode(building: Building) -> void:
 			_collect_linear_tiles(_linear_link_group(target, building.rules.upgrades_to))
 		)
 		ghost.set_linear_preview(shape.x, shape.y, Vector2.ZERO)
+	# Porta su un ostacolo (2026-11-15, richiesta utente): stesso controllo del piazzamento. Si parte dall'orientamento
+	# attuale; se è bloccato, dal primo lato libero girando come la R; tutti bloccati: niente scelta, il messaggio.
+	if target.has_door:
+		var start_rotation := _first_free_upgrade_rotation(building, ghost.rotation_dir)
+		if start_rotation < 0:
+			ghost.queue_free()
+			_report_upgrade_door_blocked()
+			_refresh_selected_building_panel()
+			return
+		ghost.rotation_dir = start_rotation as GameTypes.Direction
 	_upgrade_orientation_ghost = ghost
 	_upgrade_orientation_building = building
+	_update_upgrade_ghost_door()
 	build_bar.set_upgrade_orientation_mode(true, tr(target.building_name))
+
+
+# true se, migliorando `building` col lato della porta `rotation`, la microcella davanti alla porta non è libera
+# (BuildingVerificationService.is_door_blocked, lo stesso del piazzamento). false se la destinazione non ha porta.
+func _is_upgrade_door_blocked(building: Building, rotation: int) -> bool:
+	var target := BuildingUpgradeService.get_upgrade_rules(building)
+	var cell: LiveMacroCell = live_cells.get(Vector2i(building.macro_x, building.macro_y))
+	if target == null or not target.has_door or cell == null or cell.container == null:
+		return false
+	var direction := rotation as GameTypes.Direction
+	# Il controllo parte dalla microcella centrale (anchor_from_center): stessa ancora dell'edificio di partenza.
+	var center := Vector2i(building.micro_x, building.micro_y) + BuildingFootprint.size(target, direction) / 2
+	var world_position := cell.container.to_global((Vector2(center) + Vector2(0.5, 0.5)) * MicroCellRenderer.CELL_SIZE)
+	return BuildingVerificationService.is_door_blocked(
+		live_cells, MACRO_CELL_PIXELS, MicroCellRenderer.CELL_SIZE, world_position,
+		game_data.get_absolute_day(), macro_world, direction, target
+	)
+
+
+# Primo lato della porta libero partendo da `from` e girando in senso orario come la R; -1 se tutti bloccati.
+func _first_free_upgrade_rotation(building: Building, from: int) -> int:
+	var probe := BuildingGhost.new()
+	probe.building_type_name = building.rules.upgrades_to
+	probe.rotation_dir = from as GameTypes.Direction
+	var result := -1
+	for i in range(4):
+		if not _is_upgrade_door_blocked(building, int(probe.rotation_dir)):
+			result = int(probe.rotation_dir)
+			break
+		probe.rotate_clockwise()
+	probe.free()
+	return result
+
+
+# Anteprima rossa quando il lato scelto ha la porta su un ostacolo.
+func _update_upgrade_ghost_door() -> void:
+	if _upgrade_orientation_ghost == null or _upgrade_orientation_building == null:
+		return
+	_upgrade_orientation_ghost.is_buildable = not _is_upgrade_door_blocked(
+		_upgrade_orientation_building, int(_upgrade_orientation_ghost.rotation_dir)
+	)
+
+
+func _report_upgrade_door_blocked() -> void:
+	var selected := _get_selected_individuals()
+	_report_command_rejection(selected[0] if not selected.is_empty() else null, tr("build_blocked_door_obstacle"))
 
 
 func _exit_upgrade_orientation_mode() -> void:
@@ -15184,6 +15327,7 @@ func _handle_upgrade_orientation_input(event: InputEvent) -> bool:
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_R:
 			_upgrade_orientation_ghost.rotate_clockwise()
+			_update_upgrade_ghost_door()
 			return true
 		if event.keycode == KEY_ESCAPE:
 			_exit_upgrade_orientation_mode()
@@ -15198,6 +15342,10 @@ func _handle_upgrade_orientation_input(event: InputEvent) -> bool:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			var building := _upgrade_orientation_building
 			var chosen_rotation: int = int(_upgrade_orientation_ghost.rotation_dir)
+			# Porta su un ostacolo: rifiutato, si resta nella scelta per ruotare.
+			if building != null and _is_upgrade_door_blocked(building, chosen_rotation):
+				_report_upgrade_door_blocked()
+				return true
 			_exit_upgrade_orientation_mode()
 			if building != null and _can_start_building_upgrade(building):
 				_start_upgrade_without_builder(building, chosen_rotation)
@@ -15376,6 +15524,27 @@ func _on_feeder_days_changed(building: Building, days: int) -> void:
 	_refresh_selected_building_panel()
 
 
+func _on_live_product_collect_changed(building: Building, value: int) -> void:
+	if building == null or not LiveProductStockService.is_served(building):
+		return
+	building.live_product_collect_override = value
+	_refresh_selected_building_panel()
+
+
+func _on_manure_clean_changed(building: Building, value: int) -> void:
+	if building == null or not ManureService.has_manure_store(building):
+		return
+	building.manure_clean_override = value
+	_refresh_selected_building_panel()
+
+
+func _on_bedding_days_changed(building: Building, days: int) -> void:
+	if building == null or not BeddingService.has_bedding(building):
+		return
+	building.bedding_days_override = days
+	_refresh_selected_building_panel()
+
+
 # 🔪 sulla riga di un animale in tettoia (2026-11-14, pezzo 3): ordina la macellazione (come il cane: in lista dei lavori,
 # o scelta di chi la fa se la lista è spenta) o la annulla se è già ordinata o qualcuno ci sta andando.
 func _on_kept_animal_slaughter_toggled(animal_id: int) -> void:
@@ -15532,7 +15701,8 @@ func _on_domestication_points_earned(_individual: HumanIndividual, points: Dicti
 		DomesticationPointsService.discover_species(game_data, String(species), domestication_effects)
 		# Anche negativi (2026-11-14, macellazione in tettoia: −2).
 		if int(points[species]) != 0:
-			DomesticationPointsService.add_points(game_data, human_folk, String(species), int(points[species]), domestication_effects)
+			DomesticationPointsService.add_points(game_data, human_folk, String(species), int(points[species]), domestication_effects,
+				"%s, %s" % ["cattura" if int(points[species]) > 0 else "macellazione", _individual.name if _individual != null else "?"])
 	_apply_effects(domestication_effects)
 	if domestication_panel != null and domestication_panel.visible:
 		domestication_panel.refresh_content()
@@ -15548,7 +15718,8 @@ func _on_terrain_resources_collected(_individual: HumanIndividual, resource_name
 func _on_domestication_debug_add_points(species: String) -> void:
 	var domestication_effects := GameEffects.new()
 	DomesticationPointsService.discover_species(game_data, species, domestication_effects)
-	DomesticationPointsService.add_points(game_data, human_folk, species, DomesticationPanel.DEBUG_POINTS, domestication_effects)
+	DomesticationPointsService.add_points(game_data, human_folk, species, DomesticationPanel.DEBUG_POINTS, domestication_effects,
+		"+100 di debug")
 	_apply_effects(domestication_effects)
 	domestication_panel.refresh_content()
 
@@ -15662,9 +15833,6 @@ func _toggle_warehouse_drawer() -> void:
 		# Regola "Acqua per tettoia" (2026-11-07, giare passo 3): dato della partita, ordini da WaterShelterStockService.
 		_warehouse_panel.set_water_rule(game_data.stock_water_per_shelter, WaterShelterStockService.max_water_per_shelter(), game_data.stock_runtime.water_jars_missing)
 		_warehouse_panel.water_per_shelter_changed.connect(func(level: int) -> void: game_data.stock_water_per_shelter = level)
-		# Regola "Rifornisci le mangiatoie" (2026-11-14): dato della partita, ordini da FeederStockService.
-		_warehouse_panel.set_feeder_rule(game_data.stock_feeder_days)
-		_warehouse_panel.feeder_days_changed.connect(func(days: int) -> void: game_data.stock_feeder_days = days)
 		# Regola "Trappole per zona" (2026-11-07): dato della partita per tipo di trappola, lavori da TrapJobProvider.
 		var trap_rows: Array[Dictionary] = []
 		for trap_name in TrapService.list_trap_names():

@@ -7,6 +7,7 @@
 ; campo di segale (7200 macinate -> 5760 farina -> 2880 pani) sfama circa 13 persone. Il suo carattere: dura 60 giorni
 ; (pita 30, pane di grano 20), l'unico cibo cotto da fare in anticipo per l'inverno; meno buono del pane di grano.
 ; Spazio 3 (decisione utente 2026-11-15, come il pane di grano).
+; Acqua (2026-11-16, richiesta utente — acqua come risorsa, passo 3c): 10 per partita, dalle giare del forno.
 [resource]
 script = ExtResource("1_rye_bread")
 secondary_resource_name = "rye_bread"
@@ -20,7 +21,8 @@ day_durability = 60
 space_per_unit = 3.0
 eat_happiness_per_100_calories = 4.0
 recipe_inputs = {
-"rye_flour": 8
+"rye_flour": 8,
+"water": 10
 }
 recipe_output_quantity = 4
 recipe_labor = 60.0

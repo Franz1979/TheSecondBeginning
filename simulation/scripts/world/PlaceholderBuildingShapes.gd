@@ -68,13 +68,24 @@ const OVEN_MOUTH := Color(0.14, 0.10, 0.08, 1.0)
 const BRANCH_ROOF_DARK := Color(0.31, 0.26, 0.14, 1.0)
 const CLAY_WALL := Color(0.72, 0.52, 0.36, 1.0)
 
-# Conigliera e pollaio (2026-11-13, idea Allevamento — segnaposto), viste dall'alto.
-const HUTCH_RECT := Rect2(-3.6, -2.6, 7.2, 5.2)
+# Conigliera e pollaio, viste dall'alto. Dal 2026-11-17 (richiesta utente) 2x1 come il piccolo granaio: x da -10 a 10, y da
+# -5 a 5; a ovest la parte coperta, a est il recinto.
 const STRAW := Color(0.80, 0.70, 0.42, 1.0)
 const STRAW_DARK := Color(0.62, 0.52, 0.30, 1.0)
-const COOP_PEN_RADIUS: float = 4.3
-const COOP_ROOF_RECT := Rect2(-2.2, -3.4, 4.4, 3.0)
-const COOP_GRAIN: Array[Vector2] = [Vector2(-1.4, 1.6), Vector2(0.6, 2.2), Vector2(1.8, 0.9), Vector2(-0.3, 0.8)]
+const PEN_GRASS := Color(0.42, 0.55, 0.26, 1.0)
+const PEN_GRASS_DARK := Color(0.30, 0.42, 0.18, 1.0)
+const PEN_NET := Color(0.85, 0.80, 0.66, 0.45)
+# Conigliera: recinto d'erba, fondo d'argilla e cassone coperto.
+const HUTCH_RUN_RECT := Rect2(0.4, -4.4, 9.2, 8.8)
+const HUTCH_FLOOR_RECT := Rect2(-9.6, -4.4, 9.6, 8.8)
+const HUTCH_BOX_RECT := Rect2(-9.0, -4.0, 8.4, 6.4)
+const HUTCH_TUFTS: Array[Vector2] = [Vector2(2.4, -1.8), Vector2(5.6, -2.6), Vector2(7.8, 0.6), Vector2(3.6, 2.4), Vector2(6.4, 3.0)]
+# Pollaio: casetta, nidi lungo il lato nord, recinto di terra battuta con posatoio e chicchi.
+const COOP_HOUSE_RECT := Rect2(-9.4, -3.0, 8.4, 7.0)
+const COOP_NESTS: Array[Vector2] = [Vector2(-7.6, -3.9), Vector2(-5.2, -3.9), Vector2(-2.8, -3.9)]
+const COOP_PEN_RECT := Rect2(0.2, -4.4, 9.4, 8.8)
+const COOP_GRAIN: Array[Vector2] = [Vector2(2.2, 1.8), Vector2(3.4, 2.9), Vector2(5.8, 1.2), Vector2(7.4, 2.6), Vector2(4.6, -0.6),
+	Vector2(8.0, -1.8)]
 
 # Guado di pietre (stone_ford, 2026-10-31, richiesta utente): pietre piatte in fila sul ruscello, vista dall'alto, ognuna
 # col suo bordo scuro d'ombra sotto (come i banchi del ceppo dell'insegnamento). La fila va lungo Y (attraversa un ruscello
@@ -319,28 +330,93 @@ static func draw(
 				stone_outline.append(stone[0])
 				canvas.draw_polyline(stone_outline, tint.call(RUBBLE_OUTLINE), rw.call(0.2), true)
 		"rabbit_hutch":
-			# Cassone di legno con il tetto di frasche (2026-11-15: niente paglia prima dell'Agricoltura) e le stecche della
-			# gabbia sul davanti.
-			var hutch := Rect2(p.call(HUTCH_RECT.position.x, HUTCH_RECT.position.y), HUTCH_RECT.size * scale)
-			canvas.draw_rect(hutch, tint.call(WOOD_DARK))
-			canvas.draw_rect(hutch.grow(-w.call(0.5)), tint.call(BRANCH_ROOF))
-			for i in range(5):
-				var x: float = HUTCH_RECT.position.x + 1.2 + float(i) * 1.2
-				canvas.draw_line(p.call(x, 0.6), p.call(x, HUTCH_RECT.end.y), tint.call(WOOD_DARK), w.call(0.3), true)
-			canvas.draw_line(p.call(HUTCH_RECT.position.x, 0.6), p.call(HUTCH_RECT.end.x, 0.6), tint.call(WOOD_DARK), w.call(0.4), true)
-			canvas.draw_line(p.call(-3.0, -1.2), p.call(3.0, -1.2), tint.call(BRANCH_ROOF_DARK), w.call(0.25), true)
+			# 2x1 (2026-11-17, richiesta utente). Est: recinto d'erba con qualche ciuffo, steccato basso e una fila di pietre
+			# alla base contro lo scavo. Ovest: fondo d'argilla battuta (si vede sul davanti) e cassone di legno col tetto di
+			# paglia, con le stecche della gabbia sul davanti.
+			var run := Rect2(p.call(HUTCH_RUN_RECT.position.x, HUTCH_RUN_RECT.position.y), HUTCH_RUN_RECT.size * scale)
+			canvas.draw_rect(run, tint.call(PEN_GRASS))
+			for tuft in HUTCH_TUFTS:
+				for side in [-0.35, 0.0, 0.35]:
+					canvas.draw_line(p.call(tuft.x, tuft.y), p.call(tuft.x + side, tuft.y - 0.9), tint.call(PEN_GRASS_DARK), w.call(0.22), true)
+			canvas.draw_rect(run, tint.call(WOOD_DARK), false, w.call(0.35))
+			for i in range(9):
+				var stone_x := HUTCH_RUN_RECT.position.x + 0.5 + float(i) * 1.03
+				for stone_y in [HUTCH_RUN_RECT.position.y, HUTCH_RUN_RECT.end.y]:
+					canvas.draw_circle(p.call(stone_x, stone_y), w.call(0.5), tint.call(SLAB_EDGE))
+					canvas.draw_circle(p.call(stone_x, stone_y), w.call(0.38), tint.call(STONE))
+			for i in range(8):
+				var stone_y := HUTCH_RUN_RECT.position.y + 0.6 + float(i) * 1.08
+				canvas.draw_circle(p.call(HUTCH_RUN_RECT.end.x, stone_y), w.call(0.5), tint.call(SLAB_EDGE))
+				canvas.draw_circle(p.call(HUTCH_RUN_RECT.end.x, stone_y), w.call(0.38), tint.call(STONE))
+			var clay_floor := Rect2(p.call(HUTCH_FLOOR_RECT.position.x, HUTCH_FLOOR_RECT.position.y), HUTCH_FLOOR_RECT.size * scale)
+			canvas.draw_rect(clay_floor, tint.call(CLAY_WALL))
+			var box := Rect2(p.call(HUTCH_BOX_RECT.position.x, HUTCH_BOX_RECT.position.y), HUTCH_BOX_RECT.size * scale)
+			canvas.draw_rect(box, tint.call(WOOD_DARK))
+			canvas.draw_rect(box.grow(-w.call(0.5)), tint.call(STRAW))
+			for i in range(6):
+				var thatch_x := HUTCH_BOX_RECT.position.x + 1.0 + float(i) * 1.3
+				canvas.draw_line(p.call(thatch_x, HUTCH_BOX_RECT.position.y + 0.7), p.call(thatch_x + 0.4, HUTCH_BOX_RECT.end.y - 0.7),
+					tint.call(STRAW_DARK), w.call(0.22), true)
+			# Gabbia sul davanti, sopra il fondo d'argilla.
+			var cage_top := HUTCH_BOX_RECT.end.y
+			canvas.draw_line(p.call(HUTCH_BOX_RECT.position.x, cage_top + 1.4), p.call(HUTCH_BOX_RECT.end.x, cage_top + 1.4),
+				tint.call(WOOD_DARK), w.call(0.35), true)
+			for i in range(7):
+				var slat_x := HUTCH_BOX_RECT.position.x + 0.6 + float(i) * 1.2
+				canvas.draw_line(p.call(slat_x, cage_top), p.call(slat_x, cage_top + 1.4), tint.call(WOOD_DARK), w.call(0.28), true)
 		"chicken_coop":
-			# Recinto di terra battuta coi paletti, la casetta coperta e qualche chicco a terra.
-			canvas.draw_circle(center, w.call(COOP_PEN_RADIUS), tint.call(EARTH))
-			for i in range(12):
-				var angle := TAU * float(i) / 12.0
-				canvas.draw_circle(center + Vector2(cos(angle), sin(angle)) * w.call(COOP_PEN_RADIUS), w.call(0.4), tint.call(WOOD_DARK))
-			var roof := Rect2(p.call(COOP_ROOF_RECT.position.x, COOP_ROOF_RECT.position.y), COOP_ROOF_RECT.size * scale)
-			# Tetto di frasche (2026-11-15: niente paglia prima dell'Agricoltura); i chicchi a terra restano gialli.
-			canvas.draw_rect(roof, tint.call(BRANCH_ROOF))
-			canvas.draw_line(p.call(COOP_ROOF_RECT.position.x, -1.9), p.call(COOP_ROOF_RECT.end.x, -1.9), tint.call(BRANCH_ROOF_DARK), w.call(0.35), true)
+			# 2x1 (2026-11-17, richiesta utente). Est: recinto di terra battuta coi paletti fitti e la rete di fibra sopra,
+			# un posatoio su due paletti e chicchi a terra. Ovest: casetta di legno col tetto di paglia, i nidi di paglia lungo
+			# il lato nord e la porticina a est con la scaletta che scende nel recinto.
+			var pen := Rect2(p.call(COOP_PEN_RECT.position.x, COOP_PEN_RECT.position.y), COOP_PEN_RECT.size * scale)
+			canvas.draw_rect(pen, tint.call(EARTH))
 			for grain in COOP_GRAIN:
 				canvas.draw_circle(p.call(grain.x, grain.y), w.call(0.25), tint.call(STRAW))
+			# Posatoio: una stanga su due paletti.
+			canvas.draw_line(p.call(3.0, -2.6), p.call(7.6, -2.6), tint.call(WOOD), w.call(0.45), true)
+			canvas.draw_circle(p.call(3.0, -2.6), w.call(0.4), tint.call(WOOD_DARK))
+			canvas.draw_circle(p.call(7.6, -2.6), w.call(0.4), tint.call(WOOD_DARK))
+			# Rete: un graticcio leggero sopra tutto il recinto.
+			if not invalid:
+				for i in range(6):
+					var net_x := COOP_PEN_RECT.position.x + float(i) * 1.9
+					canvas.draw_line(p.call(net_x, COOP_PEN_RECT.position.y), p.call(minf(net_x + 4.0, COOP_PEN_RECT.end.x),
+						COOP_PEN_RECT.position.y + (minf(net_x + 4.0, COOP_PEN_RECT.end.x) - net_x) * 2.2), PEN_NET, w.call(0.12), true)
+			# Paletti fitti tutt'intorno.
+			canvas.draw_rect(pen, tint.call(WOOD_DARK), false, w.call(0.3))
+			for i in range(13):
+				var post_x := COOP_PEN_RECT.position.x + float(i) * (COOP_PEN_RECT.size.x / 12.0)
+				canvas.draw_circle(p.call(post_x, COOP_PEN_RECT.position.y), w.call(0.35), tint.call(WOOD_DARK))
+				canvas.draw_circle(p.call(post_x, COOP_PEN_RECT.end.y), w.call(0.35), tint.call(WOOD_DARK))
+			for i in range(1, 12):
+				var post_y := COOP_PEN_RECT.position.y + float(i) * (COOP_PEN_RECT.size.y / 12.0)
+				canvas.draw_circle(p.call(COOP_PEN_RECT.end.x, post_y), w.call(0.35), tint.call(WOOD_DARK))
+			# Casetta.
+			var house := Rect2(p.call(COOP_HOUSE_RECT.position.x, COOP_HOUSE_RECT.position.y), COOP_HOUSE_RECT.size * scale)
+			canvas.draw_rect(house, tint.call(WOOD_DARK))
+			canvas.draw_rect(house.grow(-w.call(0.5)), tint.call(STRAW))
+			var ridge_y := COOP_HOUSE_RECT.get_center().y
+			canvas.draw_line(p.call(COOP_HOUSE_RECT.position.x + 0.5, ridge_y), p.call(COOP_HOUSE_RECT.end.x - 0.5, ridge_y),
+				tint.call(STRAW_DARK), w.call(0.35), true)
+			for i in range(6):
+				var thatch_x := COOP_HOUSE_RECT.position.x + 1.0 + float(i) * 1.3
+				canvas.draw_line(p.call(thatch_x, COOP_HOUSE_RECT.position.y + 0.7), p.call(thatch_x + 0.3, ridge_y - 0.4),
+					tint.call(STRAW_DARK), w.call(0.2), true)
+				canvas.draw_line(p.call(thatch_x, ridge_y + 0.4), p.call(thatch_x + 0.3, COOP_HOUSE_RECT.end.y - 0.7),
+					tint.call(STRAW_DARK), w.call(0.2), true)
+			# Nidi di paglia lungo il lato nord.
+			for nest in COOP_NESTS:
+				canvas.draw_circle(p.call(nest.x, nest.y), w.call(0.9), tint.call(STRAW_DARK))
+				canvas.draw_circle(p.call(nest.x, nest.y), w.call(0.55), tint.call(STRAW))
+			# Porticina a est e scaletta verso il recinto.
+			var door := Rect2(p.call(COOP_HOUSE_RECT.end.x - 0.5, 0.0), Vector2(0.5, 1.6) * scale)
+			canvas.draw_rect(door, tint.call(OUTLINE))
+			canvas.draw_line(p.call(COOP_HOUSE_RECT.end.x, 0.4), p.call(COOP_HOUSE_RECT.end.x + 2.6, 1.6), tint.call(WOOD), w.call(0.3), true)
+			canvas.draw_line(p.call(COOP_HOUSE_RECT.end.x, 1.2), p.call(COOP_HOUSE_RECT.end.x + 2.6, 2.4), tint.call(WOOD), w.call(0.3), true)
+			for i in range(4):
+				var rung := 0.5 + float(i) * 0.65
+				canvas.draw_line(p.call(COOP_HOUSE_RECT.end.x + rung, 0.4 + rung * 0.46), p.call(COOP_HOUSE_RECT.end.x + rung, 1.2 + rung * 0.46),
+					tint.call(WOOD_DARK), w.call(0.2), true)
 		"spinning_hut":
 			var walls := Rect2(p.call(SPINNING_HUT_RECT.position.x, SPINNING_HUT_RECT.position.y), SPINNING_HUT_RECT.size * scale)
 			canvas.draw_rect(walls, tint.call(WOOD_DARK))

@@ -26,3 +26,9 @@ var water_jars_missing: int = 0
 # Regola "Rifornisci le mangiatoie" (2026-11-14): id degli edifici con mangiatoia sotto l'obiettivo e nessun cibo da
 # ricevere, ricalcolati a ogni Inventario (avviso in campanella).
 var feeder_warnings: Array = []
+# Regola "Lettiera" (2026-11-17): id degli edifici con lettiera sotto l'obiettivo e nessuna paglia da ricevere.
+var bedding_warnings: Array = []
+# Pulizia del letame (2026-11-17): id degli edifici oltre la soglia senza letamaio né Fossa con posto.
+var manure_warnings: Array = []
+# Raccolta dei prodotti da vivi (2026-11-17): id degli edifici oltre la soglia senza un magazzino con posto.
+var live_product_warnings: Array = []

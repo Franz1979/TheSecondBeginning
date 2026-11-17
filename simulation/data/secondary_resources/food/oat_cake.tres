@@ -7,6 +7,7 @@
 ; più economica da cuocere. 30 calorie a galletta (15 per misura d'avena: avena 15, orzo 20, segale 25, grano 30): un
 ; campo d'avena (7200 pestate -> 5040 fiocchi -> 2520 gallette) sfama circa 7 persone. Dura 30 giorni, poca felicità.
 ; Spazio 1 (decisione utente: sottile, occupa poco, meno dei 5 per 100 calorie degli altri cibi cotti).
+; Acqua (2026-11-16, richiesta utente — acqua come risorsa, passo 3c): 4 per partita, dalle giare del forno.
 [resource]
 script = ExtResource("1_oat_cake")
 secondary_resource_name = "oat_cake"
@@ -20,7 +21,8 @@ day_durability = 30
 space_per_unit = 1.0
 eat_happiness_per_100_calories = 1.0
 recipe_inputs = {
-"oat_flakes": 8
+"oat_flakes": 8,
+"water": 4
 }
 recipe_output_quantity = 4
 recipe_labor = 30.0

@@ -13,7 +13,7 @@
 ; semola per ordine (5 partite, ~2,5 giorni; decisione utente): anche gli ordini del WM si fermano a 40.
 [resource]
 script = ExtResource("1_small_granary")
-lifespan_years = 30
+lifespan_years = 40
 max_durability = 140
 defense = 40
 building_name = "building_small_granary"
@@ -28,7 +28,7 @@ categories_locked = true
 durability_multiplier_by_category = Array[float]([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.5])
 required_materials = {
 "clay": 200,
-"fiber_rope": 10,
+"fiber_rope": 8,
 "pebble": 20,
 "stick": 60,
 "stone": 30,

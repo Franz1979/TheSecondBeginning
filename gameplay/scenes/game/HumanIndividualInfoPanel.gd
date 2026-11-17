@@ -199,6 +199,9 @@ const LOYALTY_FROZEN_MODULATE := Color(0.55, 0.55, 0.55, 0.8)
 # Agricoltura (2026-11-15, 13a skill).
 @onready var skill_farming_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FarmingColumn/FarmingBar
 @onready var skill_farming_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/FarmingColumn/FarmingCaptionWrapper/FarmingCaption
+# Allevamento (2026-11-16, 14a skill).
+@onready var skill_husbandry_bar: ProgressBar = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HusbandryColumn/HusbandryBar
+@onready var skill_husbandry_caption: Label = $SkillsBox/SkillsBoxMargin/SkillsBoxContent/SkillsRowMargin/SkillsRow/HusbandryColumn/HusbandryCaptionWrapper/HusbandryCaption
 @onready var carried_boxes_row: HBoxContainer = $CarryRowMargin/CarryRow/CarriedBoxesRow
 # Primo riquadro (slot 0), in scena: fa anche da modello per gli altri, duplicati in _build_carried_slots.
 @onready var carried_resource_box: ColorRect = $CarryRowMargin/CarryRow/CarriedBoxesRow/CarriedResourceBox
@@ -332,7 +335,110 @@ func _ready() -> void:
 	_ensure_tool_slot_boxes(HumanIndividual.DEFAULT_TOOL_SLOT_COUNT)
 	_build_apparel_section()
 	_build_header_buttons()
+	_build_bar_rows()
+	_build_skill_rows()
 	clear()
+
+
+# Barre in riga (2026-11-16, richiesta utente — recuperare spazio verticale): in Parametri vitali e Animo ogni scritta
+# sta a sinistra della sua barra, sulla stessa riga; le skill diventano righe orizzontali (nome a sinistra, barra a
+# destra) in una sezione che si apre e si chiude cliccando il titolo. Costruite da codice spostando i nodi della scena
+# (gli @onready restano validi), come il vestiario e i pulsanti dell'intestazione.
+const BAR_ROW_LABEL_WIDTH: float = 72.0
+const SKILL_ROW_LABEL_WIDTH: float = 84.0
+const SKILL_ROW_BAR_HEIGHT: float = 8.0
+# Sezione skill aperta o chiusa: chiusa all'inizio, poi resta come è stata lasciata (anche cambiando persona o
+# riaprendo il pannello) finché il gioco è aperto.
+static var _skills_expanded: bool = false
+var _skills_rows_box: VBoxContainer = null
+
+
+# Vitali e Animo: ogni coppia scritta + margine della barra (StaminaLabel/StaminaBarMargin...) diventa una riga.
+func _build_bar_rows() -> void:
+	for content: Node in [stamina_label.get_parent(), happiness_label.get_parent()]:
+		var children := content.get_children()
+		for i in range(children.size() - 1):
+			var label := children[i] as Label
+			var margin := children[i + 1] as MarginContainer
+			if label == null or margin == null:
+				continue
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 4)
+			content.add_child(row)
+			content.move_child(row, label.get_index())
+			label.reparent(row, false)
+			margin.reparent(row, false)
+			label.custom_minimum_size.x = BAR_ROW_LABEL_WIDTH
+			label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			margin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+
+
+# Skill: dalle colonne verticali della scena (barra + didascalia ruotata) a una riga per skill, nello stesso ordine.
+func _build_skill_rows() -> void:
+	var skills_row := skill_builder_bar.get_parent().get_parent() as Container
+	var row_margin := skills_row.get_parent() as Control
+	var content := row_margin.get_parent()
+	_skills_rows_box = VBoxContainer.new()
+	_skills_rows_box.add_theme_constant_override("separation", 1)
+	content.add_child(_skills_rows_box)
+	content.move_child(_skills_rows_box, row_margin.get_index())
+	for column in skills_row.get_children():
+		var bar: ProgressBar = null
+		var caption: Label = null
+		for child in column.get_children():
+			if child is ProgressBar:
+				bar = child
+			elif child.get_child_count() > 0 and child.get_child(0) is Label:
+				caption = child.get_child(0)
+		if bar == null or caption == null:
+			continue
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 4)
+		_skills_rows_box.add_child(row)
+		caption.reparent(row, false)
+		bar.reparent(row, false)
+		caption.rotation_degrees = 0.0
+		caption.pivot_offset = Vector2.ZERO
+		caption.custom_minimum_size = Vector2(SKILL_ROW_LABEL_WIDTH, 0.0)
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar.fill_mode = ProgressBar.FILL_BEGIN_TO_END
+		bar.custom_minimum_size = Vector2(0.0, SKILL_ROW_BAR_HEIGHT)
+		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row_margin.queue_free()
+	skills_section_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	skills_section_label.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	skills_section_label.tooltip_text = TooltipText.wrap(tr("individual_skills_toggle_tooltip"))
+	skills_section_label.gui_input.connect(_on_skills_title_input)
+	_apply_skills_expanded()
+
+
+func _on_skills_title_input(event: InputEvent) -> void:
+	var click := event as InputEventMouseButton
+	if click == null or not click.pressed or click.button_index != MOUSE_BUTTON_LEFT:
+		return
+	_skills_expanded = not _skills_expanded
+	_apply_skills_expanded()
+	skills_section_label.accept_event()
+
+
+# Righe delle skill che compaiono dopo un'idea (HumanIndividual.SKILL_REQUIRED_IDEAS, 2026-11-16): nascoste finché il
+# popolo del giocatore non ha l'idea. La barra di ogni skill è la variabile "<skill>_bar" di questo pannello.
+func _apply_skill_visibility() -> void:
+	var folk: Folk = GameSettings.active_human_folk
+	for skill_name: String in HumanIndividual.SKILL_REQUIRED_IDEAS:
+		var bar := get(skill_name + "_bar") as ProgressBar
+		if bar != null and bar.get_parent() is HBoxContainer:
+			(bar.get_parent() as Control).visible = HumanIndividual.is_skill_discovered(skill_name, folk)
+
+
+func _apply_skills_expanded() -> void:
+	if _skills_rows_box != null:
+		_skills_rows_box.visible = _skills_expanded
+	skills_section_label.text = ("▾ " if _skills_expanded else "▸ ") + tr("individual_skills_section_label")
 
 
 # Vestiario (2026-10-11, richiesta utente — "occupa troppo spazio"): l'omino con gli slot (ApparelFigure) sta A FIANCO
@@ -588,7 +694,7 @@ func show_individual(
 	skill_leadership: float, skill_builder: float, skill_management: float,
 	skill_transporter: float, skill_gathering: float, skill_cognition: float,
 	skill_hunting: float, skill_crafting: float, skill_ritual: float, skill_social: float, skill_medicine: float,
-	skill_fishing: float, skill_farming: float,
+	skill_fishing: float, skill_farming: float, skill_husbandry: float,
 	queued_task_descriptions: Array[String] = []
 ) -> void:
 	visible = true
@@ -716,7 +822,7 @@ func show_individual(
 	# massimo variabile come i vitali). Didascalie (LDR/BLD/...) tr()-ate qui insieme al resto,
 	# anche se il loro testo non dipende dai dati dell'individuo — stesso trattamento "ririsolto ad
 	# ogni show_individual" già riservato a carry_label/stamina_label sopra, per coerenza.
-	skills_section_label.text = tr("individual_skills_section_label")
+	_apply_skills_expanded()
 
 	skill_leadership_bar.max_value = HumanIndividual.SKILL_MAX
 	skill_leadership_bar.value = skill_leadership
@@ -781,6 +887,11 @@ func show_individual(
 	skill_farming_bar.value = skill_farming
 	skill_farming_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_farming), int(HumanIndividual.SKILL_MAX)])
 	skill_farming_caption.text = tr("skill_farming_label")
+	skill_husbandry_bar.max_value = HumanIndividual.SKILL_MAX
+	skill_husbandry_bar.value = skill_husbandry
+	skill_husbandry_bar.tooltip_text = TooltipText.wrap("%d/%d" % [int(skill_husbandry), int(HumanIndividual.SKILL_MAX)])
+	skill_husbandry_caption.text = tr("skill_husbandry_label")
+	_apply_skill_visibility()
 
 	# Capacità di trasporto (2026-09-13, richiesta utente — spostata in FONDO alle barre, dopo i 5
 	# nuovi parametri vitali: nessun motivo funzionale, solo l'ordine visivo concordato) — la barra

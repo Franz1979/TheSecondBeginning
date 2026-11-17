@@ -102,10 +102,18 @@ static func consume(macro_state: MacroCellState, resource_name: String, position
 # risolta, evitando una seconda chiamata a CaloricCalculator.get_caloric_source_rules.
 static func is_resource_locked(resource_name: String, rules: SecondaryResourceRules = null) -> bool:
 	var resource_rules: SecondaryResourceRules = rules if rules != null else CaloricCalculator.get_caloric_source_rules(resource_name)
-	if resource_rules == null or resource_rules.required_idea_id == "":
+	if resource_rules == null or (resource_rules.required_idea_id == "" and resource_rules.also_required_idea_ids.is_empty()):
 		return false
 	var folk := GameSettings.active_human_folk
-	return folk == null or not folk.completed_ideas.has(resource_rules.required_idea_id)
+	if folk == null:
+		return true
+	if resource_rules.required_idea_id != "" and not folk.completed_ideas.has(resource_rules.required_idea_id):
+		return true
+	# Idee in più (2026-11-16, SecondaryResourceRules.also_required_idea_ids): servono tutte.
+	for idea_id in resource_rules.also_required_idea_ids:
+		if not folk.completed_ideas.has(idea_id):
+			return true
+	return false
 
 
 # "Fruit stock" (2026-09-17, richiesta utente — GENERALIZZATO dal precedente codice specifico di

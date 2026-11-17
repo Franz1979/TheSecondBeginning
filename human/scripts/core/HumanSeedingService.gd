@@ -644,10 +644,12 @@ func _random_age_in_band(durations_male: Array[float], durations_female: Array[f
 # creazione individuo di questo service (fondatori GROUP/COUPLE/FAMILY, figli iniziali FAMILY),
 # mai duplicata inline: un solo posto dove l'algoritmo di distribuzione vive. Pubblica e statica dal
 # 2026-09-27: la usa anche VisitorService.materialize_members per i visitatori accolti.
-static func seed_random_skills(individual: HumanIndividual) -> void:
+# `folk`: il popolo di arrivo (visitatori accolti); null all'inizio della partita. Le skill non ancora comparse per lui
+# (HumanIndividual.is_skill_discovered, 2026-11-16) partono a 0 e restano fuori dalla divisione.
+static func seed_random_skills(individual: HumanIndividual, folk: Folk = null) -> void:
 	var skill_names: Array[String] = []
 	for skill_name in individual.get_skill_property_names():
-		if not SEED_EXCLUDED_SKILLS.has(skill_name):
+		if not SEED_EXCLUDED_SKILLS.has(skill_name) and HumanIndividual.is_skill_discovered(skill_name, folk):
 			skill_names.append(skill_name)
 	if skill_names.is_empty():
 		return

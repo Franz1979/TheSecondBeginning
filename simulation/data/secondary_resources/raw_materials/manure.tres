@@ -1,0 +1,18 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_manure"]
+
+; Letame (2026-11-17, richiesta utente — conigliera, fase 1): escrementi degli animali tenuti, con o senza lettiera
+; (DomesticAnimalRules.manure_per_day). Nasce nel deposito dell'edificio (ManureService) e la pulizia del gestore scorte
+; lo porta al letamaio (storage_building_types "manure_heap", edificio che arriverà con Agricoltura avanzata) o, finché
+; non c'è, alla Fossa dei rifiuti (ManureStockService). Nessun magazzino lo accetta. Non deperisce. Spazio 1.
+[resource]
+script = ExtResource("1_manure")
+secondary_resource_name = "manure"
+calories_per_unit = 0.0
+category = 1
+required_idea_id = "animal_husbandry"
+day_durability = -1
+space_per_unit = 1.0
+fuel_value = 0.0
+storage_building_types = Array[String](["manure_heap"])

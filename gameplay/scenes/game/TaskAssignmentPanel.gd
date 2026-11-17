@@ -965,6 +965,7 @@ func _on_settings_toggled(pressed: bool) -> void:
 			_auto_repair_spin.apply()
 	_settings_overlay.visible = pressed
 	if pressed:
+		_refresh_kind_order_summary()
 		# Un solo strato alla volta (2026-10-09): le regole chiudono "Produci" e "Taglia".
 		close_produce_overlay()
 		close_cut_overlay()
@@ -1356,6 +1357,8 @@ func _build_kind_order_popup() -> void:
 # larghezza), con il fondo appena sopra il pulsante e sempre dentro lo schermo.
 func _open_kind_order_popup(anchor: Control) -> void:
 	_kind_order_anchor = anchor
+	# Un tipo può essere comparso nel frattempo (idea nuova).
+	_rebuild_kind_order_rows()
 	# Fondo pieno e bordo come gli strati del cassetto (2026-10-18: quello di base del tema era trasparente). All'apertura,
 	# quando il pannello è già dentro il cassetto da cui il fondo prende il colore.
 	_kind_order_popup.add_theme_stylebox_override("panel", _make_settings_overlay_style())
@@ -1386,8 +1389,8 @@ func _refresh_kind_order_summary() -> void:
 	if _kind_order_summary == null:
 		return
 	var names: Array[String] = []
-	for kind in _kind_order:
-		names.append(JobBoardService.get_kind_name(kind))
+	for index in _visible_kind_indices():
+		names.append(JobBoardService.get_kind_name(_kind_order[index]))
 	var shown := names.slice(0, KIND_ORDER_SUMMARY_COUNT)
 	if names.size() > KIND_ORDER_SUMMARY_COUNT:
 		shown.append("…")
@@ -1411,11 +1414,14 @@ func _rebuild_kind_order_rows() -> void:
 	for child in _kind_order_box.get_children():
 		_kind_order_box.remove_child(child)
 		child.queue_free()
-	for index in _kind_order.size():
+	# Tipi non ancora comparsi (JobBoardService.is_kind_discovered) nascosti: ▲▼ scambiano con il vicino visibile.
+	var visible_indices := _visible_kind_indices()
+	for position in visible_indices.size():
+		var index := visible_indices[position]
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 4)
 		var label := Label.new()
-		label.text = "%d. %s" % [index + 1, JobBoardService.get_kind_name(_kind_order[index])]
+		label.text = "%d. %s" % [position + 1, JobBoardService.get_kind_name(_kind_order[index])]
 		label.add_theme_font_size_override("font_size", LIST_FONT_SIZE)
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1425,20 +1431,32 @@ func _rebuild_kind_order_rows() -> void:
 		label.tooltip_text = label.text
 		label.mouse_filter = Control.MOUSE_FILTER_PASS
 		row.add_child(label)
-		row.add_child(_build_kind_move_button("▲", tr("task_assignment_kind_move_up"), index, -1))
-		row.add_child(_build_kind_move_button("▼", tr("task_assignment_kind_move_down"), index, 1))
+		var above := visible_indices[position - 1] if position > 0 else -1
+		var below := visible_indices[position + 1] if position + 1 < visible_indices.size() else -1
+		row.add_child(_build_kind_move_button("▲", tr("task_assignment_kind_move_up"), index, above))
+		row.add_child(_build_kind_move_button("▼", tr("task_assignment_kind_move_down"), index, below))
 		_kind_order_box.add_child(row)
 	_fit_kind_order_popup.call_deferred()
 	_refresh_kind_order_summary()
 
 
-func _build_kind_move_button(text: String, tooltip: String, index: int, direction: int) -> Button:
+# Indici di _kind_order dei tipi già comparsi per il popolo del giocatore.
+func _visible_kind_indices() -> Array[int]:
+	var result: Array[int] = []
+	var folk: Folk = GameSettings.active_human_folk
+	for index in _kind_order.size():
+		if JobBoardService.is_kind_discovered(_kind_order[index], folk):
+			result.append(index)
+	return result
+
+
+# `target`: indice con cui scambiare (-1 = nessuno, bottone spento).
+func _build_kind_move_button(text: String, tooltip: String, index: int, target: int) -> Button:
 	var button := Button.new()
 	button.text = text
 	button.tooltip_text = TooltipText.wrap(tooltip)
 	button.focus_mode = Control.FOCUS_NONE
 	button.add_theme_font_size_override("font_size", LIST_FONT_SIZE - 2)
-	var target := index + direction
 	button.disabled = target < 0 or target >= _kind_order.size()
 	button.pressed.connect(func() -> void: _move_kind(index, target))
 	return button

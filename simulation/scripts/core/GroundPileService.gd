@@ -127,6 +127,14 @@ static func drop_building_contents(game_data: GameData, building: Building, worl
 	_merge_fresh_entries(entries, extra_fresh)
 	# Attrezzeria (2026-10-04): segue la sorte del magazzino, con gli usi rimasti dei pezzi usati.
 	_merge_tool_entries(entries, building.toolkit)
+	# Liquidi (2026-11-16, acqua come risorsa): senza le loro giare si versano, non finiscono a terra.
+	for resource_name in entries.keys():
+		var liquid_rules := CaloricCalculator.get_caloric_source_rules(String(resource_name))
+		if liquid_rules != null and liquid_rules.is_liquid:
+			if DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+				print("[WATER] %s #%d: %d %s versata (svuotato a terra)." % [
+					building.building_type_name, building.id, int((entries[resource_name] as Dictionary).get("quantity", 0)), resource_name])
+			entries.erase(resource_name)
 	building.stored_resources.clear()
 	building.production_output.clear()
 	building.toolkit.clear()

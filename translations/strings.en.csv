@@ -533,8 +533,8 @@ transport_dialog_cancel,Cancel
 options_pickup_default,Pick-up: default choice
 options_pickup_default_group_category,Category
 options_pickup_default_group_resource,Resource
-options_repeat_default,Pick-up and transport: repeat up to {count} trips
-options_production_delivery_default,Production: deliver to storage
+options_repeat_default,Pick-up and transport: «Repeat» checked by default
+options_production_delivery_default,Production: «Deliver to storage» checked by default
 options_volume_master,Master volume
 options_volume_music,Music volume
 options_volume_ambience,Ambience volume
@@ -949,28 +949,31 @@ carried_resource_tooltip_stone,Stone
 carried_resource_tooltip_clay,Clay
 carried_resource_tooltip_clay_bowl,Clay bowl
 carried_resource_tooltip_clay_jar,Jar
+carried_resource_tooltip_water,Water
 task_fill_jar_name,Filling jars
 task_fill_jar_step_walk_source,Fetching the jar
 task_fill_jar_step_take,Taking the jar
-task_fill_jar_step_walk_water,To the shore
-task_fill_jar_step_walk_shelter,To the shelter
+task_fill_jar_step_walk_water,To the water
+task_fill_jar_step_walk_shelter,Bringing the jar back
 task_fill_jar_step_put,Putting the jar back
 jar_water_tooltip,Water: {water} / {capacity}
 building_info_shelter_water,"Water: {water} / {capacity} ({jars} jars in {places} places)"
 fill_jar_stop_no_jar,"{name} stopped filling: there are no more empty jars in the warehouses."
-fill_jar_fail_shelter,"{name} cannot put the jar back: the shelter is gone or full."
+fill_jar_fail_shelter,"{name} cannot put the jar back: the building is gone or has no room."
 task_fill_jar_step_fill,Filling the jar
 task_activity_fill_jar,fill jars
 fill_jar_dialog_title,Fill jars
 fill_jar_dialog_message,"How many jars to fill at the shore? First the shelter's empty jars, then jars from the warehouse for the free places. A travois is needed."
+fill_jar_dialog_message_building,"How many of the building's jars to fill? Its empty jars are taken and filled at the shore or at the handiest water shelter. A travois is needed."
+fill_jar_fail_shelter_dry,"{name} finds the shelter dry: bringing the jar back empty."
 fill_jar_dialog_count,Jars to fill
 fill_jar_reject_shelter_full,"{building} has no empty jars and no free places."
 fill_jar_reject_no_empty_jar,"{name} finds no jars in the warehouses for the shelter's free places."
 fill_jar_reject_no_travois,"{name} finds no free travois: a full jar cannot be carried by hand."
-fill_jar_reject_no_water,"{name} finds no reachable shore to fill the jar."
+fill_jar_reject_no_water,"{name} finds no reachable water (shore or shelter) to fill the jar."
 fill_jar_fail_no_jar,"{name} reached the shore without the empty jar."
 fill_jar_fail_broken,"{name}'s jar broke while being filled."
-fill_jar_fail_no_room,"{name} has no room for the full jar: bringing it back empty to the shelter."
+fill_jar_fail_no_room,"{name} has no room for the full jar: bringing it back empty."
 fill_jar_fail_no_travois,"{name} has no travois for the full jar: no filling."
 building_potter_hut,Potter's hut
 build_bar_potter_hut_tooltip,Potter's hut
@@ -1646,7 +1649,6 @@ notification_village_named,The village is now called {village}
 domestic_animal_dog,Dog
 game_info_tab_animals,Animals
 domestic_animals_empty,No domestic animals.
-domestic_animal_row,"{name} #{id}, {sex}, age {age}"
 domestic_animal_male,male
 domestic_animal_female,female
 notification_domestic_arrival_dog,"Some wolves no longer leave: they now live in the village. New dogs: {count}."
@@ -1667,7 +1669,7 @@ idea_role_assignment,Role assignment
 idea_role_assignment_summary,Everyone has a fixed task in the village.
 idea_role_assignment_description,"The chief entrusts each person with a role: who coordinates the work, who keeps the stores."
 idea_animal_domestication,Animal Domestication
-idea_animal_domestication_summary,Allows starting to domesticate the animal species you have encountered.
+idea_animal_domestication_summary,"Allows starting to domesticate the animal species you have encountered: cage shelter and drop basket for small animals."
 idea_animal_domestication_description,"The village learns that other animals, not just the wolf, can grow used to people. Each species must first be found in the world, then approached patiently: it will take generations."
 idea_plant_domestication,Plant Domestication
 idea_plant_domestication_summary,Allows starting to domesticate the plant species you have encountered.
@@ -1947,9 +1949,12 @@ warehouse_quantity_processing_tooltip,"In storage: {stored} · At workstations: 
 storage_slot_auto_days_short,{days}d
 storage_slot_auto_progress_ready_tooltip,"Ready, waiting for space"
 drawer_weapon_without_ammo,"{weapon} in storage, but ammunition is missing: {ammo}, at least {shots} shots"
+idea_fermentation,Fermentation
+idea_fermentation_summary,Grains and juices left to rest in jars turn into new drinks.
+idea_fermentation_description,"A grain gruel forgotten for a few days in a jar starts to bubble and takes on a new taste. The group understands that, with time and the right vessels, what is gathered can be transformed: it is the beginning of beer."
 idea_advanced_traps,Advanced Traps
-idea_advanced_traps_summary,Traps that catch animals alive, to be brought to the pen.
-idea_advanced_traps_description,"Those who can build traps and have learned to approach animals realize that prey can be caught without killing it. With baskets, cages and pens, animals caught alive can be kept and bred."
+idea_advanced_traps_summary,"Pens and traps that catch large animals alive, to be brought to the pen."
+idea_advanced_traps_description,"Those who already know how to keep and raise small animals realize that a large prey, too, can be taken without killing it. With funnel enclosures and sturdy traps, large animals caught alive can be kept and raised."
 carried_resource_tooltip_snare,Bundle of snares
 carried_resource_tooltip_stake_pit,Stake pit
 pending_trap_no_site,"{area}: no suitable spot for {trap}"
@@ -1961,22 +1966,25 @@ build_bar_cage_shelter_tooltip,Cage shelter
 build_bar_cage_shelter_description,"Brushwood shelter with rope-tied cages beneath: small animals caught alive will be kept here, twenty places, one species only. Catching them alive will also require the Advanced traps idea."
 building_info_animal_capacity,"Animal places: {capacity}, one species only"
 carried_resource_tooltip_drop_basket,Drop basket
-trap_live_catch_needs_cage_shelter,"{trap}: it can be made, but setting it needs a finished {building} to keep the animals caught alive."
+trap_live_catch_needs_cage_shelter,"{trap}: it can be made, but setting it needs a finished {building} that accepts animals (not set to None) to keep the animals caught alive."
 trap_live_catch_note,"Catches animals alive: it is set only if the village has at least one finished {building} (even a full one). Without it, the job stays queued with the red X."
 trap_place_item_blocked,"{trap} (needs a finished {building})"
 warehouse_rule_traps_group,Traps per zone
 warehouse_rule_traps_edit_tooltip,"How many traps of each type to keep set in every work zone"
 warehouse_rule_traps_empty,No traps known yet.
-building_kept_animals,Animals: {count}/{max}
+building_kept_animals,Animals:
+building_kept_animals_count,{count}/{max}
 building_kept_species,Animals kept:
 building_kept_species_any,Any
+building_kept_species_none,None
 building_kept_species_any_fixed,Any (now {species})
-building_kept_species_tooltip,"Species kept here, one only. Any: the first animal to enter decides it, until the shelter is empty again. Catches of other species are butchered on the spot."
+building_kept_species_tooltip,"Species kept here, one only. None: the shelter stays up but takes no animals, and drop baskets don't count it. Any: the first animal to enter decides it, until the shelter is empty again. Catches of other species are butchered on the spot."
+building_kept_species_eats,They eat: {foods} (calories per unit).
 building_kept_species_locked_tooltip,"With animals inside the species can't be changed: the shelter must be empty first."
 building_kept_animal_row,"{name}, {sex}, age {age}"
 idea_animal_husbandry,Animal Husbandry
 idea_animal_husbandry_summary,"Buildings to keep and raise domesticated animals, one for each species."
-idea_animal_husbandry_description,"Those who have learned to catch animals alive and keep them in cages realize that, with the right shelter and steady care, they can live and multiply beside the village. Each domesticated species will have its own building."
+idea_animal_husbandry_description,"Those who have learned to catch animals alive and keep them in cages realize that, with the right shelter and steady care, they can live and multiply beside the village. Each domesticated species will have its own building, which keeps only domestic animals: it can be built once that species has been domesticated in the cage shelter (the rabbit hutch with the first domestic rabbit, the chicken coop with the first hen)."
 building_rabbit_hutch,Rabbit hutch
 build_bar_rabbit_hutch_tooltip,Rabbit hutch
 building_spinning_hut,Spinning hut
@@ -2008,15 +2016,21 @@ container_no_room_reason,"{resource}: needs a free {container}, set up in the to
 toolkit_container_fill,"Seeds in the jars: {quantity} / {capacity} ounces"
 toolkit_containers_caption,"Jars ({count}/{max}) · seeds {stored}/{capacity} ounces"
 toolkit_containers_empty,no jars set up
+toolkit_containers_caption_water,"Water jars ({count}/{max}) · water {stored}/{capacity}"
+toolkit_container_fill_water,"Water in the jars: {quantity} / {capacity}"
+toolkit_containers_empty_water,no water jars set up
+toolkit_container_click_return_water,Click: put an empty water jar back in storage
+toolkit_container_click_blocked_water,"All jars hold water: none can be removed"
+toolkit_storage_tooltip_water,"Building jars: water jars are set up here (click a jar in the storage, or the stock manager rule «Restock the toolkits»). Water stays only in the jars set up here, 400 each, and takes no other room. Jars are filled at the river bank or at a water shelter: every trip wears the jar by one use. A jar can't be removed if its water wouldn't fit in the others."
+building_info_toolkit_seed_jar_count_water,"Water jars: up to {max} ({capacity} water)"
+building_info_toolkit_water_jars,"Holds water jars: only the ones set up here take in water"
 toolkit_tooltip_max,At most {max} here
 building_info_toolkit_seed_jar_count,"Seed jars: up to {max} ({capacity} ounces)"
 carried_resource_tooltip_hay,Hay
-building_feeder_line,Feeder: {space} / {max} space ({calories} calories)
+building_feeder_line,Feeder: {space} / {max} space · {calories} calories
 building_feeder_choose_species,(choose the species to fill it)
-building_feeder_tooltip,"Feeder for: {species}. Accepts: {foods} (calories per unit). Delivered food takes its space, becomes calories and can't be taken back. Changing species empties the feeder and the food is lost."
+building_feeder_tooltip,"Delivered food takes its space and spoils as in the warehouses. Changing species empties the feeder and the food is lost."
 building_feeder_tooltip_no_species,"The feeder only accepts the food of the kept species: choose the species, or wait for the first animal. Changing species empties the feeder and the food is lost."
-warehouse_rule_feeder,Restock the feeders (days of food)
-warehouse_rule_feeder_tooltip,"Days of food to keep in the feeders of the penned animals. At the inventory the WM works out how much the animals of each feeder eat and, if short, sends food from the warehouses: in the order of the species' diet, from the whole village stock, and at least a full backpack each trip. 0 = rule off."
 drawer_order_feeder_row,"{building}: feeder, bring {quantity} {resource}"
 warehouse_rule_field_seeds,Seeds in the fields
 warehouse_rule_field_seeds_tooltip,"Ounces of each domestic seed to keep in the shed of every field that sows it: the WM brings them from the granary and takes away seeds the shed no longer keeps. A field can have its own value. 0 = none."
@@ -2025,12 +2039,11 @@ drawer_order_field_seed_row,"{building}: shed, bring {quantity} {resource}"
 drawer_order_field_seed_remove_row,"{building}: shed, take away {quantity} {resource}"
 pending_stock_feeder,Feeders to restock
 pending_stock_feeder_missing,"No diet food in the warehouses for: {buildings}"
-building_feeder_days_general,Days of food: general rule
-building_feeder_days_excluded,Days of food: excluded from the WM
-building_feeder_days_own,Days of food: own value
-building_feeder_days_tooltip,"Days of food the WM keeps in this feeder, instead of the general rule. 0 = excluded: you fill it by hand."
-building_feeder_days_reset,Back to the general rule
-building_feeder_days_default_tooltip,Follows the WM general rule.
+building_feeder_days_general,"Species value (Animals panel)"
+building_feeder_days_excluded,Excluded from the WM: you fill it by hand
+building_feeder_days_own,This shelter's value
+building_feeder_days_reset,"Back to the species value"
+building_feeder_days_default_tooltip,"Follows the species value in the Animals panel."
 building_field_seeds_stored,"Seeds in the shed: {stored}/{level} (jars: {capacity})"
 building_field_seeds_general,Seeds to keep: general rule
 building_field_seeds_none,Seeds to keep: none
@@ -2059,11 +2072,21 @@ task_retill_job_name,Re-till the lot ({building})
 task_retill_job_tooltip,"Turn the tired soil of a lot of {building} with a pickaxe: the field's fertility rises again. It is done after reaping; when sowing starts, unfinished re-tilling is cancelled."
 building_kept_animal_hungry,no food for {days} days
 building_feeder_days_left,~{days} days
+building_feeder_foods,"Inside, in the order they are eaten:"
+building_feeder_food_row,{food}: {units} · {calories} calories · {freshness}% fresh
+building_feeder_days_present,~{days} days for the animals inside
+building_feeder_lasts,Lasts: {parts}
+building_feeder_full_days,~{days} with the shelter full
+building_feeder_target_capped,(the feeder holds ~{days} days)
 notification_kept_animal_starved,"{animal} starved to death in {building}: the feeder was empty."
 notification_kept_animal_starved_points,(−{points} domestication points)
 notification_kept_young_escaped,"{building} is full: {count} young {species} escaped into the wild."
 building_slaughter_above,Slaughter above:
-building_slaughter_above_tooltip,"Animals above which the warehouse manager has some slaughtered in this shelter: first males beyond the first adult, then old ones, then young males, adult females last. ∞: no slaughter, young that do not fit escape into the wild. With a number young enter even over capacity, and after 10 days the youngest extra ones escape. The lower of this and the species threshold applies."
+building_slaughter_above_tooltip,"Number of animals above which the warehouse manager has some slaughtered in this shelter: first males beyond the first adult, then old ones, then young males, adult females last. ∞ = never slaughters: young that do not fit go to another shelter with room, otherwise they escape. With a number young enter even over capacity, and after 10 days the youngest extra ones escape. The lower of this and the species threshold (Animals panel) applies."
+building_feeder_wm_keeps,Stock days:
+building_feeder_days_tooltip,"Days of food the warehouse manager keeps in this feeder, counting every place taken. D = follows the species value (Animals panel); ↺ = this building's value (click to go back to the species one). 0 = excluded: you fill it by hand."
+building_feeder_target,target {calories} calories
+building_slaughter_above_unit,animals
 building_kept_over_capacity,"Over capacity: {days} days before the youngest extra ones escape"
 building_kept_over_capacity_tooltip,"With a «Slaughter above» threshold young enter even over capacity. If the shelter is still over capacity after 10 days, the youngest extra ones escape into the wild."
 notification_kept_animals_escaped,"{building} over capacity: {count} {species} escaped into the wild."
@@ -2071,10 +2094,11 @@ domestic_animals_tab_all,All
 domestic_animals_age_young,Young
 domestic_animals_age_adult,Adults
 domestic_animals_age_old,Old
-domestic_animals_summary,"{name}: {total} (kept {kept}, free {free})  ♂ {males}  ♀ {females}"
+domestic_animals_summary,"{name}: {total} (enclosed {kept}, free {free})"
+domestic_animals_sexes,♂ {males}  ♀ {females}
 domestic_animals_slaughter_above,Slaughter above:
-domestic_animals_slaughter_above_tooltip,"Animals of this species kept in all shelters above which the warehouse manager has some slaughtered, starting from the shelter with the most. ∞: no slaughter. The lower of this and the shelter threshold applies."
-domestic_animals_shelters,Shelters:
+domestic_animals_slaughter_above_tooltip,"Number of animals of this species in the whole village, enclosed and free, above which the warehouse manager has some slaughtered: one at a time from the building that holds the most, free ones last. ∞ = never slaughters. The lower of this and the single building's threshold applies."
+domestic_animals_shelters,Buildings:
 domestic_animals_shelter_row,{building}: {count} / {max}
 building_kept_animal_to_slaughter,to slaughter
 building_kept_animal_slaughter_tooltip,"Slaughter this animal: someone with a blade goes to the shelter, kills it and butchers it there. Before domestication it costs 2 points."
@@ -2210,3 +2234,103 @@ building_field,Field with shed
 build_bar_field_tooltip,Field with shed
 build_bar_field_description,"A 3×3 microcell field: tilled soil inside a fence of posts and branches, with a small gate and a little shed in one corner for digging sticks and sickles. Rotate to choose the shed's corner. A pick is needed to till. Eight lots, one per microcell of soil: each is sown and reaped on its own, even by several people at once. Domestic seeds only, 20 ounces per lot."
 building_crop_lots_summary,"{total} lots: empty {empty}, being sown {sowing}, sown {sown}, sprouted {sprouted}, ripe {ready}"
+discovery_first_domesticated_domestic_rabbit_title,"Rabbits born among the huts"
+discovery_first_domesticated_domestic_rabbit_p1,"Generation after generation, in the cage shelter the rabbits have stopped running away when someone comes near. The village now knows how to breed them: the domestic rabbit is born."
+discovery_first_domesticated_domestic_rabbit_p2,"Rabbits caught with the drop basket stay [b]wild[/b] forever: in a cage they have only 1 or 2 young a year and give 3 meat when butchered. Young born in captivity instead are [b]domestic[/b]: full litters, up to 6, and 4 meat."
+discovery_first_domesticated_domestic_rabbit_p3,"With the Animal Husbandry idea you can build the [b]Rabbit Hutch[/b]: it keeps only domestic rabbits, which multiply there on their own. The cage shelter stays the place where wild ones come in."
+discovery_first_domesticated_domestic_rabbit_p4,"Should the domestic rabbits disappear, just catch wild ones again: their young will be born already domestic, without starting over."
+discovery_first_domesticated_chicken_title,"Hens born among the huts"
+discovery_first_domesticated_chicken_p1,"Generation after generation, in the cage shelter the wild fowl have stopped fleeing when someone comes near. The village now knows how to breed them: the hen is born."
+discovery_first_domesticated_chicken_p2,"Wild fowl caught with the drop basket stay [b]wild[/b] forever: in a cage they hatch only 1 or 2 chicks a year and give 2 meat when butchered. Chicks born in captivity instead are [b]domestic hens[/b]: full broods, up to 8, and 3 meat."
+discovery_first_domesticated_chicken_p3,"With the Animal Husbandry idea you can build the [b]Chicken Coop[/b]: it keeps only domestic hens, which multiply there on their own. The cage shelter stays the place where wild ones come in."
+discovery_first_domesticated_chicken_p4,"Should the hens disappear, just catch wild fowl again: their chicks will be born already domestic, without starting over."
+discovery_first_domesticated_wheat_title,"A wheat that keeps its grains"
+discovery_first_domesticated_wheat_p1,"Sown and reaped year after year in the domestication garden, wild wheat has changed: the ear no longer shatters by itself. The village now knows how to grow it: domestic wheat is born."
+discovery_first_domesticated_wheat_p2,"Wheat gathered in the wild stays [b]wild[/b]. Sown in the garden, it now gives [b]domestic wheat[/b], but the garden is small and yields little: at most 3 grains per seed."
+discovery_first_domesticated_wheat_p3,"Domestic wheat is kept in the stores and is used to sow the [b]fields[/b] of Agriculture, where each seed yields up to 10."
+discovery_first_domesticated_wheat_p4,"Should domestic wheat run out, just go back to the garden with wild wheat: it will give domestic wheat again, without starting over."
+discovery_first_domesticated_rye_title,"A rye that keeps its grains"
+discovery_first_domesticated_rye_p1,"Sown and reaped year after year in the domestication garden, wild rye has changed: the ear no longer shatters by itself. The village now knows how to grow it: domestic rye is born."
+discovery_first_domesticated_rye_p2,"Rye gathered in the wild stays [b]wild[/b]. Sown in the garden, it now gives [b]domestic rye[/b], but the garden is small and yields little: at most 3 grains per seed."
+discovery_first_domesticated_rye_p3,"Domestic rye is kept in the stores and is used to sow the [b]fields[/b] of Agriculture, where each seed yields up to 10."
+discovery_first_domesticated_rye_p4,"Should domestic rye run out, just go back to the garden with wild rye: it will give domestic rye again, without starting over."
+discovery_first_domesticated_oats_title,"Oats that keep their grains"
+discovery_first_domesticated_oats_p1,"Sown and reaped year after year in the domestication garden, wild oats have changed: the panicle no longer shatters by itself. The village now knows how to grow them: domestic oats are born."
+discovery_first_domesticated_oats_p2,"Oats gathered in the wild stay [b]wild[/b]. Sown in the garden, they now give [b]domestic oats[/b], but the garden is small and yields little: at most 3 grains per seed."
+discovery_first_domesticated_oats_p3,"Domestic oats are kept in the stores and are used to sow the [b]fields[/b] of Agriculture, where each seed yields up to 10."
+discovery_first_domesticated_oats_p4,"Should domestic oats run out, just go back to the garden with wild oats: they will give domestic oats again, without starting over."
+discovery_first_domesticated_flax_title,"A flax that keeps its seeds"
+discovery_first_domesticated_flax_p1,"Sown and harvested year after year in the domestication garden, wild flax has changed: the capsules no longer open by themselves and the seeds stay on the plant. The village now knows how to grow it: domestic flax is born."
+discovery_first_domesticated_flax_p2,"Flax gathered in the wild stays [b]wild[/b]. Sown in the garden, it now gives [b]domestic flax seeds[/b], but the garden is small and gives few."
+discovery_first_domesticated_flax_p3,"Flax seeds are kept in the stores and are used to sow the [b]fields[/b] of Agriculture, which besides seeds give flax fiber for ropes."
+discovery_first_domesticated_flax_p4,"Should the flax seeds run out, just go back to the garden with wild flax: it will give domestic seeds again, without starting over."
+individual_skills_toggle_tooltip,"Click to open or close the skills."
+skill_husbandry_label,Husbandry
+skill_husbandry_short,Husb.
+building_kept_animal_to_slaughter_no_room,"to slaughter (no room)"
+notification_domestic_no_breeding_room,"{count} {species} in the {shelter} must be slaughtered: there is no {building} with room for them. Domestic animals don't stay in the cage shelter."
+task_assignment_kind_husbandry,Husbandry
+task_transfer_animals_name,Moving animals
+task_transfer_animals_step_walk_shelter,Going to the cage shelter
+task_transfer_animals_step_take,Taking the animals
+task_transfer_animals_step_walk_hutch,Going to the breeding pen
+task_transfer_animals_step_place,Settling the animals
+job_transfer_animals,"Move {species} ({count})"
+building_kept_animal_in_transit,being moved
+notification_domestic_animal_extinct,"{domestic}: extinct, no domestic animal is left. To get it back, catch wild ones alive ({wild}) and keep them in the {shelter}: their young will be born domestic."
+notification_domestic_plant_extinct,"{domestic}: extinct, no domestic seed is left in storage or in the fields. To get it back, sow {wild} in the {garden}: the harvest will give domestic seed again."
+options_show_grid,Show the microcell grid
+options_group_display,Screen and sound
+options_group_game,Game
+options_group_defaults,Command defaults
+building_bedding_line,"Bedding: {units} / {max} straw"
+building_bedding_tooltip,"The bedding only accepts straw: it does not spoil and does not go back to the warehouse. Every animal inside uses a little each day (a rabbit 1 straw every 20 days)."
+building_bedding_full_days,"~{days} with every place taken"
+building_bedding_wm_keeps,"Straw days:"
+building_bedding_days_tooltip,"Days of straw the warehouse manager keeps in this bedding, counting every place taken. D = follows the species value (Animals panel); ↺ = this building's value (click to go back to the species one). 0 = excluded: you fill it by hand."
+building_bedding_days_own,"This building's value"
+building_bedding_target,"target {units} straw"
+building_bedding_target_capped,"(the bedding holds ~{days} days)"
+drawer_order_bedding_row,"{building}: bedding, bring {quantity} {resource}"
+pending_stock_bedding,"Bedding to restock"
+pending_stock_bedding_missing,"No straw in the warehouses for: {buildings}"
+building_bedding_risk,"Empty {empty} days out of {days} since the last births: each young risks dying at birth at {risk}%. With no straw on the day of the births: {max}%."
+notification_bedding_empty,"{building}: the bedding has run out. Without straw the young risk dying at birth: the more days it stays empty, the more die at the next births."
+notification_bedding_newborns_dead,"{building}: {dead} young died at birth out of {total} because of the bedding (empty {empty} days out of {days} since the previous births)."
+domestic_animals_building_defaults,"For all its buildings:"
+domestic_animals_feeder_days,"Days of food in the feeders"
+domestic_animals_feeder_days_tooltip,"Days of food the warehouse manager keeps in the feeders of every building of this species. At the inventory it works out how much all the places would eat and, if short, sends food from the warehouses: in the order of the diet, from the whole village stock, at least a full backpack each trip. The job is in the Animal Husbandry row. A single building can have its own value. 0 = no restocking."
+domestic_animals_bedding_days,"Days of straw in the bedding"
+domestic_animals_bedding_days_tooltip,"Days of straw the warehouse manager keeps in the bedding of every building of this species. At the inventory it works out how much straw all the places would use and, if short, sends it from the warehouses, at least a full backpack each trip. The job is in the Animal Husbandry row. A single building can have its own value. 0 = no restocking."
+carried_resource_tooltip_manure,"Manure"
+building_manure_line,"Manure: {units} / {max}"
+building_manure_tooltip,"The animals make manure every day, with or without bedding. At the maximum, whatever more they make is lost. The warehouse manager has it taken to the nearest manure heap with room or, if there is none, to the Waste Pit."
+building_manure_rate,"They make {per_day} a day: full in ~{days} days."
+building_manure_clean_label,"Clean above (%):"
+building_manure_clean_tooltip,"Share of the manure capacity above which the warehouse manager sends someone to clean this building: everything is taken away, to the nearest manure heap with room or to the Waste Pit. The job is in the Animal Husbandry row. D = follows the species value (Animals panel); ↺ = this building's value (click to go back to the species one). 0 = excluded: you clean it by hand."
+building_manure_clean_excluded,"Excluded from the WM: you clean it by hand"
+domestic_animals_manure_clean,"Clean the manure above (%)"
+domestic_animals_manure_clean_tooltip,"Share of the manure capacity above which the warehouse manager sends someone to clean the buildings of this species, the same for large and small buildings: everything is taken away, to the nearest manure heap with room or to the Waste Pit. The job is in the Animal Husbandry row. A single building can have its own value. 0 = no automatic cleaning."
+drawer_order_manure_row,"{building}: cleaning, take away {quantity} {resource}"
+pending_stock_manure,"Manure to throw away"
+pending_stock_manure_missing,"No manure heap or Waste Pit with room for: {buildings}"
+notification_manure_full,"{building}: the manure is at its maximum. Have it cleaned: whatever more the animals make is lost."
+dirty_reason_bedding_empty,"empty bedding"
+dirty_reason_manure_full,"manure at its maximum"
+notification_dirty_building_deaths,"{building}: {count} animals died of disease ({reasons})."
+building_dirty_death_bedding,"Empty bedding: every day each animal risks dying of disease ({chance}%)."
+building_dirty_death_manure,"Manure at its maximum: every day each animal risks dying of disease ({chance}%)."
+building_live_product_line,"{product}: {units} / {max}"
+building_live_product_tooltip,"Animal product piling up here ({product}). At the maximum, any more is lost; in here it spoils over time as in any building."
+building_live_product_seasons,"Per animal per day: winter {winter}, spring {spring}, summer {summer}, autumn {autumn}."
+building_live_product_rate,"Today: {per_day} per day from all the animals."
+building_live_product_none_today,"None today: out of season or no animal that makes it."
+notification_live_product_full,"{building}: {product} at the maximum, any more is lost."
+building_live_product_collect_label,"Collect above (%):"
+building_live_product_collect_tooltip,"Share of the capacity above which the warehouse manager sends someone to collect the animal products of this building (the eggs): everything is taken away, to the nearest storage with room. The job is in the Animal Husbandry row. At the maximum, whatever more the animals make is lost: don't keep it too high. D = follows the species value (Animals panel); ↺ = this building's value (click to go back to the species one). 0 = excluded: you collect them by hand."
+building_live_product_collect_excluded,"Excluded from the WM: you collect them by hand"
+domestic_animals_live_product_collect,"Collect the products above (%)"
+domestic_animals_live_product_collect_tooltip,"Share of the capacity above which the warehouse manager sends someone to collect the animal products of this species (the eggs), the same for large and small buildings: everything is taken away, to the nearest storage with room. The job is in the Animal Husbandry row. At the maximum, whatever more the animals make is lost. A single building can have its own value. 0 = no automatic collection."
+drawer_order_live_product_row,"{building}: collection, take away {quantity} {resource}"
+pending_stock_live_product,"Animal products to collect"
+pending_stock_live_product_missing,"No storage with room for the products of: {buildings}"

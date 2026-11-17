@@ -167,6 +167,11 @@ static func missing_for_recipe(recipe: String, quantity: int, stock: Dictionary,
 	if rules == null:
 		return missing
 	for input_name in rules.recipe_inputs.keys():
+		# Liquidi (2026-11-16, acqua come risorsa — passo 3c): non sono scorte dei magazzini, si attingono con le giare
+		# dell'edificio (WaterJarService); non fermano un ordine "Produci".
+		var input_rules := CaloricCalculator.get_caloric_source_rules(String(input_name))
+		if input_rules != null and input_rules.is_liquid:
+			continue
 		var needed := int(rules.recipe_inputs[input_name]) * quantity
 		var have := int(stock.get(String(input_name), 0))
 		if have < needed:

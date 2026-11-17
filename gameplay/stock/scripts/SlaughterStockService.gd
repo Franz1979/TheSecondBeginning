@@ -7,10 +7,12 @@ extends RefCounted
 # - Prima toglie i propri segni non ancora presi da nessuno (soglia alzata o tolta), poi li rifà: la scelta è
 #   deterministica, gli stessi animali tornano segnati. I segni manuali e quelli già presi non si toccano.
 # - Soglia della tettoia (Building.slaughter_above): animali non segnati oltre il numero.
-# - Soglia della specie (GameData.domestic_slaughter_above): animali non segnati di tutte le tettoie oltre il numero, uno
-#   alla volta dalla tettoia che ne ha di più.
-# - Chi: maschi adulti oltre il più giovane, poi i vecchi (dal più vecchio), poi i giovani maschi (dal più grande), poi le
-#   femmine adulte (dalla più vecchia). Le giovani femmine e un maschio adulto per tettoia restano sempre.
+# - Soglia della specie (GameData.domestic_slaughter_above): animali non segnati di tutto il villaggio oltre il numero,
+#   chiusi e liberi (2026-11-16, richiesta utente: prima solo i chiusi), uno alla volta dall'edificio che ne ha di più; i
+#   liberi per ultimi. Il cane non ha soglia (solo le specie da recinto, KeptAnimalService.can_be_kept).
+# - Chi: i vecchi (dal più vecchio), poi i maschi adulti oltre il più giovane, poi i giovani maschi (dal più grande), poi le
+#   femmine adulte (dalla più vecchia). Le giovani femmine e un maschio adulto per tettoia restano sempre. Vecchi per primi
+#   dal 2026-11-17 (richiesta utente): non figliano più e morirebbero presto di vecchiaia, la carne si prende prima.
 # Senza stato.
 
 
@@ -43,10 +45,15 @@ static func plan(world: World, game_data: GameData, individuals: Array) -> bool:
 		while limit > 0 and free.size() > limit:
 			if not _mark_one(free, today):
 				break
-	# Soglie delle specie.
+	# Soglie delle specie: anche i liberi, sotto la chiave FREE_KEY (per ultimi in _mark_from_fullest).
+	var free_animals: Array = []
+	for animal in game_data.domestic_animals:
+		if animal.building_id < 0 and not animal.slaughter_requested:
+			free_animals.append(animal)
+	free_by_building[FREE_KEY] = free_animals
 	for species in game_data.domestic_slaughter_above.keys():
 		var limit := KeptAnimalService.species_slaughter_above(game_data, String(species))
-		if limit <= 0:
+		if limit <= 0 or not KeptAnimalService.can_be_kept(DomesticAnimalCalculator.get_rules(String(species))):
 			continue
 		var total := 0
 		for building_id in free_by_building:
@@ -63,6 +70,10 @@ static func plan(world: World, game_data: GameData, individuals: Array) -> bool:
 	return changed
 
 
+# Chiave dei liberi (non in un edificio) in free_by_building.
+const FREE_KEY := -1
+
+
 static func _count_species(animals: Array, species: String) -> int:
 	var count := 0
 	for animal: DomesticAnimal in animals:
@@ -71,16 +82,22 @@ static func _count_species(animals: Array, species: String) -> int:
 	return count
 
 
-# Uno della specie dalla tettoia che ne ha di più (non segnati) e ha qualcuno da macellare. false se nessuna.
+# Uno della specie dall'edificio che ne ha di più (non segnati) e ha qualcuno da macellare; i liberi (FREE_KEY) per
+# ultimi. false se nessuno.
 static func _mark_from_fullest(free_by_building: Dictionary, species: String, today: int) -> bool:
 	var order: Array = free_by_building.keys()
 	order.sort_custom(func(a: int, b: int) -> bool:
+		if (a == FREE_KEY) != (b == FREE_KEY):
+			return b == FREE_KEY
 		var count_a := _count_species(free_by_building[a], species)
 		var count_b := _count_species(free_by_building[b], species)
 		return count_a > count_b if count_a != count_b else a < b)
 	for building_id in order:
-		var free: Array = free_by_building[building_id]
-		if _count_species(free, species) > 0 and _mark_one(free, today):
+		# Solo la specie: tra i liberi ce ne sono di più specie.
+		var all_free: Array = free_by_building[building_id]
+		var of_species := all_free.filter(func(animal: DomesticAnimal) -> bool: return animal.species == species)
+		if not of_species.is_empty() and _mark_one(of_species, today):
+			free_by_building[building_id] = all_free.filter(func(animal: DomesticAnimal) -> bool: return not animal.slaughter_requested)
 			return true
 	return false
 
@@ -122,10 +139,10 @@ static func _pick(animals: Array, today: int) -> DomesticAnimal:
 		return a.birth_day < b.birth_day if a.birth_day != b.birth_day else a.id < b.id
 	for group in [adult_males, old, young_males, adult_females]:
 		(group as Array).sort_custom(oldest_first)
-	if adult_males.size() > 1:
-		return adult_males[0]
 	if not old.is_empty():
 		return old[0]
+	if adult_males.size() > 1:
+		return adult_males[0]
 	if not young_males.is_empty():
 		return young_males[0]
 	if not adult_females.is_empty():

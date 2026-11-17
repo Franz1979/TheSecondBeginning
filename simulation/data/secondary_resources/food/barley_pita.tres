@@ -6,6 +6,7 @@
 ; (clay_oven, edificio del passo dopo: finché non c'è la ricetta non compare). Una partita: 8 semola + 1 combustibile ->
 ; 4 pite (2 semola a pita), 40 di lavoro. 40 calorie a pita: un campo d'orzo (7200 pestate) sfama circa 10-11 persone.
 ; Dura 30 giorni, spazio 2 (5 per 100 calorie, come i cibi cotti).
+; Acqua (2026-11-16, richiesta utente — acqua come risorsa, passo 3c): 6 per partita, dalle giare del forno.
 [resource]
 script = ExtResource("1_barley_pita")
 secondary_resource_name = "barley_pita"
@@ -18,7 +19,8 @@ day_durability = 30
 space_per_unit = 2.0
 eat_happiness_per_100_calories = 2.0
 recipe_inputs = {
-"barley_groats": 8
+"barley_groats": 8,
+"water": 6
 }
 recipe_output_quantity = 4
 recipe_labor = 40.0

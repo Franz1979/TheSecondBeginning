@@ -15,13 +15,18 @@ var entries: Array = []
 var _elapsed: float = 0.0
 var _resolved: bool = false
 var _to_butcher: Array = []
+# Trasferimento (2026-11-16, Trasferisci animali): voci con "animal_id", animali già esistenti presi dalla tettoia
+# (DomesticTransferService.transfer_entry). Entrano spostandoli, senza punti; senza posto si uccidono qui (carcassa);
+# skill Allevamento, che accorcia la tappa.
+var _is_transfer: bool = false
 
 
 func _init(p_building: Building = null, p_entries: Array = []) -> void:
 	target = null
 	building = p_building
 	entries = p_entries
-	skill_effect_key = TrapService.SKILL_EFFECT_KEY
+	_is_transfer = not p_entries.is_empty() and Dictionary(p_entries[0]).has("animal_id")
+	skill_effect_key = DomesticTransferService.SKILL_EFFECT_KEY if _is_transfer else TrapService.SKILL_EFFECT_KEY
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 
 
@@ -30,7 +35,7 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		_resolve(individual, context)
 	if not _to_butcher.is_empty() and not ensure_required_tools(individual):
 		return 0.0
-	_elapsed += delta
+	_elapsed += delta * (SkillEffectService.get_factor_for_action(self, individual, context) if _is_transfer else 1.0)
 	return 0.0
 
 
@@ -49,7 +54,18 @@ func _resolve(individual: Variant, context: Dictionary) -> void:
 	var rerouted := {}
 	for entry in entries:
 		var species := String(entry.get("species", ""))
+		var moving: DomesticAnimal = null
+		if entry.has("animal_id"):
+			moving = DomesticAnimalService.find_animal(game_data, int(entry["animal_id"]))
+			if moving == null:
+				continue
 		if KeptAnimalService.has_room_for(game_data, building, species, reserved):
+			if moving != null:
+				moving.building_id = building.id
+				moving.carried_by = -1
+				DebugLogging.print_event("[TRANSFER] #%d %s: %s #%d nella %s #%d" % [individual.id, individual.name, species,
+					moving.id, building.building_type_name, building.id])
+				continue
 			var animal := KeptAnimalService.keep_animal(game_data, building, entry)
 			# Punti addomesticazione all'arrivo (2026-11-12): li assegna la scena a fine tappa
 			# (HumanIndividualActionService.CONTEXT_PENDING_DOMESTICATION_POINTS), con l'eventuale scoperta.
@@ -61,7 +77,11 @@ func _resolve(individual: Variant, context: Dictionary) -> void:
 				entry.get("wild_species", "?"), building.building_type_name, building.id, animal.id if animal != null else -1])
 			continue
 		var macro: Vector2i = Vector2i(building.macro_x, building.macro_y) if building != null else individual.home_macro_coords
-		var other := KeptAnimalService.find_building_with_room(game_data, world, species, macro, reserved)
+		var other: Building = null
+		if moving != null:
+			other = DomesticTransferService.nearest_breeding_building(game_data, world, species, macro, reserved)
+		else:
+			other = KeptAnimalService.find_building_with_room(game_data, world, species, macro, reserved)
 		if other != null:
 			entry["building_id"] = other.id
 			reserved.append(entry)
@@ -72,6 +92,11 @@ func _resolve(individual: Variant, context: Dictionary) -> void:
 				entry.get("wild_species", "?"), building.building_type_name if building != null else "tettoia",
 				building.id if building != null else -1, _no_room_reason(game_data, building, species),
 				other.building_type_name, other.id])
+			continue
+		if moving != null:
+			DebugLogging.print_event("[TRANSFER] #%d %s: nessun posto per %s #%d, ucciso sul posto" % [individual.id,
+				individual.name, species, moving.id])
+			DomesticTransferService.kill_on_spot(game_data, moving, building)
 			continue
 		_to_butcher.append(entry)
 		TrapService.log_line("#%d %s: nessun posto per %s, si macella" % [individual.id, individual.name, entry.get("wild_species", "?")])
@@ -102,8 +127,8 @@ func _insert_reroutes(individual: Variant, rerouted: Dictionary) -> void:
 	for group in rerouted.values():
 		steps.append(WalkAction.new(walk_point(individual, group["building"])))
 		steps.append(KeepAnimalAction.new(group["building"], group["entries"]))
-		descriptions.append("task_empty_trap_step_walk_shelter")
-		descriptions.append("task_empty_trap_step_keep_animal")
+		descriptions.append("task_transfer_animals_step_walk_hutch" if _is_transfer else "task_empty_trap_step_walk_shelter")
+		descriptions.append("task_transfer_animals_step_place" if _is_transfer else "task_empty_trap_step_keep_animal")
 	task.insert_steps_after_current(steps, descriptions)
 
 
@@ -147,12 +172,15 @@ static func walk_point(individual: HumanIndividual, shelter: Building) -> Vector
 
 func get_save_data() -> Dictionary:
 	return {"elapsed": _elapsed, "resolved": _resolved, "to_butcher": _to_butcher,
-		"keep_building_id": building.id if building != null else -1, "keep_entries": entries}
+		"keep_building_id": building.id if building != null else -1, "keep_entries": entries, "transfer": _is_transfer}
 
 
 func load_save_data(data: Dictionary) -> void:
 	_elapsed = float(data.get("elapsed", 0.0))
 	_resolved = bool(data.get("resolved", false))
 	_to_butcher = data.get("to_butcher", [])
+	_is_transfer = bool(data.get("transfer", _is_transfer))
+	if _is_transfer:
+		skill_effect_key = DomesticTransferService.SKILL_EFFECT_KEY
 	if not _to_butcher.is_empty():
 		required_tool_categories = TrapService.empty_tool_categories(String(_to_butcher[0].get("trap_name", "")))

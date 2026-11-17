@@ -269,6 +269,12 @@ static func request_stock(ctx: GameContext, now: float, effects: GameEffects) ->
 		changed = true
 	if _request_feeders(ctx, now, stock):
 		changed = true
+	if _request_bedding(ctx, now, stock):
+		changed = true
+	if _request_manure(ctx, now):
+		changed = true
+	if _request_live_products(ctx, now):
+		changed = true
 	if _request_field_seeds(ctx, now, stock):
 		changed = true
 	# Macellazione oltre le soglie "Macella oltre" (2026-11-14, pezzo 2c).
@@ -1009,11 +1015,40 @@ static func _request_fuel(ctx: GameContext, now: float) -> bool:
 # Regola "Acqua per tettoia" (2026-11-07, WaterShelterStockService): ordini "transport" con WATER_TARGET_KEY (la tettoia) e
 # "quantity" (giare da riempire); senza ORDER_KEY. Un ordine aperto per tettoia, aggiornato a ogni inventario. true se ha
 # cambiato ordini.
+# Log [WATER] dell'inventario (2026-11-16, acqua come risorsa — passo 2): solo quando cambia qualcosa negli ordini.
+static func _log_water_plan(ctx: GameContext, game_data: GameData, plan: Dictionary) -> void:
+	if (plan["create"] as Array).is_empty() and (plan["update"] as Array).is_empty() and (plan["remove"] as Array).is_empty() \
+			and int(plan["missing"]) <= 0:
+		return
+	for building in ctx.world.buildings:
+		var target := 0
+		if WaterShelterStockService.is_served(building):
+			target = WaterShelterStockService.target_for(building, game_data)
+		elif WaterShelterStockService.is_served_jars(building):
+			target = WaterShelterStockService.jars_target(building)
+		if target <= 0:
+			continue
+		print("[WATER] WM: %s #%d acqua %d/%d, livello %d, viaggi già decisi %d." % [
+			building.building_type_name, building.id, WaterJarService.shelter_water(building), WaterJarService.water_room(building), target,
+			WaterJarService.planned_trips(building),
+		])
+	for need in plan["create"]:
+		print("[WATER] WM: nuovo ordine, %d giare per l'edificio #%d." % [int(need["quantity"]), int(need[WaterShelterStockService.WATER_TARGET_KEY])])
+	for update in plan["update"]:
+		print("[WATER] WM: ordine #%d aggiornato a %d giare." % [int((update["order"] as Dictionary)["id"]), int(update["quantity"])])
+	if not (plan["remove"] as Array).is_empty():
+		print("[WATER] WM: ordini tolti %s." % str(plan["remove"]))
+	if int(plan["missing"]) > 0:
+		print("[WATER] WM: mancano %d giare nei magazzini." % int(plan["missing"]))
+
+
 static func _request_water(ctx: GameContext, now: float, stock: Dictionary) -> bool:
 	var game_data := ctx.game_data
 	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool: return order.has(WaterShelterStockService.WATER_TARGET_KEY))
 	var plan := WaterShelterStockService.plan_orders(ctx.world, game_data, open_orders, int(stock.get(WaterJarService.JAR, 0)))
 	game_data.stock_runtime.water_jars_missing = int(plan["missing"])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+		_log_water_plan(ctx, game_data, plan)
 	for order_id in plan["remove"]:
 		DrawerOrderService.remove(game_data, int(order_id))
 	for update in plan["update"]:
@@ -1150,6 +1185,89 @@ static func _request_feeders(ctx: GameContext, now: float, stock: Dictionary) ->
 	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
 
 
+# Regola "Lettiera" (2026-11-17, BeddingStockService): ordini "transport" magazzino → lettiera con BEDDING_TARGET_KEY
+# (paglia); avvisi in StockRuntimeState.bedding_warnings. true se ha creato o tolto ordini.
+static func _request_bedding(ctx: GameContext, now: float, stock: Dictionary) -> bool:
+	var game_data := ctx.game_data
+	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool: return order.has(BeddingStockService.BEDDING_TARGET_KEY))
+	var plan := BeddingStockService.plan_orders(ctx.world, game_data, open_orders, BeddingStockService.traveling(ctx.individuals),
+		stock, average_carry_capacity(ctx))
+	game_data.stock_runtime.bedding_warnings = plan["warnings"]
+	for order_id in plan["remove"]:
+		DrawerOrderService.remove(game_data, int(order_id))
+	for need in plan["create"]:
+		var order_id := game_data.next_drawer_order_id
+		game_data.next_drawer_order_id += 1
+		var bedding_order := {
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT,
+			BeddingStockService.BEDDING_TARGET_KEY: int(need[BeddingStockService.BEDDING_TARGET_KEY]),
+			"resource": BeddingService.RESOURCE, "quantity": int(need["quantity"]),
+			StockRequestService.CREATED_AT_KEY: now,
+		}
+		mark_inventory_pending(game_data, bedding_order)
+		game_data.drawer_orders.append(bedding_order)
+		DebugLogging.print_event("[BEDDING] Ordine del cassetto #%d: porta %d paglia alla lettiera di %s #%d." % [
+			order_id, int(need["quantity"]), (need["building"] as Building).building_type_name,
+			int(need[BeddingStockService.BEDDING_TARGET_KEY]),
+		])
+	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
+
+
+# Pulizia del letame (2026-11-17, ManureStockService): ordini "transport" edificio → letamaio o Fossa con MANURE_SOURCE_KEY;
+# avvisi in StockRuntimeState.manure_warnings. true se ha creato o tolto ordini.
+static func _request_manure(ctx: GameContext, now: float) -> bool:
+	var game_data := ctx.game_data
+	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool: return order.has(ManureStockService.MANURE_SOURCE_KEY))
+	var plan := ManureStockService.plan_orders(ctx.world, game_data, open_orders, ManureStockService.traveling(ctx.individuals))
+	game_data.stock_runtime.manure_warnings = plan["warnings"]
+	for order_id in plan["remove"]:
+		DrawerOrderService.remove(game_data, int(order_id))
+	for need in plan["create"]:
+		var order_id := game_data.next_drawer_order_id
+		game_data.next_drawer_order_id += 1
+		var manure_order := {
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT,
+			ManureStockService.MANURE_SOURCE_KEY: int(need[ManureStockService.MANURE_SOURCE_KEY]),
+			"resource": ManureService.RESOURCE, "quantity": int(need["quantity"]),
+			StockRequestService.CREATED_AT_KEY: now,
+		}
+		mark_inventory_pending(game_data, manure_order)
+		game_data.drawer_orders.append(manure_order)
+		DebugLogging.print_event("[MANURE] Ordine del cassetto #%d: porta via %d letame da %s #%d." % [
+			order_id, int(need["quantity"]), (need["building"] as Building).building_type_name,
+			int(need[ManureStockService.MANURE_SOURCE_KEY]),
+		])
+	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
+
+
+# Raccolta dei prodotti da vivi (2026-11-17, LiveProductStockService): ordini "transport" edificio → magazzino con
+# LIVE_PRODUCT_SOURCE_KEY; avvisi in StockRuntimeState.live_product_warnings. true se ha creato o tolto ordini.
+static func _request_live_products(ctx: GameContext, now: float) -> bool:
+	var game_data := ctx.game_data
+	var open_orders: Array = game_data.drawer_orders.filter(func(order: Dictionary) -> bool:
+		return order.has(LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY))
+	var plan := LiveProductStockService.plan_orders(ctx.world, game_data, open_orders, LiveProductStockService.traveling(ctx.individuals))
+	game_data.stock_runtime.live_product_warnings = plan["warnings"]
+	for order_id in plan["remove"]:
+		DrawerOrderService.remove(game_data, int(order_id))
+	for need in plan["create"]:
+		var order_id := game_data.next_drawer_order_id
+		game_data.next_drawer_order_id += 1
+		var product_order := {
+			"id": order_id, "type": DrawerOrderService.TYPE_TRANSPORT,
+			LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY: int(need[LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY]),
+			"resource": String(need["resource"]), "quantity": int(need["quantity"]),
+			StockRequestService.CREATED_AT_KEY: now,
+		}
+		mark_inventory_pending(game_data, product_order)
+		game_data.drawer_orders.append(product_order)
+		DebugLogging.print_event("[LIVE PRODUCT] Ordine del cassetto #%d: porta via %d %s da %s #%d." % [
+			order_id, int(need["quantity"]), String(need["resource"]), (need["building"] as Building).building_type_name,
+			int(need[LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY]),
+		])
+	return not (plan["remove"] as Array).is_empty() or not (plan["create"] as Array).is_empty()
+
+
 # Regola "Semi nei campi" (2026-11-15, FieldSeedStockService): ordini "transport" magazzino → capanno del campo
 # (SEED_TARGET_KEY) e capanno → magazzino per i semi che il capanno non tiene più (SEED_REMOVE_KEY). true se ha creato o
 # tolto ordini.
@@ -1193,6 +1311,66 @@ static func collect_feeder_entries(ctx: GameContext) -> Array[Dictionary]:
 	var row_name := GameContext.tr_text("pending_stock_feeder")
 	var reason := GameContext.tr_text("pending_stock_feeder_missing").format({"buildings": ", ".join(names)})
 	var entry := PendingEntryService.make_entry("stock_feeder", "%s\n%s" % [row_name, reason], {
+		"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": 0.0, "name": row_name, "detail": reason,
+	}, false)
+	entry["disabled_reason"] = GameContext.tr_text("pending_stock_blocked_detail")
+	entries.append(entry)
+	return entries
+
+
+# Avviso in campanella della regola "Lettiera": lettiere sotto l'obiettivo senza paglia da ricevere.
+static func collect_bedding_entries(ctx: GameContext) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var names: Array[String] = []
+	for building_id in ctx.game_data.stock_runtime.bedding_warnings:
+		var building := find_building(ctx.world, int(building_id))
+		if building != null:
+			names.append(building.get_display_name())
+	if names.is_empty():
+		return entries
+	var row_name := GameContext.tr_text("pending_stock_bedding")
+	var reason := GameContext.tr_text("pending_stock_bedding_missing").format({"buildings": ", ".join(names)})
+	var entry := PendingEntryService.make_entry("stock_bedding", "%s\n%s" % [row_name, reason], {
+		"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": 0.0, "name": row_name, "detail": reason,
+	}, false)
+	entry["disabled_reason"] = GameContext.tr_text("pending_stock_blocked_detail")
+	entries.append(entry)
+	return entries
+
+
+# Avviso in campanella della pulizia del letame: edifici oltre la soglia senza letamaio né Fossa con posto.
+static func collect_manure_entries(ctx: GameContext) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var names: Array[String] = []
+	for building_id in ctx.game_data.stock_runtime.manure_warnings:
+		var building := find_building(ctx.world, int(building_id))
+		if building != null:
+			names.append(building.get_display_name())
+	if names.is_empty():
+		return entries
+	var row_name := GameContext.tr_text("pending_stock_manure")
+	var reason := GameContext.tr_text("pending_stock_manure_missing").format({"buildings": ", ".join(names)})
+	var entry := PendingEntryService.make_entry("stock_manure", "%s\n%s" % [row_name, reason], {
+		"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": 0.0, "name": row_name, "detail": reason,
+	}, false)
+	entry["disabled_reason"] = GameContext.tr_text("pending_stock_blocked_detail")
+	entries.append(entry)
+	return entries
+
+
+# Avviso in campanella della raccolta dei prodotti da vivi: edifici oltre la soglia senza un magazzino con posto.
+static func collect_live_product_entries(ctx: GameContext) -> Array[Dictionary]:
+	var entries: Array[Dictionary] = []
+	var names: Array[String] = []
+	for building_id in ctx.game_data.stock_runtime.live_product_warnings:
+		var building := find_building(ctx.world, int(building_id))
+		if building != null:
+			names.append(building.get_display_name())
+	if names.is_empty():
+		return entries
+	var row_name := GameContext.tr_text("pending_stock_live_product")
+	var reason := GameContext.tr_text("pending_stock_live_product_missing").format({"buildings": ", ".join(names)})
+	var entry := PendingEntryService.make_entry("stock_live_product", "%s\n%s" % [row_name, reason], {
 		"kind": "none", "id": -1, "macro": Vector2i(-1, -1), "sort": 0.0, "name": row_name, "detail": reason,
 	}, false)
 	entry["disabled_reason"] = GameContext.tr_text("pending_stock_blocked_detail")
@@ -1437,6 +1615,42 @@ static func transport_order_pick(world: World, worker: HumanIndividual, order: D
 		if feeder_room <= 0 or feeder_source == null:
 			return {}
 		return {"target": feeder, "source": feeder_source, "resource": food, "quantity": mini(int(order.get("quantity", 1)), feeder_room)}
+	# Pulizia del letame (2026-11-17, ManureStockService): dall'edificio al letamaio più vicino con posto, altrimenti alla
+	# Fossa; tutto il letame che c'è adesso, fino alla quantità dell'ordine.
+	if order.has(ManureStockService.MANURE_SOURCE_KEY):
+		var manure_source := find_building(world, int(order[ManureStockService.MANURE_SOURCE_KEY]))
+		if manure_source == null:
+			return {}
+		var manure_left := BuildingStorageService.get_available_quantity(manure_source, ManureService.RESOURCE)
+		var manure_target := ManureStockService.pick_destination(world, manure_source)
+		if manure_left <= 0 or manure_target == null:
+			return {}
+		return {"target": manure_target, "source": manure_source, "resource": ManureService.RESOURCE,
+			"quantity": mini(int(order.get("quantity", 1)), manure_left)}
+	# Raccolta dei prodotti da vivi (2026-11-17, LiveProductStockService): dall'edificio al magazzino più vicino con posto;
+	# tutto quello che c'è adesso, fino alla quantità dell'ordine.
+	if order.has(LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY):
+		var product_source := find_building(world, int(order[LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY]))
+		var product := String(order.get("resource", ""))
+		if product_source == null or product.is_empty():
+			return {}
+		var product_left := BuildingStorageService.get_available_quantity(product_source, product)
+		var product_target := LiveProductStockService.pick_destination(world, product_source, product)
+		if product_left <= 0 or product_target == null:
+			return {}
+		return {"target": product_target, "source": product_source, "resource": product,
+			"quantity": mini(int(order.get("quantity", 1)), product_left)}
+	# Lettiera (2026-11-17, regola "Lettiera"): magazzino più vicino con la paglia → lettiera, fin dove ci sta.
+	if order.has(BeddingStockService.BEDDING_TARGET_KEY):
+		var bedding_building := find_building(world, int(order[BeddingStockService.BEDDING_TARGET_KEY]))
+		if bedding_building == null:
+			return {}
+		var bedding_room := BeddingService.max_depositable(bedding_building, BeddingService.RESOURCE)
+		var bedding_source := FeederStockService.pick_source(world, bedding_building, BeddingService.RESOURCE, worker)
+		if bedding_room <= 0 or bedding_source == null:
+			return {}
+		return {"target": bedding_building, "source": bedding_source, "resource": BeddingService.RESOURCE,
+			"quantity": mini(int(order.get("quantity", 1)), bedding_room)}
 	# Capanno del campo (2026-11-15, regola "Semi nei campi"): magazzino più vicino col seme → capanno, fino al livello.
 	if order.has(FieldSeedStockService.SEED_TARGET_KEY):
 		var shed := find_building(world, int(order[FieldSeedStockService.SEED_TARGET_KEY]))
@@ -1515,6 +1729,12 @@ static func transport_order_task(worker: HumanIndividual, order: Dictionary, pic
 	elif task != null and order.has(FeederStockService.FEEDER_TARGET_KEY):
 		task.context[FeederStockService.FEEDER_TARGET_KEY] = int(order[FeederStockService.FEEDER_TARGET_KEY])
 		task.context[FeederStockService.FEEDER_FOOD_KEY] = String(order.get(FeederStockService.FEEDER_FOOD_KEY, ""))
+	elif task != null and order.has(ManureStockService.MANURE_SOURCE_KEY):
+		task.context[ManureStockService.MANURE_SOURCE_KEY] = int(order[ManureStockService.MANURE_SOURCE_KEY])
+	elif task != null and order.has(LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY):
+		task.context[LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY] = int(order[LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY])
+	elif task != null and order.has(BeddingStockService.BEDDING_TARGET_KEY):
+		task.context[BeddingStockService.BEDDING_TARGET_KEY] = int(order[BeddingStockService.BEDDING_TARGET_KEY])
 	elif task != null and order.has(FieldSeedStockService.SEED_TARGET_KEY):
 		task.context[FieldSeedStockService.SEED_TARGET_KEY] = int(order[FieldSeedStockService.SEED_TARGET_KEY])
 	elif task != null and order.has(FieldSeedStockService.SEED_REMOVE_KEY):

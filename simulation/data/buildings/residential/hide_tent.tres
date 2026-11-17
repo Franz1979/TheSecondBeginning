@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_hide_tent")
-lifespan_years = 15
+lifespan_years = 20
 max_durability = 120
 defense = 30
 building_name = "building_hide_tent"

@@ -103,6 +103,10 @@ extends Resource
 # anche dal cassetto Scorte (WarehousePanel._visible_resource_names): regola unica per le risorse future da scoperta
 # (grano, birra...).
 @export var required_idea_id: String = ""
+# Altre idee, tutte necessarie insieme a required_idea_id, perché la risorsa sia conosciuta (2026-11-16, richiesta utente —
+# orzo selvatico: Ceramica per i vasi e Conoscenza delle piante, così i suoi punti partono solo con quell'idea). Lette solo
+# da TerrainScatteredResourceService.is_resource_locked, come required_idea_id per le risorse.
+@export var also_required_idea_ids: Array[String] = []
 # Specie addomesticate (GameData.domesticated_species) di cui ne basta UNA perché la ricetta compaia (2026-11-15,
 # richiesta utente — la macina a sella aspetta il grano o la segale domestici), oltre a required_idea_id; vuota = nessuna.
 # Lista e non stringa come BuildingRules.required_domesticated_species, perché un attrezzo può servire a più specie.
@@ -312,6 +316,9 @@ extends Resource
 # sua categoria (BuildingRules.loose_categories, la Casa delle granaglie) resta nei vasi. Letto da
 # StorageContainerService.is_loose_in.
 @export var always_in_container: bool = false
+# Liquido (2026-11-16, richiesta utente — acqua come risorsa): senza i suoi contenitori si versa. Alla demolizione o
+# con "Svuota tutto" non finisce a terra in un mucchio (GroundPileService.drop_building_contents): va persa.
+@export var is_liquid: bool = false
 # Calorie di gioco per unità quando la mangia un animale (2026-11-13, punto 4): per i cibi che l'uomo non mangia crudi
 # (semi, carne e pesce crudi, ossa), che hanno calories_per_unit 0. 0 = per gli animali vale calories_per_unit.
 @export var animal_calories_per_unit: float = 0.0

@@ -13,11 +13,11 @@ building_name = "building_haystack"
 category = 2
 required_idea_id = "agriculture"
 required_labor = 800
-lifespan_years = 10
+lifespan_years = 20
 max_durability = 40
 defense = 10
 required_materials = {
-"fiber_rope": 8,
+"fiber_rope": 6,
 "wood": 12
 }
 required_space = 1

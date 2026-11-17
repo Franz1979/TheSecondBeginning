@@ -8,11 +8,11 @@ building_name = "building_water_shelter"
 category = 10
 required_idea_id = "pottery"
 required_labor = 1500
-lifespan_years = 15
+lifespan_years = 25
 max_durability = 100
 defense = 10
 required_materials = {
-"fiber_rope": 8,
+"fiber_rope": 6,
 "stick": 30,
 "wood": 8
 }

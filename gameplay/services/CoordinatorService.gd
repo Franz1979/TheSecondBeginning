@@ -23,7 +23,7 @@ extends RefCounted
 #   - "Coordina" interrotta (bisogno, H) o sparita: il posto si libera e il prossimo in fila diventa coordinatore. Chi
 #     aspettava resta in fila.
 #
-# Provvisorio (passi successivi): niente richiamo, suono, raggio né Leadership; can_coordinate risponde sempre sì.
+# can_coordinate: chiunque in fila non sia malato (da adolescente in su, per la regola di "Cerca lavoro").
 
 # Durata di un'istruzione (giorni di gioco): un'ora. La misura l'azione (WaitAtPointAction), non il giro al secondo.
 const ASSIGNMENT_DURATION_DAYS: float = 1.0 / 24.0
@@ -41,8 +41,11 @@ const SELF_ASSIGN_WAIT_DAYS: float = 1.0
 # Crescita della Leadership (2026-10-09, passo 6): il coordinatore guadagna questo valore su skill_leadership (fino al
 # tetto comune HumanIndividual.SKILL_MAX, 2026-10-10 — prima un LEADERSHIP_MAX proprio a 1000) ogni volta che un ALTRO
 # individuo riceve il lavoro alla fine di un'istruzione; niente per l'autoassegnazione né per chi viene istruito senza
-# ricevere un lavoro.
-const LEADERSHIP_GAIN_PER_ASSIGNMENT: float = 1.0
+# ricevere un lavoro. 2026-11-16 (richiesta utente): una volta sola per turno, quante che siano le persone istruite —
+# il segno sta nel context della task "Coordina" (CONTEXT_LEADERSHIP_GRANTED), salvato con lei; un turno nuovo è una
+# task nuova e riparte da zero.
+const LEADERSHIP_GAIN_PER_SHIFT: float = 1.0
+const CONTEXT_LEADERSHIP_GRANTED := "leadership_granted"
 
 const COORDINATE_TASK_PATH := "res://gameplay/scripts/tasks/definitions/coordinate.tres"
 const COORDINATE_TASK_NAME := "task_coordinate_name"
@@ -66,6 +69,8 @@ static var _last_now: float = -1.0
 
 # Un giorno sarà il ruolo "coordinatore"; per ora chiunque non malato (2026-10-24, HumanIndividual.is_sick). Chi si
 # ammala mentre coordina finisce comunque il turno.
+# Età: nessun controllo qui — in fila arriva solo chi è da adolescente in su (JobBoardService.try_seek_job), e anche gli
+# adolescenti coordinano (2026-11-16, richiesta utente: una fila di soli adolescenti resterebbe ferma).
 static func can_coordinate(individual: HumanIndividual) -> bool:
 	return not individual.is_sick()
 
@@ -555,14 +560,19 @@ static func report_departure(member: HumanIndividual, received_text: String) -> 
 	_forget(member.id)
 
 
-# Crescita della Leadership del coordinatore `coordinator_id` (LEADERSHIP_GAIN_PER_ASSIGNMENT, tetto HumanIndividual.SKILL_MAX):
-# somma diretta, come le altre skill (TaskCompletionEffectService), più il tetto. Testo per il log ("" se non c'è più).
+# Crescita della Leadership del coordinatore `coordinator_id` (LEADERSHIP_GAIN_PER_SHIFT, tetto HumanIndividual.SKILL_MAX):
+# somma diretta, come le altre skill (TaskCompletionEffectService), più il tetto; una volta per turno (segno nel context
+# della sua "Coordina"). Testo per il log ("" se non c'è più o ha già avuto il punto di questo turno).
 static func _grant_leadership(coordinator_id: int) -> String:
 	var coordinator := _find(GameSettings.active_human_individuals, coordinator_id)
-	if coordinator == null:
+	if coordinator == null or not is_coordinate_task(coordinator.current_task):
 		return ""
+	var context := coordinator.current_task.context
+	if bool(context.get(CONTEXT_LEADERSHIP_GRANTED, false)):
+		return ""
+	context[CONTEXT_LEADERSHIP_GRANTED] = true
 	var before := coordinator.skill_leadership
-	coordinator.skill_leadership = minf(before + LEADERSHIP_GAIN_PER_ASSIGNMENT, maxf(HumanIndividual.SKILL_MAX, before))
+	coordinator.skill_leadership = minf(before + LEADERSHIP_GAIN_PER_SHIFT, maxf(HumanIndividual.SKILL_MAX, before))
 	return "Leadership di %s %d → %d" % [coordinator.name, roundi(before), roundi(coordinator.skill_leadership)]
 
 

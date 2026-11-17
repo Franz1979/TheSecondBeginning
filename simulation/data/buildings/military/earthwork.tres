@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_earthwork")
-lifespan_years = 20
+lifespan_years = 30
 max_durability = 250
 defense = 100
 building_name = "building_earthwork"

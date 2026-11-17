@@ -116,6 +116,12 @@ signal waste_closed_toggle_requested(building: Building)
 signal water_target_changed(building: Building, level: int)
 # Giorni di cibo della singola mangiatoia (2026-11-14, FeederStockService): -1 = regola generale, 0 = esclusa.
 signal feeder_days_changed(building: Building, days: int)
+# Giorni di paglia della singola lettiera (2026-11-17, BeddingStockService): -1 = regola generale, 0 = esclusa.
+signal bedding_days_changed(building: Building, days: int)
+# Soglia di pulizia del letame della singola conigliera (2026-11-17, ManureStockService): -1 = specie, 0 = esclusa.
+signal manure_clean_changed(building: Building, value: int)
+# Soglia di raccolta dei prodotti da vivi del singolo edificio (2026-11-17, LiveProductStockService): -1 = specie, 0 = esclusa.
+signal live_product_collect_changed(building: Building, value: int)
 # Specie tenuta (2026-11-12, tettoia delle gabbie — KeptAnimalService): "" = Qualunque.
 signal kept_species_changed(building: Building, species: String)
 # Specie coltivata (2026-11-15, orto delle prove — CultivationService): "" = nessuna; solo a terreno vuoto.
@@ -124,6 +130,8 @@ signal crop_species_changed(building: Building, species: String)
 signal crop_auto_mode_changed(building: Building, mode: int)
 # Livello dei semi nel capanno del campo (2026-11-15, passo 3a): -1 = regola generale, 0 = nessuno, > 0 = suo.
 signal field_seed_level_changed(building: Building, level: int)
+# "Porta al deposito" dell'edificio (2026-11-16, Building.production_deliver): 1 = sì, 0 = no. Esce quando si tocca la spunta.
+signal production_deliver_changed(building: Building, value: int)
 # Cura del campo (2026-11-15, FieldFertilityService): rimedio e soglia del campo, -1 = come la regola.
 signal field_care_remedy_changed(building: Building, remedy: int)
 signal field_care_threshold_changed(building: Building, threshold: int)
@@ -342,6 +350,8 @@ var _last_production_claimant_names: Array[String] = []
 # Spunta "Consegna al magazzino" (2026-09-26): riparte dal default di UserOptions a ogni cambio di edificio, come
 # la quantità; il cambio vale per gli ordini di questo pannello (stesso schema di "Ripeti" nei dialog).
 var _order_deliver: bool = true
+# true = alla prossima ricostruzione della griglia la spunta riparte dal valore dell'edificio (cambio d'edificio in coda).
+var _order_deliver_from_building: bool = false
 var _order_keep_for_building: bool = false
 # Ordini in coda (2026-10-09, richiesta utente — con l'idea dell'assegnazione, set_production_queue_mode): la griglia
 # non prepara più un ordine per il mirino, ma mostra l'ordine appena messo in coda da questo pannello (GameScene ne tiene
@@ -1977,18 +1987,30 @@ func _refresh_kept_animals(building: Building) -> void:
 	if not _kept_box.visible:
 		return
 	var animals := DomesticAnimalService.get_kept_animals(game_data, building.id)
-	# A gruppi (2026-11-14, richiesta utente): separatore, "Animali: N/M" col menu della specie sulla stessa riga, giorni di
-	# cibo, mangiatoia con la sua barra, macella oltre; poi, separato, l'elenco degli animali.
+	# Due gruppi (riordino 2026-11-16, richiesta utente): CIBO (mangiatoia, giorni di scorta); una divisione netta;
+	# ANIMALI ("Animali: N/M" col menu della specie, "Macella oltre", tratteggio ed elenco degli animali).
 	_kept_box.add_child(HSeparator.new())
+	_add_feeder_line(game_data, building, KeptAnimalService.current_species(game_data, building))
+	_add_bedding_line(game_data, building)
+	_add_manure_line(game_data, building)
+	_add_live_product_lines(game_data, building)
+	_kept_box.add_child(_build_group_separator())
 	var species_row := HBoxContainer.new()
 	species_row.add_theme_constant_override("separation", 6)
+	# "Animali:" a filo, poi il menu della specie, poi "N/M" (2026-11-16, richiesta utente).
+	var title_label := Label.new()
+	title_label.text = tr("building_kept_animals")
+	title_label.tooltip_text = TooltipText.wrap(tr("building_kept_species_tooltip"))
+	title_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	title_label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	title_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	species_row.add_child(title_label)
 	var count_label := Label.new()
-	count_label.text = tr("building_kept_animals").format({"count": animals.size(), "max": KeptAnimalService.capacity(building)})
-	count_label.tooltip_text = TooltipText.wrap(tr("building_kept_species_tooltip"))
+	count_label.text = tr("building_kept_animals_count").format({"count": animals.size(), "max": KeptAnimalService.capacity(building)})
+	count_label.tooltip_text = title_label.tooltip_text
 	count_label.mouse_filter = Control.MOUSE_FILTER_PASS
 	count_label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
 	count_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	species_row.add_child(count_label)
 	# Oltre la capienza con una soglia (2026-11-14, pezzo 2b): giorni prima che i più giovani in più scappino, in rosso.
 	var days_left := KeptAnimalService.over_capacity_days_left(game_data, building)
 	var over_row: Control = null
@@ -2001,36 +2023,56 @@ func _refresh_kept_animals(building: Building) -> void:
 	var picker := OptionButton.new()
 	picker.focus_mode = Control.FOCUS_NONE
 	picker.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
-	var choices: Array[String] = [""]
+	# Specie fissa (conigliera, pollaio — 2026-11-16): una sola voce, sempre bloccata.
+	var fixed := KeptAnimalService.fixed_species(building)
+	var choices: Array[String] = []
+	if fixed == "":
+		# Nessuna (2026-11-16, richiesta utente): tettoia tenuta in piedi senza animali.
+		choices.append(KeptAnimalService.NO_SPECIES)
+		choices.append("")
 	choices.append_array(KeptAnimalService.selectable_species(building))
 	var current := KeptAnimalService.current_species(game_data, building)
 	for i in range(choices.size()):
 		var species := choices[i]
 		var text := tr("building_kept_species_any") if species == "" else KeptAnimalService.species_display_name(species, true)
+		if species == KeptAnimalService.NO_SPECIES:
+			text = tr("building_kept_species_none")
 		# Qualunque con un animale dentro: dice quale specie l'ha fissata.
 		if species == "" and building.kept_species == "" and current != "":
 			text = tr("building_kept_species_any_fixed").format({"species": KeptAnimalService.species_display_name(current, true)})
 		picker.add_item(text, i)
-		if species == building.kept_species:
+		if species == KeptAnimalService.chosen_species(building):
 			picker.select(i)
-	picker.disabled = not animals.is_empty()
-	picker.tooltip_text = TooltipText.wrap(tr("building_kept_species_locked_tooltip") if picker.disabled else tr("building_kept_species_tooltip"))
+	picker.disabled = fixed != "" or not animals.is_empty()
+	var picker_tooltip := tr("building_kept_species_locked_tooltip") if picker.disabled else tr("building_kept_species_tooltip")
+	# "Mangiano: ..." della specie (2026-11-16, richiesta utente — tolto dal tooltip della mangiatoia), nell'ordine della dieta.
+	if current != "":
+		var foods: Array[String] = []
+		for food in AnimalFeederService.accepted_foods(game_data, building):
+			# Calorie 0 = cibo non ancora attivo (es. il fieno segnaposto): non si mostra.
+			if AnimalFeederService.food_calories(food) > 0.0:
+				foods.append("%s (%d)" % [IconRegistry.get_resource_display_name(food), roundi(AnimalFeederService.food_calories(food))])
+		if not foods.is_empty():
+			picker_tooltip += "
+
+" + tr("building_kept_species_eats").format({"foods": ", ".join(foods)})
+	picker.tooltip_text = TooltipText.wrap(picker_tooltip)
 	var target := building
 	picker.item_selected.connect(func(index: int) -> void:
 		kept_species_changed.emit(target, choices[index])
 	)
 	species_row.add_child(picker)
+	species_row.add_child(count_label)
 	_kept_box.add_child(species_row)
 	if over_row != null:
 		_kept_box.add_child(over_row)
-	_add_feeder_line(game_data, building, current)
 	if FeederStockService.is_rule_available():
 		_add_slaughter_above_row(building)
+	if not animals.is_empty():
+		_kept_box.add_child(DashedSeparator.new())
 	# Pulsante "Addomesticazioni" (2026-11-13, richiesta utente): sulla riga di "Costruito", a fianco del menu non ci stava.
 	_ensure_domestication_button()
 	_domestication_button.visible = true
-	if not animals.is_empty():
-		_kept_box.add_child(HSeparator.new())
 	var today := game_data.get_absolute_day()
 	for animal in animals:
 		var animal_text := tr("building_kept_animal_row").format({
@@ -2042,7 +2084,14 @@ func _refresh_kept_animals(building: Building) -> void:
 		if animal.days_without_food > 0:
 			animal_text += " · " + tr("building_kept_animal_hungry").format({"days": animal.days_without_food})
 		if animal.slaughter_requested:
-			animal_text += " · " + tr("building_kept_animal_to_slaughter_wm" if animal.slaughter_by_wm else "building_kept_animal_to_slaughter")
+			var slaughter_key := "building_kept_animal_to_slaughter"
+			if animal.slaughter_no_room:
+				slaughter_key = "building_kept_animal_to_slaughter_no_room"
+			elif animal.slaughter_by_wm:
+				slaughter_key = "building_kept_animal_to_slaughter_wm"
+			animal_text += " · " + tr(slaughter_key)
+		if animal.carried_by >= 0:
+			animal_text += " · " + tr("building_kept_animal_in_transit")
 		var animal_row := _build_buried_label(animal_text, BURIED_ROW_INDENT)
 		var animal_label: Label = animal_row if animal_row is Label else animal_row.get_child(0)
 		if animal.days_without_food > 0:
@@ -2066,38 +2115,43 @@ func _refresh_kept_animals(building: Building) -> void:
 		_kept_box.add_child(line)
 
 
-# Mangiatoia (2026-11-13, AnimalFeederService): "Mangiatoia: 34 / 200 spazio (340 calorie)", con la specie non decisa
-# "scegli la specie". Tooltip: cibi accettati con le loro calorie e l'avviso che cambiando specie si svuota.
+# Sezione Mangiatoia (2026-11-16, semplificata su richiesta dell'utente): "Mangiatoia: 34 / 200 spazio · 340 calorie" e
+# la barra; nel loro tooltip la specie, i cibi accettati, quanti giorni basta (ai presenti e a tettoia piena) e i cibi
+# dentro con la freschezza. Col gestore scorte, "Giorni di scorta: [5] D/↺". Specie non decisa: "scegli la specie".
 func _add_feeder_line(game_data: GameData, building: Building, species: String) -> void:
 	if AnimalFeederService.capacity(building) <= 0:
 		return
+	var have := AnimalFeederService.calories(game_data, building)
 	var text := tr("building_feeder_line").format({
 		"space": int(ceil(AnimalFeederService.space_used(game_data, building))), "max": AnimalFeederService.capacity(building),
-		"calories": int(floor(AnimalFeederService.calories(game_data, building))),
+		"calories": int(floor(have)),
 	})
-	var foods: Array[String] = []
-	for food in AnimalFeederService.accepted_foods(game_data, building):
-		# Calorie 0 = cibo non ancora attivo (es. il fieno segnaposto): non si mostra.
-		if AnimalFeederService.food_calories(food) > 0.0:
-			foods.append("%s (%d)" % [IconRegistry.get_resource_display_name(food), roundi(AnimalFeederService.food_calories(food))])
-	# Giorni che restano (2026-11-14): calorie / quanto mangiano oggi gli animali.
-	var need := AnimalFeederService.daily_calories_needed(game_data, building)
-	if need > 0.0:
-		text += " · " + tr("building_feeder_days_left").format({"days": floori(AnimalFeederService.calories(game_data, building) / need)})
+	# I cibi che la specie mangia stanno nel tooltip del menu della specie (2026-11-16, richiesta utente).
 	var tooltip := tr("building_feeder_tooltip_no_species")
-	if species == "":
-		text += " " + tr("building_feeder_choose_species")
-	else:
-		tooltip = tr("building_feeder_tooltip").format({
-			"species": KeptAnimalService.species_display_name(species, true), "foods": ", ".join(foods),
-		})
-	# Giorni di cibo prima della mangiatoia (2026-11-14, richiesta utente), poi la riga e la sua barra di riempimento.
-	if FeederStockService.is_rule_available():
-		_add_feeder_days_row(game_data, building)
-	var line := _build_buried_label(text, 0)
-	var label: Label = line if line is Label else line.get_child(0)
-	label.tooltip_text = TooltipText.wrap(tooltip)
-	_kept_box.add_child(line)
+	var full_need := 0.0
+	if species != "":
+		tooltip = tr("building_feeder_tooltip")
+		# Durata: ai presenti (quanto mangiano oggi) e a tettoia piena (tutti i posti, specie scelta).
+		var parts: Array[String] = []
+		var need := AnimalFeederService.daily_calories_needed(game_data, building)
+		if need > 0.0:
+			parts.append(tr("building_feeder_days_present").format({"days": floori(have / need)}))
+		full_need = AnimalFeederService.target_daily_calories(game_data, building) if KeptAnimalService.chosen_species(building) != "" else 0.0
+		if full_need > 0.0:
+			parts.append(tr("building_feeder_full_days").format({"days": floori(have / full_need)}))
+		if not parts.is_empty():
+			tooltip += "\n\n" + tr("building_feeder_lasts").format({"parts": " · ".join(parts)})
+	# Cibi dentro, nell'ordine in cui si mangiano.
+	var rows := AnimalFeederService.food_rows(game_data, building)
+	if not rows.is_empty():
+		tooltip += "\n\n" + tr("building_feeder_foods")
+		for row in rows:
+			tooltip += "\n• " + tr("building_feeder_food_row").format({
+				"food": IconRegistry.get_resource_display_name(String(row["food"])),
+				"units": roundi(float(row["units"])), "calories": roundi(float(row["calories"])),
+				"freshness": roundi(float(row["freshness"]) * 100.0),
+			})
+	_add_feeder_label(text, tooltip)
 	# Barra come quella dell'Integrità (stessi stili della barra di costruzione).
 	var bar := ProgressBar.new()
 	bar.custom_minimum_size = construction_progress_bar.custom_minimum_size
@@ -2114,31 +2168,324 @@ func _add_feeder_line(game_data: GameData, building: Building, species: String) 
 	bar_margin.add_theme_constant_override("margin_right", 4)
 	bar_margin.add_child(bar)
 	_kept_box.add_child(bar_margin)
+	if species == "":
+		_add_feeder_label(tr("building_feeder_choose_species"), tooltip)
+		return
+	if FeederStockService.is_rule_available():
+		_add_feeder_days_row(game_data, building, full_need)
 
 
-# Giorni di cibo della mangiatoia (2026-11-14, come il livello voluto della tettoia dell'acqua): "Giorni di cibo: regola
-# generale" col campo che mostra il valore generale; toccandolo la mangiatoia prende un valore suo (0 = esclusa dal WM) e
-# compare ↺ per tornare alla regola generale.
-func _add_feeder_days_row(game_data: GameData, building: Building) -> void:
-	var override := building.feeder_days_override
-	var general := game_data.stock_feeder_days if game_data != null else 0
+# Lettiera (2026-11-17, BeddingService): "Lettiera: 30 / 60 paglia · ~20 giorni" con la barra; nel tooltip quanto basta ai
+# presenti e a posti pieni. Col gestore scorte, "Giorni di paglia: [20] D/↺" come la mangiatoia.
+func _add_bedding_line(game_data: GameData, building: Building) -> void:
+	if BeddingService.capacity(building) <= 0:
+		return
+	_kept_box.add_child(HSeparator.new())
+	var have := building.bedding_straw
+	var text := tr("building_bedding_line").format({"units": int(floor(have)), "max": BeddingService.capacity(building)})
+	var tooltip := tr("building_bedding_tooltip")
+	var parts: Array[String] = []
+	var use := BeddingService.daily_use(game_data, building)
+	if use > 0.0:
+		text += " · " + tr("building_feeder_days_left").format({"days": floori(have / use)})
+		parts.append(tr("building_feeder_days_present").format({"days": floori(have / use)}))
+	var full_use := BeddingService.target_daily_use(game_data, building)
+	if full_use > 0.0:
+		parts.append(tr("building_bedding_full_days").format({"days": floori(have / full_use)}))
+	if not parts.is_empty():
+		tooltip += "\n\n" + tr("building_feeder_lasts").format({"parts": " · ".join(parts)})
+	# Rischio per i piccoli (2026-11-17): giorni vuota dalle ultime nascite e cosa succede se manca il giorno delle nascite.
+	var species_rules := BeddingService.species_rules(game_data, building)
+	if species_rules != null and species_rules.newborn_death_without_bedding > 0.0:
+		var max_risk := species_rules.newborn_death_without_bedding
+		tooltip += "\n\n" + tr("building_bedding_risk").format({
+			"empty": building.bedding_days_empty, "days": building.bedding_days_with_animals,
+			"risk": roundi(max_risk * BeddingService.year_empty_ratio(building) * 100.0), "max": roundi(max_risk * 100.0),
+		})
+	# Malattie (2026-11-17): lettiera vuota adesso.
+	if species_rules != null and species_rules.death_chance_without_bedding > 0.0 and BeddingService.is_empty(building):
+		tooltip += "\n\n" + tr("building_dirty_death_bedding").format({"chance": "%.1f" % (species_rules.death_chance_without_bedding * 100.0)})
+	_add_feeder_label(text, tooltip)
+	var bar := ProgressBar.new()
+	bar.custom_minimum_size = construction_progress_bar.custom_minimum_size
+	bar.min_value = 0.0
+	bar.max_value = float(BeddingService.capacity(building))
+	bar.value = have
+	bar.show_percentage = false
+	bar.mouse_filter = Control.MOUSE_FILTER_PASS
+	bar.tooltip_text = TooltipText.wrap(tooltip)
+	bar.add_theme_stylebox_override("background", construction_progress_bar.get_theme_stylebox("background"))
+	bar.add_theme_stylebox_override("fill", construction_progress_bar.get_theme_stylebox("fill"))
+	var bar_margin := MarginContainer.new()
+	bar_margin.add_theme_constant_override("margin_left", 4)
+	bar_margin.add_theme_constant_override("margin_right", 4)
+	bar_margin.add_child(bar)
+	_kept_box.add_child(bar_margin)
+	if BeddingStockService.is_rule_available() and full_use > 0.0:
+		_add_bedding_days_row(game_data, building, full_use)
+
+
+# Letame (2026-11-17, ManureService): "Letame: 30 / 100" con la barra; nel tooltip quanto ne fanno al giorno e fra quanto è
+# pieno. Col gestore scorte, "Pulisci oltre (%): [50] D/↺".
+func _add_manure_line(game_data: GameData, building: Building) -> void:
+	var capacity := ManureService.capacity(building)
+	if capacity <= 0:
+		return
+	_kept_box.add_child(HSeparator.new())
+	var have := ManureService.stored(building)
+	var tooltip := tr("building_manure_tooltip")
+	var made := ManureService.daily_production(game_data, building)
+	if made > 0.0:
+		tooltip += "\n\n" + tr("building_manure_rate").format({"per_day": "%.2f" % made,
+			"days": floori(float(maxi(capacity - have, 0)) / made)})
+	# Malattie (2026-11-17): letame al massimo adesso.
+	var manure_rules := BeddingService.species_rules(game_data, building)
+	if manure_rules != null and manure_rules.death_chance_full_manure > 0.0 and have >= capacity:
+		tooltip += "\n\n" + tr("building_dirty_death_manure").format({"chance": "%.1f" % (manure_rules.death_chance_full_manure * 100.0)})
+	_add_feeder_label(tr("building_manure_line").format({"units": have, "max": capacity}), tooltip)
+	var bar := ProgressBar.new()
+	bar.custom_minimum_size = construction_progress_bar.custom_minimum_size
+	bar.min_value = 0.0
+	bar.max_value = float(capacity)
+	bar.value = float(have)
+	bar.show_percentage = false
+	bar.mouse_filter = Control.MOUSE_FILTER_PASS
+	bar.tooltip_text = TooltipText.wrap(tooltip)
+	bar.add_theme_stylebox_override("background", construction_progress_bar.get_theme_stylebox("background"))
+	bar.add_theme_stylebox_override("fill", construction_progress_bar.get_theme_stylebox("fill"))
+	var bar_margin := MarginContainer.new()
+	bar_margin.add_theme_constant_override("margin_left", 4)
+	bar_margin.add_theme_constant_override("margin_right", 4)
+	bar_margin.add_child(bar)
+	_kept_box.add_child(bar_margin)
+	if ManureStockService.is_rule_available():
+		_add_manure_clean_row(game_data, building)
+
+
+# Prodotti da vivi (2026-11-17, LiveProductService): "Uova: 12 / 40" per prodotto, con la barra; nel tooltip quanto ne
+# fanno oggi e in ogni stagione.
+func _add_live_product_lines(game_data: GameData, building: Building) -> void:
+	var capacity := LiveProductService.capacity(building)
+	if capacity <= 0:
+		return
+	var rules := BeddingService.species_rules(game_data, building)
+	if rules == null or rules.live_products.is_empty():
+		return
+	var today := LiveProductService.daily_production(game_data, building)
+	for entry in rules.live_products:
+		var product_rules := entry as LiveProductRules
+		if product_rules == null or product_rules.product.is_empty():
+			continue
+		var product := product_rules.product
+		var product_name := tr("carried_resource_tooltip_" + product)
+		var have := LiveProductService.stored(building, product)
+		_kept_box.add_child(HSeparator.new())
+		var tooltip := tr("building_live_product_tooltip").format({"product": product_name})
+		tooltip += "\n\n" + tr("building_live_product_seasons").format({
+			"winter": "%.2f" % product_rules.per_day(GameTypes.Season.WINTER),
+			"spring": "%.2f" % product_rules.per_day(GameTypes.Season.SPRING),
+			"summer": "%.2f" % product_rules.per_day(GameTypes.Season.SUMMER),
+			"autumn": "%.2f" % product_rules.per_day(GameTypes.Season.AUTUMN),
+		})
+		var made := float(today.get(product, 0.0))
+		tooltip += "\n\n" + (tr("building_live_product_rate").format({"per_day": "%.2f" % made}) if made > 0.0
+			else tr("building_live_product_none_today"))
+		_add_feeder_label(tr("building_live_product_line").format({"product": product_name, "units": have, "max": capacity}), tooltip)
+		var bar := ProgressBar.new()
+		bar.custom_minimum_size = construction_progress_bar.custom_minimum_size
+		bar.min_value = 0.0
+		bar.max_value = float(capacity)
+		bar.value = float(have)
+		bar.show_percentage = false
+		bar.mouse_filter = Control.MOUSE_FILTER_PASS
+		bar.tooltip_text = TooltipText.wrap(tooltip)
+		bar.add_theme_stylebox_override("background", construction_progress_bar.get_theme_stylebox("background"))
+		bar.add_theme_stylebox_override("fill", construction_progress_bar.get_theme_stylebox("fill"))
+		var bar_margin := MarginContainer.new()
+		bar_margin.add_theme_constant_override("margin_left", 4)
+		bar_margin.add_theme_constant_override("margin_right", 4)
+		bar_margin.add_child(bar)
+		_kept_box.add_child(bar_margin)
+	if LiveProductStockService.is_rule_available():
+		_add_live_product_collect_row(game_data, building)
+
+
+# Col gestore scorte, "Raccogli oltre (%): [25] D/↺" (2026-11-17, LiveProductStockService), come la pulizia del letame.
+func _add_live_product_collect_row(game_data: GameData, building: Building) -> void:
+	var override := building.live_product_collect_override
+	var general := LiveProductStockService.species_collect_above(game_data, KeptAnimalService.current_species(game_data, building))
+	var shown := override if override >= 0 else general
+	var detail := tr("building_feeder_days_general")
+	if override == 0:
+		detail = tr("building_live_product_collect_excluded")
+	elif override > 0:
+		detail = tr("building_bedding_days_own")
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
 	var label := Label.new()
 	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.mouse_filter = Control.MOUSE_FILTER_PASS
-	if override < 0:
-		label.text = tr("building_feeder_days_general")
-	elif override == 0:
-		label.text = tr("building_feeder_days_excluded")
-	else:
-		label.text = tr("building_feeder_days_own")
-	label.tooltip_text = TooltipText.wrap(tr("building_feeder_days_tooltip"))
+	label.text = tr("building_live_product_collect_label")
+	label.tooltip_text = TooltipText.wrap(tr("building_live_product_collect_tooltip") + "\n\n" + detail)
 	row.add_child(label)
+	row.add_child(WarehousePanel.build_level_field(shown, func(value: int) -> void:
+		live_product_collect_changed.emit(building, value)
+	, "building_live_product_collect_tooltip", 5, 0, true, WarehousePanel.LEVEL_NONE_TEXT, 100))
+	var marker := Button.new()
+	marker.text = "↺" if override >= 0 else "D"
+	marker.focus_mode = Control.FOCUS_NONE
+	marker.add_theme_font_size_override("font_size", 12)
+	marker.custom_minimum_size = Vector2(22.0, 22.0)
+	marker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if override >= 0:
+		marker.tooltip_text = TooltipText.wrap(tr("building_feeder_days_reset"))
+		marker.pressed.connect(func() -> void: live_product_collect_changed.emit(building, -1))
+	else:
+		marker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		marker.tooltip_text = TooltipText.wrap(tr("building_feeder_days_default_tooltip"))
+	row.add_child(marker)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
+	margin.add_child(row)
+	_kept_box.add_child(margin)
+
+
+func _add_manure_clean_row(game_data: GameData, building: Building) -> void:
+	var override := building.manure_clean_override
+	var general := ManureStockService.species_clean_above(game_data, KeptAnimalService.current_species(game_data, building))
 	var shown := override if override >= 0 else general
+	var detail := tr("building_feeder_days_general")
+	if override == 0:
+		detail = tr("building_manure_clean_excluded")
+	elif override > 0:
+		detail = tr("building_bedding_days_own")
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.text = tr("building_manure_clean_label")
+	label.tooltip_text = TooltipText.wrap(tr("building_manure_clean_tooltip") + "\n\n" + detail)
+	row.add_child(label)
+	row.add_child(WarehousePanel.build_level_field(shown, func(value: int) -> void:
+		manure_clean_changed.emit(building, value)
+	, "building_manure_clean_tooltip", 5, 0, true, WarehousePanel.LEVEL_NONE_TEXT, 100))
+	var marker := Button.new()
+	marker.text = "↺" if override >= 0 else "D"
+	marker.focus_mode = Control.FOCUS_NONE
+	marker.add_theme_font_size_override("font_size", 12)
+	marker.custom_minimum_size = Vector2(22.0, 22.0)
+	marker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if override >= 0:
+		marker.tooltip_text = TooltipText.wrap(tr("building_feeder_days_reset"))
+		marker.pressed.connect(func() -> void: manure_clean_changed.emit(building, -1))
+	else:
+		marker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		marker.tooltip_text = TooltipText.wrap(tr("building_feeder_days_default_tooltip"))
+	row.add_child(marker)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
+	margin.add_child(row)
+	_kept_box.add_child(margin)
+
+
+func _add_bedding_days_row(game_data: GameData, building: Building, full_use: float) -> void:
+	var override := building.bedding_days_override
+	var general := BeddingStockService.species_days(game_data, KeptAnimalService.current_species(game_data, building))
+	var shown := override if override >= 0 else general
+	var detail := tr("building_feeder_days_general")
+	if override == 0:
+		detail = tr("building_feeder_days_excluded")
+	elif override > 0:
+		detail = tr("building_bedding_days_own")
+	if shown > 0:
+		var target := full_use * float(shown)
+		detail += " · " + tr("building_bedding_target").format({"units": ceili(target - 0.000001)})
+		var capacity := float(BeddingService.capacity(building))
+		if target > capacity:
+			detail += " " + tr("building_bedding_target_capped").format({"days": floori(capacity / full_use)})
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.text = tr("building_bedding_wm_keeps")
+	label.tooltip_text = TooltipText.wrap(tr("building_bedding_days_tooltip") + "\n\n" + detail)
+	row.add_child(label)
+	row.add_child(WarehousePanel.build_level_field(shown, func(days: int) -> void:
+		bedding_days_changed.emit(building, days)
+	, "building_bedding_days_tooltip", 1, 0, true, WarehousePanel.LEVEL_NONE_TEXT, WarehousePanel.FEEDER_DAYS_MAX))
+	var marker := Button.new()
+	marker.text = "↺" if override >= 0 else "D"
+	marker.focus_mode = Control.FOCUS_NONE
+	marker.add_theme_font_size_override("font_size", 12)
+	marker.custom_minimum_size = Vector2(22.0, 22.0)
+	marker.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if override >= 0:
+		marker.tooltip_text = TooltipText.wrap(tr("building_feeder_days_reset"))
+		marker.pressed.connect(func() -> void: bedding_days_changed.emit(building, -1))
+	else:
+		marker.mouse_default_cursor_shape = Control.CURSOR_ARROW
+		marker.tooltip_text = TooltipText.wrap(tr("building_feeder_days_default_tooltip"))
+	row.add_child(marker)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
+	margin.add_child(row)
+	_kept_box.add_child(margin)
+
+
+# Divisione netta tra due gruppi del pannello: linea spessa con spazio sopra e sotto.
+func _build_group_separator() -> HSeparator:
+	var separator := HSeparator.new()
+	separator.add_theme_constant_override("separation", 18)
+	var line := StyleBoxLine.new()
+	line.thickness = 3
+	line.color = Color(1.0, 1.0, 1.0, 0.45)
+	separator.add_theme_stylebox_override("separator", line)
+	return separator
+
+
+func _add_feeder_label(text: String, tooltip: String) -> void:
+	var line := _build_buried_label(text, BURIED_ROW_INDENT)
+	var label: Label = line if line is Label else line.get_child(0)
+	label.tooltip_text = TooltipText.wrap(tooltip)
+	_kept_box.add_child(line)
+
+
+# "Giorni di scorta: [5] D/↺" (2026-11-16, come gli altri edifici): il campo mostra il valore generale finché la tettoia
+# non ne ha uno suo (0 = esclusa: la riempi a mano); ↺ torna alla regola generale, D = la segue. Nel tooltip della
+# scritta: da dove viene il numero, le calorie dell'obiettivo e, se non ci stanno, quanti giorni ne tiene la mangiatoia.
+func _add_feeder_days_row(game_data: GameData, building: Building, full_need: float) -> void:
+	var override := building.feeder_days_override
+	var general := FeederStockService.species_days(game_data, KeptAnimalService.current_species(game_data, building))
+	var shown := override if override >= 0 else general
+	var detail := tr("building_feeder_days_general")
+	if override == 0:
+		detail = tr("building_feeder_days_excluded")
+	elif override > 0:
+		detail = tr("building_feeder_days_own")
+	if shown > 0 and full_need > 0.0:
+		var target := full_need * float(shown)
+		detail += " · " + tr("building_feeder_target").format({"days": shown, "calories": roundi(target)})
+		var max_calories := AnimalFeederService.max_calories(game_data, building)
+		if max_calories > 0.0 and target > max_calories:
+			detail += " " + tr("building_feeder_target_capped").format({"days": floori(max_calories / full_need)})
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var label := Label.new()
+	label.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.text = tr("building_feeder_wm_keeps")
+	label.tooltip_text = TooltipText.wrap(tr("building_feeder_days_tooltip") + "\n\n" + detail)
+	row.add_child(label)
 	row.add_child(WarehousePanel.build_level_field(shown, func(days: int) -> void:
 		feeder_days_changed.emit(building, days)
 	, "building_feeder_days_tooltip", 1, 0, true, WarehousePanel.LEVEL_NONE_TEXT, WarehousePanel.FEEDER_DAYS_MAX))
@@ -2161,8 +2508,8 @@ func _add_feeder_days_row(game_data: GameData, building: Building) -> void:
 	_kept_box.add_child(margin)
 
 
-# Soglia "Macella oltre" (2026-11-14, pezzo 2, solo col gestore scorte): campo da 1 alla capienza, "∞" = nessuna
-# macellazione (0, o − sotto 1).
+# Sezione Macellazione (2026-11-16): "Macella oltre: [∞] animali" (campo da 1 alla capienza, ∞ = nessuna macellazione);
+# la spiegazione sta nel tooltip. Fa parte del gruppo Animali (_refresh_kept_animals).
 func _add_slaughter_above_row(building: Building) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 4)
@@ -2174,9 +2521,17 @@ func _add_slaughter_above_row(building: Building) -> void:
 	label.text = tr("building_slaughter_above")
 	label.tooltip_text = TooltipText.wrap(tr("building_slaughter_above_tooltip"))
 	row.add_child(label)
-	row.add_child(WarehousePanel.build_level_field(KeptAnimalService.building_slaughter_above(building), func(value: int) -> void:
-		slaughter_above_changed.emit(building, value)
+	var value := KeptAnimalService.building_slaughter_above(building)
+	row.add_child(WarehousePanel.build_level_field(value, func(new_value: int) -> void:
+		slaughter_above_changed.emit(building, new_value)
 	, "building_slaughter_above_tooltip", 1, 0, true, "∞", maxi(KeptAnimalService.capacity(building), 1)))
+	var unit := Label.new()
+	unit.add_theme_font_size_override("font_size", BURIED_FONT_SIZE)
+	unit.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	unit.mouse_filter = Control.MOUSE_FILTER_PASS
+	unit.text = tr("building_slaughter_above_unit")
+	unit.tooltip_text = label.tooltip_text
+	row.add_child(unit)
 	var margin := MarginContainer.new()
 	margin.add_theme_constant_override("margin_left", BURIED_ROW_INDENT)
 	margin.add_child(row)
@@ -2748,6 +3103,12 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 		_order_recipe = ""
 		_order_quantity = 0
 	_order_quantity = clampi(_order_quantity, 0, max_quantity)
+	# Senza un ordine in preparazione la spunta parte dal valore dell'edificio (2026-11-16, Building.production_deliver),
+	# o dal predefinito delle Opzioni se l'edificio non ne ha uno suo.
+	# "Tieni per l'edificio" accesa la tiene spenta (spunte esclusive).
+	if (_order_quantity == 0 or _order_deliver_from_building) and not _order_keep_for_building:
+		_order_deliver = building.deliver_to_warehouse_or(UserOptions.production_delivery_default)
+	_order_deliver_from_building = false
 
 	var grid := GridContainer.new()
 	grid.columns = RECIPE_GRID_COLUMNS
@@ -2783,6 +3144,10 @@ func _refresh_production_recipes(building: Building, production_claimant_names: 
 	var keep_check_box := CheckBox.new()
 	deliver_check_box.toggled.connect(func(pressed: bool) -> void:
 		_order_deliver = pressed
+		# La scelta resta all'edificio per gli ordini dopo (2026-11-16, richiesta utente — niente tasto per tornare al
+		# predefinito: una volta toccata, la spunta è sua).
+		if _current_building != null:
+			production_deliver_changed.emit(_current_building, 1 if pressed else 0)
 		# Spunte esclusive (2026-10-04): consegnare al magazzino toglie "Tieni per l'edificio".
 		if pressed and _order_keep_for_building:
 			_order_keep_for_building = false
@@ -2852,7 +3217,8 @@ func set_production_queue_mode(enabled: bool, building_id: int = -1, recipe: Str
 	if not enabled:
 		return
 	if _order_quantity_building_id != building_id:
-		_order_deliver = UserOptions.production_delivery_default
+		# Il valore dell'edificio si legge alla ricostruzione della griglia (qui c'è solo l'id).
+		_order_deliver_from_building = true
 		_order_keep_for_building = false
 	_order_quantity_building_id = building_id
 	_order_recipe = recipe if units > 0 else ""
@@ -3380,13 +3746,15 @@ func _refresh_toolkit(building: Building) -> void:
 		max_count += BuildingToolkitService.get_units_per_type(building, container)
 		stored += StorageContainerService.stored_in(building, container)
 		capacity += StorageContainerService.capacity_of(building, container)
-	_container_caption.text = tr("toolkit_containers_caption").format({"count": count, "max": max_count,
+	# Giare dell'acqua (2026-11-16, passo 3a): testi propri (StorageContainerService.text_suffix).
+	var suffix := StorageContainerService.text_suffix(names[0])
+	_container_caption.text = tr("toolkit_containers_caption" + suffix).format({"count": count, "max": max_count,
 		"stored": stored, "capacity": capacity})
 	# Spiegazione dei vasi da semi nel tooltip del titolo (2026-11-13, richiesta utente).
-	_container_caption.tooltip_text = TooltipText.wrap(tr("toolkit_storage_tooltip"))
+	_container_caption.tooltip_text = TooltipText.wrap(tr("toolkit_storage_tooltip" + suffix))
 	_container_caption.mouse_filter = Control.MOUSE_FILTER_STOP
 	if containers.is_empty():
-		_container_grid.add_child(_toolkit_empty_label("toolkit_containers_empty"))
+		_container_grid.add_child(_toolkit_empty_label("toolkit_containers_empty" + suffix))
 	for container in containers:
 		_container_grid.add_child(_build_toolkit_chip(building, container))
 
@@ -3418,10 +3786,11 @@ func _build_toolkit_chip(building: Building, tool_name: String) -> Control:
 		chip.add_child(_build_container_fill_bar(float(contained) / float(container_capacity)))
 		# Riga del clic dei vasi (2026-11-14, richiesta utente): "di scorta" faceva pensare a vasi liberi; il clic toglie
 		# solo un vaso che si può svuotare, ed è rifiutato quando i semi non ci starebbero più (blocks_removal).
-		var container_click := tr("toolkit_container_click_blocked" if StorageContainerService.blocks_removal(building, tool_name)
-			else "toolkit_container_click_return")
+		var suffix := StorageContainerService.text_suffix(tool_name)
+		var container_click := tr(("toolkit_container_click_blocked" if StorageContainerService.blocks_removal(building, tool_name)
+			else "toolkit_container_click_return") + suffix)
 		chip.tooltip_text = TooltipText.wrap(_toolkit_tooltip(tool_name, quantity, uses_list, max_uses, container_click, max_units)
-			+ "\n" + tr("toolkit_container_fill").format({"quantity": contained, "capacity": container_capacity}))
+			+ "\n" + tr("toolkit_container_fill" + suffix).format({"quantity": contained, "capacity": container_capacity}))
 	chip.mouse_filter = Control.MOUSE_FILTER_STOP
 	chip.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	chip.gui_input.connect(func(event: InputEvent) -> void:

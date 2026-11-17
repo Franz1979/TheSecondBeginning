@@ -288,6 +288,9 @@ func activate(individual: Variant, context: Dictionary) -> void:
 			elif AnimalFeederService.accepts(GameSettings.active_game_data, target_building, String(resource_name)):
 				# Mangiatoia (2026-11-14): solo lo spazio che resta.
 				units_now = mini(AnimalFeederService.max_depositable(GameSettings.active_game_data, target_building, String(resource_name)), carried_units)
+			elif BeddingService.accepts(target_building, String(resource_name)):
+				# Lettiera (2026-11-17): solo lo spazio che resta.
+				units_now = mini(BeddingService.max_depositable(target_building, String(resource_name)), carried_units)
 			elif WasteDisposalService.is_waste_pit(target_building):
 				# Fossa dei rifiuti (2026-10-18): solo lo spazio che resta nella fossa.
 				units_now = mini(WasteDisposalService.get_max_disposable(target_building, String(resource_name)), carried_units)
@@ -501,7 +504,11 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 			elif not _is_completed_site_destination(context) and _is_deposit_allowed(String(resource_name)):
 				if AnimalFeederService.accepts(GameSettings.active_game_data, target_building, String(resource_name)):
 					# Mangiatoia (2026-11-14, AnimalFeederService): il cibo occupa il suo spazio, diventa calorie e sparisce.
-					deposited = AnimalFeederService.deposit(GameSettings.active_game_data, target_building, String(resource_name), int(carried_entry["quantity"]))
+					deposited = AnimalFeederService.deposit(GameSettings.active_game_data, target_building, String(resource_name), int(carried_entry["quantity"]),
+						float(carried_entry.get("decay_fraction", 0.0)))
+				elif BeddingService.accepts(target_building, String(resource_name)):
+					# Lettiera (2026-11-17, BeddingService): la paglia entra nella lettiera, non deperisce e non torna indietro.
+					deposited = BeddingService.deposit(target_building, String(resource_name), int(carried_entry["quantity"]))
 				elif WasteDisposalService.is_waste_pit(target_building):
 					# Fossa dei rifiuti (2026-10-18): la merce è distrutta, occupa solo spazio. Gli attrezzi escono
 					# dallo zaino qui (la rimozione sotto salta chi usa le istanze).

@@ -9,4 +9,5 @@ func _ready() -> void:
 
 
 func _draw() -> void:
-	PlaceholderBuildingShapes.draw(self, "chicken_coop", size * 0.5, false, minf(size.x, size.y) / 10.0)
+	# 2x1 (2026-11-17): il disegno è largo due caselle, come il piccolo granaio.
+	PlaceholderBuildingShapes.draw(self, "chicken_coop", size * 0.5, false, minf(size.x / 20.0, size.y / 10.0))

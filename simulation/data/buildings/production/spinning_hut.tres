@@ -12,11 +12,11 @@ required_idea_id = "spinning"
 min_construction_days = 3
 required_labor = 2500
 max_builders = 2
-lifespan_years = 15
+lifespan_years = 25
 max_durability = 100
 defense = 10
 required_materials = {
-"fiber_rope": 10,
+"fiber_rope": 8,
 "plant_fiber": 10,
 "stick": 30,
 "stone": 10,

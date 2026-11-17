@@ -6,13 +6,13 @@ close_and_save,Salva e chiudi
 options,Opzioni
 options_show_notification_popups,Mostra notifiche popup
 options_language,Lingua
-options_pickup_default,Raccolta: preselezione
+options_pickup_default,Raccolta: voce scelta di default
 options_pickup_default_group_category,Categoria
 options_pickup_default_group_resource,Risorsa
 minimap_show_tooltip,Mostra la minimappa
 minimap_hide_tooltip,Nascondi la minimappa
-options_repeat_default,Raccolta e trasporto: ripeti fino a {count} viaggi
-options_production_delivery_default,Produzione: porta al deposito
+options_repeat_default,Raccolta e trasporto: spunta «Ripeti» accesa di default
+options_production_delivery_default,Produzione: spunta «Porta al deposito» accesa di default
 options_volume_master,Volume generale
 options_volume_music,Volume musica
 options_volume_ambience,Volume ambiente
@@ -1007,28 +1007,31 @@ carried_resource_tooltip_stone,Pietra
 carried_resource_tooltip_clay,Argilla
 carried_resource_tooltip_clay_bowl,Ciotola di terracotta
 carried_resource_tooltip_clay_jar,Giara
+carried_resource_tooltip_water,Acqua
 task_fill_jar_name,Riempimento giare
 task_fill_jar_step_walk_source,A prendere la giara
 task_fill_jar_step_take,Prende la giara
-task_fill_jar_step_walk_water,Verso la riva
-task_fill_jar_step_walk_shelter,Verso la tettoia
+task_fill_jar_step_walk_water,Verso l'acqua
+task_fill_jar_step_walk_shelter,Riporta la giara
 task_fill_jar_step_put,Ripone la giara
 jar_water_tooltip,Acqua: {water} / {capacity}
 building_info_shelter_water,"Acqua: {water} / {capacity} ({jars} giare su {places} posti)"
 fill_jar_stop_no_jar,"{name} ha smesso di riempire: non ci sono altre giare vuote nei magazzini."
-fill_jar_fail_shelter,"{name} non può riporre la giara: la tettoia non c'è più o è piena."
+fill_jar_fail_shelter,"{name} non può riporre la giara: l'edificio non c'è più o non ha posto."
 task_fill_jar_step_fill,Riempiendo la giara
 task_activity_fill_jar,riempire le giare
 fill_jar_dialog_title,Riempi giare
 fill_jar_dialog_message,"Quante giare riempire alla riva? Prima quelle vuote della tettoia, poi quelle dal magazzino per i posti liberi. Serve un travois."
+fill_jar_dialog_message_building,"Quante giare dell'edificio riempire? Si prendono le sue giare vuote e si riempiono alla riva o alla tettoia dell'acqua più comoda. Serve un travois."
+fill_jar_fail_shelter_dry,"{name} trova la tettoia a secco: riporta la giara vuota."
 fill_jar_dialog_count,Giare da riempire
 fill_jar_reject_shelter_full,"{building} non ha giare vuote né posti liberi."
 fill_jar_reject_no_empty_jar,"{name} non trova giare nei magazzini per i posti liberi della tettoia."
 fill_jar_reject_no_travois,"{name} non trova un travois libero: la giara piena non si porta a mano."
-fill_jar_reject_no_water,"{name} non trova una riva raggiungibile dove riempire la giara."
+fill_jar_reject_no_water,"{name} non trova acqua raggiungibile (riva o tettoia) dove riempire la giara."
 fill_jar_fail_no_jar,"{name} non ha più la giara vuota da riempire."
 fill_jar_fail_broken,"La giara di {name} si è rotta mentre la riempiva."
-fill_jar_fail_no_room,"{name} non ha posto per la giara piena: la riporta vuota alla tettoia."
+fill_jar_fail_no_room,"{name} non ha posto per la giara piena: la riporta vuota."
 fill_jar_fail_no_travois,"{name} non ha un travois per la giara piena: niente riempimento."
 building_potter_hut,Capanna del vasellaio
 build_bar_potter_hut_tooltip,Capanna del vasellaio
@@ -1459,6 +1462,7 @@ apparel_storage_dialog_title,Prendi un capo
 apparel_storage_dialog_message,Scegli il capo da prendere dal magazzino più vicino e indossare:
 pending_reason_naked,Senza vestito
 pending_reason_naked_no_stock,Senza vestito — nessun vestito in deposito
+pending_reason_no_house,Senza casa
 apparel_children_tooltip,Vestiti di recupero: i bambini non usano il vestiario del villaggio
 folk_name_label,Il tuo popolo
 folk_name_placeholder,Lascia vuoto per un nome casuale
@@ -1700,7 +1704,6 @@ notification_village_named,Il villaggio si chiama ora {village}
 domestic_animal_dog,Cane
 game_info_tab_animals,Animali
 domestic_animals_empty,Nessun animale domestico.
-domestic_animal_row,"{name} #{id}, {sex}, età {age}"
 domestic_animal_male,maschio
 domestic_animal_female,femmina
 notification_domestic_arrival_dog,"Alcuni lupi non se ne vanno più: ora vivono al villaggio. Nuovi cani: {count}."
@@ -1721,7 +1724,7 @@ idea_role_assignment,Assegnazione dei ruoli
 idea_role_assignment_summary,Ognuno ha un compito fisso nel villaggio.
 idea_role_assignment_description,"Il capo affida a ciascuno il suo ruolo: chi coordina il lavoro, chi custodisce le scorte."
 idea_animal_domestication,Addomesticazione degli animali
-idea_animal_domestication_summary,Permette di iniziare ad addomesticare le specie animali incontrate.
+idea_animal_domestication_summary,"Permette di iniziare ad addomesticare le specie animali incontrate: tettoia delle gabbie e cesto a caduta per i piccoli animali."
 idea_animal_domestication_description,"Il villaggio impara che anche altri animali, non solo il lupo, possono abituarsi all'uomo. Ogni specie va prima trovata nel mondo, poi avvicinata con pazienza: ci vorranno generazioni."
 idea_plant_domestication,Addomesticazione delle piante
 idea_plant_domestication_summary,Permette di iniziare ad addomesticare le specie vegetali incontrate.
@@ -1752,7 +1755,7 @@ domestication_species_unknown,"Specie non ancora scoperta: cattura vivo un anima
 domestication_species_discovered,"Nuova specie da addomesticare: {species}. Ne deriverà: {domestic}.
 Ogni animale catturato vivo e portato nelle gabbie porta punti: le femmine adulte più dei maschi, i giovani poco, gli anziani niente.
 All'inizio non sappiamo ancora come tenerli: in cattività vivranno pochissimo, a volte solo qualche giorno, e moriranno senza lasciare carne. Non scoraggiarti: ogni punto è esperienza, e più ne accumuli più a lungo sopravvivranno."
-domestication_stats_line,"Catturati {captured} · morti {died} · nati {born} · in tettoia {kept}"
+domestication_stats_line,"Catturati {captured} · morti {died} · nati {born} · in allevamento {kept}"
 domestication_stats_life,"Un animale catturato oggi vive circa {days} giorni"
 building_kept_open_domestication,Addomesticazioni
 building_kept_open_domestication_tooltip,"Apre il pannello delle Addomesticazioni: punti, catturati, morti e nati per specie."
@@ -2001,9 +2004,12 @@ warehouse_quantity_processing_tooltip,"In deposito: {stored} · Sulle postazioni
 storage_slot_auto_days_short,{days}g
 storage_slot_auto_progress_ready_tooltip,"Pronto, in attesa di spazio"
 drawer_weapon_without_ammo,"{weapon} in deposito, ma mancano le munizioni: {ammo}, almeno {shots} colpi"
+idea_fermentation,Fermentazione
+idea_fermentation_summary,Cereali e succhi lasciati riposare nelle giare diventano bevande nuove.
+idea_fermentation_description,"Una pappa di cereali dimenticata qualche giorno in una giara comincia a fare le bollicine e prende un sapore nuovo. Il gruppo capisce che, con il tempo e i recipienti giusti, ciò che si raccoglie può trasformarsi: è l'inizio della birra."
 idea_advanced_traps,Trappole avanzate
-idea_advanced_traps_summary,Trappole che prendono gli animali vivi, da portare al recinto.
-idea_advanced_traps_description,"Chi sa costruire trappole e ha imparato ad avvicinare gli animali capisce che una preda può essere presa senza ucciderla. Con cesti, gabbie e recinti gli animali catturati vivi potranno essere tenuti e allevati."
+idea_advanced_traps_summary,"Recinti e trappole che prendono vivi gli animali grossi, da portare al recinto."
+idea_advanced_traps_description,"Chi sa già tenere e allevare gli animali piccoli capisce che anche una preda grossa può essere presa senza ucciderla. Con recinti a imbuto e trappole robuste gli animali grossi catturati vivi potranno essere tenuti e allevati."
 carried_resource_tooltip_snare,Mazzo di lacci
 carried_resource_tooltip_stake_pit,Fossa con pali
 pending_trap_no_site,"{area}: nessun posto adatto per {trap}"
@@ -2015,22 +2021,25 @@ build_bar_cage_shelter_tooltip,Tettoia delle gabbie
 build_bar_cage_shelter_description,"Tettoia di frasche con sotto le gabbie legate con la corda: qui si terranno gli animali piccoli presi vivi, venti posti, una specie sola. Per catturarli vivi servirà anche l'idea Trappole avanzate."
 building_info_animal_capacity,"Posti per animali: {capacity}, una sola specie"
 carried_resource_tooltip_drop_basket,Cesto a caduta
-trap_live_catch_needs_cage_shelter,"{trap}: si può fabbricare, ma per piazzarlo serve una {building} finita, dove tenere gli animali presi vivi."
+trap_live_catch_needs_cage_shelter,"{trap}: si può fabbricare, ma per piazzarlo serve una {building} finita che accetti animali (non su Nessuna), dove tenere gli animali presi vivi."
 trap_live_catch_note,"Cattura gli animali vivi: si piazza solo se nel villaggio c'è almeno una {building} finita (anche piena). Senza, il lavoro resta in coda con la X rossa."
 trap_place_item_blocked,"{trap} (serve una {building} finita)"
 warehouse_rule_traps_group,Trappole per zona
 warehouse_rule_traps_edit_tooltip,"Quante trappole di ogni tipo tenere montate in ogni zona di lavoro"
 warehouse_rule_traps_empty,Nessuna trappola ancora nota.
-building_kept_animals,Animali: {count}/{max}
+building_kept_animals,Animali:
+building_kept_animals_count,{count}/{max}
 building_kept_species,Animali ospitati:
 building_kept_species_any,Qualunque
+building_kept_species_none,Nessuna
 building_kept_species_any_fixed,Qualunque (ora {species})
-building_kept_species_tooltip,"Specie tenuta qui, una sola. Qualunque: la decide il primo animale che entra, finché la tettoia non torna vuota. Le catture di altre specie si macellano sul posto."
+building_kept_species_tooltip,"Specie tenuta qui, una sola. Nessuna: la tettoia resta in piedi ma non accetta animali, e i cesti a caduta non la contano. Qualunque: la decide il primo animale che entra, finché la tettoia non torna vuota. Le catture di altre specie si macellano sul posto."
+building_kept_species_eats,Mangiano: {foods} (calorie per unità).
 building_kept_species_locked_tooltip,"Con animali dentro la specie non si cambia: prima la tettoia deve tornare vuota."
 building_kept_animal_row,"{name}, {sex}, età {age}"
 idea_animal_husbandry,Allevamento
 idea_animal_husbandry_summary,"Edifici per tenere e far crescere gli animali addomesticati, uno per ogni specie."
-idea_animal_husbandry_description,"Chi ha imparato a prendere gli animali vivi e a tenerli nelle gabbie capisce che, con il riparo giusto e cure costanti, possono vivere e moltiplicarsi accanto al villaggio. Ogni specie addomesticata avrà il suo edificio."
+idea_animal_husbandry_description,"Chi ha imparato a prendere gli animali vivi e a tenerli nelle gabbie capisce che, con il riparo giusto e cure costanti, possono vivere e moltiplicarsi accanto al villaggio. Ogni specie addomesticata avrà il suo edificio, che tiene solo animali domestici: si potrà costruire quando quella specie sarà addomesticata nella tettoia delle gabbie (la conigliera col primo coniglio domestico, il pollaio con la prima gallina)."
 building_rabbit_hutch,Conigliera
 build_bar_rabbit_hutch_tooltip,Conigliera
 building_spinning_hut,Filatoio
@@ -2062,15 +2071,21 @@ container_no_room_reason,"{resource}: serve un {container} libero, montato nell'
 toolkit_container_fill,"Semi nei vasi: {quantity} / {capacity} once"
 toolkit_containers_caption,"Vasi ({count}/{max}) · semi {stored}/{capacity} once"
 toolkit_containers_empty,nessun vaso montato
+toolkit_containers_caption_water,"Giare ({count}/{max}) · acqua {stored}/{capacity}"
+toolkit_container_fill_water,"Acqua nelle giare: {quantity} / {capacity}"
+toolkit_containers_empty_water,nessuna giara montata
+toolkit_container_click_return_water,Clic: rimetti nel magazzino una giara vuota
+toolkit_container_click_blocked_water,"Le giare sono tutte occupate dall'acqua: non se ne può togliere nessuna"
+toolkit_storage_tooltip_water,"Giare dell'edificio: qui si montano le giare per l'acqua (clic sulla giara nel magazzino, oppure la regola del gestore scorte «Rifornisci le Attrezzerie»). L'acqua sta solo nelle giare montate, 400 ciascuna, e non occupa altro spazio. Le giare si riempiono alla riva o a una tettoia dell'acqua: ogni viaggio consuma un uso della giara. Una giara non si smonta se la sua acqua non entrerebbe nelle altre."
+building_info_toolkit_seed_jar_count_water,"Giare per l'acqua: fino a {max} ({capacity} d'acqua)"
+building_info_toolkit_water_jars,"Tiene le giare per l'acqua: solo quelle montate qui accolgono l'acqua"
 toolkit_tooltip_max,Al massimo {max} qui
 building_info_toolkit_seed_jar_count,"Vasi da semi: fino a {max} ({capacity} once)"
 carried_resource_tooltip_hay,Fieno
-building_feeder_line,Mangiatoia: {space} / {max} spazio ({calories} calorie)
+building_feeder_line,Mangiatoia: {space} / {max} spazio · {calories} calorie
 building_feeder_choose_species,(scegli la specie per riempirla)
-building_feeder_tooltip,"Mangiatoia per: {species}. Accetta: {foods} (calorie per unità). Il cibo portato occupa il suo spazio, diventa calorie e non si riprende. Cambiando specie la mangiatoia si svuota e il cibo è perso."
+building_feeder_tooltip,"Il cibo portato occupa il suo spazio e deperisce come nei magazzini. Cambiando specie la mangiatoia si svuota e il cibo è perso."
 building_feeder_tooltip_no_species,"La mangiatoia accetta solo i cibi della specie tenuta: scegli la specie, o aspetta il primo animale. Cambiando specie la mangiatoia si svuota e il cibo è perso."
-warehouse_rule_feeder,Rifornisci le mangiatoie (giorni di cibo)
-warehouse_rule_feeder_tooltip,"Giorni di cibo da tenere nelle mangiatoie degli animali chiusi. All'inventario il WM calcola quanto mangiano gli animali di ogni mangiatoia e, se sotto, manda cibo dai magazzini: nell'ordine della dieta della specie, da tutta la scorta del villaggio, e almeno uno zaino pieno a ogni viaggio. 0 = regola spenta."
 drawer_order_feeder_row,"{building}: mangiatoia, porta {quantity} {resource}"
 warehouse_rule_field_seeds,Semi nei campi
 warehouse_rule_field_seeds_tooltip,"Once di ogni seme domestico da tenere nel capanno di ogni campo che lo semina: il WM le porta dal granaio e porta via i semi che il capanno non tiene più. Un campo può avere un valore suo. 0 = nessuno."
@@ -2079,12 +2094,11 @@ drawer_order_field_seed_row,"{building}: capanno, porta {quantity} {resource}"
 drawer_order_field_seed_remove_row,"{building}: capanno, porta via {quantity} {resource}"
 pending_stock_feeder,Mangiatoie da rifornire
 pending_stock_feeder_missing,"Nessun cibo della dieta in magazzino per: {buildings}"
-building_feeder_days_general,Giorni di cibo: regola generale
-building_feeder_days_excluded,Giorni di cibo: esclusa dal WM
-building_feeder_days_own,Giorni di cibo: valore suo
-building_feeder_days_tooltip,"Giorni di cibo che il WM tiene in questa mangiatoia, al posto della regola generale. 0 = esclusa: la riempi a mano."
-building_feeder_days_reset,Torna alla regola generale
-building_feeder_days_default_tooltip,Segue la regola generale del WM.
+building_feeder_days_general,"Valore della specie (pannello Animali)"
+building_feeder_days_excluded,Esclusa dal WM: la riempi a mano
+building_feeder_days_own,Valore di questa tettoia
+building_feeder_days_reset,"Torna al valore della specie"
+building_feeder_days_default_tooltip,"Segue il valore della specie nel pannello Animali."
 building_field_seeds_stored,"Semi nel capanno: {stored}/{level} (vasi: {capacity})"
 building_field_seeds_general,Semi da tenere: regola generale
 building_field_seeds_none,Semi da tenere: nessuno
@@ -2113,11 +2127,21 @@ task_retill_job_name,Rizolla il lotto ({building})
 task_retill_job_tooltip,"Rivoltare col piccone la terra stanca di un lotto di {building}: la fertilità del campo risale. Si fa dopo la mietitura; quando comincia la semina, le rizollature non finite si annullano."
 building_kept_animal_hungry,digiuno da {days} giorni
 building_feeder_days_left,~{days} giorni
+building_feeder_foods,"Dentro, nell'ordine in cui si mangiano:"
+building_feeder_food_row,{food}: {units} · {calories} calorie · fresco {freshness}%
+building_feeder_days_present,~{days} giorni ai presenti
+building_feeder_lasts,Basta per: {parts}
+building_feeder_full_days,~{days} a tettoia piena
+building_feeder_target_capped,(la mangiatoia ne tiene ~{days} giorni)
 notification_kept_animal_starved,"{animal} è morto di fame in {building}: la mangiatoia era vuota."
 notification_kept_animal_starved_points,(−{points} punti addomesticazione)
 notification_kept_young_escaped,"{building} piena: {count} piccoli di {species} sono scappati nei dintorni."
 building_slaughter_above,Macella oltre:
-building_slaughter_above_tooltip,"Animali oltre i quali il gestore scorte ne fa macellare in questa tettoia: prima i maschi oltre il primo adulto, poi i vecchi, poi i giovani maschi, per ultime le femmine adulte. ∞: nessuna macellazione, i piccoli che non ci stanno scappano nei dintorni. Con un numero i piccoli entrano anche oltre la capienza, e dopo 10 giorni i più giovani in più scappano. Vale la più bassa tra questa e quella della specie."
+building_slaughter_above_tooltip,"Numero di animali oltre il quale il gestore scorte ne fa macellare in questa tettoia: prima i maschi oltre il primo adulto, poi i vecchi, poi i giovani maschi, per ultime le femmine adulte. ∞ = non macella mai: i piccoli che non ci stanno vanno in un'altra tettoia con posto, altrimenti scappano. Con un numero i piccoli entrano anche oltre la capienza, e dopo 10 giorni i più giovani in più scappano. Vale la più bassa tra questa e quella della specie (pannello Animali)."
+building_feeder_wm_keeps,Giorni di scorta:
+building_feeder_days_tooltip,"Giorni di cibo che il gestore scorte tiene in questa mangiatoia, contando tutti i posti occupati. D = segue il valore della specie (pannello Animali); ↺ = valore di questo edificio (clic per tornare a quello della specie). 0 = esclusa: la riempi a mano."
+building_feeder_target,obiettivo {calories} calorie
+building_slaughter_above_unit,animali
 building_kept_over_capacity,"Troppo piena: {days} giorni prima che i più giovani in più scappino"
 building_kept_over_capacity_tooltip,"Con una soglia «Macella oltre» i piccoli entrano anche oltre la capienza. Se dopo 10 giorni la tettoia è ancora troppo piena, i più giovani in più scappano nei dintorni."
 notification_kept_animals_escaped,"{building} troppo piena: {count} {species} sono scappati nei dintorni."
@@ -2125,10 +2149,11 @@ domestic_animals_tab_all,Tutte
 domestic_animals_age_young,Giovani
 domestic_animals_age_adult,Adulti
 domestic_animals_age_old,Vecchi
-domestic_animals_summary,"{name}: {total} (in tettoia {kept}, liberi {free})  ♂ {males}  ♀ {females}"
+domestic_animals_summary,"{name}: {total} (chiusi {kept}, liberi {free})"
+domestic_animals_sexes,♂ {males}  ♀ {females}
 domestic_animals_slaughter_above,Macella oltre:
-domestic_animals_slaughter_above_tooltip,"Animali di questa specie chiusi in tutte le tettoie oltre i quali il gestore scorte ne fa macellare, a partire dalla tettoia che ne ha di più. ∞: nessuna macellazione. Vale la più bassa tra questa e quella della tettoia."
-domestic_animals_shelters,Tettoie:
+domestic_animals_slaughter_above_tooltip,"Numero di animali di questa specie in tutto il villaggio, chiusi e liberi, oltre il quale il gestore scorte ne fa macellare: uno alla volta dall'edificio che ne ha di più, i liberi per ultimi. ∞ = non macella mai. Vale la più bassa tra questa e quella del singolo edificio."
+domestic_animals_shelters,Edifici:
 domestic_animals_shelter_row,{building}: {count} / {max}
 building_kept_animal_to_slaughter,da macellare
 building_kept_animal_slaughter_tooltip,"Macella questo animale: chi ha una lama va alla tettoia, lo uccide e lo macella lì. Prima dell'addomesticazione costa 2 punti."
@@ -2264,3 +2289,103 @@ building_field,Campo con capanno
 build_bar_field_tooltip,Campo con capanno
 build_bar_field_description,"Un campo di 3×3 microcelle: terra dissodata dentro un recinto di pali e rami, con un cancellino e un piccolo capanno in un angolo per i bastoni da scavo e i falcetti. Ruota per scegliere l'angolo del capanno. Serve il piccone per dissodare. Otto lotti, uno per microcella di terra: ognuno si semina e si miete per conto suo, anche in più persone insieme. Solo semi domestici, 20 once per lotto."
 building_crop_lots_summary,"{total} lotti: vuoti {empty}, in semina {sowing}, seminati {sown}, germogliati {sprouted}, maturi {ready}"
+discovery_first_domesticated_domestic_rabbit_title,"Conigli nati tra le capanne"
+discovery_first_domesticated_domestic_rabbit_p1,"Generazione dopo generazione, nella tettoia delle gabbie i conigli hanno smesso di scappare quando qualcuno si avvicina. Il villaggio ora sa allevarli: è nato il coniglio domestico."
+discovery_first_domesticated_domestic_rabbit_p2,"I conigli presi con il cesto a caduta restano [b]selvatici[/b] per sempre: in gabbia fanno solo 1 o 2 piccoli all'anno e macellati danno 3 di carne. I piccoli nati in cattività invece sono [b]domestici[/b]: cucciolate intere, fino a 6, e 4 di carne."
+discovery_first_domesticated_domestic_rabbit_p3,"Con l'idea Allevamento si costruisce la [b]Conigliera[/b]: tiene solo conigli domestici, che lì si moltiplicano da soli. La tettoia delle gabbie resta il posto dove entrano i selvatici."
+discovery_first_domesticated_domestic_rabbit_p4,"Se i conigli domestici dovessero sparire, basta catturarne di nuovo di selvatici: i loro piccoli nasceranno già domestici, senza ricominciare da capo."
+discovery_first_domesticated_chicken_title,"Galline nate tra le capanne"
+discovery_first_domesticated_chicken_p1,"Generazione dopo generazione, nella tettoia delle gabbie i galli selvatici hanno smesso di fuggire quando qualcuno si avvicina. Il villaggio ora sa allevarli: è nata la gallina."
+discovery_first_domesticated_chicken_p2,"I galli selvatici presi con il cesto a caduta restano [b]selvatici[/b] per sempre: in gabbia covano solo 1 o 2 pulcini all'anno e macellati danno 2 di carne. I pulcini nati in cattività invece sono [b]galline domestiche[/b]: covate intere, fino a 8, e 3 di carne."
+discovery_first_domesticated_chicken_p3,"Con l'idea Allevamento si costruisce il [b]Pollaio[/b]: tiene solo galline domestiche, che lì si moltiplicano da sole. La tettoia delle gabbie resta il posto dove entrano i selvatici."
+discovery_first_domesticated_chicken_p4,"Se le galline dovessero sparire, basta catturare di nuovo galli selvatici: i loro pulcini nasceranno già domestici, senza ricominciare da capo."
+discovery_first_domesticated_wheat_title,"Un grano che tiene i chicchi"
+discovery_first_domesticated_wheat_p1,"Seminato e mietuto anno dopo anno nell'orto dell'addomesticazione, il grano selvatico è cambiato: la spiga non si sgrana più da sola. Il villaggio ora sa coltivarlo: è nato il grano domestico."
+discovery_first_domesticated_wheat_p2,"Il grano raccolto in natura resta [b]selvatico[/b]. Seminato nell'orto, ora dà [b]grano domestico[/b], ma l'orto è piccolo e rende poco: al massimo 3 chicchi per seme."
+discovery_first_domesticated_wheat_p3,"Il grano domestico si conserva nei magazzini e serve a seminare i [b]campi[/b] dell'Agricoltura, dove ogni seme rende fino a 10."
+discovery_first_domesticated_wheat_p4,"Se il grano domestico dovesse finire, basta tornare all'orto con il grano selvatico: darà di nuovo grano domestico, senza ricominciare da capo."
+discovery_first_domesticated_rye_title,"Una segale che tiene i chicchi"
+discovery_first_domesticated_rye_p1,"Seminata e mietuta anno dopo anno nell'orto dell'addomesticazione, la segale selvatica è cambiata: la spiga non si sgrana più da sola. Il villaggio ora sa coltivarla: è nata la segale domestica."
+discovery_first_domesticated_rye_p2,"La segale raccolta in natura resta [b]selvatica[/b]. Seminata nell'orto, ora dà [b]segale domestica[/b], ma l'orto è piccolo e rende poco: al massimo 3 chicchi per seme."
+discovery_first_domesticated_rye_p3,"La segale domestica si conserva nei magazzini e serve a seminare i [b]campi[/b] dell'Agricoltura, dove ogni seme rende fino a 10."
+discovery_first_domesticated_rye_p4,"Se la segale domestica dovesse finire, basta tornare all'orto con la segale selvatica: darà di nuovo segale domestica, senza ricominciare da capo."
+discovery_first_domesticated_oats_title,"Un'avena che tiene i chicchi"
+discovery_first_domesticated_oats_p1,"Seminata e mietuta anno dopo anno nell'orto dell'addomesticazione, l'avena selvatica è cambiata: la pannocchia non si sgrana più da sola. Il villaggio ora sa coltivarla: è nata l'avena domestica."
+discovery_first_domesticated_oats_p2,"L'avena raccolta in natura resta [b]selvatica[/b]. Seminata nell'orto, ora dà [b]avena domestica[/b], ma l'orto è piccolo e rende poco: al massimo 3 chicchi per seme."
+discovery_first_domesticated_oats_p3,"L'avena domestica si conserva nei magazzini e serve a seminare i [b]campi[/b] dell'Agricoltura, dove ogni seme rende fino a 10."
+discovery_first_domesticated_oats_p4,"Se l'avena domestica dovesse finire, basta tornare all'orto con l'avena selvatica: darà di nuovo avena domestica, senza ricominciare da capo."
+discovery_first_domesticated_flax_title,"Un lino che tiene i semi"
+discovery_first_domesticated_flax_p1,"Seminato e raccolto anno dopo anno nell'orto dell'addomesticazione, il lino selvatico è cambiato: le capsule non si aprono più da sole e i semi restano sulla pianta. Il villaggio ora sa coltivarlo: è nato il lino domestico."
+discovery_first_domesticated_flax_p2,"Il lino raccolto in natura resta [b]selvatico[/b]. Seminato nell'orto, ora dà [b]semi di lino domestico[/b], ma l'orto è piccolo e ne dà pochi."
+discovery_first_domesticated_flax_p3,"I semi di lino si conservano nei magazzini e servono a seminare i [b]campi[/b] dell'Agricoltura, che oltre ai semi danno la fibra di lino per le corde."
+discovery_first_domesticated_flax_p4,"Se i semi di lino dovessero finire, basta tornare all'orto con il lino selvatico: darà di nuovo semi domestici, senza ricominciare da capo."
+individual_skills_toggle_tooltip,"Clic per aprire o chiudere le skill."
+skill_husbandry_label,Allevamento
+skill_husbandry_short,All.
+building_kept_animal_to_slaughter_no_room,"da macellare (manca posto)"
+notification_domestic_no_breeding_room,"{count} {species} nella {shelter} vanno macellati: non c'è una {building} con posto per loro. I domestici non restano nella tettoia delle gabbie."
+task_assignment_kind_husbandry,Allevamento
+task_transfer_animals_name,Trasferimento animali
+task_transfer_animals_step_walk_shelter,Verso la tettoia delle gabbie
+task_transfer_animals_step_take,Prendendo gli animali
+task_transfer_animals_step_walk_hutch,Verso l'allevamento
+task_transfer_animals_step_place,Sistemando gli animali
+job_transfer_animals,"Trasferisci {species} ({count})"
+building_kept_animal_in_transit,in trasporto
+notification_domestic_animal_extinct,"{domestic}: specie estinta, non resta nessun esemplare domestico. Per riaverla cattura vivi degli esemplari selvatici ({wild}) e tienili nella {shelter}: i loro piccoli nasceranno già domestici."
+notification_domestic_plant_extinct,"{domestic}: specie estinta, non resta nessun seme domestico né in magazzino né nei campi. Per riaverla semina {wild} nell'{garden}: la mietitura darà di nuovo il seme domestico."
+options_show_grid,Mostra la griglia delle microcelle
+options_group_display,Schermo e suoni
+options_group_game,Partita
+options_group_defaults,Impostazioni di default dei comandi
+building_bedding_line,"Lettiera: {units} / {max} paglia"
+building_bedding_tooltip,"La lettiera accetta solo paglia: non deperisce e non torna in magazzino. Ogni animale dentro ne consuma un po' ogni giorno (un coniglio 1 paglia ogni 20 giorni)."
+building_bedding_full_days,"~{days} a posti pieni"
+building_bedding_wm_keeps,"Giorni di paglia:"
+building_bedding_days_tooltip,"Giorni di paglia che il gestore scorte tiene in questa lettiera, contando tutti i posti occupati. D = segue il valore della specie (pannello Animali); ↺ = valore di questo edificio (clic per tornare a quello della specie). 0 = esclusa: la riempi a mano."
+building_bedding_days_own,"Valore di questo edificio"
+building_bedding_target,"obiettivo {units} paglia"
+building_bedding_target_capped,"(la lettiera ne tiene ~{days} giorni)"
+drawer_order_bedding_row,"{building}: lettiera, porta {quantity} {resource}"
+pending_stock_bedding,"Lettiere da rifornire"
+pending_stock_bedding_missing,"Nessuna paglia in magazzino per: {buildings}"
+building_bedding_risk,"Vuota {empty} giorni su {days} dalle ultime nascite: ogni piccolo rischia di morire appena nato al {risk}%. Senza paglia il giorno delle nascite: {max}%."
+notification_bedding_empty,"{building}: la lettiera è finita. Senza paglia i piccoli rischiano di morire appena nati: più giorni resta vuota, più ne muoiono alle prossime nascite."
+notification_bedding_newborns_dead,"{building}: {dead} piccoli morti appena nati su {total} per la lettiera (vuota {empty} giorni su {days} dalle nascite precedenti)."
+domestic_animals_building_defaults,"Per tutti i suoi edifici:"
+domestic_animals_feeder_days,"Giorni di cibo nelle mangiatoie"
+domestic_animals_feeder_days_tooltip,"Giorni di cibo che il gestore scorte tiene nelle mangiatoie di tutti gli edifici di questa specie. All'inventario calcola quanto mangerebbero tutti i posti e, se sotto, manda cibo dai magazzini: nell'ordine della dieta, da tutta la scorta del villaggio, almeno uno zaino pieno a ogni viaggio. Il lavoro sta nella riga Allevamento. Il singolo edificio può avere un valore suo. 0 = nessun rifornimento."
+domestic_animals_bedding_days,"Giorni di paglia nelle lettiere"
+domestic_animals_bedding_days_tooltip,"Giorni di paglia che il gestore scorte tiene nelle lettiere di tutti gli edifici di questa specie. All'inventario calcola quanta paglia userebbero tutti i posti e, se sotto, la manda dai magazzini, almeno uno zaino pieno a ogni viaggio. Il lavoro sta nella riga Allevamento. Il singolo edificio può avere un valore suo. 0 = nessun rifornimento."
+carried_resource_tooltip_manure,"Letame"
+building_manure_line,"Letame: {units} / {max}"
+building_manure_tooltip,"Gli animali fanno letame ogni giorno, con o senza lettiera. Al massimo, quello che fanno in più si perde. Il gestore scorte lo fa portare al letamaio più vicino con posto o, se non c'è, alla Fossa dei rifiuti."
+building_manure_rate,"Ne fanno {per_day} al giorno: pieno tra ~{days} giorni."
+building_manure_clean_label,"Pulisci oltre (%):"
+building_manure_clean_tooltip,"Percentuale della capienza del letame oltre la quale il gestore scorte manda a pulire questo edificio: si porta via tutto, al letamaio più vicino con posto o alla Fossa dei rifiuti. Il lavoro sta nella riga Allevamento. D = segue il valore della specie (pannello Animali); ↺ = valore di questo edificio (clic per tornare a quello della specie). 0 = esclusa: la pulisci a mano."
+building_manure_clean_excluded,"Esclusa dal WM: la pulisci a mano"
+domestic_animals_manure_clean,"Pulisci il letame oltre (%)"
+domestic_animals_manure_clean_tooltip,"Percentuale della capienza del letame oltre la quale il gestore scorte manda a pulire gli edifici di questa specie, uguale per edifici grandi e piccoli: si porta via tutto, al letamaio più vicino con posto o alla Fossa dei rifiuti. Il lavoro sta nella riga Allevamento. Il singolo edificio può avere un valore suo. 0 = nessuna pulizia automatica."
+drawer_order_manure_row,"{building}: pulizia, porta via {quantity} {resource}"
+pending_stock_manure,"Letame da buttare"
+pending_stock_manure_missing,"Nessun letamaio né Fossa dei rifiuti con posto per: {buildings}"
+notification_manure_full,"{building}: il letame è al massimo. Fallo pulire: quello che gli animali fanno in più si perde."
+dirty_reason_bedding_empty,"lettiera vuota"
+dirty_reason_manure_full,"letame al massimo"
+notification_dirty_building_deaths,"{building}: {count} animali morti di malattia ({reasons})."
+building_dirty_death_bedding,"Lettiera vuota: ogni giorno ogni animale rischia di morire di malattia ({chance}%)."
+building_dirty_death_manure,"Letame al massimo: ogni giorno ogni animale rischia di morire di malattia ({chance}%)."
+building_live_product_line,"{product}: {units} / {max}"
+building_live_product_tooltip,"Prodotto degli animali che si accumula qui ({product}). Al massimo, quello in più si perde; qui dentro deperisce col tempo come in ogni edificio."
+building_live_product_seasons,"Per animale al giorno: inverno {winter}, primavera {spring}, estate {summer}, autunno {autumn}."
+building_live_product_rate,"Oggi: {per_day} al giorno da tutti gli animali."
+building_live_product_none_today,"Oggi niente: fuori stagione o nessun animale che lo fa."
+notification_live_product_full,"{building}: {product} al massimo, quello in più si perde."
+building_live_product_collect_label,"Raccogli oltre (%):"
+building_live_product_collect_tooltip,"Percentuale della capienza oltre la quale il gestore scorte manda a raccogliere i prodotti degli animali di questo edificio (le uova): si porta via tutto, al magazzino più vicino con posto. Il lavoro sta nella riga Allevamento. Al massimo, quelli che gli animali fanno in più si perdono: non tenerla troppo alta. D = segue il valore della specie (pannello Animali); ↺ = valore di questo edificio (clic per tornare a quello della specie). 0 = esclusa: li raccogli a mano."
+building_live_product_collect_excluded,"Esclusa dal WM: li raccogli a mano"
+domestic_animals_live_product_collect,"Raccogli i prodotti oltre (%)"
+domestic_animals_live_product_collect_tooltip,"Percentuale della capienza oltre la quale il gestore scorte manda a raccogliere i prodotti degli animali di questa specie (le uova), uguale per edifici grandi e piccoli: si porta via tutto, al magazzino più vicino con posto. Il lavoro sta nella riga Allevamento. Al massimo, quelli che gli animali fanno in più si perdono. Il singolo edificio può avere un valore suo. 0 = nessuna raccolta automatica."
+drawer_order_live_product_row,"{building}: raccolta, porta via {quantity} {resource}"
+pending_stock_live_product,"Prodotti degli animali da raccogliere"
+pending_stock_live_product_missing,"Nessun magazzino con posto per i prodotti di: {buildings}"

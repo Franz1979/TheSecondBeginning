@@ -159,6 +159,13 @@ extends Resource
 # Mangiatoia (2026-11-13, punto 4 — AnimalFeederService): spazio per il cibo, come la saccoccia delle persone (il cibo
 # entrato diventa calorie); 0 = nessuna mangiatoia.
 @export var feeder_space_capacity: int = 0
+# Lettiera (2026-11-17, richiesta utente — BeddingService): unità di paglia che tiene; 0 = nessuna lettiera.
+@export var bedding_capacity: int = 0
+# Letame (2026-11-17, richiesta utente — ManureService): letame che l'edificio tiene prima della pulizia; 0 = nessuno.
+@export var manure_capacity: int = 0
+# Prodotti da vivi (2026-11-17, richiesta utente — LiveProductService): unità che tiene di ciascun prodotto degli animali
+# (pollaio 40 uova); 0 = gli animali qui non producono.
+@export var live_product_capacity: int = 0
 
 # Rifiuti (2026-10-18, richiesta utente — Fossa dei rifiuti, passo 1): spazio totale per i rifiuti, come lo spazio di un
 # magazzino ma senza slot e senza mai riprendere nulla; 0 = non è una fossa. Occupato e prenotato stanno in

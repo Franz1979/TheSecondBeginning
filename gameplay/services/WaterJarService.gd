@@ -23,10 +23,22 @@ extends RefCounted
 # (drink_from_carried_jars, da ThirstService.apply_drain dopo l'otre). Bere non consuma gli usi della giara.
 # Regola del WM "Acqua per tettoia" (2026-11-07, passo 3: WaterShelterStockService): trips_to_reach dice quanti viaggi
 # in più servono per tenere la tettoia al livello voluto.
-# Prossimi passi (non qui): valore per singola tettoia, giare mancanti, consumo.
+# Acqua come risorsa (2026-11-16, richiesta utente — passo 1, modello R): l'acqua della tettoia è la risorsa WATER
+# (water.tres, stored_in_container clay_jar) nella sua voce di Building.stored_resources; le giare restano nei posti e
+# ne sono i contenitori: al massimo giare × water_capacity. Per disegno e pannello l'acqua si ricava giara per giara
+# (shelter_jar_waters: prima le piene, poi quella a metà, poi le vuote). In viaggio la giara porta ancora la sua acqua
+# nell'istanza (ToolInstance.KEY_WATER): PutJar la versa nella voce WATER e la giara torna vuota al suo posto. Le
+# tettoie dei salvataggi vecchi (acqua nelle istanze) si convertono al caricamento (convert_legacy_jars).
+# Giare degli edifici (2026-11-16, richiesta utente — passo 3b): lo stesso riempimento vale per ogni edificio con le giare
+# nell'Attrezzeria (has_water_jars: il forno). Si prende una giara vuota DELL'EDIFICIO (mai dal magazzino: le giare che
+# mancano arrivano con «Rifornisci le Attrezzerie»), si va al punto d'acqua del giro più corto — la riva o una tettoia con
+# almeno una giara d'acqua non già promessa ad altri viaggi (pick_water_source) — e la giara torna all'edificio, l'acqua
+# nella sua voce WATER. Un uso della giara per viaggio, da qualsiasi fonte (decisione utente). La tettoia si riempie solo
+# alla riva (niente giri tra tettoie).
 # Senza stato.
 
 const JAR := "clay_jar"
+const WATER := "water"
 const SHELTER_TYPE := "water_shelter"
 const TASK_DEFINITION_PATH := "res://gameplay/scripts/tasks/definitions/fill_jar.tres"
 
@@ -46,10 +58,50 @@ const CONTEXT_CARRYING := "fill_jar_carrying"
 const CONTEXT_PENDING_NEXT_TRIP := "fill_jar_pending_next_trip"
 # Riempimento fallito alla riva (niente posto per la giara piena): la giara torna vuota nella tettoia e la serie finisce lì.
 const CONTEXT_STOP_AFTER_TRIP := "fill_jar_stop_after_trip"
+# Passo 3b: il viaggio attinge a questa tettoia invece che alla riva (id); assente = riva.
+const CONTEXT_FILL_SHELTER_ID := "fill_jar_fill_shelter_id"
+# true dopo FillJar: la tettoia del viaggio non aspetta più quest'acqua.
+const CONTEXT_FILLED := "fill_jar_filled"
 
 
 static func is_shelter(building: Building) -> bool:
 	return building != null and building.building_type_name == SHELTER_TYPE
+
+
+# Edificio con le giare dell'acqua nell'Attrezzeria (2026-11-16, passo 3b: il forno).
+static func has_water_jars(building: Building) -> bool:
+	return building != null and building.rules != null and not is_shelter(building) \
+		and BuildingToolkitService.has_toolkit(building) and building.rules.toolkit_extra_tools.has(JAR)
+
+
+# Edificio di cui si riempiono le giare: la tettoia o un edificio con le giare nell'Attrezzeria.
+static func is_fill_target(building: Building) -> bool:
+	return is_shelter(building) or has_water_jars(building)
+
+
+# Giare dell'edificio: nei posti della tettoia, o nell'Attrezzeria.
+static func jar_count(building: Building) -> int:
+	if is_shelter(building):
+		return shelter_jar_count(building)
+	return BuildingToolkitService.get_quantity(building, JAR) if building != null else 0
+
+
+# Acqua che le giare dell'edificio possono tenere adesso.
+static func water_room(building: Building) -> int:
+	return jar_count(building) * jar_water_capacity()
+
+
+# Giare vuote dell'edificio: quelle che la sua acqua non occupa (un contenitore, una risorsa).
+static func empty_jar_count(building: Building) -> int:
+	var capacity := jar_water_capacity()
+	if capacity <= 0:
+		return 0
+	return maxi(jar_count(building) - ceili(float(shelter_water(building)) / float(capacity)), 0)
+
+
+# Punto d'arrivo all'edificio: lo spiazzo della tettoia, la porta degli altri.
+static func arrival_point(worker: HumanIndividual, building: Building) -> Vector2:
+	return shelter_point(worker, building) if is_shelter(building) else TaskBuilderService.building_arrival_point(worker, building)
 
 
 static func is_fill_task(task: Task) -> bool:
@@ -76,12 +128,31 @@ static func shelter_capacity(shelter: Building) -> int:
 
 # --- Contenuto della tettoia ---
 
-# Acqua di ogni giara nella tettoia (i pezzi nuovi sono vuoti), nell'ordine in cui sono disegnate.
+# Acqua di ogni giara nella tettoia, nell'ordine in cui sono disegnate (2026-11-16, acqua come risorsa): ricavata dalla
+# voce WATER, prima le giare piene, poi quella a metà, poi le vuote.
 static func shelter_jar_waters(shelter: Building) -> Array[int]:
+	var waters: Array[int] = []
 	if shelter == null:
-		var none: Array[int] = []
-		return none
-	return entry_jar_waters(shelter.stored_resources.get(JAR, {}))
+		return waters
+	var remaining := shelter_water(shelter)
+	var capacity := jar_water_capacity()
+	for i in range(shelter_jar_count(shelter)):
+		var water := mini(remaining, capacity)
+		waters.append(water)
+		remaining -= water
+	return waters
+
+
+# Giare nei posti della tettoia.
+static func shelter_jar_count(shelter: Building) -> int:
+	if shelter == null:
+		return 0
+	return int((shelter.stored_resources.get(JAR, {}) as Dictionary).get("quantity", 0))
+
+
+# Acqua che le giare della tettoia possono tenere adesso.
+static func shelter_water_room(shelter: Building) -> int:
+	return shelter_jar_count(shelter) * jar_water_capacity()
 
 
 # Acqua di ogni giara di una voce (deposito o zaino): prima i pezzi nuovi (vuoti), poi le istanze.
@@ -110,11 +181,29 @@ static func decorate_jar_box(box: Control, waters: Array[int]) -> void:
 		box.tooltip_text += "\n" + TooltipText.wrap("\n".join(lines))
 
 
+# Acqua della tettoia (o di un edificio con le giare, passo 3b): la sua voce WATER.
 static func shelter_water(shelter: Building) -> int:
-	var total := 0
-	for water in shelter_jar_waters(shelter):
-		total += water
-	return total
+	if shelter == null:
+		return 0
+	return int((shelter.stored_resources.get(WATER, {}) as Dictionary).get("quantity", 0))
+
+
+# Scrive l'acqua della tettoia (0 = voce tolta).
+static func _set_shelter_water(shelter: Building, water: int) -> void:
+	if water <= 0:
+		shelter.stored_resources.erase(WATER)
+	else:
+		shelter.stored_resources[WATER] = {"quantity": water, "decay_fraction": 0.0}
+
+
+# Versa `water` nell'edificio (tettoia o giare dell'Attrezzeria), fino a quanto tengono le sue giare. Ritorna quanta ne è
+# entrata.
+static func _add_shelter_water(shelter: Building, water: int) -> int:
+	var before := shelter_water(shelter)
+	var after := mini(before + maxi(water, 0), water_room(shelter))
+	after = maxi(after, before)
+	_set_shelter_water(shelter, after)
+	return after - before
 
 
 # Giare in viaggio per `shelter` nei compiti di riempimento aperti (in corso o in coda): quante sono già in mano
@@ -137,13 +226,9 @@ static func _trips_for(shelter: Building) -> Dictionary:
 	return counts
 
 
-# Giare della tettoia vuote (senza acqua) e non già prenotate da un altro viaggio.
+# Giare vuote dell'edificio (tettoia o Attrezzeria) e non già prenotate da un altro viaggio.
 static func _free_empty_jars(shelter: Building, trips: Dictionary) -> int:
-	var empty := 0
-	for water in shelter_jar_waters(shelter):
-		if water <= 0:
-			empty += 1
-	return maxi(empty - int(trips["from_shelter"]), 0)
+	return maxi(empty_jar_count(shelter) - int(trips["from_shelter"]), 0)
 
 
 # Giare vuote della tettoia ancora libere per un viaggio (2026-11-07, giare mancanti: WaterShelterStockService).
@@ -156,15 +241,18 @@ static func pending_storage_trips(shelter: Building) -> int:
 	return int(_trips_for(shelter)["from_storage"])
 
 
-# Posti della tettoia senza giara e non riservati (giare in viaggio o attese da un magazzino).
+# Posti della tettoia senza giara e non riservati (giare in viaggio o attese da un magazzino). Un edificio con le giare
+# nell'Attrezzeria non prende giare dal magazzino col riempimento: 0.
 static func _free_places(shelter: Building, trips: Dictionary) -> int:
+	if not is_shelter(shelter):
+		return 0
 	return maxi(shelter_capacity(shelter) - shelter_jar_waters(shelter).size() - int(trips["carrying"]) - int(trips["from_storage"]), 0)
 
 
 # Quanti riempimenti si possono ancora chiedere alla tettoia: giare vuote più posti liberi. 0 = tettoia piena
 # d'acqua, o non utilizzabile (non completa, fuori servizio, demolita).
 static func fillable_count(shelter: Building) -> int:
-	if not is_shelter(shelter) or not shelter.is_complete or shelter.is_demolished or shelter.is_out_of_service():
+	if not is_fill_target(shelter) or not shelter.is_complete or shelter.is_demolished or shelter.is_out_of_service():
 		return 0
 	var trips := _trips_for(shelter)
 	return _free_empty_jars(shelter, trips) + _free_places(shelter, trips)
@@ -185,7 +273,7 @@ static func planned_trips(shelter: Building) -> int:
 # già come pieni. Si può superare `target` (giare sempre piene); il limite è solo la tettoia: giare vuote e posti liberi
 # non ancora presi dai viaggi già decisi. 0 = coi viaggi già decisi arriva al livello, o nessun viaggio possibile.
 static func trips_to_reach(shelter: Building, target: int) -> int:
-	if not is_shelter(shelter) or target <= 0:
+	if not is_fill_target(shelter) or target <= 0:
 		return 0
 	var capacity := jar_water_capacity()
 	if capacity <= 0:
@@ -239,19 +327,64 @@ static func build_fill_task(worker: HumanIndividual, source: Building, shelter: 
 
 
 static func _trip_context(worker: HumanIndividual, source: Building, shelter: Building) -> Dictionary:
-	var source_point := shelter_point(worker, source) if is_shelter(source) else TaskBuilderService.building_arrival_point(worker, source)
-	var arrival := shelter_point(worker, shelter)
-	var water_point: Variant = pick_fill_point(worker, source_point, arrival)
-	if water_point == null:
+	var source_point := arrival_point(worker, source)
+	var arrival := arrival_point(worker, shelter)
+	var water := pick_water_source(worker, source_point, arrival, shelter)
+	if water.is_empty():
 		return {}
-	return {
+	var context := {
 		CONTEXT_SOURCE_POSITION: source_point,
 		CONTEXT_SOURCE_BUILDING: source,
-		CONTEXT_WATER_POSITION: water_point,
+		CONTEXT_WATER_POSITION: water["point"],
 		CONTEXT_SHELTER_POSITION: arrival,
 		CONTEXT_SHELTER_BUILDING: shelter,
 		CONTEXT_SOURCE_ID: source.id,
 	}
+	var water_shelter: Building = water.get("shelter", null)
+	if water_shelter != null:
+		context[CONTEXT_FILL_SHELTER_ID] = water_shelter.id
+	if DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+		print("[WATER] #%d %s: viaggio per %s #%d: giara da %s #%d, acqua %s (giro %.0f)." % [
+			worker.id, worker.name, shelter.building_type_name, shelter.id, source.building_type_name, source.id,
+			"alla tettoia #%d" % water_shelter.id if water_shelter != null else "alla riva", float(water["length"]),
+		])
+	return context
+
+
+# Punto d'acqua del viaggio (2026-11-16, passo 3b): la riva (pick_fill_point) o, per un edificio che non è una tettoia,
+# una tettoia con almeno una giara d'acqua libera (shelter_water_available), quella del giro sorgente -> acqua -> edificio
+# più corto in linea d'aria. {"point", "length", "shelter" (solo se tettoia)}; {} se nessun punto.
+static func pick_water_source(worker: HumanIndividual, source_point: Vector2, arrival: Vector2, target: Building) -> Dictionary:
+	var best: Dictionary = {}
+	var river: Variant = pick_fill_point(worker, source_point, arrival)
+	if river != null:
+		best = {"point": river, "length": source_point.distance_to(river) + (river as Vector2).distance_to(arrival)}
+	if is_shelter(target) or GameSettings.active_world == null:
+		return best
+	var reachable := PathfindingService.reachability_for(worker)
+	for building in GameSettings.active_world.buildings:
+		if not is_shelter(building) or not building.is_complete or building.is_demolished or building.is_out_of_service():
+			continue
+		if not PathfindingService.get_live_cells().has(Vector2i(building.macro_x, building.macro_y)):
+			continue
+		if shelter_water_available(building) < jar_water_capacity() or not bool(reachable.call(building)):
+			continue
+		var point := shelter_point(worker, building)
+		var length := source_point.distance_to(point) + point.distance_to(arrival)
+		if best.is_empty() or length < float(best["length"]):
+			best = {"point": point, "length": length, "shelter": building}
+	return best
+
+
+# Acqua della tettoia non ancora promessa ai viaggi che vanno ad attingere lì (una giara piena ciascuno).
+static func shelter_water_available(shelter: Building) -> int:
+	var promised := 0
+	for member in GameSettings.active_human_individuals:
+		for task in JobWorkScanService.open_tasks(member):
+			if is_fill_task(task) and int(task.context.get(CONTEXT_FILL_SHELTER_ID, -1)) == shelter.id \
+					and not bool(task.context.get(CONTEXT_FILLED, false)):
+				promised += 1
+	return shelter_water(shelter) - promised * jar_water_capacity()
 
 
 # Viaggio successivo (HumanIndividualActionService, dopo PutJarAction con CONTEXT_PENDING_NEXT_TRIP): gli step di un
@@ -274,6 +407,12 @@ static func append_next_trip(individual: HumanIndividual, task: Task, world: Wor
 	if trip == null:
 		return
 	task.context[CONTEXT_SOURCE_ID] = int(trip_context[CONTEXT_SOURCE_ID])
+	# Punto d'acqua del nuovo viaggio (passo 3b): riva o tettoia.
+	task.context.erase(CONTEXT_FILLED)
+	if trip_context.has(CONTEXT_FILL_SHELTER_ID):
+		task.context[CONTEXT_FILL_SHELTER_ID] = int(trip_context[CONTEXT_FILL_SHELTER_ID])
+	else:
+		task.context.erase(CONTEXT_FILL_SHELTER_ID)
 	var first_index := task.steps.size()
 	task.append_steps(trip.steps)
 	for i in range(trip.step_descriptions.size()):
@@ -334,7 +473,13 @@ static func pick_fill_point(worker: HumanIndividual, source_point: Vector2, shel
 static func take_jar(individual: HumanIndividual, source: Building, context: Dictionary) -> String:
 	if source == null or source.is_demolished:
 		return GameContext.tr_text("fill_jar_fail_no_jar").format({"name": individual.name})
-	var jar: Dictionary = _take_from_shelter(source) if is_shelter(source) else _take_from_storage(source)
+	var jar: Dictionary = {}
+	if is_shelter(source):
+		jar = _take_from_shelter(source)
+	elif has_water_jars(source):
+		jar = _take_from_toolkit(source)
+	else:
+		jar = _take_from_storage(source)
 	if jar.is_empty():
 		return GameContext.tr_text("fill_jar_fail_no_jar").format({"name": individual.name})
 	# Correzione 2026-11-07 (richiesta utente): si controlla già qui che ci starà da piena (il travois può essere sparito
@@ -348,35 +493,32 @@ static func take_jar(individual: HumanIndividual, source: Building, context: Dic
 	return ""
 
 
+# Giara vuota dell'Attrezzeria di un edificio (passo 3b): la più consumata, se una giara è vuota. {} se nessuna.
+static func _take_from_toolkit(building: Building) -> Dictionary:
+	if empty_jar_count(building) <= 0:
+		return {}
+	var jar := BuildingToolkitService.take_unit(building, JAR)
+	ToolInstance.set_water(jar, 0)
+	return jar
+
+
 static func _take_from_storage(source: Building) -> Dictionary:
 	var units: Array = BuildingStorageService.withdraw_tool_units(source, JAR, 1)
 	return units[0] if not units.is_empty() else {}
 
 
-# Giara vuota (prima i pezzi nuovi); {} se nessuna è vuota.
+# Giara vuota della tettoia (2026-11-16, acqua come risorsa: le giare non hanno acqua loro, è vuota una giara che l'acqua
+# della tettoia non occupa): la più consumata. {} se nessuna è vuota.
 static func _take_from_shelter(shelter: Building) -> Dictionary:
-	if not shelter.stored_resources.has(JAR):
+	if not shelter.stored_resources.has(JAR) or not shelter_jar_waters(shelter).has(0):
 		return {}
 	var entry: Dictionary = (shelter.stored_resources[JAR] as Dictionary).duplicate(true)
-	var max_uses := ToolInstance.get_max_uses(JAR)
-	var jar: Dictionary = {}
-	if ToolInstance.get_new_quantity(entry) > 0:
-		jar = ToolInstance.create(max_uses, float(entry.get("decay_fraction", 0.0)))
-	else:
-		var instances: Array = ToolInstance.get_used_instances(entry).duplicate()
-		var best_index := -1
-		for i in range(instances.size()):
-			var water := ToolInstance.get_water(instances[i])
-			if water <= 0:
-				best_index = i
-				break
-		if best_index == -1:
-			return {}
-		jar = instances[best_index]
-		instances.remove_at(best_index)
-		ToolInstance.set_used_instances(entry, instances)
-	entry["quantity"] = int(entry.get("quantity", 0)) - 1
+	var units: Array = ToolInstance.take_units_from_entry(entry, 1, ToolInstance.get_max_uses(JAR))
+	if units.is_empty():
+		return {}
 	_write_shelter_entry(shelter, entry)
+	var jar: Dictionary = units[0]
+	ToolInstance.set_water(jar, 0)
 	return jar
 
 
@@ -384,26 +526,53 @@ static func _take_from_shelter(shelter: Building) -> Dictionary:
 static func _give_back(source: Building, jar: Dictionary) -> void:
 	if is_shelter(source):
 		_add_to_shelter(source, jar)
+	elif has_water_jars(source):
+		BuildingToolkitService.put_back_unit(source, JAR, jar)
 	else:
 		BuildingStorageService.store_tool_instance(source, JAR, jar)
 
 
 # FillJarAction: la giara dello zaino con meno acqua si riempie fino a water_capacity, con un uso in meno (a zero si
-# rompe). "" se riuscito, altrimenti il motivo già tradotto (la giara resta nello zaino, tranne quando si rompe).
-static func fill_carried_jar(individual: HumanIndividual) -> String:
+# rompe). Alla riva sempre piena; a una tettoia (passo 3b, CONTEXT_FILL_SHELTER_ID) con quello che c'è, fino a piena, e
+# la tettoia scende altrettanto; tettoia a secco = niente acqua, la giara torna vuota. "" se riuscito, altrimenti il
+# motivo già tradotto (la giara resta nello zaino, tranne quando si rompe).
+static func fill_carried_jar(individual: HumanIndividual, context: Dictionary = {}) -> String:
+	context[CONTEXT_FILLED] = true
 	var jar := _take_carried_jar(individual, false)
 	if jar.is_empty():
 		return GameContext.tr_text("fill_jar_fail_no_jar").format({"name": individual.name})
+	var water_shelter: Building = null
+	if context.has(CONTEXT_FILL_SHELTER_ID):
+		water_shelter = _find_building(GameSettings.active_world, int(context[CONTEXT_FILL_SHELTER_ID]))
+		if not is_shelter(water_shelter) or water_shelter.is_demolished or shelter_water(water_shelter) <= 0:
+			individual.add_carried_tool_instance(JAR, jar)
+			if DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+				print("[WATER] #%d %s: la tettoia #%d è a secco, niente acqua." % [individual.id, individual.name, int(context[CONTEXT_FILL_SHELTER_ID])])
+			return GameContext.tr_text("fill_jar_fail_shelter_dry").format({"name": individual.name})
 	var uses_left := ToolInstance.get_remaining_uses(jar) - 1
 	if uses_left <= 0:
 		return GameContext.tr_text("fill_jar_fail_broken").format({"name": individual.name})
 	var full := _filled_copy(jar)
 	full[ToolInstance.KEY_REMAINING_USES] = uses_left
+	if water_shelter != null:
+		ToolInstance.set_water(full, mini(jar_water_capacity(), shelter_water(water_shelter)))
 	if not _fits(individual, full) or not individual.add_carried_tool_instance(JAR, full):
 		individual.add_carried_tool_instance(JAR, jar)
 		return GameContext.tr_text("fill_jar_fail_no_room").format({"name": individual.name})
+	if water_shelter != null:
+		_set_shelter_water(water_shelter, shelter_water(water_shelter) - ToolInstance.get_water(full))
+		if DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+			print("[WATER] #%d %s: attinge alla tettoia #%d, giara %d -> %d (usi rimasti %d), tettoia resta %d/%d." % [
+				individual.id, individual.name, water_shelter.id, ToolInstance.get_water(jar), ToolInstance.get_water(full), uses_left,
+				shelter_water(water_shelter), water_room(water_shelter),
+			])
+		return ""
 	if DebugLogging.ENABLED and DebugLogging.SHOW_TRANSPORT_BUILD_LOGS:
 		print("[FILL JAR] #%d %s: giara riempita (%d -> %d), usi rimasti %d." % [
+			individual.id, individual.name, ToolInstance.get_water(jar), ToolInstance.get_water(full), uses_left
+		])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+		print("[WATER] #%d %s: attinge alla riva, giara %d -> %d (usi rimasti %d)." % [
 			individual.id, individual.name, ToolInstance.get_water(jar), ToolInstance.get_water(full), uses_left
 		])
 	return ""
@@ -414,13 +583,30 @@ static func fill_carried_jar(individual: HumanIndividual) -> String:
 # resta nello zaino: alla prima pausa finisce in magazzino, vuota).
 static func put_jar(individual: HumanIndividual, shelter: Building, context: Dictionary) -> String:
 	context.erase(CONTEXT_CARRYING)
-	if not is_shelter(shelter) or shelter.is_demolished or shelter.is_out_of_service() \
-			or shelter_jar_waters(shelter).size() >= shelter_capacity(shelter):
+	var has_place := false
+	if is_shelter(shelter):
+		has_place = shelter_jar_count(shelter) < shelter_capacity(shelter)
+	elif has_water_jars(shelter):
+		has_place = BuildingToolkitService.get_quantity(shelter, JAR) < BuildingToolkitService.get_units_per_type(shelter, JAR)
+	if not has_place or shelter.is_demolished or shelter.is_out_of_service():
 		return GameContext.tr_text("fill_jar_fail_shelter").format({"name": individual.name})
 	var jar := _take_carried_jar(individual, true)
 	if jar.is_empty():
 		return GameContext.tr_text("fill_jar_fail_no_jar").format({"name": individual.name})
-	_add_to_shelter(shelter, jar)
+	# Acqua come risorsa (2026-11-16): la giara torna vuota al suo posto (tettoia o Attrezzeria, passo 3b), la sua acqua va
+	# nella voce WATER dell'edificio.
+	var poured := ToolInstance.get_water(jar)
+	ToolInstance.set_water(jar, 0)
+	if is_shelter(shelter):
+		_add_to_shelter(shelter, jar)
+	else:
+		BuildingToolkitService.put_back_unit(shelter, JAR, jar)
+	var added := _add_shelter_water(shelter, poured)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+		print("[WATER] #%d %s: versa %d d'acqua in %s #%d -> %d/%d (%d giare)%s." % [
+			individual.id, individual.name, added, shelter.building_type_name, shelter.id, shelter_water(shelter), water_room(shelter),
+			jar_count(shelter), "" if added == poured else ", %d persa (giare piene)" % (poured - added)
+		])
 	var remaining := int(context.get(CONTEXT_REMAINING, 1)) - 1
 	context[CONTEXT_REMAINING] = remaining
 	if context.has(CONTEXT_STOP_AFTER_TRIP):
@@ -542,19 +728,22 @@ static func drink_at_shelter(individual: HumanIndividual, shelter_id: int) -> Bu
 					individual.waterskin_water = 0.0
 	if DebugLogging.ENABLED and DebugLogging.SHOW_THIRST_LOGS:
 		print("[THIRST] #%d %s: beve %.1f alla tettoia #%d (resta %d)." % [individual.id, individual.name, drunk, shelter.id, shelter_water(shelter)])
+	if DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+		print("[WATER] #%d %s: beve %d alla tettoia #%d (otre %.0f), resta %d/%d." % [
+			individual.id, individual.name, int(drunk), shelter.id, individual.waterskin_water, shelter_water(shelter), shelter_water_room(shelter)
+		])
 	return shelter
 
 
 # Toglie fino a `amount` d'acqua dalle giare della tettoia, dalla giara con meno acqua (le giare si svuotano una alla
 # volta). Ritorna quanta ne ha tolta. L'acqua delle giare è intera: si arrotonda per eccesso, al massimo quella che c'è.
+# Acqua come risorsa (2026-11-16): si preleva dalla voce WATER della tettoia.
 static func _take_shelter_water(shelter: Building, amount: float) -> float:
-	if amount <= 0.0 or not shelter.stored_resources.has(JAR):
+	if amount <= 0.0:
 		return 0.0
-	var entry: Dictionary = (shelter.stored_resources[JAR] as Dictionary).duplicate(true)
-	var instances: Array = ToolInstance.get_used_instances(entry).duplicate(true)
-	var taken := _drain_instances(instances, int(ceil(amount)))
-	ToolInstance.set_used_instances(entry, instances)
-	_write_shelter_entry(shelter, entry)
+	var current := shelter_water(shelter)
+	var taken := mini(current, int(ceil(amount)))
+	_set_shelter_water(shelter, current - taken)
 	return float(taken)
 
 
@@ -572,6 +761,10 @@ static func drink_from_carried_jars(individual: HumanIndividual) -> float:
 		individual.add_carried_tool_instance(JAR, unit)
 	individual.current_thirst = minf(individual.current_thirst + float(drunk), individual.max_thirst)
 	individual.thirst_retry_below = INF
+	if drunk > 0 and DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+		print("[WATER] #%d %s: beve %d dalla giara che porta (resta %d)." % [
+			individual.id, individual.name, drunk, ToolInstance.get_entry_water(individual.carried_resources.get(JAR, {}))
+		])
 	return float(drunk)
 
 
@@ -593,6 +786,31 @@ static func _drain_instances(instances: Array, amount: int) -> int:
 		ToolInstance.set_water(instances[index], water - part)
 		taken += part
 	return taken
+
+
+# --- Salvataggi vecchi ---
+
+# Tettoia di un salvataggio di prima del 2026-11-16 (acqua nelle istanze delle giare): l'acqua passa nella voce WATER,
+# le giare restano vuote nei loro posti con i loro usi. Da GameLoadService, dopo aver letto il deposito. Nessun effetto
+# su una tettoia già convertita.
+static func convert_legacy_jars(shelter: Building) -> void:
+	if not is_shelter(shelter) or not shelter.stored_resources.has(JAR):
+		return
+	var entry: Dictionary = (shelter.stored_resources[JAR] as Dictionary).duplicate(true)
+	if ToolInstance.get_entry_water(entry) <= 0:
+		return
+	var units: Array = ToolInstance.take_units_from_entry(entry, int(entry.get("quantity", 0)), ToolInstance.get_max_uses(JAR))
+	var legacy_water := 0
+	_write_shelter_entry(shelter, entry)
+	for unit in units:
+		legacy_water += ToolInstance.get_water(unit)
+		ToolInstance.set_water(unit, 0)
+		_add_to_shelter(shelter, unit)
+	var added := _add_shelter_water(shelter, legacy_water)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_WATER_LOGS:
+		print("[WATER] tettoia #%d convertita dal salvataggio vecchio: %d d'acqua nelle giare -> risorsa %d/%d (%d giare)." % [
+			shelter.id, legacy_water, added, shelter_water_room(shelter), shelter_jar_count(shelter)
+		])
 
 
 static func _find_building(world: World, building_id: int) -> Building:

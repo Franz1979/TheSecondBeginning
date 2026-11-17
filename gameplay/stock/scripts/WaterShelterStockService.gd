@@ -14,13 +14,31 @@ extends RefCounted
 # del WM e campanella, StockRuntimeState.water_jars_missing). La produzione automatica delle giare NON si fa (decisione
 # utente 2026-11-07).
 
-# Nell'ordine del cassetto: id della tettoia da riempire.
+# Giare degli edifici (2026-11-16, richiesta utente — acqua come risorsa, passo 3c): stessa regola per gli edifici con le
+# giare nell'Attrezzeria (WaterJarService.has_water_jars: il forno), senza livello da impostare: quando agli ordini in
+# produzione manca acqua (ProductionService.get_missing_inputs), un ordine di riempimento per i viaggi che la coprono
+# (giare sempre piene), solo con le giare vuote dell'edificio (mai dal magazzino). Vale solo col WM acceso: senza, il forno
+# si riempie col clic destro.
+
+# Nell'ordine del cassetto: id della tettoia (o dell'edificio con le giare) da riempire.
 const WATER_TARGET_KEY := "water_shelter_target_id"
 
 
 # Tettoia che la regola serve: completa, non demolita, in servizio.
 static func is_served(building: Building) -> bool:
 	return WaterJarService.is_shelter(building) and building.is_complete and not building.is_demolished and not building.is_out_of_service()
+
+
+# Edificio con le giare (passo 3c) che la regola serve: completo, non demolito, in servizio.
+static func is_served_jars(building: Building) -> bool:
+	return WaterJarService.has_water_jars(building) and building.is_complete and not building.is_demolished \
+		and not building.is_out_of_service()
+
+
+# Acqua voluta in un edificio con le giare: quella che ha più quella che manca ai suoi ordini in produzione; 0 = niente.
+static func jars_target(building: Building) -> int:
+	var missing := int(ProductionService.get_missing_inputs(building).get(WaterJarService.WATER, 0))
+	return WaterJarService.shelter_water(building) + missing if missing > 0 else 0
 
 
 # Acqua voluta in `shelter`: il valore suo (Building.water_target_override; 0 = esclusa), altrimenti la regola generale;
@@ -63,6 +81,16 @@ static func plan_orders(world: World, game_data: GameData, open_orders: Array, s
 	var available := storage_jars
 	if world != null:
 		for building in world.buildings:
+			# Giare degli edifici (passo 3c): viaggi solo con le loro giare vuote.
+			if is_served_jars(building):
+				var jars_level := jars_target(building)
+				var jars_trips := WaterJarService.trips_to_reach(building, jars_level) if jars_level > 0 else 0
+				if jars_trips > 0:
+					needs.append({
+						"building": building, "trips": jars_trips, "own": jars_trips,
+						"ratio": float(WaterJarService.shelter_water(building)) / float(jars_level),
+					})
+				continue
 			if not is_served(building):
 				continue
 			# Giare già attese da un magazzino da viaggi decisi (anche a mano): non sono più disponibili per altri.

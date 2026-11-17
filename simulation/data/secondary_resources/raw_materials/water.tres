@@ -1,0 +1,20 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_water"]
+
+; Acqua (2026-11-16, richiesta utente — acqua come risorsa, passo 1): risorsa vera, ma sta solo nelle giare
+; (stored_in_container = clay_jar): un edificio tiene acqua solo se ha giare, 400 per giara (water_capacity della giara).
+; Oggi la tiene solo la Tettoia dell'acqua (WaterJarService: giare nei suoi posti, acqua nella voce "water").
+; Liquido (is_liquid): senza le giare si versa, non finisce mai a terra in un mucchio.
+; Spazio 0,1 per unità, come l'acqua dentro una giara portata (ToolInstance.WATER_SPACE_PER_UNIT): 400 d'acqua = 40.
+; Riva e ruscello sono sorgenti senza fine: lì si beve e si attinge senza toccare questa risorsa.
+[resource]
+script = ExtResource("1_water")
+secondary_resource_name = "water"
+calories_per_unit = 0.0
+category = 1
+required_idea_id = "pottery"
+generation_source = 1
+space_per_unit = 0.1
+stored_in_container = "clay_jar"
+is_liquid = true

@@ -39,10 +39,37 @@ static func _held_in(building: Building, resource_name: String, container: Strin
 	return rules != null and rules.stored_in_container == container and not is_loose_in(building, rules)
 
 
-# Misure che tiene un pezzo del contenitore (0 = non è un contenitore).
+# Misure che tiene un pezzo del contenitore (0 = non è un contenitore). Giara per l'acqua (2026-11-16, acqua come risorsa,
+# passo 3a): un contenitore di un liquido tiene la sua water_capacity (la giara 400). L'otre ha water_capacity ma nessun
+# liquido ci sta in magazzino: resta 0.
 static func unit_capacity(container: String) -> int:
 	var rules := CaloricCalculator.get_caloric_source_rules(container)
-	return maxi(rules.seed_capacity, 0) if rules != null else 0
+	if rules == null:
+		return 0
+	if rules.seed_capacity > 0:
+		return rules.seed_capacity
+	return maxi(int(rules.water_capacity), 0) if holds_liquid(container) else 0
+
+
+static var _liquid_containers: Dictionary = {}
+static var _liquid_containers_ready := false
+
+
+# true se in `container` sta un liquido (SecondaryResourceRules.is_liquid con stored_in_container = container: la giara
+# con l'acqua). Elenco fatto una volta sola.
+static func holds_liquid(container: String) -> bool:
+	if not _liquid_containers_ready:
+		_liquid_containers_ready = true
+		for resource_name in CaloricCalculator.list_secondary_resource_names():
+			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+			if rules != null and rules.is_liquid and rules.stored_in_container != "":
+				_liquid_containers[rules.stored_in_container] = true
+	return _liquid_containers.has(container)
+
+
+# Suffisso dei testi del pannello per `container` (2026-11-16): "_water" per le giare dell'acqua, "" per i vasi da semi.
+static func text_suffix(container: String) -> String:
+	return "_water" if holds_liquid(container) else ""
 
 
 static func capacity_of(building: Building, container: String) -> int:
@@ -126,6 +153,11 @@ static func no_room_reason(resource_name: String) -> String:
 # capienza si perdono.
 static func wear(building: Building, resource_name: String, amount: int) -> void:
 	var container := container_of(resource_name)
+	# Liquidi (2026-11-16, decisione utente): la giara si consuma di un uso per ogni viaggio di riempimento (WaterJarService),
+	# non per ogni misura che entra o esce.
+	var liquid_rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if liquid_rules != null and liquid_rules.is_liquid:
+		return
 	if building == null or container == "" or amount <= 0 \
 			or is_loose_in(building, CaloricCalculator.get_caloric_source_rules(resource_name)):
 		return
@@ -189,6 +221,10 @@ static func building_accepts_contents(building: Building, container: String) -> 
 		return false
 	for resource_name in CaloricCalculator.list_secondary_resource_names():
 		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		# Liquidi (2026-11-16, giare del forno): l'edificio che elenca la giara nei suoi dati tiene l'acqua; se e quanta ne
+		# serve lo decidono ricette e riempimento, non i filtri di categoria del deposito.
+		if rules != null and rules.stored_in_container == container and rules.is_liquid:
+			return true
 		if rules != null and rules.stored_in_container == container \
 				and BuildingStorageService._free_storage_allows(building, resource_name, rules):
 			return true

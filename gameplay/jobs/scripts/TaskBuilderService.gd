@@ -117,6 +117,11 @@ static func transport_trip_target(destination_building: Building, resource_name:
 		var feeder_room := AnimalFeederService.max_depositable(GameSettings.active_game_data, destination_building, resource_name)
 		if feeder_room > 0:
 			return mini(remaining_quantity, feeder_room)
+	# Lettiera (2026-11-17, BeddingService): solo paglia, fin dove ci sta.
+	if BeddingService.has_bedding(destination_building):
+		var bedding_room := BeddingService.max_depositable(destination_building, resource_name)
+		if bedding_room > 0:
+			return mini(remaining_quantity, bedding_room)
 	# Fossa dei rifiuti (2026-10-18): tutto ciò che ci sta ancora, qualunque merce (WasteDisposalService).
 	if WasteDisposalService.is_waste_pit(destination_building):
 		return mini(remaining_quantity, WasteDisposalService.get_max_disposable(destination_building, resource_name))

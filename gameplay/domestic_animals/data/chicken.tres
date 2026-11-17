@@ -1,7 +1,19 @@
 [gd_resource type="Resource" script_class="DomesticAnimalRules" format=3]
 
 [ext_resource type="Script" path="res://gameplay/domestic_animals/scripts/DomesticAnimalRules.gd" id="1_chicken"]
+[ext_resource type="Script" path="res://gameplay/domestic_animals/scripts/LiveProductRules.gd" id="2_live_product"]
 
+; Uova (2026-11-17, richiesta utente): solo le femmine adulte; inverno, primavera, estate, autunno. Macello: 2 carne (metà del coniglio) e
+; nessun osso, come la pernice (2026-11-17, richiesta utente).
+[sub_resource type="Resource" id="LiveProduct_eggs"]
+script = ExtResource("2_live_product")
+product = "eggs"
+per_day_by_season = Array[float]([0.0, 0.3, 0.25, 0.1])
+is_female_only = true
+adults_only = true
+
+; Pollaio (2026-11-17, richiesta utente): 2 calorie al giorno (erano 3; valgono anche per le pernici selvatiche in tettoia,
+; che usano queste regole), lettiera 0.03 al giorno, letame 0.015 (meno del coniglio), malattie come il coniglio, pulcini senza lettiera 70% (più resistenti dei coniglietti, 75%).
 [resource]
 script = ExtResource("1_chicken")
 species_name = "chicken"
@@ -18,13 +30,21 @@ max_age_years = 4
 max_age_variation_years = 1
 litter_size_min = 1
 litter_size_max = 8
-daily_calories = 3.0
+daily_calories = 2.0
 accepted_foods = Array[String](["wild_seeds", "wild_wheat", "wild_rye", "wild_oats", "domestic_barley", "domestic_wheat", "domestic_rye", "domestic_oats", "wild_vegetables", "berry", "fruit", "acorn", "hay"])
 max_days_without_food = 5
 starvation_point_loss = 10
-butcher_meat_units = 3
+butcher_meat_units = 2
 butcher_hide_units = 0
 butcher_sinew_units = 0
-butcher_bone_units = 1
+butcher_bone_units = 0
+live_carry_space_young = 2.0
+live_carry_space_adult = 4.0
+bedding_per_day = 0.03
+newborn_death_without_bedding = 0.7
+manure_per_day = 0.015
+death_chance_without_bedding = 0.002
+death_chance_full_manure = 0.005
+live_products = [SubResource("LiveProduct_eggs")]
 slaughter_point_loss = 2
 escape_point_loss = 1

@@ -120,6 +120,8 @@ const RESOURCE_ICON_NODES := {
 	"oat_cake": preload("res://simulation/scripts/ui/OatCakeIcon.gd"),
 	# Paglia (2026-11-15): covone di steli legati (StrawIcon).
 	"straw": preload("res://simulation/scripts/ui/StrawIcon.gd"),
+	# Letame (2026-11-17): mucchio bruno con fili di paglia (ManureIcon).
+	"manure": preload("res://simulation/scripts/ui/ManureIcon.gd"),
 	# Segale selvatica (2026-11-15, era il miglio): la stessa spiga, grigio-verde (WildRyeIcon).
 	"wild_rye": preload("res://simulation/scripts/ui/WildRyeIcon.gd"),
 	# Avena selvatica (2026-11-15): la stessa spiga, beige-verdolina (WildOatsIcon).

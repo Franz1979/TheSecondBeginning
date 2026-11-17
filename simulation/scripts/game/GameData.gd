@@ -125,6 +125,9 @@ var domesticated_species: Array[String] = []
 # Anno (GameData.year) della prima addomesticazione per specie (2026-11-07, richiesta utente: la carta del pannello lo
 # mostra). Salvataggi più vecchi: chiave assente, la carta non dice l'anno. Scritto solo da DomesticationPointsService.
 var domestication_years: Dictionary = {}
+# Specie domestiche (animali e piante) presenti al controllo di ieri (2026-11-17, DomesticExtinctionService): l'avviso di
+# estinzione esce al passaggio da presente ad assente. Salvato; save precedenti: vuoto (il primo giorno registra soltanto).
+var domestic_species_present: Array[String] = []
 # Contatori di debug di caccia e trappole per anno (2026-11-15, «caccia grossi animali»): str(anno) -> dati. Scritti solo
 # da HuntTrapStatsService, letti da HuntTrapStatsPanel. Salvato.
 var hunt_trap_stats: Dictionary = {}
@@ -414,6 +417,21 @@ var stock_water_per_shelter: int = 0
 # Regola "Rifornisci le mangiatoie" (2026-11-14, FeederStockService): giorni di cibo da tenere nelle mangiatoie (0 =
 # spenta). Salvata; partita nuova e salvataggi vecchi: FeederStockService.DEFAULT_DAYS.
 var stock_feeder_days: int = 5
+# Regola "Lettiera" (2026-11-17, BeddingStockService): giorni di paglia da tenere nelle lettiere (0 = spenta). Salvata;
+# partita nuova e salvataggi vecchi: BeddingStockService.DEFAULT_DAYS.
+var stock_bedding_days: int = 20
+# Giorni per specie (2026-11-17, richiesta utente — regole spostate nel pannello Animali): specie -> giorni di cibo nelle
+# mangiatoie / di paglia nelle lettiere dei suoi edifici (0 = nessun rifornimento). Una specie senza valore usa
+# stock_feeder_days / stock_bedding_days qui sopra, che non si cambiano più dal gioco: restano come default (e per i
+# salvataggi di prima, dove erano un solo numero per tutto il villaggio). Salvati.
+var stock_feeder_days_by_species: Dictionary = {}
+var stock_bedding_days_by_species: Dictionary = {}
+# Pulizia del letame per specie (2026-11-17, ManureStockService): specie -> percentuale della capienza oltre la quale
+# pulire (0 = mai in automatico); senza valore ManureStockService.DEFAULT_CLEAN_ABOVE. Salvato.
+var stock_manure_clean_by_species: Dictionary = {}
+# Raccolta dei prodotti da vivi per specie (2026-11-17, LiveProductStockService): specie -> percentuale della capienza oltre
+# la quale raccogliere (0 = mai in automatico); senza valore LiveProductStockService.DEFAULT_COLLECT_ABOVE. Salvato.
+var stock_live_product_collect_by_species: Dictionary = {}
 var stock_fuel_min_by_type: Dictionary = {}
 # Regola "Rifornisci le Attrezzerie" (2026-10-18, richiesta utente — ToolkitStockService): accesa/spenta e pezzi voluti
 # per tipo di edificio e attrezzo (tipo -> {attrezzo -> int}). Salvati ("stock_toolkit_rule_enabled",

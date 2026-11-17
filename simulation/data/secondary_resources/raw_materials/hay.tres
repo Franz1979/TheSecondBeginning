@@ -12,3 +12,4 @@ category = 1
 calories_per_unit = 0.0
 required_idea_id = "placeholder_unavailable"
 animal_calories_per_unit = 0.0
+day_durability = 400

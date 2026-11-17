@@ -51,13 +51,29 @@ Per aggiungerne uno, copia il blocco "Modello" e compilalo.
 - Scaricato il: 14/10/2026
 - Note: registrato su Content ID; i video YouTube con questo brano possono ricevere un reclamo
 
-## Ethnic Flute | Samurai Relaxing Cinematic Ambient Meditation Music
-- File: audio/assets/music/theme7_flute.mp3
-- Autore: Onetent
-- Fonte: https://pixabay.com/music/ambient-ethnic-flute-samurai-relaxing-cinematic-ambient-meditation-music-248252/
+## Medieval Horizons - Squire
+- File: audio/assets/music/theme7_medieval.mp3
+- Autore: Medieval_Horizons
+- Fonte: https://pixabay.com/music/classical-string-quartet-medieval-horizons-squire-470880/
 - Licenza: Pixabay Content License (nessun credito richiesto; vietato rivendere il file da solo)
-- Scaricato il: 14/10/2026
-- Note: nella descrizione l'autore chiede di contattarlo via email per uso commerciale (shakibmusicinc@gmail.com), richiesta che va oltre la Pixabay Content License: da chiarire prima di un'eventuale uscita commerciale
+- Scaricato il: 16/11/2026
+- Note: registrato su Content ID; i video YouTube con questo brano possono ricevere un reclamo. Certificato Content ID non scaricato: in caso di reclamo si scarica dalla pagina Pixabay. Nella descrizione l'autore chiede solo di ascoltarlo sul suo canale YouTube, nessuna richiesta per l'uso commerciale
+
+## Medieval Folk Music
+- File: audio/assets/music/theme8_medieval.mp3
+- Autore: Watermelon_Beats
+- Fonte: https://pixabay.com/music/modern-classical-medieval-folk-music-505203/
+- Licenza: Pixabay Content License (nessun credito richiesto; vietato rivendere il file da solo)
+- Scaricato il: 16/11/2026
+- Note: etichettato "AI generated" su Pixabay; nessun Content ID; l'autore chiede (facoltativo) di lasciare un link o taggarlo se usi il brano
+
+## Medieval Festive Music
+- File: audio/assets/music/theme9_medieval.mp3
+- Autore: Tunetank
+- Fonte: https://pixabay.com/music/folk-medieval-festive-music-412772/
+- Licenza: Pixabay Content License (nessun credito richiesto; vietato rivendere il file da solo)
+- Scaricato il: 16/11/2026
+- Note: registrato su Content ID; i video YouTube con questo brano possono ricevere un reclamo. Certificato Content ID non scaricato: in caso di reclamo si scarica dalla pagina Pixabay. Nessuna richiesta dell'autore per l'uso commerciale
 
 ## Modello
 - File:

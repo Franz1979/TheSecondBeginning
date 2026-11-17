@@ -599,6 +599,10 @@ var skill_fishing: float = 0.0
 # semina iniziale e ereditata alle nascite.
 # Crescerà con la Semina e la Mietitura (orto delle prove e campi, CultivationService).
 var skill_farming: float = 0.0
+# husbandry (2026-11-16, richiesta utente — 14a skill, allevamento): stesso trattamento/default delle altre, inclusa nella
+# semina iniziale e ereditata alle nascite. Crescerà con i lavori della riga "Allevamento" (trasferimento degli animali
+# domestici, poi uova, lettiera...), accelerandone i tempi come le altre skill.
+var skill_husbandry: float = 0.0
 
 
 # Nomi di TUTTE le property skill_* dell'istanza, raccolti via reflection (2026-09-13, richiesta
@@ -611,6 +615,23 @@ var skill_farming: float = 0.0
 # prescindere). Usato insieme a Object.get(name)/Object.set(name, value) dai due chiamanti, mai
 # un dizionario/array cachato qui: la lista va ricalcolata ad ogni uso perché è la stessa identica
 # introspezione ad "auto-aggiornarsi" quando un domani si aggiungerà un ottavo campo skill_*.
+# Skill che compaiono solo dopo un'idea (2026-11-16, richiesta utente): finché il popolo non ha l'idea la riga è nascosta
+# (pannello della persona, statistiche) e la skill resta fuori dalla distribuzione iniziale dei punti
+# (HumanSeedingService.seed_random_skills). La skill esiste sempre, salvata e ereditata come le altre.
+const SKILL_REQUIRED_IDEAS := {
+	"skill_farming": "plant_domestication",
+	# Dal 2026-11-16 con la tettoia delle gabbie (mangiatoie sotto Allevamento), non più con l'idea Allevamento.
+	"skill_husbandry": "animal_domestication",
+	"skill_medicine": "herbal_medicine",
+}
+
+
+# true se la skill `skill_name` ("skill_farming") è già comparsa per `folk` (null = nessuna idea).
+static func is_skill_discovered(skill_name: String, folk: Folk) -> bool:
+	var idea := String(SKILL_REQUIRED_IDEAS.get(skill_name, ""))
+	return idea == "" or (folk != null and folk.completed_ideas.has(idea))
+
+
 func get_skill_property_names() -> Array[String]:
 	var names: Array[String] = []
 	for property in get_property_list():
@@ -1553,7 +1574,8 @@ func get_walk_load_space() -> float:
 	if carried_body_id != -1:
 		# Il corpo pesa quanto il carico pieno della persona, non del mezzo da traino (2026-10-23).
 		return maxf(max_carry_capacity - get_towed_carry_bonus(), get_carried_space())
-	return get_carried_space()
+	# Animali vivi in braccio (2026-11-16, richiesta utente): pesano come il resto dello zaino.
+	return get_carried_space() + KeptAnimalService.carried_live_space(current_task)
 
 
 func get_carried_space() -> float:

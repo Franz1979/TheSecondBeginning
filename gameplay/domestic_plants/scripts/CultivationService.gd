@@ -420,8 +420,11 @@ static func _merge(into: Dictionary, extra: Dictionary) -> void:
 		into[species] = int(into.get(species, 0)) + int(extra[species])
 
 
+# Log della coltivazione: spento il 2026-11-16 (richiesta utente, disturbava le prove dell'acqua); riaccendere con
+# DebugLogging.SHOW_CULTIVATION_LOGS.
 static func log_line(message: String) -> void:
-	print("[COLTIVAZIONE] %s" % message)
+	if DebugLogging.ENABLED and DebugLogging.SHOW_CULTIVATION_LOGS:
+		print("[COLTIVAZIONE] %s" % message)
 
 
 # Semina e Mietitura di questo terreno vanno da sole nella lista dei lavori? Sempre sì / sempre no del terreno, altrimenti

@@ -11,6 +11,8 @@ extends RefCounted
 static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 	var game_data := ctx.game_data
 	var today := game_data.get_absolute_day()
+	# Deperimento del cibo nelle mangiatoie (2026-11-16), prima del pasto.
+	AnimalFeederService.advance_decay_day(ctx.world)
 	var species_present: Dictionary = {}
 	# Animali tenuti negli edifici, ancora vivi oggi: building_id -> Array[DomesticAnimal] (cucciolate in cattività).
 	var kept_by_building: Dictionary = {}
@@ -55,13 +57,33 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 				var animal_rules := DomesticAnimalCalculator.get_rules(animal.species)
 				if animal_rules != null and animal_rules.starvation_point_loss > 0 \
 						and not DomesticAnimalService.is_domesticated(game_data, animal.species):
-					DomesticationPointsService.add_points(game_data, ctx.folk, animal.species, -animal_rules.starvation_point_loss, effects)
+					DomesticationPointsService.add_points(game_data, ctx.folk, animal.species, -animal_rules.starvation_point_loss, effects,
+						"fame: #%d nell'edificio %d, %d giorni senza cibo, mangiatoia %.0f calorie" % [animal.id, building_id,
+							animal.days_without_food, building.feeder_calories if building != null else -1.0])
 					message += " " + GameContext.tr_text("notification_kept_animal_starved_points").format({"points": animal_rules.starvation_point_loss})
 				if effects != null:
 					effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS, message)
 			else:
 				alive.append(animal)
 		kept_by_building[building_id] = alive
+	# Lettiera (2026-11-17, BeddingService): ogni animale vivo dentro ne consuma la sua parte; avviso il giorno che resta vuota.
+	for building_id: int in kept_by_building:
+		var bedding_building := WarehouseManagerService.find_building(ctx.world, building_id)
+		if BeddingService.consume_day(bedding_building, kept_by_building[building_id]) and effects != null:
+			effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS,
+				GameContext.tr_text("notification_bedding_empty").format({"building": bedding_building.get_display_name()}))
+		# Letame (2026-11-17, ManureService): con o senza lettiera; avviso il giorno che arriva al massimo.
+		if ManureService.produce_day(bedding_building, kept_by_building[building_id]) and effects != null:
+			effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS,
+				GameContext.tr_text("notification_manure_full").format({"building": bedding_building.get_display_name()}))
+		# Edificio sporco (2026-11-17): lettiera vuota o letame al massimo, morti di malattia.
+		kept_by_building[building_id] = _dirty_building_deaths(ctx, bedding_building, kept_by_building[building_id], effects)
+		# Prodotti da vivi (2026-11-17, LiveProductService): uova; avviso il giorno che un prodotto arriva al massimo.
+		for product in LiveProductService.produce_day(ctx.game_data, bedding_building, kept_by_building[building_id]):
+			if effects != null:
+				effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS,
+					GameContext.tr_text("notification_live_product_full").format({"building": bedding_building.get_display_name(),
+						"product": GameContext.tr_text("carried_resource_tooltip_" + product)}))
 	for building_id: int in kept_by_building:
 		if (kept_by_building[building_id] as Array).is_empty():
 			continue
@@ -71,6 +93,8 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 		for building in ctx.world.buildings:
 			if KeptAnimalService.capacity(building) > 0:
 				_check_over_capacity(ctx, building, today, effects)
+	# Domestici nella tettoia senza posto in un edificio d'allevamento: da macellare (2026-11-16).
+	DomesticTransferService.plan_no_room_slaughter(ctx, effects)
 	var is_departure_day: bool = game_data.current_day == SeasonCalculator.get_season_day_range(GameTypes.Season.AUTUMN).x
 	for species: String in species_present:
 		var rules: DomesticAnimalRules = species_present[species]
@@ -228,9 +252,10 @@ static func _give_birth_if_season(game_data: GameData, rules: DomesticAnimalRule
 # Cucciolate in cattività (2026-11-12, richiesta utente): il primo giorno della stagione delle nascite della selvatica, in
 # ogni edificio con almeno un maschio adulto, ogni femmina adulta partorisce. Una specie per edificio.
 # - Specie non ancora addomesticata: p = punti / soglia. La femmina partorisce con probabilità p; se partorisce fa almeno un
-#   piccolo, e ogni altro fino a litter_size_max arriva con probabilità p. Il piccolo è selvatico e vive come un catturato
-#   (captivity_life_days, da oggi).
-# - Specie addomesticata: partorisce sempre, piccoli a caso tra litter_size_min e litter_size_max, domestici.
+#   piccolo, e ogni altro fino al tetto della madre selvatica (captive_wild_litter_max, 2026-11-16) arriva con probabilità
+#   p. Il piccolo è selvatico e vive come un catturato (captivity_life_days, da oggi).
+# - Specie addomesticata: piccoli domestici. Madre domestica: partorisce sempre, piccoli a caso tra litter_size_min e
+#   litter_size_max. Madre selvatica (catturata, 2026-11-16): partorisce sempre, da 1 a captive_wild_litter_max.
 # Edificio pieno: chi non ci sta nasce e muore subito, senza carcassa e fuori dalle statistiche. Ogni nato vivo conta tra
 # i "nati" e dà captivity_birth_points punti addomesticazione.
 static func _give_birth_in_building(ctx: GameContext, building_id: int, animals: Array, today: int, effects: GameEffects) -> void:
@@ -256,27 +281,42 @@ static func _give_birth_in_building(ctx: GameContext, building_id: int, animals:
 	var enter_over := KeptAnimalService.has_slaughter_threshold(game_data, building, species)
 	var born := 0
 	var escaped := 0
+	# Lettiera (2026-11-17, BeddingService): i piccoli nascono tutti, ognuno muore appena nato con questa probabilità.
+	var bedding_death_chance := BeddingService.newborn_death_chance(building, rules)
+	var bedding_dead := 0
 	var reserved := KeptAnimalService.reservations(ctx.individuals)
 	for mother: DomesticAnimal in animals:
 		if mother.is_male or mother.get_age_band(today, wild_rules) != GameTypes.AgeBand.ADULT:
 			continue
 		var litter := 0
+		# Tetto della madre selvatica in cattività (2026-11-16, richiesta utente).
+		var wild_max := rules.litter_size_max
+		if rules.captive_wild_litter_max > 0:
+			wild_max = mini(rules.captive_wild_litter_max, rules.litter_size_max)
 		if is_wild:
 			if randf() >= progress:
 				continue
 			litter = 1
-			for i in range(rules.litter_size_max - 1):
+			for i in range(wild_max - 1):
 				if randf() < progress:
 					litter += 1
+		elif mother.is_wild:
+			litter = randi_range(1, maxi(wild_max, 1))
 		else:
 			litter = randi_range(maxi(rules.litter_size_min, 1), rules.litter_size_max)
 		for i in range(litter):
+			# Morto appena nato per la lettiera: conta tra i nati e i morti, non occupa posto, nessuna carcassa.
+			if bedding_death_chance > 0.0 and randf() < bedding_death_chance:
+				bedding_dead += 1
+				KeptAnimalService.count_stat(game_data, species, "born")
+				KeptAnimalService.count_stat(game_data, species, "died")
+				continue
 			# Piena: prima un'altra tettoia della specie con posto (spostamento istantaneo, 2026-11-14), poi oltre la
 			# capienza con una soglia, altrimenti scappa.
 			var target_id := building_id
 			if room <= 0:
 				var other := KeptAnimalService.find_building_with_room(game_data, ctx.world, species,
-					Vector2i(building.macro_x, building.macro_y) if building != null else Vector2i.ZERO, reserved)
+					Vector2i(building.macro_x, building.macro_y) if building != null else Vector2i.ZERO, reserved, building)
 				if other != null:
 					target_id = other.id
 				elif not enter_over:
@@ -291,6 +331,17 @@ static func _give_birth_in_building(ctx: GameContext, building_id: int, animals:
 				room -= 1
 			born += 1
 			KeptAnimalService.count_stat(game_data, species, "born")
+	if BeddingService.capacity(building) > 0:
+		if bedding_dead > 0 and effects != null:
+			effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS,
+				GameContext.tr_text("notification_bedding_newborns_dead").format({
+					"building": building.get_display_name(), "dead": bedding_dead, "total": born + escaped + bedding_dead,
+					"empty": building.bedding_days_empty, "days": building.bedding_days_with_animals,
+				}))
+		DebugLogging.print_event("[BEDDING] Edificio %d: nascite, %d morti per la lettiera (rischio %.2f, vuota %d/%d giorni, oggi %.1f paglia)" % [
+			building_id, bedding_dead, bedding_death_chance, building.bedding_days_empty, building.bedding_days_with_animals,
+			building.bedding_straw])
+		BeddingService.reset_year(building)
 	if born == 0 and escaped == 0:
 		return
 	# Tettoia piena (2026-11-14, richiesta utente): i piccoli in più scappano nella mandria selvatica d'origine della
@@ -313,7 +364,8 @@ static func _give_birth_in_building(ctx: GameContext, building_id: int, animals:
 	DebugLogging.print_event("[DOMESTIC] %s nell'edificio %d: nati %d, scappati %d (edificio pieno, %d nella mandria), progresso %.2f" % [species,
 		building_id, born, escaped, joined, progress])
 	if born > 0 and rules.captivity_birth_points > 0:
-		DomesticationPointsService.add_points(game_data, ctx.folk, species, born * rules.captivity_birth_points, effects)
+		DomesticationPointsService.add_points(game_data, ctx.folk, species, born * rules.captivity_birth_points, effects,
+			"nascite: %d nell'edificio %d" % [born, building_id])
 
 
 # Oltre il tetto (abitanti / inhabitants_per_animal, mai sotto min_population_cap) se ne va chi dice _pick_leaver. Un messaggio
@@ -422,7 +474,7 @@ static func _escape_youngest(ctx: GameContext, building: Building, animals: Arra
 		var animal: DomesticAnimal = sorted[i]
 		# Prima un'altra tettoia della specie con posto (spostamento istantaneo, senza messaggio).
 		var other := KeptAnimalService.find_building_with_room(game_data, ctx.world, species,
-			Vector2i(building.macro_x, building.macro_y), reserved)
+			Vector2i(building.macro_x, building.macro_y), reserved, building)
 		if other != null:
 			animal.building_id = other.id
 			moved += 1
@@ -457,8 +509,51 @@ static func _escape_points(ctx: GameContext, rules: DomesticAnimalRules, count: 
 	var loss := rules.escape_point_loss * count
 	if loss <= 0 or DomesticAnimalService.is_domesticated(ctx.game_data, rules.species_name):
 		return ""
-	DomesticationPointsService.add_points(ctx.game_data, ctx.folk, rules.species_name, -loss, effects)
+	DomesticationPointsService.add_points(ctx.game_data, ctx.folk, rules.species_name, -loss, effects,
+		"fuga: %d da un edificio troppo pieno" % count)
 	return " " + GameContext.tr_text("notification_kept_animal_starved_points").format({"points": loss})
+
+
+# Malattie dell'edificio sporco (2026-11-17, richiesta utente — generico per tutte le specie): un solo controllo per
+# edificio; se la lettiera è vuota o il letame è al massimo, ogni animale dentro muore con death_chance_without_bedding /
+# death_chance_full_manure della sua specie (sommate). Senza carcassa: un animale malato non si mangia. Un avviso al giorno
+# per edificio. Ritorna gli animali rimasti vivi.
+static func _dirty_building_deaths(ctx: GameContext, building: Building, animals: Array, effects: GameEffects) -> Array:
+	if building == null or animals.is_empty():
+		return animals
+	var bedding_empty := BeddingService.capacity(building) > 0 and BeddingService.is_empty(building)
+	var manure_full := ManureService.capacity(building) > 0 and ManureService.stored(building) >= ManureService.capacity(building)
+	if not bedding_empty and not manure_full:
+		return animals
+	var alive: Array = []
+	var dead := 0
+	for animal: DomesticAnimal in animals:
+		var rules := DomesticAnimalCalculator.get_rules(animal.species)
+		var chance := 0.0
+		if rules != null:
+			if bedding_empty:
+				chance += rules.death_chance_without_bedding
+			if manure_full:
+				chance += rules.death_chance_full_manure
+		if chance > 0.0 and randf() < chance:
+			_remove(ctx.game_data, animal)
+			KeptAnimalService.count_stat(ctx.game_data, animal.species, "died")
+			DebugLogging.print_event("[DOMESTIC] %s %d morto di malattia nell'edificio %d (lettiera vuota %s, letame al massimo %s)" % [
+				animal.species, animal.id, building.id, bedding_empty, manure_full])
+			dead += 1
+		else:
+			alive.append(animal)
+	if dead > 0 and effects != null:
+		var reasons: Array[String] = []
+		if bedding_empty:
+			reasons.append(GameContext.tr_text("dirty_reason_bedding_empty"))
+		if manure_full:
+			reasons.append(GameContext.tr_text("dirty_reason_manure_full"))
+		effects.notify(NotificationTypes.NotificationPopupType.WILD_ANIMAL_GROUP_NEWS,
+			GameContext.tr_text("notification_dirty_building_deaths").format({
+				"building": building.get_display_name(), "count": dead, "reasons": ", ".join(reasons),
+			}))
+	return alive
 
 
 static func _remove(game_data: GameData, animal: DomesticAnimal) -> void:

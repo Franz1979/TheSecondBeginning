@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_gate")
-lifespan_years = 15
+lifespan_years = 20
 max_durability = 300
 defense = 150
 building_name = "building_gate"

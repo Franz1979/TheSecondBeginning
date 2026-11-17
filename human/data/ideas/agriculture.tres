@@ -2,6 +2,8 @@
 
 [ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_agriculture"]
 
+; Prerequisiti (2026-11-16, richiesta utente): anche il Vasellame, perché il campo tiene le sementi nei vasi da semi e il
+; forno l'acqua nelle giare; così la Fermentazione (che chiede l'Agricoltura) ha già le giare.
 [resource]
 script = ExtResource("1_agriculture")
 id = "agriculture"
@@ -9,5 +11,5 @@ display_name = "idea_agriculture"
 summary = "idea_agriculture_summary"
 description = "idea_agriculture_description"
 thoughts_cost = 100
-prerequisites = Array[String](["plant_domestication"])
+prerequisites = Array[String](["plant_domestication", "pottery"])
 era = "paleolithic"

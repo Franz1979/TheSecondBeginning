@@ -13,12 +13,12 @@ const MAX_FIELDS: Array[StringName] = [&"max_health", &"max_happiness", &"max_st
 
 const SKILLS: Array[String] = [
 	"leadership", "builder", "management", "transporter", "gathering", "cognition", "hunting", "crafting", "ritual", "social", "medicine", "fishing",
-	"farming",
+	"farming", "husbandry",
 ]
 const SKILL_FIELDS: Array[StringName] = [
 	&"skill_leadership", &"skill_builder", &"skill_management", &"skill_transporter", &"skill_gathering",
 	&"skill_cognition", &"skill_hunting", &"skill_crafting", &"skill_ritual", &"skill_social", &"skill_medicine",
-	&"skill_fishing", &"skill_farming",
+	&"skill_fishing", &"skill_farming", &"skill_husbandry",
 ]
 
 

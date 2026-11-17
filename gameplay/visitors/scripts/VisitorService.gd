@@ -378,7 +378,7 @@ static func materialize_members(
 		individual.equip_starting_apparel(
 			game_data.era_effective_age_band_durations_male, game_data.era_effective_age_band_durations_female, game_data.get_absolute_day()
 		)
-		HumanSeedingService.seed_random_skills(individual)
+		HumanSeedingService.seed_random_skills(individual, folk)
 		individual.folk_ref = folk
 		individual.village_ref = village
 		individual.home_macro_coords = party.macro_coords

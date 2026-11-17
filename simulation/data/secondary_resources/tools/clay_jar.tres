@@ -18,5 +18,5 @@ recipe_inputs = {
 recipe_labor = 800.0
 recipe_fuel_required = 4.0
 recipe_workstation_types = Array[String](["potter_hut"])
-max_uses = 150
+max_uses = 300
 water_capacity = 400.0

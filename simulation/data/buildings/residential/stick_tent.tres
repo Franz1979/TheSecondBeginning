@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_stick_tent")
-lifespan_years = 10
+lifespan_years = 15
 max_durability = 100
 defense = 20
 building_name = "building_stick_tent"

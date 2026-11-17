@@ -5,6 +5,12 @@
 [resource]
 script = ExtResource("1_tce")
 skill_effects_by_task_name = {
+"task_feed_animals_name": {
+"skill_husbandry": 0.5
+},
+"task_transfer_animals_name": {
+"skill_husbandry": 0.5
+},
 "task_reap_name": {
 "skill_farming": 1.0
 },

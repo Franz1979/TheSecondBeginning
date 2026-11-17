@@ -24,8 +24,22 @@ static func apply_effects(individual: HumanIndividual, task: Task) -> void:
 	var effects := _get_effects()
 	if effects == null:
 		return
-	_apply_skill_effects(individual, task, _with_production_skill(task, effects.skill_effects_by_task_name.get(task.task_name, {})))
+	_apply_skill_effects(individual, task, _with_production_skill(task, effects.skill_effects_by_task_name.get(_skill_task_key(task), {})))
 	_apply_vital_effects(individual, task, effects.vital_effects_by_task_name.get(task.task_name, {}))
+
+
+# Chiave della tabella delle skill per `task`: il suo nome, tranne il trasporto verso una mangiatoia (2026-11-16, richiesta
+# utente: riga Allevamento), che cresce solo Allevamento con la voce FEEDER_TASK_KEY.
+const FEEDER_TASK_KEY := "task_feed_animals_name"
+
+
+static func _skill_task_key(task: Task) -> String:
+	# Anche la paglia per la lettiera, la pulizia del letame e la raccolta delle uova (2026-11-17): stesso lavoro di Allevamento.
+	if task.context.has(FeederStockService.FEEDER_TARGET_KEY) or task.context.has(BeddingStockService.BEDDING_TARGET_KEY) \
+			or task.context.has(ManureStockService.MANURE_SOURCE_KEY) \
+			or task.context.has(LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY):
+		return FEEDER_TASK_KEY
+	return task.task_name
 
 
 # Produce in un edificio con BuildingRules.production_skill (2026-10-25, capanna del guaritore → Medicina): la crescita di

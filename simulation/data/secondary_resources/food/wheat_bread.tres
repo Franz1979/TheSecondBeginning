@@ -6,6 +6,7 @@
 ; Una partita: 8 farina + 2 combustibile -> 4 pani (2 farina a pane), 60 di lavoro. 60 calorie a pane: un campo di grano
 ; (7200 macinate -> 6480 farina) sfama circa 18 persone. Costa più della pita (macina più lenta, doppio combustibile,
 ; grano più difficile da addomesticare) e dura meno (20 giorni); un po' di felicità in più quando si mangia. Spazio 1,5.
+; Acqua (2026-11-16, richiesta utente — acqua come risorsa, passo 3c): 8 per partita, dalle giare del forno.
 [resource]
 script = ExtResource("1_wheat_bread")
 secondary_resource_name = "wheat_bread"
@@ -19,7 +20,8 @@ day_durability = 20
 space_per_unit = 3.0
 eat_happiness_per_100_calories = 8.0
 recipe_inputs = {
-"wheat_flour": 8
+"wheat_flour": 8,
+"water": 8
 }
 recipe_output_quantity = 4
 recipe_labor = 60.0

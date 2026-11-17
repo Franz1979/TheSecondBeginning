@@ -2,8 +2,11 @@
 
 [ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_advanced_traps"]
 
-; Trappole avanzate (2026-11-09, segnaposto): per ora non sblocca nulla. Con questa idea si sbloccheranno le trappole che
-; catturano gli animali vivi (cesto a caduta per il coniglio, recinto a imbuto per le mandrie) da portare al recinto.
+; Trappole avanzate (2026-11-09, segnaposto): per ora non sblocca nulla. Dal 2026-11-16 (richiesta utente) è l'idea della
+; cattura viva degli animali GROSSI (recinto a imbuto per le mandrie, trappole per grandi animali); il cesto a caduta e la
+; tettoia delle gabbie sono passati ad Addomesticazione degli animali. Dal 2026-11-17 (richiesta utente) viene DOPO
+; Allevamento: prima si sa tenere gli animali, poi si catturano vivi i grossi. Sbloccherà trappola grande e recinto di
+; addomesticazione grande (le stalle forse con un Allevamento avanzato).
 [resource]
 script = ExtResource("1_advanced_traps")
 id = "advanced_traps"
@@ -11,5 +14,5 @@ display_name = "idea_advanced_traps"
 summary = "idea_advanced_traps_summary"
 description = "idea_advanced_traps_description"
 thoughts_cost = 70
-prerequisites = Array[String](["animal_domestication", "advanced_paleolithic_constructions"])
+prerequisites = Array[String](["animal_husbandry", "advanced_paleolithic_constructions"])
 era = "paleolithic"

@@ -63,10 +63,15 @@ static func build(rules: BuildingRules) -> Array[Dictionary]:
 			add_row.call(_tr("building_info_toolkit").format({"types": tool_types, "units": rules.toolkit_units_per_type}), false)
 		for container in container_types:
 			var max_units := BuildingToolkitService.units_for_rules(rules, container)
-			add_row.call(_tr("building_info_toolkit_seed_jar_count").format({"max": max_units,
+			add_row.call(_tr("building_info_toolkit_seed_jar_count" + StorageContainerService.text_suffix(container)).format({"max": max_units,
 				"capacity": max_units * StorageContainerService.unit_capacity(container)}), false)
 		# Magazzino (2026-11-13, attrezzeria dei vasi da semi): non ci lavora nessuno, la riga dice a cosa serve.
-		add_row.call(_tr("building_info_toolkit_usage" if rules.toolkit_extra_tools.is_empty() else "building_info_toolkit_seed_jars"), true)
+		# Giare dell'acqua (2026-11-16, passo 3a): riga propria.
+		var usage_key := "building_info_toolkit_usage"
+		if not rules.toolkit_extra_tools.is_empty():
+			usage_key = "building_info_toolkit_water_jars" if StorageContainerService.holds_liquid(rules.toolkit_extra_tools[0]) \
+				else "building_info_toolkit_seed_jars"
+		add_row.call(_tr(usage_key), true)
 	if rules.is_workstation:
 		# Ordini in tutto (2026-10-09, BuildingRules.production_max_orders, ordini in coda): accanto ai lavori
 		# contemporanei solo se l'edificio ne tiene di più.

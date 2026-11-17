@@ -65,6 +65,11 @@ var show_health_icons: bool = true
 # Salvataggio automatico a fine anno (2026-11-08, richiesta utente — AutosaveService): acceso, a ogni cambio d'anno
 # GameScene scrive un salvataggio in user://saves/. Chiave in options.cfg con lo stesso nome.
 var autosave_enabled: bool = true
+# Griglia delle microcelle nella GameScene (2026-11-17, richiesta utente): spenta, le linee non si disegnano, salvo
+# mentre si piazza un edificio (GameScene._apply_grid_visibility). Chiave in options.cfg con lo stesso nome.
+# Cambiarla con set_show_grid, che avvisa la scena aperta.
+var show_grid: bool = true
+signal show_grid_changed
 # Minimappa della sidebar chiusa (2026-09-20, richiesta utente): true = nascosta, resta solo il bottone per
 # riaprirla; false (default) = visibile. Salvato a ogni click sul bottone.
 var minimap_collapsed: bool = false
@@ -153,6 +158,7 @@ func load_from_disk() -> void:
 	pending_bell_sound = bool(config.get_value(SECTION, "pending_bell_sound", true))
 	show_health_icons = bool(config.get_value(SECTION, "show_health_icons", true))
 	autosave_enabled = bool(config.get_value(SECTION, "autosave_enabled", true))
+	show_grid = bool(config.get_value(SECTION, "show_grid", true))
 	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
 	work_area_auto_zone = bool(config.get_value(SECTION, "work_area_auto_zone", true))
 	# Letti così come sono: i dialog li riportano nei valori ammessi (PickupChoiceDialog, anche in modalità caccia).
@@ -173,6 +179,13 @@ func load_from_disk() -> void:
 
 # Pubblico per un futuro menu Options — nessun chiamante reale ancora (i campi sopra si cambiano
 # solo da codice/debug per ora).
+func set_show_grid(value: bool) -> void:
+	if show_grid == value:
+		return
+	show_grid = value
+	show_grid_changed.emit()
+
+
 func save_to_disk() -> void:
 	var config := ConfigFile.new()
 	config.set_value(SECTION, "show_notification_popups", show_notification_popups)
@@ -186,6 +199,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "pending_bell_sound", pending_bell_sound)
 	config.set_value(SECTION, "show_health_icons", show_health_icons)
 	config.set_value(SECTION, "autosave_enabled", autosave_enabled)
+	config.set_value(SECTION, "show_grid", show_grid)
 	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
 	config.set_value(SECTION, "work_area_auto_zone", work_area_auto_zone)
 	config.set_value(SECTION, "work_area_gather_trips", work_area_gather_trips)

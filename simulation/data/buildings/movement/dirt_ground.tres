@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_dirt_ground")
-lifespan_years = 20
+lifespan_years = 30
 max_durability = 40
 defense = 10
 building_name = "building_dirt_ground"

@@ -266,12 +266,39 @@ var kept_species: String = ""
 var feeder_space_used: float = 0.0
 var feeder_calories: float = 0.0
 var feeder_species: String = ""
+# Cibi nella mangiatoia col loro nome (2026-11-16, richiesta utente — AnimalFeederService): nome -> {"units": float,
+# "decay": 0..1}. feeder_calories/feeder_space_used ne sono i totali. Salvato; vuoto nei vecchi salvataggi (le calorie
+# di allora diventano il primo cibo della dieta alla prima occasione, AnimalFeederService._ensure_foods).
+var feeder_foods: Dictionary = {}
 # Giorni di cibo voluti in questa mangiatoia al posto della regola generale del WM (2026-11-14, FeederStockService.
 # days_for): -1 = regola generale, 0 = esclusa dal WM, > 0 = giorni suoi. Salvato.
 var feeder_days_override: int = -1
+# Lettiera (2026-11-17, BeddingService): paglia dentro, e giorni voluti al posto della regola generale del WM
+# (BeddingStockService.days_for: -1 = regola generale, 0 = esclusa, > 0 = giorni suoi). Salvati.
+var bedding_straw: float = 0.0
+var bedding_days_override: int = -1
+# Giorni con animali dentro e, di questi, giorni con la lettiera vuota (meno di 1 paglia), dalle ultime nascite
+# (2026-11-17, BeddingService.newborn_death_chance). Ripartono da zero dopo le nascite. Salvati.
+var bedding_days_with_animals: int = 0
+var bedding_days_empty: int = 0
+# Letame (2026-11-17, ManureService): frazione di oggi non ancora diventata un'unità (il letame intero sta in
+# stored_resources), e soglia di pulizia in percentuale al posto di quella della specie (ManureStockService.clean_above:
+# -1 = specie, 0 = esclusa, > 0 = sua). Salvati.
+var manure_pending: float = 0.0
+var manure_clean_override: int = -1
+# Prodotti da vivi (2026-11-17, LiveProductService): prodotto -> frazione di oggi non ancora diventata un'unità (le unità
+# intere stanno in stored_resources). Salvato.
+var live_product_pending: Dictionary = {}
+# Raccolta dei prodotti da vivi (2026-11-17, LiveProductStockService.collect_above): percentuale al posto di quella della
+# specie; -1 = specie, 0 = esclusa, > 0 = sua. Salvata.
+var live_product_collect_override: int = -1
 # Once di seme da tenere nel capanno del campo (2026-11-15, passo 3a — FieldSeedStoreService): -1 = regola generale,
 # 0 = nessuno, > 0 = valore suo. Salvato.
 var field_seed_level: int = -1
+# "Porta al deposito" degli ordini di produzione di questo edificio (2026-11-16, richiesta utente): -1 = il predefinito delle
+# Opzioni (UserOptions.production_delivery_default), 0 = no, 1 = sì. La spunta del pannello lo cambia; vince anche sugli
+# ordini "Produci" senza edificio quando finiscono qui (deliver_to_warehouse_or). Salvato.
+var production_deliver: int = -1
 # Cura del campo (2026-11-15, FieldFertilityService): rimedio (Remedy) e soglia di fertilità (percento) di questo campo;
 # -1 = come la regola del WM. Salvati.
 var field_care_remedy: int = -1
@@ -523,3 +550,8 @@ func get_resumable_task_context() -> Dictionary:
 # TaskReassignmentService, che la scrive su Task.debug_target_key) — nessuna logica di simulazione.
 func get_debug_target_key() -> String:
 	return "building:%d" % id
+
+
+# "Porta al deposito" per un ordine di questo edificio: il valore suo (production_deliver), altrimenti `default_value`.
+func deliver_to_warehouse_or(default_value: bool) -> bool:
+	return default_value if production_deliver < 0 else production_deliver == 1

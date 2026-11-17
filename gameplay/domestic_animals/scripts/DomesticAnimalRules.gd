@@ -63,6 +63,10 @@ extends Resource
 # Cuccioli per cucciolata (passo 5).
 @export var litter_size_min: int = 0
 @export var litter_size_max: int = 0
+# Piccoli massimi di una madre SELVATICA (catturata o nata da selvatici prima dell'addomesticazione) in cattività
+# (2026-11-16, richiesta utente): sempre, prima e dopo l'addomesticazione; la cucciolata intera è solo delle domestiche.
+# 0 = nessun tetto (litter_size_max).
+@export var captive_wild_litter_max: int = 2
 
 @export_group("Feeding")
 # Alimentazione (2026-11-13, punto 4, passo 1: solo i dati, nessuno li legge ancora). Calorie di gioco al giorno di un
@@ -89,6 +93,37 @@ extends Resource
 @export var butcher_hide_units: int = 0
 @export var butcher_sinew_units: int = 0
 @export var butcher_bone_units: int = 0
+
+@export_group("Transport")
+# Peso da vivo nello zaino (2026-11-16, richiesta utente: non la resa del macello): spazio di un animale portato in braccio,
+# piccolo e adulto (i vecchi come gli adulti). Vale per il trasferimento in conigliera/pollaio e per le catture vive dei cesti;
+# pesa anche nel cammino come il resto dello zaino. 0 = non si porta a mano (animali grossi: col laccio, più avanti); finché
+# manca, KeptAnimalService.live_space ripiega sulla resa macellata.
+@export var live_carry_space_young: float = 0.0
+@export var live_carry_space_adult: float = 0.0
+
+@export_group("Bedding")
+# Paglia della lettiera consumata al giorno da un animale tenuto (2026-11-17, richiesta utente — BeddingService):
+# coniglio 1 ogni 20 giorni = 0.05. 0 = non usa lettiera.
+@export var bedding_per_day: float = 0.0
+# Morte dei piccoli per la lettiera (2026-11-17, richiesta utente — BeddingService.newborn_death_chance): probabilità di
+# morire appena nato, per piccolo, con la lettiera vuota il giorno delle nascite; altrimenti questa × giorni vuota / giorni
+# con animali dalle ultime nascite. Coniglio 0.75. 0 = nessun effetto.
+@export var newborn_death_without_bedding: float = 0.0
+# Letame fatto al giorno da un animale tenuto (2026-11-17, richiesta utente — ManureService), con o senza lettiera: coniglio
+# 0.025 (50 conigli ~1,25 al giorno). 0 = nessun letame.
+@export var manure_per_day: float = 0.0
+# Malattie dell'edificio sporco (2026-11-17, richiesta utente — per tutte le specie tenute): probabilità al giorno che ogni
+# animale dentro muoia, con la lettiera vuota e col letame al massimo (si sommano). Niente salute né stato "malato": un
+# solo controllo per edificio, i dadi solo se è sporco (DomesticAnimalLifeService._dirty_building_deaths). Il morto non
+# lascia carne. Coniglio 0.002 / 0.005. 0 = nessun effetto.
+@export var death_chance_without_bedding: float = 0.0
+@export var death_chance_full_manure: float = 0.0
+
+@export_group("Live products")
+# Prodotti da vivi (2026-11-17, richiesta utente — LiveProductRules / LiveProductService): uova, poi latte e lana. Lista
+# non tipizzata come ResourceGrowthRules.subtypes (più robusta nei .tres scritti a mano). Vuota = nessun prodotto.
+@export var live_products: Array = []
 
 @export_group("Population")
 # Massimo di animali = abitanti / inhabitants_per_animal, mai meno di min_population_cap (passo 5).

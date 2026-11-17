@@ -205,6 +205,12 @@ const SHOW_FOOD_SELECTION_LOGS := false
 const SHOW_RESTOCK_LOGS := false
 # THIRST (2026-10-30): [THIRST] sorsi al passaggio, compiti di bere assegnati, ricerche della riva fallite (ThirstService).
 const SHOW_THIRST_LOGS := false
+# WATER (2026-11-16, richiesta utente — acqua come risorsa, passo 1): [WATER] acqua versata nella tettoia dopo un
+# riempimento, bevute alla tettoia e dalla giara portata, acqua persa (demolizione, posti pieni), conversione delle
+# tettoie dei salvataggi vecchi (WaterJarService, GroundPileService). Solo print. Da spegnere dopo le prove.
+const SHOW_WATER_LOGS := false
+# COLTIVAZIONE (2026-11-16): [COLTIVAZIONE] semina, mietitura, semi del capanno (CultivationService.log_line).
+const SHOW_CULTIVATION_LOGS := false
 const RESTOCK_LOG_INDIVIDUAL_ID: int = -1
 
 # true se il log RESTOCK e' attivo per questo individuo (flag acceso e id configurato uguale, oppure -1).
@@ -275,7 +281,20 @@ const SHOW_REST_CHOICE_LOGS := false
 const SHOW_TRANSPORT_BUILD_LOGS := false
 # Zuppa di casa (2026-11-07, HomeSoupService): piano, tappe, prese, cottura e, col tasto M di debug, il motivo per cui
 # non si può cucinare.
-const SHOW_SOUP_LOGS := true
+const SHOW_SOUP_LOGS := false
+# FEEDER — [FEEDER] mangiatoie (2026-11-16, richiesta utente — i trasporti non partono): a ogni Inventario il calcolo di
+# FeederStockService.plan_orders per ogni edificio con mangiatoia (giorni, obiettivo, cosa c'è, cosa manca, perché salta),
+# gli ordini creati e il cibo marcito. Temporaneo: da spegnere quando il rifornimento funziona.
+const SHOW_FEEDER_LOGS := false
+# [DOMESTICATION POINTS] (2026-11-17, richiesta utente — i punti della gallina scendono): ogni cambio dei punti
+# addomesticazione di un animale, con giorno, prima -> dopo e motivo (cattura, macellazione, fame, fuga, nascite, debug).
+# Scritto da DomesticationPointsService.add_points. Temporaneo: da spegnere a causa trovata.
+const SHOW_DOMESTICATION_POINTS_LOGS := true
+
+
+static func print_feeder(text: String) -> void:
+	if ENABLED and SHOW_FEEDER_LOGS:
+		print(text)
 # FISH — [FISH] pesca (2026-10-31, prove della pesca nelle zone): tentativi, fine sessione o viaggio, cambio di punto
 # (FishAction), pesci consegnati (unload_action.gd), pesca successiva e fine della serie (WorkFollowUpService). Temporaneo:
 # da spegnere quando la pesca nelle zone funziona.

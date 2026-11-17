@@ -4,7 +4,7 @@
 
 [resource]
 script = ExtResource("1_storage_hut")
-lifespan_years = 20
+lifespan_years = 30
 max_durability = 140
 defense = 40
 building_name = "building_storage_hut"
@@ -16,7 +16,7 @@ storage_space_per_slot = 300
 durability_multiplier_by_category = Array[float]([1.5, 1.4, 1.4, 1.4, 1.4, 1.6, 1.0])
 required_materials = {
 "dried_hide": 12,
-"fiber_rope": 20,
+"fiber_rope": 10,
 "pebble": 40,
 "stick": 100,
 "stone": 20,

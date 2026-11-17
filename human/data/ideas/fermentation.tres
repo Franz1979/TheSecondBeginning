@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="Idea" format=3]
+
+[ext_resource type="Script" uid="uid://cqx38hirrk3s1" path="res://human/scripts/core/Idea.gd" id="1_fermentation"]
+
+; Fermentazione (2026-11-16, richiesta utente — segnaposto): per ora non sblocca nulla. Idea capostipite delle bevande e
+; dei cibi fermentati: la birra d'orzo per prima (malto, cotta, fermentazione nelle giare); più avanti il vino (vite
+; domestica + una sua idea), e forse formaggio, pane lievitato, aceto. Chiede l'Agricoltura (i cereali), che a sua volta
+; chiede il Vasellame (le giare).
+[resource]
+script = ExtResource("1_fermentation")
+id = "fermentation"
+display_name = "idea_fermentation"
+summary = "idea_fermentation_summary"
+description = "idea_fermentation_description"
+thoughts_cost = 80
+prerequisites = Array[String](["agriculture"])
+era = "paleolithic"

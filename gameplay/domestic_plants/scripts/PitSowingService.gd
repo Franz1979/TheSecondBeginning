@@ -194,8 +194,9 @@ static func _find_grass_lot(macro_state: MacroCellState, pit: Building, blocked:
 
 # Righe [SEMINA] del contatore e delle nascite (2026-11-15, richiesta utente): sempre nel log col debug acceso, non nel
 # canale degli eventi (DebugLogging.SHOW_GAME_EVENT_LOGS, spento).
+# Spento il 2026-11-16 (richiesta utente, prove dell'acqua): riaccendere con DebugLogging.SHOW_CULTIVATION_LOGS.
 static func _log(text: String) -> void:
-	if DebugLogging.ENABLED:
+	if DebugLogging.ENABLED and DebugLogging.SHOW_CULTIVATION_LOGS:
 		print(text)
 
 

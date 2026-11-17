@@ -1,11 +1,13 @@
 class_name FeederStockService
 extends RefCounted
 
-# Regola del gestore scorte "Rifornisci le mangiatoie" (2026-11-14, richiesta utente — punto 4). Un numero per tutto il
-# villaggio, i giorni di cibo da tenere nelle mangiatoie (GameData.stock_feeder_days, 0 = spenta); la singola tettoia può
+# Regola del gestore scorte "Rifornisci le mangiatoie" (2026-11-14, richiesta utente — punto 4). Un numero per specie dal
+# 2026-11-17 (pannello Animali, species_days; prima uno per il villaggio nelle regole del WM), i giorni di cibo da tenere
+# nelle mangiatoie (0 = nessun rifornimento); la singola tettoia può
 # avere il suo (Building.feeder_days_override: -1 = regola generale, 0 = esclusa, > 0 = giorni suoi). A ogni Inventario,
-# per ogni edificio con mangiatoia: obiettivo = calorie al giorno degli animali che mangiano adesso
-# (AnimalFeederService.daily_calories_needed) × giorni. Se la mangiatoia (con quanto già in viaggio e gli ordini aperti)
+# per ogni edificio con mangiatoia: obiettivo = calorie al giorno × giorni. Dal 2026-11-16 (richiesta utente) le calorie
+# al giorno sono quelle di tutti i posti della tettoia per la specie scelta (AnimalFeederService.target_daily_calories),
+# non più degli animali presenti: la mangiatoia è pronta prima che arrivi il primo; con "Qualunque" niente a tettoia vuota. Se la mangiatoia (con quanto già in viaggio e gli ordini aperti)
 # sta sotto l'obiettivo, ordini "transport" deposito → mangiatoia, scelti così:
 # - cibi nell'ordine della dieta della specie (DomesticAnimalRules.accepted_foods = preferenza);
 # - da tutta la scorta del villaggio: il minimo del gestore scorte non si tiene da parte (2026-11-15, richiesta utente —
@@ -26,11 +28,22 @@ static func is_served(building: Building) -> bool:
 	return AnimalFeederService.has_feeder(building) and not building.is_out_of_service()
 
 
-# Giorni voluti in `building`: i suoi (0 = escluso), altrimenti la regola generale.
+# Giorni voluti in `building`: i suoi (0 = escluso), altrimenti quelli della specie tenuta (pannello Animali).
 static func days_for(building: Building, game_data: GameData) -> int:
 	if building.feeder_days_override >= 0:
 		return building.feeder_days_override
-	return game_data.stock_feeder_days if game_data != null else 0
+	return species_days(game_data, KeptAnimalService.current_species(game_data, building))
+
+
+# Giorni della specie (2026-11-17, richiesta utente — pannello Animali); senza valore il default GameData.stock_feeder_days.
+static func species_days(game_data: GameData, species: String) -> int:
+	if game_data == null:
+		return 0
+	return maxi(int(game_data.stock_feeder_days_by_species.get(species, game_data.stock_feeder_days)), 0)
+
+
+static func set_species_days(game_data: GameData, species: String, days: int) -> void:
+	game_data.stock_feeder_days_by_species[species] = maxi(days, 0)
 
 
 # true se il WM è sbloccato: solo allora il pannello della tettoia mostra i giorni.
@@ -82,10 +95,12 @@ static func plan_orders(world: World, game_data: GameData, open_orders: Array, i
 	var served: Dictionary = {}
 	if world != null and game_data != null:
 		for building in world.buildings:
-			if not is_served(building):
+			if not AnimalFeederService.has_feeder(building):
+				continue
+			if building.is_out_of_service():
 				continue
 			var days := days_for(building, game_data)
-			var need := AnimalFeederService.daily_calories_needed(game_data, building)
+			var need := AnimalFeederService.target_daily_calories(game_data, building)
 			if days <= 0 or need <= 0.0 or AnimalFeederService.accepted_foods(game_data, building).is_empty():
 				continue
 			served[building.id] = true
@@ -107,6 +122,14 @@ static func plan_orders(world: World, game_data: GameData, open_orders: Array, i
 				load_space, stock, promised)
 			if created.is_empty():
 				(result["warnings"] as Array).append(building.id)
+			else:
+				# Una riga per rifornimento deciso: su che basi (2026-11-16, richiesta utente).
+				var loads: Array[String] = []
+				for order_load in created:
+					loads.append("%d %s" % [int(order_load["quantity"]), String(order_load[FEEDER_FOOD_KEY])])
+				DebugLogging.print_feeder("[FEEDER] Riempio %s #%d: %d giorni × %.0f cal/giorno (%d posti) = %.0f; dentro %.0f, in viaggio %.0f -> mancano %.0f. Ordini: %s." % [
+					building.building_type_name, building.id, days, need, KeptAnimalService.capacity(building), need * float(days),
+					AnimalFeederService.calories(game_data, building), float(traveling_entry["calories"]), missing, ", ".join(loads)])
 			(result["create"] as Array).append_array(created)
 	for target_id in open_by_target.keys():
 		if not served.has(int(target_id)):

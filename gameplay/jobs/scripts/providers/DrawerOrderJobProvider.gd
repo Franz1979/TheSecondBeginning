@@ -137,6 +137,27 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
 			"building": feeder_target.get_display_name() if feeder_target != null else "",
 		})
+	# Pulizia del letame (2026-11-17): "Conigliera: pulizia, porta via 50 Letame".
+	if order.has(ManureStockService.MANURE_SOURCE_KEY):
+		var manure_source := WarehouseManagerService.find_building(ctx.world, int(order[ManureStockService.MANURE_SOURCE_KEY]))
+		row_name = GameContext.tr_text("drawer_order_manure_row").format({
+			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
+			"building": manure_source.get_display_name() if manure_source != null else "",
+		})
+	# Raccolta dei prodotti da vivi (2026-11-17): "Pollaio: raccolta, porta via 10 Uova".
+	if order.has(LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY):
+		var product_source := WarehouseManagerService.find_building(ctx.world, int(order[LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY]))
+		row_name = GameContext.tr_text("drawer_order_live_product_row").format({
+			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
+			"building": product_source.get_display_name() if product_source != null else "",
+		})
+	# Lettiera (2026-11-17): "Conigliera: lettiera, porta 30 Paglia".
+	if order.has(BeddingStockService.BEDDING_TARGET_KEY):
+		var bedding_target := WarehouseManagerService.find_building(ctx.world, int(order[BeddingStockService.BEDDING_TARGET_KEY]))
+		row_name = GameContext.tr_text("drawer_order_bedding_row").format({
+			"quantity": quantity, "resource": IconRegistry.get_resource_display_name(resource_name),
+			"building": bedding_target.get_display_name() if bedding_target != null else "",
+		})
 	# Capanno del campo (2026-11-15, "Semi nei campi"): "Campo: capanno, porta 200 Orzo" / "… porta via 100 Orzo".
 	if order.has(FieldSeedStockService.SEED_TARGET_KEY) or order.has(FieldSeedStockService.SEED_REMOVE_KEY):
 		var removing := order.has(FieldSeedStockService.SEED_REMOVE_KEY)
@@ -175,7 +196,13 @@ static func _transport_job(ctx: GameContext, provider: Dictionary, order: Dictio
 			"building": fuel_target.get_display_name() if fuel_target != null else "",
 		})
 	return {
-		"key": JobBoardService.drawer_order_key(order_id), "kind": "transport", "name": row_name, "text": row_name,
+		# Mangiatoie (2026-11-16) e lettiere (2026-11-17), richiesta utente: riga Allevamento per priorità e "Più adatto"; il compito resta il trasporto.
+		"key": JobBoardService.drawer_order_key(order_id),
+		"kind": DomesticTransferJobProvider.KIND if order.has(FeederStockService.FEEDER_TARGET_KEY) \
+			or order.has(BeddingStockService.BEDDING_TARGET_KEY) \
+			or order.has(ManureStockService.MANURE_SOURCE_KEY) \
+			or order.has(LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY) else "transport",
+		"name": row_name, "text": row_name,
 		"log_name": "ordine del cassetto #%d trasporto: %d %s" % [order_id, quantity, resource_name],
 		"icon": icon,
 		"macro": Vector2i(target.macro_x, target.macro_y) if target != null else Vector2i(-1, -1),
@@ -422,7 +449,8 @@ static func rejection(ctx: GameContext, worker: HumanIndividual, job: Dictionary
 	if building == null:
 		return "nessun edificio libero"
 	var quantity := int(job["quantity"])
-	var task := TaskBuilderService.build_produce_task(worker, building, String(job["recipe"]), quantity, bool(order.get("deliver_to_warehouse", true)))
+	var task := TaskBuilderService.build_produce_task(worker, building, String(job["recipe"]), quantity,
+		building.deliver_to_warehouse_or(bool(order.get("deliver_to_warehouse", true))))
 	if task == null:
 		return "definizione mancante"
 	var assign_rejection := worker.get_assign_rejection_reason(task, ctx.age_band_of(worker))

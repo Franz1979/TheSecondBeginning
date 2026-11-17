@@ -2,8 +2,13 @@
 
 [ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_chicken_coop"]
 
-; Pollaio (2026-11-13, richiesta utente — segnaposto): richiede l'idea Allevamento e la specie chicken addomesticata. Per ora
-; solo l'edificio, senza funzioni: nessun animale ci entra ancora.
+; Pollaio (2026-11-13, richiesta utente — segnaposto): richiede l'idea Allevamento e la specie chicken addomesticata.
+; Dal 2026-11-17 (richiesta utente) funziona come la conigliera: 2x1, 80 posti, solo galline domestiche (specie fissa =
+; required_domesticated_species, KeptAnimalService.fixed_species), mangiatoia 500, lettiera 100 paglia (BeddingService),
+; letame fino a 100 (ManureService, pulito dal gestore scorte). Consumi e produzioni stanno nella specie (chicken.tres).
+; Materiali (2026-11-17, richiesta utente): casetta di legno con posatoi, tetto e nidi di paglia, fondo d'argilla;
+; recinto alto di bastoni con la rete di fibra contro i rapaci; niente pietre (le galline non scavano). Uova (2026-11-17): fino a 40 nel pollaio
+; (LiveProductService), durano come in ogni edificio (45 giorni, moltiplicatore 1.0). Disegno 2x1 dal 2026-11-17.
 [resource]
 script = ExtResource("1_chicken_coop")
 building_name = "building_chicken_coop"
@@ -11,17 +16,25 @@ category = 11
 required_idea_id = "animal_husbandry"
 required_domesticated_species = "chicken"
 min_construction_days = 4
-required_labor = 3500
+required_labor = 4000
 max_builders = 2
-lifespan_years = 10
+lifespan_years = 20
 max_durability = 100
 defense = 10
 required_materials = {
-"fiber_rope": 20,
+"clay": 30,
+"fiber_rope": 16,
 "plant_fiber": 20,
-"stick": 60,
-"wood": 10
+"stick": 80,
+"straw": 80,
+"wood": 30
 }
-required_space = 1
+required_space = 2
+footprint = Vector2i(2, 1)
 has_door = false
 visibility_radius = 2
+animal_capacity = 80
+feeder_space_capacity = 500
+bedding_capacity = 100
+manure_capacity = 100
+live_product_capacity = 40

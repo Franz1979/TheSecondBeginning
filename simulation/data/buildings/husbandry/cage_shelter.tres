@@ -5,6 +5,9 @@
 ; Tettoia delle gabbie (2026-11-12, richiesta utente — addomesticazione per cattura viva, primo edificio): tettoia di
 ; frasche con sotto le gabbie dove si tengono gli animali piccoli catturati vivi (pernice, coniglio). 20 posti, una sola
 ; specie. Per ora solo l'edificio: gli animali arriveranno con le trappole vive (advanced_traps).
+; 2026-11-16 (richiesta utente): resta su Addomesticazione degli animali (scoperta col lupo), ora insieme al cesto a caduta
+; che prima chiedeva Trappole avanzate: così l'idea sblocca subito dove tenere i selvatici e come prenderli, come
+; l'Addomesticazione delle piante con l'orto delle prove.
 [resource]
 script = ExtResource("1_cage_shelter")
 building_name = "building_cage_shelter"
@@ -17,7 +20,7 @@ lifespan_years = 10
 max_durability = 100
 defense = 10
 required_materials = {
-"fiber_rope": 30,
+"fiber_rope": 20,
 "plant_fiber": 20,
 "stick": 70,
 "wood": 8

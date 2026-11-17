@@ -1545,7 +1545,8 @@ func _draw() -> void:
 				CELL_SIZE
 			)
 			draw_rect(rect, color)
-			draw_rect(rect, TerrainColors.GRID, false, 1.0)
+			if show_grid:
+				draw_rect(rect, TerrainColors.GRID, false, 1.0)
 
 	var grid_size: int = World.WIDTH * CELL_SIZE
 	_draw_clay()
@@ -1596,6 +1597,15 @@ func _draw() -> void:
 # 404 punti in un solo comando invece di 20.000 comandi.
 # Punti e colori delle linee sono costanti (dipendono solo da CELL_SIZE e dal numero di celle), costruiti
 # una volta sola e condivisi da tutte le istanze.
+# Linee della griglia delle microcelle (2026-11-17, opzione UserOptions.show_grid): le decide chi usa il renderer
+# (GameScene._apply_grid_visibility, accese comunque durante il piazzamento di un edificio). Ridisegna solo se cambia.
+var show_grid: bool = true:
+	set(value):
+		if show_grid == value:
+			return
+		show_grid = value
+		queue_redraw()
+
 static var _uniform_grid_points: PackedVector2Array = PackedVector2Array()
 static var _uniform_grid_colors: PackedColorArray = PackedColorArray()
 
@@ -1625,6 +1635,8 @@ func _draw_uniform_terrain() -> void:
 	var first_cell: MacroCellData = world.cells[0]
 	var color: Color = TerrainColors.get_land_color(first_cell) if is_river else TerrainColors.get_cell_color(first_cell)
 	draw_rect(Rect2(0.0, 0.0, float(World.WIDTH * CELL_SIZE), float(World.HEIGHT * CELL_SIZE)), color)
+	if not show_grid:
+		return
 	_ensure_uniform_grid_lines()
 	draw_multiline_colors(_uniform_grid_points, _uniform_grid_colors, 1.0)
 
@@ -3614,11 +3626,17 @@ func _compute_tree_visual(individual_key: Vector3i, lot_counts: Dictionary) -> D
 	# range casuale).
 	var offset_variation: float = float(hash(jitter_pos * 7 + Vector2i(3, 11)) % 1000) / 1000.0
 	var vertical_variation: float = float(hash(jitter_pos * 13 + Vector2i(29, 5)) % 1000) / 1000.0
+	# Alberi sparsi su tutto il lotto (2026-11-17, richiesta utente): prima un albero da solo nel lotto stava entro ±1px
+	# dal centro e il bosco si leggeva come una griglia regolare. Ora l'albero singolo può stare ovunque entro
+	# ±TREE_SPREAD_RANGE (fin quasi al bordo, con la chioma che entra nel lotto vicino); con più individui per lotto il
+	# disco di Fibonacci che li separa si allarga allo stesso raggio, e resta il piccolo wobble di sempre. Solo disegno:
+	# l'albero resta del suo lotto.
+	var wobble_range: float = TREE_SPREAD_RANGE if local_count <= 1 else BASE_OFFSET_RANGE
 	var wobble := Vector2(
-		lerp(-BASE_OFFSET_RANGE, BASE_OFFSET_RANGE, offset_variation),
-		lerp(-BASE_OFFSET_RANGE, BASE_OFFSET_RANGE, vertical_variation)
+		lerp(-wobble_range, wobble_range, offset_variation),
+		lerp(-wobble_range, wobble_range, vertical_variation)
 	)
-	var disk_offset := _fibonacci_disk_offset(index, local_count, MAX_OFFSET_RANGE)
+	var disk_offset := _fibonacci_disk_offset(index, local_count, TREE_SPREAD_RANGE)
 	# `ground` = punto in cui QUESTO individuo "poggia", disperso su tutto il footprint 10x10px via
 	# disk_offset/wobble esattamente come center per SHRUB (base + half + offset).
 	var ground := Vector2(
@@ -4788,6 +4806,9 @@ func _count_individuals_per_lot(positions: Array) -> Dictionary:
 const SPREAD_REFERENCE_COUNT: int = 5
 const BASE_OFFSET_RANGE: float = 1.0
 const MAX_OFFSET_RANGE: float = 3.0
+# Solo TREE (2026-11-17, vedi _compute_tree_visual): quanto un albero può allontanarsi dal centro del suo lotto
+# (CELL_SIZE/2 = 5px = bordo). Per tornare a prima: singolo ±BASE_OFFSET_RANGE e disco MAX_OFFSET_RANGE.
+const TREE_SPREAD_RANGE: float = 5.0
 const MIN_DENSITY_SCALE: float = 0.4
 
 func _resolve_density_scale_and_offset_range(local_count: int) -> Dictionary:

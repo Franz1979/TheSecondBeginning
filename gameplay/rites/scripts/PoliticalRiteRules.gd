@@ -13,7 +13,8 @@ extends SocialRiteRules
 @export var min_days_between: int = 30
 # Leadership guadagnata a fine rito (interi, regola delle skill).
 @export var leadership_gain_organizer: float = 1.0
-@export var leadership_gain_participant: float = 1.0
+# Ai partecipanti niente (2026-11-16, richiesta utente: la Leadership cresce solo a chi guida).
+@export var leadership_gain_participant: float = 0.0
 # Lealtà data a ogni presente, chi guida compreso (2026-10-26, gran consiglio), per il fattore della leadership di chi guida.
 @export var loyalty_gain: float = 0.0
 # Autorità dell'edificio (punti di influenza POLITICAL): base + per partecipante presente, chi guida escluso.

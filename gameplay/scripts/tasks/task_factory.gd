@@ -354,6 +354,13 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					continue
 				steps.append(ReapAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.TAKE_ANIMALS:
+				# 1 argomento (la tettoia delle gabbie) — 2026-11-16, Trasferisci animali.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante per step TAKE_ANIMALS di TaskDefinition '%s'." % definition.task_name)
+					continue
+				steps.append(TakeAnimalsAction.new(context[step_definition.context_keys[0]]))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.RETILL:
 				# 1 argomento (il campo da rizollare) — 2026-11-15, Cura del campo.
 				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):

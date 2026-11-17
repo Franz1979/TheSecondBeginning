@@ -23,6 +23,12 @@ var slaughter_requested: bool = false
 # Segno messo dal gestore scorte (2026-11-14, SlaughterStockService): lo toglie lui se la soglia sale; quelli manuali no.
 # Salvato.
 var slaughter_by_wm: bool = false
+# Segno "manca posto" (2026-11-16, DomesticTransferService): domestico nella tettoia delle gabbie senza posto in un edificio
+# d'allevamento. Lo rifà ogni giorno la regola, che lo toglie se il posto arriva. Salvato.
+var slaughter_no_room: bool = false
+# In trasporto verso un edificio d'allevamento (2026-11-16, Trasferisci animali): id di chi lo porta, -1 nessuno. Resta nella
+# tettoia (building_id) finché non arriva; se il lavoro si interrompe torna in attesa (DomesticTransferService.release_orphans).
+var carried_by: int = -1
 # Animali tenuti (2026-11-12, addomesticazione per cattura viva): edificio in cui vive (Building.id: tettoia delle gabbie,
 # poi recinto, stalla, pollaio); -1 = libero come il cane. Un animale tenuto non ha corpo sulla mappa, non segue, non fa la
 # guardia né parte in autunno; invecchia e muore di vecchiaia (DomesticAnimalLifeService).
@@ -83,7 +89,7 @@ func get_age_band(absolute_day: int, wild_rules: AnimalRules) -> GameTypes.AgeBa
 func to_save_data() -> Dictionary:
 	return {"id": id, "species": species, "is_male": is_male, "birth_day": birth_day, "village_id": village_id,
 		"macro_x": macro_coords.x, "macro_y": macro_coords.y, "x": position.x, "y": position.y, "health_ratio": health_ratio,
-		"slaughter_requested": slaughter_requested, "slaughter_by_wm": slaughter_by_wm, "building_id": building_id, "is_wild": is_wild, "captured_day": captured_day,
+		"slaughter_requested": slaughter_requested, "slaughter_by_wm": slaughter_by_wm, "slaughter_no_room": slaughter_no_room, "carried_by": carried_by, "building_id": building_id, "is_wild": is_wild, "captured_day": captured_day,
 		"days_without_food": days_without_food}
 
 
@@ -99,6 +105,8 @@ static func from_save_data(data: Dictionary) -> DomesticAnimal:
 	animal.health_ratio = float(data.get("health_ratio", 1.0))
 	animal.slaughter_requested = bool(data.get("slaughter_requested", false))
 	animal.slaughter_by_wm = bool(data.get("slaughter_by_wm", false))
+	animal.slaughter_no_room = bool(data.get("slaughter_no_room", false))
+	animal.carried_by = int(data.get("carried_by", -1))
 	# Animali tenuti (2026-11-12): salvataggi precedenti, tutti liberi e addomesticati.
 	animal.building_id = int(data.get("building_id", -1))
 	animal.is_wild = bool(data.get("is_wild", false))

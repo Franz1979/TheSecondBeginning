@@ -160,6 +160,8 @@ enum ActionType {
 	REAP,
 	# RETILL (2026-11-15, Rizollatura del campo — RetillAction, retill.tres) — IN CODA (53).
 	RETILL,
+	# TAKE_ANIMALS (2026-11-16, Trasferisci animali — TakeAnimalsAction, transfer_animals.tres) — IN CODA (54).
+	TAKE_ANIMALS,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

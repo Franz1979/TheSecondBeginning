@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="DiscoveryHintRules" format=3]
+
+[ext_resource type="Script" path="res://gameplay/discoveries/scripts/DiscoveryHintRules.gd" id="1_rules"]
+
+; Lino addomesticato (2026-11-16, richiesta utente, simmetria con gli animali): orto, campi e come ripartire.
+[resource]
+script = ExtResource("1_rules")
+id = "first_domesticated_flax"
+title_key = "discovery_first_domesticated_flax_title"
+paragraph_keys = Array[String](["discovery_first_domesticated_flax_p1", "discovery_first_domesticated_flax_p2", "discovery_first_domesticated_flax_p3", "discovery_first_domesticated_flax_p4"])
+trigger_type = 2
+species = "flax"
