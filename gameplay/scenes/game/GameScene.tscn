@@ -15,6 +15,8 @@
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/DemolishConfirmationDialog.tscn" id="13_demolish"]
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/OptionChoiceDialog.tscn" id="14_transport"]
 [ext_resource type="PackedScene" path="res://gameplay/scenes/game/PickupChoiceDialog.tscn" id="15_pickup_choice"]
+[ext_resource type="PackedScene" path="res://render3d/View3D.tscn" id="16_view3d"]
+[ext_resource type="PackedScene" path="res://render3d/ui/View3DToggleButton.tscn" id="17_view3d_toggle"]
 
 [sub_resource type="StyleBoxFlat" id="StyleBoxFlat_game"]
 bg_color = Color(0.19934133, 0.34936652, 0.5477696, 1)
@@ -173,3 +175,7 @@ filters = PackedStringArray("*.json ; File JSON")
 [node name="TransportSourceDialog" parent="." instance=ExtResource("14_transport")]
 
 [node name="PickupChoiceDialog" parent="." instance=ExtResource("15_pickup_choice")]
+
+[node name="View3DToggleButton" parent="CanvasLayer" instance=ExtResource("17_view3d_toggle")]
+
+[node name="View3D" parent="." instance=ExtResource("16_view3d")]
