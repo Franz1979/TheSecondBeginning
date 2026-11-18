@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="SecondaryResourceRules" format=3]
+
+[ext_resource type="Script" uid="uid://cu4cyua5y4n1m" path="res://simulation/scripts/core/SecondaryResourceRules.gd" id="1_halter"]
+
+; Cavezza (2026-11-18, richiesta utente — animali grossi): anello di corda che stringe il muso con un capo lungo per
+; condurre a piedi un animale vivo (dall'imbuto di caccia al recinto di addomesticazione, poi alla stalla). Una persona,
+; una cavezza, un animale. Capanna del trappoliere, idea Trappole avanzate come imbuto e recinto. 3 corde di fibre (la
+; corda di lino la sostituisce alla pari, MaterialOptionsService), solo il coltello. Categoria LEADING (Conduzione), da
+; cintura; 30 usi, uno per animale condotto. Nessuna Action la richiede ancora: arriva col lavoro "Conduci".
+[resource]
+script = ExtResource("1_halter")
+secondary_resource_name = "halter"
+calories_per_unit = 0.0
+category = 4
+panel_group = "transport"
+generation_source = 2
+required_idea_id = "advanced_traps"
+space_per_unit = 3.0
+recipe_inputs = {
+"fiber_rope": 3
+}
+recipe_labor = 150.0
+recipe_workstation_types = Array[String](["trapper_hut"])
+recipe_required_tool_categories = Array[int]([1])
+tool_categories = Array[int]([19])
+max_uses = 30

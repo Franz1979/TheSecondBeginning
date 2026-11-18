@@ -46,6 +46,18 @@ static func rebuild(macro_state: MacroCellState, occupied: Dictionary, current_y
 	for lot in positions.get(GameTypes.WorldObjectType.GRASS, []):
 		macro_state.grass_lots[lot] = true
 	_add_sown_grass(macro_state, occupied)
+	# Erba seminata alla Fossa anche nell'elenco restituito (2026-11-18, bug: il generatore non la conosce, quindi
+	# dopo un rebuild mancava dalle posizioni GRASS — niente capacità dei lotti d'erba, niente raccolta né disegno
+	# fino al ricaricamento; read e rebuild_from_function la includevano già da grass_lots).
+	var grass: Array = positions.get(GameTypes.WorldObjectType.GRASS, [])
+	var grass_set: Dictionary = {}
+	for lot in grass:
+		grass_set[lot] = true
+	for lot in macro_state.sown_grass_lots.keys():
+		if not grass_set.has(lot):
+			grass.append(lot)
+			occupied[lot] = true
+	positions[GameTypes.WorldObjectType.GRASS] = grass
 	macro_state.vegetation_layout_ready = true
 	return positions
 

@@ -156,6 +156,10 @@ extends Resource
 # vivi, una sola specie per edificio; 0 = l'edificio non tiene animali. Per ora solo il dato e la riga Info: gli animali
 # arriveranno con la cattura viva.
 @export var animal_capacity: int = 0
+# Animali grossi (2026-11-18, recinto di addomesticazione): true = tiene le specie delle prede grosse (AnimalRules.max_hunters
+# > 1: capra, pecora, maiale, bue, asino, cavallo), false = quelle piccole (max_hunters == 1, la tettoia delle gabbie).
+# KeptAnimalService.selectable_species; ignorato con la specie fissa.
+@export var keeps_big_animals: bool = false
 # Mangiatoia (2026-11-13, punto 4 — AnimalFeederService): spazio per il cibo, come la saccoccia delle persone (il cibo
 # entrato diventa calorie); 0 = nessuna mangiatoia.
 @export var feeder_space_capacity: int = 0

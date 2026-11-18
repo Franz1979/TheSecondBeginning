@@ -1753,13 +1753,13 @@ domestication_wild_group,{species} selvatico
 domestication_wild_group_dog,Branco selvatico di lupi
 domestication_species_unknown,"Specie non ancora scoperta: cattura vivo un animale e portalo in una tettoia delle gabbie per conoscerla."
 domestication_species_discovered,"Nuova specie da addomesticare: {species}. Ne deriverà: {domestic}.
-Ogni animale catturato vivo e portato nelle gabbie porta punti: le femmine adulte più dei maschi, i giovani poco, gli anziani niente.
+Ogni animale catturato vivo e portato nelle gabbie porta punti: le femmine adulte più dei maschi, i giovani poco, gli anziani pochissimo.
 All'inizio non sappiamo ancora come tenerli: in cattività vivranno pochissimo, a volte solo qualche giorno, e moriranno senza lasciare carne. Non scoraggiarti: ogni punto è esperienza, e più ne accumuli più a lungo sopravvivranno."
 domestication_stats_line,"Catturati {captured} · morti {died} · nati {born} · in allevamento {kept}"
 domestication_stats_life,"Un animale catturato oggi vive circa {days} giorni"
 building_kept_open_domestication,Addomesticazioni
 building_kept_open_domestication_tooltip,"Apre il pannello delle Addomesticazioni: punti, catturati, morti e nati per specie."
-domestication_capture_hint,"Ogni animale catturato vivo e portato in una tettoia delle gabbie porta punti: le femmine adulte più dei maschi, i giovani poco, gli anziani niente."
+domestication_capture_hint,"Ogni animale catturato vivo e portato in una tettoia delle gabbie porta punti: le femmine adulte più dei maschi, i giovani poco, gli anziani pochissimo."
 domestication_no_method_hint,Non c'è ancora un modo per catturarlo vivo.
 domestication_wild_group_chicken,{species}
 domestication_wild_group_donkey,{species}
@@ -2017,12 +2017,16 @@ pending_trap_no_other_site,"{area}: nessun altro posto adatto per {trap} ({count
 trap_pickup_catch_prey,"Prede: {detail}"
 building_category_husbandry,Allevamento
 building_cage_shelter,Tettoia delle gabbie
+building_domestication_pen,Recinto di addomesticazione
 build_bar_cage_shelter_tooltip,Tettoia delle gabbie
 build_bar_cage_shelter_description,"Tettoia di frasche con sotto le gabbie legate con la corda: qui si terranno gli animali piccoli presi vivi, venti posti, una specie sola. Per catturarli vivi servirà anche l'idea Trappole avanzate."
+build_bar_domestication_pen_tooltip,Recinto di addomesticazione
+build_bar_domestication_pen_description,"Steccato di pali legati con la corda e pietre alla base: qui si terranno gli animali grossi presi vivi con l'imbuto di caccia (capra, pecora, maiale, bue, asino, cavallo), dieci posti, una specie sola. Si costruisce dopo le Trappole avanzate."
 building_info_animal_capacity,"Posti per animali: {capacity}, una sola specie"
 carried_resource_tooltip_drop_basket,Cesto a caduta
-trap_live_catch_needs_cage_shelter,"{trap}: si può fabbricare, ma per piazzarlo serve una {building} finita che accetti animali (non su Nessuna), dove tenere gli animali presi vivi."
-trap_live_catch_note,"Cattura gli animali vivi: si piazza solo se nel villaggio c'è almeno una {building} finita (anche piena). Senza, il lavoro resta in coda con la X rossa."
+carried_resource_tooltip_hunting_funnel,Imbuto di caccia
+carried_resource_tooltip_halter,Cavezza
+trap_live_catch_note,"Cattura gli animali vivi. Per tenerli serve una {building} finita, con posto per quella specie e non su Nessuna: senza, allo svuotamento si macellano."
 trap_place_item_blocked,"{trap} (serve una {building} finita)"
 warehouse_rule_traps_group,Trappole per zona
 warehouse_rule_traps_edit_tooltip,"Quante trappole di ogni tipo tenere montate in ogni zona di lavoro"
@@ -2136,6 +2140,7 @@ building_feeder_target_capped,(la mangiatoia ne tiene ~{days} giorni)
 notification_kept_animal_starved,"{animal} è morto di fame in {building}: la mangiatoia era vuota."
 notification_kept_animal_starved_points,(−{points} punti addomesticazione)
 notification_kept_young_escaped,"{building} piena: {count} piccoli di {species} sono scappati nei dintorni."
+notification_live_catch_slaughtered,"Prese vive e macellate: {list}. Nessuna {building} con posto per loro: per addomesticarle costruisci una {building} o fai posto."
 building_slaughter_above,Macella oltre:
 building_slaughter_above_tooltip,"Numero di animali oltre il quale il gestore scorte ne fa macellare in questa tettoia: prima i maschi oltre il primo adulto, poi i vecchi, poi i giovani maschi, per ultime le femmine adulte. ∞ = non macella mai: i piccoli che non ci stanno vanno in un'altra tettoia con posto, altrimenti scappano. Con un numero i piccoli entrano anche oltre la capienza, e dopo 10 giorni i più giovani in più scappano. Vale la più bassa tra questa e quella della specie (pannello Animali)."
 building_feeder_wm_keeps,Giorni di scorta:
@@ -2224,6 +2229,7 @@ carried_resource_tooltip_grain_mortar,Mortaio
 carried_resource_tooltip_saddle_quern,Macina a sella
 tool_category_sowing,semina
 tool_category_reaping,mietitura
+tool_category_leading,conduzione
 building_crop_species,Coltura:
 building_crop_species_none,Nessuna
 building_crop_species_tooltip,"Specie da seminare qui, una sola. Si sceglie tra le piante già raccolte almeno una volta, anche senza semi nei vasi: la semina aspetterà i semi."

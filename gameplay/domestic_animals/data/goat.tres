@@ -2,10 +2,35 @@
 
 [ext_resource type="Script" path="res://gameplay/domestic_animals/scripts/DomesticAnimalRules.gd" id="1_goat"]
 
+; Capra (2026-11-17, richiesta utente — animali grossi passo 1): vita = bezoar, macello = bezoar (prime capre domestiche più piccole), calorie/lettiera/letame = coniglio × (40 kg / 2 kg)^0.75. Latte dopo (punto 7).
 [resource]
 script = ExtResource("1_goat")
 species_name = "goat"
 display_name = "domestic_animal_goat"
 wild_species_name = "bezoar"
-domestication_points_required = 3000
+domestication_points_required = 3500
 required_idea_id = "animal_domestication"
+capture_points_adult_male = 7
+capture_points_adult_female = 10
+capture_points_young = 5
+capture_points_old = 2
+captivity_birth_points = 20
+max_age_years = 11
+max_age_variation_years = 2
+litter_size_min = 1
+litter_size_max = 3
+daily_calories = 28.0
+accepted_foods = Array[String](["hay", "wild_vegetables", "wild_seeds", "wild_wheat", "wild_rye", "wild_oats", "domestic_barley", "domestic_wheat", "domestic_rye", "domestic_oats", "fruit", "berry", "acorn"])
+max_days_without_food = 7
+starvation_point_loss = 10
+butcher_meat_units = 16
+butcher_hide_units = 5
+butcher_sinew_units = 3
+butcher_bone_units = 4
+bedding_per_day = 0.5
+newborn_death_without_bedding = 0.7
+manure_per_day = 0.25
+death_chance_without_bedding = 0.002
+death_chance_full_manure = 0.005
+slaughter_point_loss = 4
+escape_point_loss = 2

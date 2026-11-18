@@ -59,6 +59,10 @@ func try_select(event: InputEvent, live_cells: Dictionary, buildings: Array, req
 			var beats_ground: bool = is_equal_approx(distance, best_distance) and not is_ground and best.get("is_ground", false)
 			if distance < best_distance or beats_ground:
 				best_distance = distance
-				best = {"macro_coords": coords, "building_id": building.id, "distance": distance, "is_ground": is_ground}
+				# Cantiere grande non finito (2026-11-18, richiesta utente): dentro c'è ancora la vegetazione del posto, che
+				# altrimenti vincerebbe sempre il clic (GameScene la scarta con questo flag).
+				var unfinished_large: bool = building.rules != null and BuildingFootprint.is_large(building.rules) 					and not building.is_complete and distance == LARGE_BUILDING_HIT_DISTANCE_PX
+				best = {"macro_coords": coords, "building_id": building.id, "distance": distance, "is_ground": is_ground,
+					"unfinished_large": unfinished_large}
 
 	return best

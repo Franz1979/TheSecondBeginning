@@ -72,14 +72,17 @@ func refresh(game_data: GameData, world: World) -> void:
 	)
 
 
-# Linguette (2026-11-17, richiesta utente — i nomi non ci stavano): solo il simbolo della specie, simbolo e nome per
-# quella aperta. "Tutte" resta scritta.
+# Linguette (2026-11-17, richiesta utente — i nomi non ci stavano): solo il simbolo della specie, anche per quella aperta
+# (2026-11-18, richiesta utente): il nome sta in cima alla pagina (_fill_species_page). "Tutte" resta scritta.
 func _retitle_tabs(tabs: TabContainer, species_list: Array[String]) -> void:
 	for i in range(species_list.size()):
 		var species := species_list[i]
-		var symbol := String(SPECIES_SYMBOLS.get(species, _species_name(species).left(1)))
-		tabs.set_tab_title(i + 1, "%s %s" % [symbol, _species_name(species)] if tabs.current_tab == i + 1 else symbol)
+		tabs.set_tab_title(i + 1, _species_symbol(species))
 		tabs.set_tab_tooltip(i + 1, _species_name(species))
+
+
+func _species_symbol(species: String) -> String:
+	return String(SPECIES_SYMBOLS.get(species, _species_name(species).left(1)))
 
 
 # Specie (in ordine alfabetico del nome mostrato) con almeno un animale, libero o in tettoia, o con un edificio finito che la tiene.
@@ -144,6 +147,8 @@ func _fill_species_page(box: VBoxContainer, species: String) -> void:
 	var animals := _animals_of(species)
 	var today := _game_data.get_absolute_day()
 	var wild_rules := DomesticAnimalCalculator.get_wild_rules(species)
+	# Nome della specie in cima alla pagina (2026-11-18, richiesta utente): nella linguetta solo il simbolo.
+	box.add_child(_make_label("%s %s" % [_species_symbol(species), _species_name(species)]))
 	# Tabella fasce d'età × sesso.
 	var counts: Dictionary = {}
 	for animal in animals:

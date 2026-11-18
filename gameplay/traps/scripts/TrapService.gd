@@ -45,12 +45,17 @@ const QUARRY_SMALL_GAME := "small_game"
 # AnimalRules.max_hunters == 1, fossa = con max_hunters > 1 (prey_species).
 const QUARRY_BIG_GAME := "big_game"
 # Cesto a caduta (2026-11-12, richiesta utente — addomesticazione per cattura viva): conigli e pernici presi VIVI. Si monta
-# come i lacci, ma solo se c'è una tettoia delle gabbie completata (placement_blocked_reason). Per ora non cattura niente.
+# come i lacci (dal 2026-11-18 anche senza tettoia delle gabbie: allora le prede si macellano).
 const QUARRY_LIVE_SMALL_GAME := "live_small_game"
+# Imbuto di caccia (2026-11-18, richiesta utente — animali grossi): prede grosse (max_hunters > 1) prese VIVE, solo con la
+# spinta (trap_daily_catch_chance 0, trap_flee_fall_chance e bocca larga trap_fall_edge_cells). Svuotato da solo come la
+# fossa (BIG_GAME_QUARRIES); senza posto nel recinto (trap_live_building_type) le prede si macellano.
+const QUARRY_LIVE_BIG_GAME := "live_big_game"
 # Trappole a preda grossa (2026-11-15): prendono le specie con max_hunters > 1 (prey_species) e si svuotano col lavoro
 # proprio, fuori dal giro (is_emptied_alone). Una futura cattura viva di prede grosse va aggiunta qui.
-const BIG_GAME_QUARRIES: Array[String] = [QUARRY_BIG_GAME]
-# Edificio senza il quale le trappole a cattura viva non si piazzano (almeno uno completato, pieno o vuoto).
+const BIG_GAME_QUARRIES: Array[String] = [QUARRY_BIG_GAME, QUARRY_LIVE_BIG_GAME]
+# Edificio dove vanno le prede vive del cesto (nota nei tooltip, notifica del giorno); le altre trappole a cattura viva lo
+# dicono nel campo SecondaryResourceRules.trap_live_building_type (live_building_type_for).
 const LIVE_CATCH_BUILDING_TYPE := "cage_shelter"
 # Animali vivi presi dai cesti nel giro (2026-11-12, passo B2): [{"wild_species", "species", "is_male", "age_band",
 # "building_id", "space", "trap_name"}] (KeptAnimalService.make_entry). Contano come posto prenotato nella tettoia e come
@@ -78,12 +83,19 @@ static func list_trap_names() -> Array[String]:
 # Lacci, fossa e cesto a caduta (2026-11-12): prendono animali veri delle mandrie (SnareService), stessa logica; stesso
 # terreno (niente alberi né pietre) e posti sparsi.
 static func is_herd_quarry(rules: SecondaryResourceRules) -> bool:
-	return rules != null and rules.trap_quarry in [QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME]
+	return rules != null and rules.trap_quarry in [QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME, QUARRY_LIVE_BIG_GAME]
 
 
-# Trappole a cattura viva (2026-11-12): oggi il cesto a caduta.
+# Trappole a cattura viva (2026-11-12): il cesto a caduta; dal 2026-11-18 anche l'imbuto di caccia.
 static func is_live_catch(rules: SecondaryResourceRules) -> bool:
-	return rules != null and rules.trap_quarry == QUARRY_LIVE_SMALL_GAME
+	return rules != null and rules.trap_quarry in [QUARRY_LIVE_SMALL_GAME, QUARRY_LIVE_BIG_GAME]
+
+
+# Edificio dove vanno le prede vive di una trappola a cattura viva: quello scritto nei suoi dati, altrimenti la tettoia.
+static func live_building_type_for(rules: SecondaryResourceRules) -> String:
+	if rules != null and rules.trap_live_building_type != "":
+		return rules.trap_live_building_type
+	return LIVE_CATCH_BUILDING_TYPE
 
 
 # Trappole a preda grossa (2026-11-15, richiesta utente — «caccia grossi animali»: BIG_GAME_QUARRIES, oggi la fossa con
@@ -99,35 +111,21 @@ static func is_big_game_quarry(rules: SecondaryResourceRules) -> bool:
 	return rules != null and BIG_GAME_QUARRIES.has(rules.trap_quarry)
 
 
-# true se nel mondo c'è almeno una tettoia delle gabbie completata (piena o vuota) che accetta animali (non su "Nessuna",
-# 2026-11-16).
-static func has_live_catch_building(world: World) -> bool:
-	if world == null:
-		return false
-	for building in world.buildings:
-		if building != null and building.is_complete and building.building_type_name == LIVE_CATCH_BUILDING_TYPE 				and not KeptAnimalService.accepts_none(building):
-			return true
-	return false
-
-
-# Motivo per cui `trap_name` non si può piazzare adesso, già tradotto; "" se si può. Unico punto del vincolo (2026-11-12):
-# le trappole a cattura viva vogliono una tettoia delle gabbie completata. Letto dal lavoro di zona (X rossa), dal clic
-# destro e dall'ordine diretto.
-static func placement_blocked_reason(world: World, trap_name: String) -> String:
-	var rules := get_rules(trap_name)
-	if is_live_catch(rules) and not has_live_catch_building(world):
-		return GameContext.tr_text("trap_live_catch_needs_cage_shelter").format({
-			"trap": IconRegistry.get_resource_display_name(trap_name),
-			"building": GameContext.tr_text("building_" + LIVE_CATCH_BUILDING_TYPE),
-		})
+# Motivo per cui `trap_name` non si può piazzare adesso, già tradotto; "" se si può. Unico punto dei vincoli di
+# piazzamento, letto dal lavoro di zona (X rossa), dal clic destro e dall'ordine diretto. Oggi nessun vincolo: dal
+# 2026-11-18 (richiesta utente) il cesto a caduta si piazza anche senza tettoia delle gabbie — senza un posto le prede
+# vive si macellano allo svuotamento (take_live_catches), con la nota nei tooltip (placement_note) e la notifica del
+# giorno (LiveCatchNoticeService). Prima (2026-11-12) voleva una tettoia finita non su "Nessuna".
+static func placement_blocked_reason(_world: World, _trap_name: String) -> String:
 	return ""
 
 
 # Nota fissa da aggiungere ai tooltip del numero di trappole (WM, zona), già tradotta; "" se il tipo non ha vincoli.
 static func placement_note(trap_name: String) -> String:
-	if is_live_catch(get_rules(trap_name)):
+	var rules := get_rules(trap_name)
+	if is_live_catch(rules):
 		return GameContext.tr_text("trap_live_catch_note").format({
-			"building": GameContext.tr_text("building_" + LIVE_CATCH_BUILDING_TYPE),
+			"building": GameContext.tr_text("building_" + live_building_type_for(rules)),
 		})
 	return ""
 
@@ -337,9 +335,11 @@ static func take_live_catches(game_data: GameData, world: World, trap: PlacedTra
 		var species := KeptAnimalService.domestic_species_for_wild(wild_species)
 		if species == "":
 			continue
-		var building := KeptAnimalService.find_building_with_room(game_data, world, species, trap.macro_coords, reserved + taken)
+		var building := KeptAnimalService.find_building_with_room(game_data, world, species, trap.macro_coords, reserved + taken,
+			null, true)
 		if building == null:
 			log_line("%s #%d: %s vivo ma nessuna tettoia con posto, si macella" % [trap.trap_name, trap.id, wild_species])
+			LiveCatchNoticeService.record(game_data, wild_species, species, live_building_type_for(rules))
 			continue
 		var age_band := trap.catch_ages[i] if i < trap.catch_ages.size() else int(GameTypes.AgeBand.ADULT)
 		var is_male := i < trap.catch_sexes.size() and trap.catch_sexes[i] == 1
@@ -354,16 +354,15 @@ static func take_live_catches(game_data: GameData, world: World, trap: PlacedTra
 	return taken
 
 
-# Giorni di macellazione sul posto delle prede di un laccio (ritmo di ButcherAction); 0 per le altre trappole. Gli animali
-# vivi dei cesti non contano: vanno alla tettoia (take_live_catches).
+# Giorni di macellazione sul posto delle prede di un laccio (ritmo di ButcherAction); 0 per le altre trappole. Dal
+# 2026-11-18 contano anche gli animali vivi (cesto, imbuto): senza posto si macellano lì (take_live_catches), e quelli
+# che hanno posto allungano di poco la tappa (stima, da rivedere con la cavezza).
 static func butcher_days(trap: PlacedTrap) -> float:
 	var rules := get_rules(trap.trap_name)
 	if rules == null or not is_herd_quarry(rules):
 		return 0.0
 	var days := 0.0
 	for i in range(trap.catch_days.size()):
-		if trap.is_catch_alive(i):
-			continue
 		var species := trap.catch_species[i] if i < trap.catch_species.size() else ""
 		var age_band := trap.catch_ages[i] if i < trap.catch_ages.size() else int(GameTypes.AgeBand.ADULT)
 		var meat := float(ButcherAction.compute_yields(species, age_band)["meat"])
@@ -436,7 +435,7 @@ static func site_index(trap_name: String, world: World, macro_coords: Vector2i, 
 			var fish := StreamFishService.get_fish_in_reach(state, StreamMicrocellService.get_positions(world, cell),
 				macro_coords.x, macro_coords.y, lot, game_data.get_absolute_day())
 			return clampf(float(fish) / float(StreamFishService.TRAP_FULL_FISH), 0.0, 1.0)
-		QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME:
+		QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME, QUARRY_LIVE_BIG_GAME:
 			return 1.0
 	return 0.0
 
@@ -449,7 +448,7 @@ static func current_index(trap_name: String, p_site_index: float, season: GameTy
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.apply_season(p_site_index, season)
-		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME:
+		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME, QUARRY_LIVE_BIG_GAME:
 			return p_site_index
 	return 0.0
 
@@ -462,7 +461,7 @@ static func is_worth_setting(trap_name: String, index: float) -> bool:
 	match rules.trap_quarry:
 		QUARRY_BIRDS:
 			return BirdPresenceService.level_for_index(index) != BirdPresenceService.Level.NONE
-		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME:
+		QUARRY_FISH, QUARRY_SMALL_GAME, QUARRY_BIG_GAME, QUARRY_LIVE_SMALL_GAME, QUARRY_LIVE_BIG_GAME:
 			return index > 0.0
 	return false
 
@@ -541,12 +540,18 @@ static func choose_site(game_data: GameData, world: World, individuals: Array[Hu
 	var stream_positions := _stream_positions_of(world, area.macro_coords)
 	var macro_state := world.get_cell_state_at(area.macro_coords.x, area.macro_coords.y)
 	var stone_lots := _stone_lots_of(macro_state) if is_herd_quarry(rules) else {}
+	# Area libera (trap_clear_radius, imbuto di caccia): niente trappole di nessun tipo, montate, in viaggio o a riposo.
+	var trap_area_lots := resting.duplicate()
+	for lot in taken:
+		trap_area_lots[lot] = true
 	var best_score := 0.0
 	for y in range(area.rect.position.y, area.rect.end.y):
 		for x in range(area.rect.position.x, area.rect.end.x):
 			var lot := Vector2i(x, y)
 			if occupied.has(lot) or resting.has(lot) or not _fits_ground(rules, stream_positions, lot, macro_state, stone_lots) \
-					or not _far_from(lot, taken, rules.trap_min_spacing):
+					or not _far_from(lot, taken, rules.trap_min_spacing) \
+					or not _area_is_clear(rules, lot, occupied, stream_positions, stone_lots, trap_area_lots) \
+					or _inside_clear_area(game_data, area.macro_coords, lot):
 				continue
 			var index := current_index(trap_name, site_index(trap_name, world, area.macro_coords, lot), season)
 			if not is_worth_setting(trap_name, index):
@@ -588,9 +593,21 @@ static func placeable_traps(game_data: GameData, world: World, individuals: Arra
 	var stream_positions := _stream_positions_of(world, macro_coords)
 	var macro_state := world.get_cell_state_at(macro_coords.x, macro_coords.y)
 	var stone_lots := _stone_lots_of(macro_state)
+	# Area libera (trap_clear_radius, imbuto di caccia) e aree degli imbuti già montati (2026-11-18). Qui la microcella
+	# non ha trappole né piazzamenti in viaggio (controllato sopra): bastano quelle attorno.
+	var building_lots := _building_lots(world, macro_coords)
+	var trap_area_lots := trap_lots(game_data, macro_coords)
+	for broken in broken_in_macro_cell(game_data, macro_coords):
+		trap_area_lots[Vector2i(int(broken.get("lot_x", -1)), int(broken.get("lot_y", -1)))] = true
+	for task in open_place_tasks(individuals):
+		if Vector2i(int(task.context.get(CONTEXT_MACRO_X, -1)), int(task.context.get(CONTEXT_MACRO_Y, -1))) == macro_coords:
+			trap_area_lots[Vector2i(int(task.context.get(CONTEXT_LOT_X, -1)), int(task.context.get(CONTEXT_LOT_Y, -1)))] = true
+	var inside_clear_area := _inside_clear_area(game_data, macro_coords, lot)
 	for trap_name in list_trap_names():
 		var rules := get_rules(trap_name)
 		if not _fits_ground(rules, stream_positions, lot, macro_state, stone_lots) or not WarehouseSelectionService.has_retrieval_source(world, trap_name):
+			continue
+		if inside_clear_area or not _area_is_clear(rules, lot, building_lots, stream_positions, stone_lots, trap_area_lots):
 			continue
 		var index := current_index(trap_name, site_index(trap_name, world, macro_coords, lot), season)
 		var level := -1
@@ -826,7 +843,7 @@ static func days_to_first_spoil(trap: PlacedTrap, day: int) -> float:
 	for i in range(trap.catch_days.size()):
 		var left := float(rules.trap_catch_spoil_days)
 		if trap.is_catch_alive(i):
-			left += float(maxi(rules.trap_live_survival_days - (day - trap.catch_days[i]), 0))
+			left += float(maxi(live_survival_days(trap, i) - (day - trap.catch_days[i]), 0))
 		else:
 			left -= float(day - trap.get_catch_spoil_start(i))
 		best = minf(best, left)
@@ -851,14 +868,23 @@ static func _spoil_old_catches(game_data: GameData, trap: PlacedTrap, rules: Sec
 	return true
 
 
-# Cattura viva (2026-11-12, cesto a caduta): un animale lasciato vivo nella trappola per trap_live_survival_days giorni
+# Giorni che la preda viva `index` resta viva nella trappola (2026-11-18, richiesta utente): in trappola non mangia, quindi
+# i giorni senza cibo della sua specie domestica d'arrivo (DomesticAnimalRules.max_days_without_food: coniglio 5, gallina 6,
+# capra 7, bue 10...). Almeno 1.
+static func live_survival_days(trap: PlacedTrap, index: int) -> int:
+	var wild_species := trap.catch_species[index] if index < trap.catch_species.size() else ""
+	var domestic := DomesticAnimalCalculator.get_rules(KeptAnimalService.domestic_species_for_wild(wild_species))
+	return maxi(domestic.max_days_without_food if domestic != null else 0, 1)
+
+
+# Cattura viva (2026-11-12, cesto a caduta): un animale lasciato vivo nella trappola per live_survival_days giorni
 # muore; da lì è una preda come quella di un laccio (marcisce, si macella allo svuotamento). true se ne è morto almeno uno.
 static func _kill_live_catches(trap: PlacedTrap, rules: SecondaryResourceRules, day: int) -> bool:
 	if not is_live_catch(rules):
 		return false
 	var died := false
 	for i in range(trap.catch_days.size()):
-		if trap.is_catch_alive(i) and day - trap.catch_days[i] >= rules.trap_live_survival_days:
+		if trap.is_catch_alive(i) and day - trap.catch_days[i] >= live_survival_days(trap, i):
 			trap.catch_death_days[i] = day
 			died = true
 			log_line("%s #%d in %s %s: %s morto nel cesto dopo %d giorni" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot,
@@ -913,6 +939,54 @@ static func traps_in_macro_cell(game_data: GameData, macro_coords: Vector2i) -> 
 		if trap.macro_coords == macro_coords:
 			result.append(trap)
 	return result
+
+
+# Area libera attorno a `lot` per una trappola con trap_clear_radius > 0 (2026-11-18, imbuto di caccia): dentro la
+# macrocella, niente edifici (`building_lots`), ruscello, pietre né trappole (`trap_lots_here`, la microcella centrale
+# esclusa: la controllano già i chiamanti). Piante e arbusti ammessi. true per le trappole senza area.
+static func _area_is_clear(rules: SecondaryResourceRules, lot: Vector2i, building_lots: Dictionary, stream_positions: Dictionary,
+		stone_lots: Dictionary, trap_lots_here: Dictionary) -> bool:
+	var radius := rules.trap_clear_radius if rules != null else 0
+	if radius <= 0:
+		return true
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var cell := lot + Vector2i(dx, dy)
+			if cell.x < 0 or cell.y < 0 or cell.x >= World.WIDTH or cell.y >= World.HEIGHT:
+				return false
+			if building_lots.has(cell) or stream_positions.has(cell) or stone_lots.has(cell):
+				return false
+			if cell != lot and trap_lots_here.has(cell):
+				return false
+	return true
+
+
+# true se sulla microcella `lot` non si può costruire un edificio (2026-11-18, richiesta utente — BuildingVerificationService,
+# criterio 15): c'è una trappola montata, o sta nell'area libera di un imbuto di caccia (trap_clear_radius). I posti a
+# riposo delle trappole rotte non contano.
+static func blocks_building_at(game_data: GameData, macro_coords: Vector2i, lot: Vector2i) -> bool:
+	if game_data == null:
+		return false
+	for trap in traps_in_macro_cell(game_data, macro_coords):
+		if trap.lot == lot:
+			return true
+		var rules := get_rules(trap.trap_name)
+		if rules != null and rules.trap_clear_radius > 0 \
+				and maxi(absi(trap.lot.x - lot.x), absi(trap.lot.y - lot.y)) <= rules.trap_clear_radius:
+			return true
+	return false
+
+
+# true se `lot` sta nell'area libera di una trappola già montata della macrocella (trap_clear_radius > 0, l'imbuto di
+# caccia): lì non si piazza nessun'altra trappola (2026-11-18).
+static func _inside_clear_area(game_data: GameData, macro_coords: Vector2i, lot: Vector2i) -> bool:
+	for trap in traps_in_macro_cell(game_data, macro_coords):
+		var rules := get_rules(trap.trap_name)
+		if rules == null or rules.trap_clear_radius <= 0 or trap.lot == lot:
+			continue
+		if maxi(absi(trap.lot.x - lot.x), absi(trap.lot.y - lot.y)) <= rules.trap_clear_radius:
+			return true
+	return false
 
 
 static func _far_from(lot: Vector2i, taken: Array[Vector2i], spacing: int) -> bool:

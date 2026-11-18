@@ -9,7 +9,7 @@
 ; villaggio c'è una tettoia delle gabbie completata (TrapService.placement_blocked_reason). Numero generale del WM a 0: lo
 ; si decide zona per zona.
 ; Cattura (2026-11-12, passo A): come i lacci (SnareService, passaggi, tiro a fine giornata, disturbo), coniglio 0,6 e
-; pernice 0,5 (0,4 fino al 2026-11-17, richiesta utente: troppe poche galline), ma l'animale resta VIVO (sesso a caso). Lasciato lì trap_live_survival_days (5) giorni muore; morto, marcisce
+; pernice 0,5 (0,4 fino al 2026-11-17, richiesta utente: troppe poche galline), ma l'animale resta VIVO (sesso a caso). Lasciato lì muore dopo i giorni senza cibo della specie (dal 2026-11-18; erano 5 per tutti); morto, marcisce
 ; dopo trap_catch_spoil_days e allo svuotamento si macella come la preda di un laccio. Portarlo alla tettoia: passo B.
 ; Idea (2026-11-16, richiesta utente): Addomesticazione degli animali come la tettoia delle gabbie (prima Trappole avanzate,
 ; che ora restano alla cattura viva degli animali grossi).
@@ -53,4 +53,3 @@ trap_passage_radius = 5
 trap_rest_days = 60
 trap_idle_wear_days = 60
 trap_empty_tool_categories = Array[int]([4])
-trap_live_survival_days = 5

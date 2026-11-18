@@ -78,7 +78,7 @@ static func _form_couples_in_group(
 ) -> Array[Dictionary]:
 	var males: Array[HumanIndividual] = []
 	var females: Array[HumanIndividual] = []
-	# Per ogni candidato (id): età, anni già passati nella fascia fertile, anni fertili che gli restano.
+	# Per ogni candidato (id): anni fertili che gli restano.
 	var info: Dictionary = {}
 	for individual in individuals:
 		if individual.partner_id != -1:
@@ -88,13 +88,8 @@ static func _form_couples_in_group(
 		if age_band != HumanTypes.AgeBand.FERTILE_ADULT:
 			continue
 		var durations: Array[float] = durations_female if individual.sex == HumanTypes.Sex.FEMALE else durations_male
-		var fertile_start := HumanCalculator.get_age_band_start_age(durations, HumanTypes.AgeBand.FERTILE_ADULT)
 		var fertile_end := HumanCalculator.get_age_band_start_age(durations, HumanTypes.AgeBand.MATURE_ADULT)
-		info[individual.id] = {
-			"age": age,
-			"waited": maxf(0.0, age - fertile_start),
-			"remaining": maxf(0.0, fertile_end - age),
-		}
+		info[individual.id] = {"remaining": maxf(0.0, fertile_end - age)}
 		if individual.sex == HumanTypes.Sex.MALE:
 			males.append(individual)
 		else:
@@ -120,28 +115,21 @@ static func _form_couples_in_group(
 
 # Scelta del partner (2026-11-17, richiesta utente — prima era il primo compatibile, senza guardare l'età, e nascevano
 # coppie in cui uno usciva presto dall'età fertile lasciando l'altro legato senza figli):
-#   - ammessi solo i liberi, non parenti, con differenza d'età entro la tolleranza di ENTRAMBI: MAX_AGE_GAP_BASE anni più
-#     MAX_AGE_GAP_PER_WAITED_YEAR per ogni anno già passato nella fascia fertile (chi aspetta da tempo, compresi
-#     vedovi/e, si adatta di più; un appena fertile solo se l'altro è vicino d'età). Nessuno ammesso: resta single e
-#     riprova l'anno dopo, con la tolleranza cresciuta;
-#   - tra gli ammessi vince chi ha più anni fertili in comune (il minimo tra gli anni fertili rimasti ai due), pescando a
-#     caso tra i primi PICK_AMONG_BEST per non rendere le coppie meccaniche.
-const MAX_AGE_GAP_BASE := 5.0
-const MAX_AGE_GAP_PER_WAITED_YEAR := 2.0
+#   - ammessi tutti i liberi non parenti; vince chi ha più anni fertili in comune (il minimo tra gli anni fertili rimasti
+#     ai due), pescando a caso tra i primi PICK_AMONG_BEST per non rendere le coppie meccaniche. I giovani si scelgono
+#     così tra giovani da soli; chi è più avanti (es. una vedova) viene preso quando non c'è di meglio, mai lasciato solo.
+#   - Tolleranza d'età tolta il 2026-11-18 (richiesta utente: era un vincolo, una vedova restava sola per anni perché i
+#     ragazzi appena fertili la rifiutavano; gli anni in comune bastano a dare la preferenza).
 const PICK_AMONG_BEST := 3
 
 
 static func _pick_partner(candidate: HumanIndividual, pool: Array[HumanIndividual], info: Dictionary) -> HumanIndividual:
 	var mine: Dictionary = info[candidate.id]
-	var my_tolerance := MAX_AGE_GAP_BASE + MAX_AGE_GAP_PER_WAITED_YEAR * float(mine["waited"])
 	var options: Array[Dictionary] = []
 	for other in pool:
 		if other.partner_id != -1 or is_incestuous_pair(candidate, other):
 			continue
 		var theirs: Dictionary = info[other.id]
-		var tolerance := minf(my_tolerance, MAX_AGE_GAP_BASE + MAX_AGE_GAP_PER_WAITED_YEAR * float(theirs["waited"]))
-		if absf(float(mine["age"]) - float(theirs["age"])) > tolerance:
-			continue
 		options.append({"other": other, "shared": minf(float(mine["remaining"]), float(theirs["remaining"]))})
 	if options.is_empty():
 		return null

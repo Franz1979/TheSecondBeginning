@@ -2,10 +2,35 @@
 
 [ext_resource type="Script" path="res://gameplay/domestic_animals/scripts/DomesticAnimalRules.gd" id="1_cattle"]
 
+; Bue (2026-11-17, richiesta utente — animali grossi passo 1): vita e macello = uro, un vitello all'anno, prima nascita a 3 anni (dati dell'uro), calorie/lettiera/letame = coniglio × (400 kg / 2 kg)^0.75.
 [resource]
 script = ExtResource("1_cattle")
 species_name = "cattle"
 display_name = "domestic_animal_cattle"
 wild_species_name = "aurochs"
-domestication_points_required = 5000
+domestication_points_required = 5500
 required_idea_id = "animal_domestication"
+capture_points_adult_male = 16
+capture_points_adult_female = 24
+capture_points_young = 12
+capture_points_old = 6
+captivity_birth_points = 50
+max_age_years = 20
+max_age_variation_years = 3
+litter_size_min = 1
+litter_size_max = 1
+daily_calories = 160.0
+accepted_foods = Array[String](["hay", "wild_vegetables", "wild_seeds", "wild_wheat", "wild_rye", "wild_oats", "domestic_barley", "domestic_wheat", "domestic_rye", "domestic_oats", "fruit", "berry"])
+max_days_without_food = 10
+starvation_point_loss = 10
+butcher_meat_units = 60
+butcher_hide_units = 15
+butcher_sinew_units = 8
+butcher_bone_units = 16
+bedding_per_day = 2.7
+newborn_death_without_bedding = 0.7
+manure_per_day = 1.3
+death_chance_without_bedding = 0.002
+death_chance_full_manure = 0.005
+slaughter_point_loss = 6
+escape_point_loss = 3

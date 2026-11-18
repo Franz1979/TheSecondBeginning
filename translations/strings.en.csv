@@ -1962,12 +1962,16 @@ pending_trap_no_other_site,"{area}: no other suitable spot for {trap} ({count} o
 trap_pickup_catch_prey,"Prey: {detail}"
 building_category_husbandry,Husbandry
 building_cage_shelter,Cage shelter
+building_domestication_pen,Domestication pen
 build_bar_cage_shelter_tooltip,Cage shelter
 build_bar_cage_shelter_description,"Brushwood shelter with rope-tied cages beneath: small animals caught alive will be kept here, twenty places, one species only. Catching them alive will also require the Advanced traps idea."
+build_bar_domestication_pen_tooltip,Domestication pen
+build_bar_domestication_pen_description,"A fence of rope-tied stakes with stones at the base: big animals caught alive with the hunting funnel will be kept here (goat, sheep, pig, cattle, donkey, horse), ten places, one species only. It can be built after Advanced traps."
 building_info_animal_capacity,"Animal places: {capacity}, one species only"
 carried_resource_tooltip_drop_basket,Drop basket
-trap_live_catch_needs_cage_shelter,"{trap}: it can be made, but setting it needs a finished {building} that accepts animals (not set to None) to keep the animals caught alive."
-trap_live_catch_note,"Catches animals alive: it is set only if the village has at least one finished {building} (even a full one). Without it, the job stays queued with the red X."
+carried_resource_tooltip_hunting_funnel,Hunting funnel
+carried_resource_tooltip_halter,Halter
+trap_live_catch_note,"Catches animals alive. Keeping them needs a finished {building} with room for that species and not set to None: without it, they are butchered when the trap is emptied."
 trap_place_item_blocked,"{trap} (needs a finished {building})"
 warehouse_rule_traps_group,Traps per zone
 warehouse_rule_traps_edit_tooltip,"How many traps of each type to keep set in every work zone"
@@ -2081,6 +2085,7 @@ building_feeder_target_capped,(the feeder holds ~{days} days)
 notification_kept_animal_starved,"{animal} starved to death in {building}: the feeder was empty."
 notification_kept_animal_starved_points,(−{points} domestication points)
 notification_kept_young_escaped,"{building} is full: {count} young {species} escaped into the wild."
+notification_live_catch_slaughtered,"Caught alive and butchered: {list}. No {building} with room for them: to domesticate them build a {building} or make room."
 building_slaughter_above,Slaughter above:
 building_slaughter_above_tooltip,"Number of animals above which the warehouse manager has some slaughtered in this shelter: first males beyond the first adult, then old ones, then young males, adult females last. ∞ = never slaughters: young that do not fit go to another shelter with room, otherwise they escape. With a number young enter even over capacity, and after 10 days the youngest extra ones escape. The lower of this and the species threshold (Animals panel) applies."
 building_feeder_wm_keeps,Stock days:
@@ -2169,6 +2174,7 @@ carried_resource_tooltip_grain_mortar,Mortar
 carried_resource_tooltip_saddle_quern,Saddle quern
 tool_category_sowing,sowing
 tool_category_reaping,reaping
+tool_category_leading,leading
 building_crop_species,Crop:
 building_crop_species_none,None
 building_crop_species_tooltip,"Species sown here, only one. Choose among plants gathered at least once, even with no seeds in jars: sowing will wait for seeds."

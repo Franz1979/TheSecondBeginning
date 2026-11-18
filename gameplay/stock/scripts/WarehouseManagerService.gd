@@ -1577,6 +1577,20 @@ static func dry_traveling(individuals: Array[HumanIndividual], recipe: String) -
 # - essiccatoio: l'essiccatoio di `recipe` con più posto per la risorsa dell'ordine, deposito più vicino che la ha;
 # - combustibile (FuelStockService.FUEL_TARGET_KEY, 2026-10-16): l'edificio dell'ordine; quale combustibile, quanti pezzi
 #   e da dove li sceglie FuelStockService.pick_fuel adesso, non alla creazione dell'ordine.
+# Carico pieno di chi va (2026-11-17, richiesta utente — mangiatoie, lettiere, letame): gli ordini sono fatti su uno zaino
+# medio; con un lavoratore si porta fino alla sua capacità vera (max_carry_capacity, borsa e travois compresi), mai meno
+# dell'ordine e mai oltre `available` (quanto c'è nella sorgente scelta). Il posto nella destinazione lo limita il
+# chiamante. Senza lavoratore (anteprima della riga) resta la quantità dell'ordine.
+static func _full_load_quantity(worker: HumanIndividual, order_quantity: int, resource_name: String, available: int) -> int:
+	if worker == null:
+		return order_quantity
+	var unit_space := AnimalFeederService.unit_space(resource_name)
+	if unit_space <= 0.0:
+		return order_quantity
+	var worker_units := floori(worker.max_carry_capacity / unit_space + 0.000001)
+	return maxi(order_quantity, mini(worker_units, available))
+
+
 static func transport_order_pick(world: World, worker: HumanIndividual, order: Dictionary) -> Dictionary:
 	# Ordine "Trasporta" del giocatore (2026-11-06): partenza e destinazione scelte da lui.
 	if DrawerOrderService.is_player_transport_order(order):
@@ -1614,7 +1628,9 @@ static func transport_order_pick(world: World, worker: HumanIndividual, order: D
 		var feeder_source := FeederStockService.pick_source(world, feeder, food, worker)
 		if feeder_room <= 0 or feeder_source == null:
 			return {}
-		return {"target": feeder, "source": feeder_source, "resource": food, "quantity": mini(int(order.get("quantity", 1)), feeder_room)}
+		var feeder_quantity := _full_load_quantity(worker, int(order.get("quantity", 1)), food,
+			BuildingStorageService.get_available_quantity(feeder_source, food))
+		return {"target": feeder, "source": feeder_source, "resource": food, "quantity": mini(feeder_quantity, feeder_room)}
 	# Pulizia del letame (2026-11-17, ManureStockService): dall'edificio al letamaio più vicino con posto, altrimenti alla
 	# Fossa; tutto il letame che c'è adesso, fino alla quantità dell'ordine.
 	if order.has(ManureStockService.MANURE_SOURCE_KEY):
@@ -1626,7 +1642,7 @@ static func transport_order_pick(world: World, worker: HumanIndividual, order: D
 		if manure_left <= 0 or manure_target == null:
 			return {}
 		return {"target": manure_target, "source": manure_source, "resource": ManureService.RESOURCE,
-			"quantity": mini(int(order.get("quantity", 1)), manure_left)}
+			"quantity": mini(_full_load_quantity(worker, int(order.get("quantity", 1)), ManureService.RESOURCE, manure_left), manure_left)}
 	# Raccolta dei prodotti da vivi (2026-11-17, LiveProductStockService): dall'edificio al magazzino più vicino con posto;
 	# tutto quello che c'è adesso, fino alla quantità dell'ordine.
 	if order.has(LiveProductStockService.LIVE_PRODUCT_SOURCE_KEY):
@@ -1649,8 +1665,10 @@ static func transport_order_pick(world: World, worker: HumanIndividual, order: D
 		var bedding_source := FeederStockService.pick_source(world, bedding_building, BeddingService.RESOURCE, worker)
 		if bedding_room <= 0 or bedding_source == null:
 			return {}
+		var bedding_quantity := _full_load_quantity(worker, int(order.get("quantity", 1)), BeddingService.RESOURCE,
+			BuildingStorageService.get_available_quantity(bedding_source, BeddingService.RESOURCE))
 		return {"target": bedding_building, "source": bedding_source, "resource": BeddingService.RESOURCE,
-			"quantity": mini(int(order.get("quantity", 1)), bedding_room)}
+			"quantity": mini(bedding_quantity, bedding_room)}
 	# Capanno del campo (2026-11-15, regola "Semi nei campi"): magazzino più vicino col seme → capanno, fino al livello.
 	if order.has(FieldSeedStockService.SEED_TARGET_KEY):
 		var shed := find_building(world, int(order[FieldSeedStockService.SEED_TARGET_KEY]))

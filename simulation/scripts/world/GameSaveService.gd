@@ -76,8 +76,7 @@ func save_game_to_json(
 			"domestication_years": game_data.domestication_years,
 			"domestic_species_present": game_data.domestic_species_present,
 			"hunt_trap_stats": game_data.hunt_trap_stats,
-			"domestication_harvest_units": game_data.domestication_harvest_units,
-			"pit_sowing_units": game_data.pit_sowing_units,
+			"domestication_harvest_units": game_data.domestication_harvest_units,			"pit_sowing_units": game_data.pit_sowing_units,
 			"discovered_domestic_species": game_data.discovered_domestic_species,
 			"domestication_stats": game_data.domestication_stats,
 			# Animali domestici (vedi GameData, DomesticAnimal.to_save_data).

@@ -237,6 +237,13 @@ static func _is_position_clear(cell: LiveMacroCell, microcell: Vector2i, current
 	if not ignore_movement_buildings and not rules.walkable and ClayDepositService.has_clay(cell.macro_state, microcell):
 		return false
 
+	# Criterio 15 (2026-11-18, richiesta utente): niente edifici sopra una trappola montata, né dentro l'area di un imbuto
+	# di caccia (TrapService.blocks_building_at). Sentieri e terra battuta (rules.walkable) ammessi; la porta può dare su
+	# una trappola.
+	if not ignore_movement_buildings and not rules.walkable \
+			and TrapService.blocks_building_at(GameSettings.active_game_data, Vector2i(cell.macro_x, cell.macro_y), microcell):
+		return false
+
 	# Criteri 3-6: regola condivisa con la posa dei mucchi a terra (is_microcell_free). Strada sotto il cancello
 	# (2026-10-24): sulla microcella dell'edificio stesso (non davanti alla porta) un ospite può andare sopra una strada e
 	# una strada sotto un ospite (MicrocellObstacles.is_free, stack_as_host/stack_as_ground).

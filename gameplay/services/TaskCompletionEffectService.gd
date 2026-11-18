@@ -33,7 +33,13 @@ static func apply_effects(individual: HumanIndividual, task: Task) -> void:
 const FEEDER_TASK_KEY := "task_feed_animals_name"
 
 
+# Macellazione di un animale tenuto in un edificio (2026-11-18, richiesta utente): cresce Allevamento, non Artigianato.
+const KEPT_BUTCHER_TASK_KEY := "task_butcher_kept_animal_name"
+
+
 static func _skill_task_key(task: Task) -> String:
+	if bool(task.context.get(ButcherAction.CONTEXT_KEPT_ANIMAL_KEY, false)):
+		return KEPT_BUTCHER_TASK_KEY
 	# Anche la paglia per la lettiera, la pulizia del letame e la raccolta delle uova (2026-11-17): stesso lavoro di Allevamento.
 	if task.context.has(FeederStockService.FEEDER_TARGET_KEY) or task.context.has(BeddingStockService.BEDDING_TARGET_KEY) \
 			or task.context.has(ManureStockService.MANURE_SOURCE_KEY) \
@@ -121,7 +127,8 @@ static func _get_effects() -> TaskCompletionEffects:
 # corrispondono al task_name di nessuna TaskDefinition in TASK_DEFINITIONS_DIR - un refuso non darebbe
 # nessun effetto ne' nessun errore.
 static func _warn_unknown_task_names(effects: TaskCompletionEffects) -> void:
-	var known_names: Array[String] = []
+	# Voce senza TaskDefinition propria (2026-11-18): la macellazione di un animale tenuto, vedi _skill_task_key.
+	var known_names: Array[String] = [KEPT_BUTCHER_TASK_KEY]
 	var dir := DirAccess.open(TASK_DEFINITIONS_DIR)
 	if dir == null:
 		return

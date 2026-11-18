@@ -156,8 +156,7 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		game_data.pit_sowing_units["wild_seeds"] = int(saved_pit_units)
 	var saved_harvest_units: Dictionary = data["game"].get("domestication_harvest_units", {})
 	for species in saved_harvest_units:
-		game_data.domestication_harvest_units[String(species)] = int(saved_harvest_units[species])
-	# Contatori di debug di caccia e trappole (2026-11-15) — .get() per i save precedenti: vuoti.
+		game_data.domestication_harvest_units[String(species)] = int(saved_harvest_units[species])	# Contatori di debug di caccia e trappole (2026-11-15) — .get() per i save precedenti: vuoti.
 	game_data.hunt_trap_stats = HuntTrapStatsService.from_save(data["game"].get("hunt_trap_stats", {}))
 	# Specie domestiche presenti ieri (2026-11-17, avviso di estinzione) — .get() per i save precedenti: nessuna.
 	game_data.domestic_species_present.clear()
@@ -851,9 +850,19 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 			var saved_feeder_foods: Dictionary = building_data.get("feeder_foods", {})
 			for food_name in saved_feeder_foods.keys():
 				var food_entry: Dictionary = saved_feeder_foods[food_name]
-				building.feeder_foods[String(food_name)] = {
-					"units": float(food_entry.get("units", 0.0)), "decay": float(food_entry.get("decay", 0.0)),
-				}
+				# Lotti (2026-11-17): nei salvataggi precedenti il cibo intero diventa un lotto solo.
+				var saved_lots: Array = food_entry.get("lots", [
+					{"units": food_entry.get("units", 0.0), "decay": food_entry.get("decay", 0.0)},
+				])
+				var lots: Array = []
+				for saved_lot: Dictionary in saved_lots:
+					lots.append({"units": float(saved_lot.get("units", 0.0)), "decay": float(saved_lot.get("decay", 0.0))})
+				var total_units := 0.0
+				var oldest_decay := 0.0
+				for lot: Dictionary in lots:
+					total_units += float(lot["units"])
+					oldest_decay = maxf(oldest_decay, float(lot["decay"]))
+				building.feeder_foods[String(food_name)] = {"units": total_units, "decay": oldest_decay, "lots": lots}
 			building.feeder_days_override = int(building_data.get("feeder_days_override", -1))
 			building.bedding_straw = float(building_data.get("bedding_straw", 0.0))
 			building.bedding_days_override = int(building_data.get("bedding_days_override", -1))

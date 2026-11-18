@@ -395,11 +395,21 @@ extends Resource
 # Caduta in fuga (2026-11-14, richiesta utente — "spingere verso le fosse"): probabilità che un animale in fuga che passa
 # sulla microcella della trappola ci cada (SnareService._on_pit_fall). 0 = nessuna caduta (tutte tranne la fossa).
 @export var trap_flee_fall_chance: float = 0.0
+# Bocca della trappola (2026-11-18, imbuto di caccia): si cade passando entro questo numero di microcelle dalla trappola
+# (1 = quadrato 3×3, la fossa; 3 = 7×7, l'imbuto con le braccia). Solo con trap_flee_fall_chance > 0.
+@export var trap_fall_edge_cells: int = 1
+# Area libera attorno alla trappola (2026-11-18, richiesta utente — imbuto di caccia, le braccia disegnate): per piazzarla
+# tutte le microcelle entro questo raggio (quadrato, 3 = 7×7) devono essere dentro la macrocella e senza edifici, ruscello,
+# pietre e altre trappole (montate, a riposo o in viaggio); piante e arbusti ammessi. Nessun'altra trappola si piazza poi
+# dentro quest'area. 0 = solo la microcella della trappola (tutte le altre).
+@export var trap_clear_radius: int = 0
+# Edificio dove vanno le prede vive (2026-11-18, cattura viva): "" = la tettoia delle gabbie (TrapService.
+# LIVE_CATCH_BUILDING_TYPE); l'imbuto di caccia il recinto di addomesticazione. Solo nota, notifica e testi.
+@export var trap_live_building_type: String = ""
 # Laccio piazzato fuori da una zona: i passaggi si contano in un quadrato di questo raggio attorno a lui.
 @export var trap_passage_radius: int = 5
-# Cattura viva (2026-11-12, cesto a caduta — TrapService.QUARRY_LIVE_SMALL_GAME): giorni che l'animale preso resta vivo
-# nella trappola senza che nessuno venga a prenderlo; poi muore e da lì contano i trap_catch_spoil_days come per i lacci.
-@export var trap_live_survival_days: int = 3
+# Cattura viva: i giorni che l'animale preso resta vivo nella trappola vengono dalla sua specie (2026-11-18,
+# TrapService.live_survival_days); qui non c'è più un numero per trappola.
 
 @export_group("Apparel")
 # Campi del vestiario (2026-10-11, richiesta utente — vestiti, scarpe, monili; category APPAREL). La durata di un capo

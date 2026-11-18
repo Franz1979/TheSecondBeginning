@@ -4,6 +4,11 @@ extends RefCounted
 # Macella (cane, passo 7, 2026-11-04): ordine del giocatore su un animale domestico, mai automatico. L'animale continua a
 # girare finché la persona non lo raggiunge (SlaughterAction).
 
+# Carcassa di un animale ucciso dentro un edificio che tiene animali (recinto, tettoia, conigliera, pollaio, stalla;
+# 2026-11-18, richiesta utente): la sua macellazione è lavoro di Allevamento (crescita e velocità, ButcherAction). Salvata
+# con la carcassa (GroundPileService).
+const CARCASS_KEPT_KEY := "kept_in_building"
+
 # Suono dell'uccisione (GameScene): Callable(DomesticAnimal), chiamata prima che il corpo sparisca.
 static var kill_sound_emitter: Callable = Callable()
 
@@ -66,6 +71,8 @@ static func kill(game_data: GameData, animal: DomesticAnimal) -> Dictionary:
 	if animal.is_wild and rules != null and rules.wild_species_name != "":
 		carcass_species = rules.wild_species_name
 	var pile := GroundPileService.drop_carcass(game_data, macro, position, carcass_species, int(band))
+	if pile != null and animal.building_id >= 0:
+		pile.carcasses[-1][CARCASS_KEPT_KEY] = true
 	if animal.body_id != 0:
 		AnimalGroupRenderer.remove_live_individual(animal.body_id)
 	game_data.domestic_animals.erase(animal)

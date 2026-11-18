@@ -76,6 +76,8 @@ const DEPOSIT_STORAGE_ICON_DRAW_METHODS := {
 	"snare": "_draw_deposit_storage_snare_icon",
 	"stake_pit": "_draw_deposit_storage_stake_pit_icon",
 	"drop_basket": "_draw_deposit_storage_drop_basket_icon",
+	"hunting_funnel": "_draw_deposit_storage_hunting_funnel_icon",
+	"halter": "_draw_deposit_storage_halter_icon",
 	"fish_meat": "_draw_deposit_storage_fish_meat_icon",
 	"cooked_fish": "_draw_deposit_storage_cooked_fish_icon",
 	"dried_fish": "_draw_deposit_storage_dried_fish_icon",
@@ -621,6 +623,16 @@ static func _draw_deposit_storage_stake_pit_icon(canvas: CanvasItem, top_left: V
 # Cesto a caduta (2026-11-12): stessa geometria dell'icona del pannello (DropBasketIcon.draw_into).
 static func _draw_deposit_storage_drop_basket_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
 	DropBasketIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Imbuto di caccia (2026-11-18): stessa geometria dell'icona del pannello (HuntingFunnelIcon.draw_into).
+static func _draw_deposit_storage_hunting_funnel_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	HuntingFunnelIcon.draw_into(canvas, top_left, Vector2(side, side))
+
+
+# Cavezza (2026-11-18): stessa geometria dell'icona del pannello (HalterIcon.draw_into).
+static func _draw_deposit_storage_halter_icon(canvas: CanvasItem, top_left: Vector2, side: float) -> void:
+	HalterIcon.draw_into(canvas, top_left, Vector2(side, side))
 
 
 # Rete per uccelli (2026-11-07): stessa geometria dell'icona del pannello (BirdNetIcon.draw_into).

@@ -172,6 +172,9 @@ const RESOURCE_ICON_NODES := {
 	"stake_pit": preload("res://simulation/scripts/ui/StakePitIcon.gd"),
 	# Cesto a caduta (2026-11-12, cattura viva): cesto rovesciato sollevato su un bastoncino.
 	"drop_basket": preload("res://simulation/scripts/ui/DropBasketIcon.gd"),
+	# Imbuto di caccia (2026-11-18, cattura viva dei grossi): fascio di pali con la corda.
+	"hunting_funnel": preload("res://simulation/scripts/ui/HuntingFunnelIcon.gd"),
+	"halter": preload("res://simulation/scripts/ui/HalterIcon.gd"),
 	"fish_meat": preload("res://simulation/scripts/ui/FishMeatIcon.gd"),
 	# Pesce cotto, essiccato e affumicato (2026-10-31): la sagoma del pesce crudo con i propri colori e dettagli.
 	"cooked_fish": preload("res://simulation/scripts/ui/CookedFishIcon.gd"),
@@ -252,6 +255,7 @@ const BUILDING_ICONS := {
 	"cage_shelter": "🐇",
 	# Conigliera e pollaio (2026-11-13, segnaposto) — emoji di riserva, la barra usa RabbitHutchIcon / ChickenCoopIcon.
 	"rabbit_hutch": "🐰",
+	"domestication_pen": "🐐",
 	"chicken_coop": "🐔",
 	# Piccolo granaio (2026-11-15) — emoji di riserva, la barra usa SmallGranaryIcon.
 	"small_granary": "🌾",
@@ -334,6 +338,7 @@ const BUILDING_ICON_NODES := {
 	"cage_shelter": preload("res://simulation/scripts/ui/CageShelterIcon.gd"),
 	# Conigliera e pollaio (2026-11-13, segnaposto): lo stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rabbit_hutch": preload("res://simulation/scripts/ui/RabbitHutchIcon.gd"),
+	"domestication_pen": preload("res://simulation/scripts/ui/DomesticationPenIcon.gd"),
 	"chicken_coop": preload("res://simulation/scripts/ui/ChickenCoopIcon.gd"),
 	# Piccolo granaio (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
 	"small_granary": preload("res://simulation/scripts/ui/SmallGranaryIcon.gd"),

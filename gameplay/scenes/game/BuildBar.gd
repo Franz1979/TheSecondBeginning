@@ -163,7 +163,10 @@ const BUILDING_SLOT_INDEX_BY_TYPE := {
 	# Filatoio (2026-11-15, richiesta utente — segnaposto) — slot 39, submenu_row.slot_count portato a 41; Hut resta
 	# l'ultimo (slot 40). Categoria PRODUCTION, richiede spinning.
 	"spinning_hut": 39,
-	"hut": 40,
+	# Recinto di addomesticazione (2026-11-18, richiesta utente — animali grossi) — slot 40, submenu_row.slot_count portato
+	# a 42; Hut resta l'ultimo (slot 41). Categoria HUSBANDRY, richiede advanced_traps.
+	"domestication_pen": 40,
+	"hut": 41,
 }
 
 # Ordine delle categorie in category_row, uno slot ciascuna (BuildBar.tscn: CategoryRow.slot_count = 12). RUINS esclusa:
@@ -300,7 +303,7 @@ func _ready() -> void:
 	# Hut, ora slot 6 e sempre ULTIMA a destra (richiesta utente 2026-09-19; slot 6 dal 2026-09-24).
 	# Legnaia (2026-10-08): richiede advanced_paleolithic_constructions, disabilitata da _refresh_building_slots_buildable.
 	# Capanna del vestiario (2026-10-11): richiede advanced_paleolithic_constructions, come la legnaia.
-	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack", "healer_hut", "star_circle", "stone_ford", "potter_hut", "water_shelter", "trapper_hut", "cage_shelter", "rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "field", "haystack", "clay_oven", "field_plot", "spinning_hut"]:
+	for placeholder_type in ["drying_rack", "smokehouse", "burial", "earthwork", "palisade", "gate", "stacked_stones", "woodshed", "clothing_hut", "teaching_stump", "pebble_path", "waste_pit", "travois_rack", "healer_hut", "star_circle", "stone_ford", "potter_hut", "water_shelter", "trapper_hut", "cage_shelter", "rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "field", "haystack", "clay_oven", "field_plot", "spinning_hut", "domestication_pen"]:
 		submenu_row.configure_slot(
 			BUILDING_SLOT_INDEX_BY_TYPE[placeholder_type], "", tr("build_bar_%s_tooltip" % placeholder_type),
 			StringName("build_%s" % placeholder_type), "", true, IconRegistry.get_building_icon_node(placeholder_type)

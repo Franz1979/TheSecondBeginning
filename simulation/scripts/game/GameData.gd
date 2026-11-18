@@ -133,8 +133,7 @@ var domestic_species_present: Array[String] = []
 var hunt_trap_stats: Dictionary = {}
 # Unità raccolte non ancora diventate un punto (2026-11-13, piante: DomesticPlantRules.harvested_units_per_point, 1 punto
 # ogni 10 once di semi): specie -> resto. Scritto solo da DomesticPlantCalculator.units_to_points. Salvato.
-var domestication_harvest_units: Dictionary = {}
-# Once raccolte da terra non ancora diventate una microcella alla Fossa (2026-11-13, PitSowingService): dal 2026-11-15
+var domestication_harvest_units: Dictionary = {}# Once raccolte da terra non ancora diventate una microcella alla Fossa (2026-11-13, PitSowingService): dal 2026-11-15
 # una per risorsa (nome -> once), soglia in SecondaryResourceRules.pit_sowing_units. Salvato.
 var pit_sowing_units: Dictionary = {}
 # Specie domestiche scoperte (2026-11-12, addomesticazione per cattura viva, passo C): il primo animale vivo arrivato in
@@ -170,6 +169,9 @@ func allocate_domestic_animal_id() -> int:
 var placed_traps: Array[PlacedTrap] = []
 var next_placed_trap_id: int = 1
 var placed_traps_revision: int = 0
+# Prede vive macellate oggi per mancanza di posto (2026-11-18, LiveCatchNoticeService): tipo di edificio -> {specie
+# selvatica -> numero}. Svuotato ogni giorno dalla notifica; non salvato.
+var live_catch_slaughtered_today: Dictionary = {}
 # Trappole rotte, posti a riposo (2026-11-07, SecondaryResourceRules.trap_rest_days): {"id", "trap_name", "macro_x",
 # "macro_y", "lot_x", "lot_y", "broken_day"} JSON-nativi; tolte da TrapService.advance_daily alla scadenza. Salvate
 # ("broken_traps"); il disegno segue placed_traps_revision.

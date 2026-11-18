@@ -166,8 +166,10 @@ static func _update_pit_lots(game_data: GameData, live_cells: Dictionary) -> voi
 				lots_by_renderer[renderer] = {}
 			# Bordo della fossa (2026-11-14, richiesta utente): cade anche chi in corsa passa su una delle 8 microcelle attorno,
 			# non solo su quella della fossa. Le fosse distano almeno trap_min_spacing, quindi i bordi non si toccano.
-			for dy in range(-PIT_EDGE_CELLS, PIT_EDGE_CELLS + 1):
-				for dx in range(-PIT_EDGE_CELLS, PIT_EDGE_CELLS + 1):
+			# Bocca per trappola (2026-11-18): SecondaryResourceRules.trap_fall_edge_cells (fossa 1, imbuto di caccia 3).
+			var edge_cells := maxi(rules.trap_fall_edge_cells, 0)
+			for dy in range(-edge_cells, edge_cells + 1):
+				for dx in range(-edge_cells, edge_cells + 1):
 					var edge := trap.lot + Vector2i(dx, dy)
 					if edge.x >= 0 and edge.y >= 0 and edge.x < World.WIDTH and edge.y < World.HEIGHT \
 							and not lots_by_renderer[renderer].has(edge):
@@ -182,8 +184,6 @@ static func _update_pit_lots(game_data: GameData, live_cells: Dictionary) -> voi
 			herd_renderer.pit_fall_test = SnareService._on_pit_fall.bind(game_data) if not herd_renderer.pit_lots.is_empty() else Callable()
 
 
-# Microcelle attorno alla fossa da cui si cade (1 = quadrato 3×3).
-const PIT_EDGE_CELLS := 1
 
 
 # Toglie dal renderer tutte le microcelle che portano alla fossa in `lot`.

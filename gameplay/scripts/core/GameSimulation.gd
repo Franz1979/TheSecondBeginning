@@ -460,6 +460,8 @@ static func tick_day(ctx: GameContext, effects: GameEffects) -> void:
 	DomesticAnimalLifeService.tick_day(ctx, effects)
 	# Specie domestiche estinte, animali e piante (2026-11-17): avviso in campanella.
 	DomesticExtinctionService.check_daily(ctx, effects)
+	# Prede vive macellate per mancanza di posto (2026-11-18): una notifica al giorno.
+	LiveCatchNoticeService.flush_daily(ctx, effects)
 	# Mandrie della fauna ad hoc che cambiano cella nel loro riquadro (2026-10-31, piano fauna passo 1b).
 	WildFaunaService.tick_day(ctx)
 	# Crollo a Integrità zero (2026-10-10).

@@ -66,6 +66,8 @@ func _draw() -> void:
 			_draw_stake_pit(top_left, trap.id, false)
 		elif rules != null and rules.trap_quarry == TrapService.QUARRY_LIVE_SMALL_GAME:
 			_draw_drop_basket(top_left, trap.id, trap.get_caught() > 0, false)
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_LIVE_BIG_GAME:
+			_draw_hunting_funnel(top_left, trap.id, rules.trap_fall_edge_cells, trap.get_caught(), false)
 		else:
 			_draw_symbol(top_left)
 	for broken in TrapService.broken_in_macro_cell(game_data, _macro_coords):
@@ -81,6 +83,8 @@ func _draw() -> void:
 			_draw_stake_pit(top_left, int(broken.get("id", 0)), true)
 		elif rules != null and rules.trap_quarry == TrapService.QUARRY_LIVE_SMALL_GAME:
 			_draw_drop_basket(top_left, int(broken.get("id", 0)), false, true)
+		elif rules != null and rules.trap_quarry == TrapService.QUARRY_LIVE_BIG_GAME:
+			_draw_hunting_funnel(top_left, int(broken.get("id", 0)), rules.trap_fall_edge_cells, 0, true)
 
 
 # Rete rotta (posto a riposo, TrapService.broken_traps): stessi paletti, uno storto, e la rete strappata a metà che pende
@@ -157,6 +161,37 @@ func _draw_snare(top_left: Vector2, trap_id: int, broken: bool) -> void:
 	draw_arc(center, radius, 0.0, TAU * (0.7 if broken else 1.0), 14, color, CELL_SIZE * 0.035, true)
 	draw_circle(a, CELL_SIZE * 0.04, POLE_COLOR)
 	draw_circle(b, CELL_SIZE * 0.04, POLE_COLOR)
+
+
+# Imbuto di caccia visto dall'alto (2026-11-18): due braccia di pali che si stringono verso un piccolo recinto tondo
+# sulla microcella della trappola; la bocca è larga quanto l'area in cui si cade (trap_fall_edge_cells). Verso stabile per
+# trappola (dal suo id), solo estetico: le braccia non bloccano nessuno. Dentro il recinto un puntino per bestia presa.
+# Rotto (posto a riposo): pochi pali sparsi e il recinto spento.
+func _draw_hunting_funnel(top_left: Vector2, trap_id: int, edge_cells: int, caught: int, broken: bool) -> void:
+	var center := top_left + Vector2.ONE * CELL_SIZE * 0.5
+	var angle := deg_to_rad(float((trap_id * 67) % 360))
+	var along := Vector2(cos(angle), sin(angle))
+	var across := Vector2(-along.y, along.x)
+	var reach := CELL_SIZE * (float(maxi(edge_cells, 1)) + 0.4)
+	var pen_radius := CELL_SIZE * 0.38
+	var post_color := PIT_BROKEN_COLOR if broken else PIT_STAKE_COLOR
+	draw_arc(center, pen_radius, 0.0, TAU, 18, PIT_BROKEN_COLOR if broken else PIT_COVER_COLOR, CELL_SIZE * 0.06, true)
+	for side in [-1.0, 1.0]:
+		var mouth: Vector2 = center + along * reach + across * reach * 0.8 * float(side)
+		var throat: Vector2 = center + along * pen_radius * 0.9 + across * pen_radius * 0.6 * float(side)
+		var posts := 6
+		for i in range(posts + 1):
+			if broken and i % 2 == 1:
+				continue
+			var point: Vector2 = throat.lerp(mouth, float(i) / float(posts))
+			draw_circle(point, CELL_SIZE * 0.07, post_color)
+			if not broken and i < posts:
+				draw_line(point, throat.lerp(mouth, float(i + 1) / float(posts)), PIT_COVER_COLOR, CELL_SIZE * 0.03, true)
+	if broken:
+		return
+	for i in range(caught):
+		var turn := TAU * float(i) / float(maxi(caught, 1))
+		draw_circle(center + Vector2(cos(turn), sin(turn)) * pen_radius * 0.45, CELL_SIZE * 0.08, PIT_COLOR)
 
 
 # Fossa con pali vista dall'alto: buca quasi grande come la microcella, rametti di copertura di sbieco (verso stabile per

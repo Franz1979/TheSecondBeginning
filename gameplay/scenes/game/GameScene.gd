@@ -1567,7 +1567,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	var map_hit: Dictionary = {}
 	var map_hit_kind := SelectionKind.NONE
 	var best_map_distance_px := INF
-	if not vegetation_hit.is_empty():
+	# Dentro un cantiere grande non finito (2026-11-18) vince il cantiere sulla vegetazione; persone, mucchi e animali no.
+	if not vegetation_hit.is_empty() and not bool(building_hit.get("unfinished_large", false)):
 		map_hit = vegetation_hit
 		map_hit_kind = SelectionKind.VEGETATION
 		best_map_distance_px = vegetation_hit["distance"]
@@ -8121,7 +8122,7 @@ func _trap_catch_display_name(trap: PlacedTrap, rules: SecondaryResourceRules) -
 			return tr("trap_pickup_catch_birds")
 		TrapService.QUARRY_FISH:
 			return tr("trap_pickup_catch_fish")
-		TrapService.QUARRY_SMALL_GAME, TrapService.QUARRY_BIG_GAME, TrapService.QUARRY_LIVE_SMALL_GAME:
+		TrapService.QUARRY_SMALL_GAME, TrapService.QUARRY_BIG_GAME, TrapService.QUARRY_LIVE_SMALL_GAME, TrapService.QUARRY_LIVE_BIG_GAME:
 			var counts := {}
 			for species in trap.catch_species:
 				counts[species] = int(counts.get(species, 0)) + 1
@@ -15035,6 +15036,9 @@ func _building_type_name_for_action(action_id: StringName) -> String:
 		&"build_cage_shelter":
 			return "cage_shelter"
 		# Conigliera e pollaio (2026-11-13) — azioni cablate in BuildBar._ready.
+		# Recinto di addomesticazione (2026-11-18) — azione cablata in BuildBar._ready.
+		&"build_domestication_pen":
+			return "domestication_pen"
 		&"build_rabbit_hutch":
 			return "rabbit_hutch"
 		&"build_chicken_coop":

@@ -25,7 +25,7 @@ var catch_species: Array[String] = []
 var catch_ages: Array[int] = []
 # Cattura viva (2026-11-12, cesto a caduta): per ogni preda, stesso ordine, il sesso (1 = maschio, 0 = femmina, -1 = non
 # segnato: le trappole che uccidono) e il giorno assoluto della morte (-1 = ancora viva). Un animale vivo resta nella
-# trappola SecondaryResourceRules.trap_live_survival_days giorni, poi muore e si svuota come la preda di un laccio.
+# trappola i giorni senza cibo della sua specie (TrapService.live_survival_days), poi muore e si svuota come la preda di un laccio.
 var catch_sexes: Array[int] = []
 var catch_death_days: Array[int] = []
 # Giorno assoluto dell'ultimo uso consumato (montaggio, svuotamento o usura a riposo): da qui contano i

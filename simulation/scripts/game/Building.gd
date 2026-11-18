@@ -269,7 +269,7 @@ var feeder_species: String = ""
 # Cibi nella mangiatoia col loro nome (2026-11-16, richiesta utente — AnimalFeederService): nome -> {"units": float,
 # "decay": 0..1}. feeder_calories/feeder_space_used ne sono i totali. Salvato; vuoto nei vecchi salvataggi (le calorie
 # di allora diventano il primo cibo della dieta alla prima occasione, AnimalFeederService._ensure_foods).
-var feeder_foods: Dictionary = {}
+var feeder_foods: Dictionary = {}  # Lotti (2026-11-17): nome -> {"units" totale, "decay" del più vecchio, "lots": [{"units", "decay"}]}
 # Giorni di cibo voluti in questa mangiatoia al posto della regola generale del WM (2026-11-14, FeederStockService.
 # days_for): -1 = regola generale, 0 = esclusa dal WM, > 0 = giorni suoi. Salvato.
 var feeder_days_override: int = -1

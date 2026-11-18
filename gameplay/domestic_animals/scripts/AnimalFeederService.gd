@@ -241,26 +241,63 @@ static func feed_day(game_data: GameData, building: Building, animals: Array) ->
 
 
 # --- Cibi col nome (2026-11-16) ---
+# LOTTI (2026-11-17, richiesta utente — il cibo marciva tutto insieme e gli animali morivano di fame): ogni cibo è una
+# lista di lotti {"units", "decay"}, uno per consegna, dal più vecchio (deperimento più alto) al più fresco. Ogni lotto
+# marcisce per conto suo; si mangia prima il più vecchio. Consegne con lo stesso deperimento si uniscono; oltre MAX_LOTS
+# lotti la consegna si unisce al più fresco (media pesata). Nell'entrata restano anche "units" (totale) e "decay" (del
+# lotto più vecchio) per chi legge l'entrata intera (ordine di consumo, pannello).
+const MAX_LOTS := 8
+const SAME_LOT_DECAY := 0.001
 
-# Aggiunge `units` di `food` con deperimento `decay`, mescolato a quello già dentro in proporzione alle unità (come la
-# media dei magazzini).
+
+static func _lots(entry: Dictionary) -> Array:
+	if not entry.has("lots"):
+		entry["lots"] = [{"units": float(entry.get("units", 0.0)), "decay": float(entry.get("decay", 0.0))}]
+	return entry["lots"]
+
+
+# Aggiunge `units` di `food` come lotto col deperimento `decay`.
 static func _add_food(building: Building, food: String, units: float, decay: float) -> void:
 	if units <= 0.0:
 		return
-	var entry: Dictionary = building.feeder_foods.get(food, {"units": 0.0, "decay": 0.0})
-	var old_units := float(entry["units"])
-	entry["decay"] = (float(entry["decay"]) * old_units + decay * units) / (old_units + units)
-	entry["units"] = old_units + units
+	var entry: Dictionary = building.feeder_foods.get(food, {"lots": []})
+	var lots := _lots(entry)
+	var merged := false
+	for lot: Dictionary in lots:
+		if absf(float(lot["decay"]) - decay) < SAME_LOT_DECAY:
+			lot["units"] = float(lot["units"]) + units
+			merged = true
+			break
+	if not merged and lots.size() >= MAX_LOTS:
+		var freshest: Dictionary = lots[lots.size() - 1]
+		var old_units := float(freshest["units"])
+		freshest["decay"] = (float(freshest["decay"]) * old_units + decay * units) / (old_units + units)
+		freshest["units"] = old_units + units
+		merged = true
+	if not merged:
+		lots.append({"units": units, "decay": decay})
 	building.feeder_foods[food] = entry
 	_recompute(building)
 
 
-# Totali di calorie e spazio dai cibi dentro.
+# Totali di calorie e spazio dai cibi dentro; per ogni cibo lotti in ordine (più vecchio prima), via quelli vuoti,
+# "units" e "decay" dell'entrata aggiornati.
 static func _recompute(building: Building) -> void:
 	var calories_total := 0.0
 	var space_total := 0.0
 	for food in building.feeder_foods.keys():
-		var units := float((building.feeder_foods[food] as Dictionary)["units"])
+		var entry: Dictionary = building.feeder_foods[food]
+		var lots := _lots(entry).filter(func(lot: Dictionary) -> bool: return float(lot["units"]) > 0.0001)
+		if lots.is_empty():
+			building.feeder_foods.erase(food)
+			continue
+		lots.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["decay"]) > float(b["decay"]))
+		entry["lots"] = lots
+		var units := 0.0
+		for lot: Dictionary in lots:
+			units += float(lot["units"])
+		entry["units"] = units
+		entry["decay"] = float(lots[0]["decay"])
 		calories_total += units * food_calories(String(food))
 		space_total += units * _unit_space(String(food))
 	building.feeder_calories = calories_total
@@ -275,7 +312,7 @@ static func _ensure_foods(building: Building) -> void:
 	var food := _first_food_with_calories(rules.accepted_foods if rules != null else ([] as Array[String]))
 	if food == "":
 		return
-	building.feeder_foods[food] = {"units": building.feeder_calories / food_calories(food), "decay": 0.0}
+	building.feeder_foods[food] = {"lots": [{"units": building.feeder_calories / food_calories(food), "decay": 0.0}]}
 	_recompute(building)
 
 
@@ -303,7 +340,7 @@ static func _eating_order(game_data: GameData, building: Building) -> Array[Stri
 	return foods
 
 
-# Toglie `calories` dai cibi nell'ordine `order`; i cibi finiti spariscono.
+# Toglie `calories` dai cibi nell'ordine `order`, in ogni cibo dal lotto più vecchio; lotti e cibi finiti spariscono.
 static func _eat(building: Building, order: Array[String], calories: float) -> void:
 	var left := calories
 	for food in order:
@@ -314,12 +351,12 @@ static func _eat(building: Building, order: Array[String], calories: float) -> v
 		var per_unit := food_calories(food)
 		if per_unit <= 0.0:
 			continue
-		var entry: Dictionary = building.feeder_foods[food]
-		var eaten_units := minf(float(entry["units"]), left / per_unit)
-		entry["units"] = float(entry["units"]) - eaten_units
-		left -= eaten_units * per_unit
-		if float(entry["units"]) <= 0.0001:
-			building.feeder_foods.erase(food)
+		for lot: Dictionary in _lots(building.feeder_foods[food]):
+			if left <= 0.0001:
+				break
+			var eaten_units := minf(float(lot["units"]), left / per_unit)
+			lot["units"] = float(lot["units"]) - eaten_units
+			left -= eaten_units * per_unit
 	_recompute(building)
 
 
@@ -337,12 +374,13 @@ static func advance_decay_day(world: World) -> void:
 			var rules := CaloricCalculator.get_caloric_source_rules(String(food))
 			if rules == null or rules.day_durability <= 0:
 				continue
-			var entry: Dictionary = building.feeder_foods[food]
-			entry["decay"] = float(entry["decay"]) + 1.0 / float(rules.day_durability)
-			if float(entry["decay"]) >= 1.0:
-				DebugLogging.print_event("[FEEDER] Edificio %d: %.1f %s marcito nella mangiatoia" % [building.id, float(entry["units"]), food])
-				building.feeder_foods.erase(food)
-				changed = true
+			# Ogni lotto per conto suo (2026-11-17): marcisce solo quello arrivato a 1.
+			for lot: Dictionary in _lots(building.feeder_foods[food]):
+				lot["decay"] = float(lot["decay"]) + 1.0 / float(rules.day_durability)
+				if float(lot["decay"]) >= 1.0:
+					DebugLogging.print_event("[FEEDER] Edificio %d: %.1f %s marcito nella mangiatoia" % [building.id, float(lot["units"]), food])
+					lot["units"] = 0.0
+			changed = true
 		if changed:
 			_recompute(building)
 

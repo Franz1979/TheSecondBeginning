@@ -216,4 +216,7 @@ enum ToolCategory {
 	# non deve valere come macina né viceversa. Nessuna Action le richiede ancora.
 	POUNDING,
 	GRINDING,
+	# LEADING (2026-11-18, richiesta utente — cavezza, halter.tres) aggiunta IN FONDO, stesso motivo: condurre a piedi un
+	# animale vivo (dall'imbuto al recinto, poi alla stalla). Nessuna Action la richiede ancora.
+	LEADING,
 }

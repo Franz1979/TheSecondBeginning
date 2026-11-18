@@ -525,6 +525,9 @@ static func from_save_data(data: Dictionary, parse_resources: Callable) -> Groun
 					"butcherable": bool(raw_carcass.get("butcherable", true)),
 					HuntTrapStatsService.CARCASS_HUNTED_KEY: bool(raw_carcass.get(HuntTrapStatsService.CARCASS_HUNTED_KEY, false)),
 				})
+				# Animale tenuto in un edificio (2026-11-18, DomesticAnimalSlaughterService.CARCASS_KEPT_KEY): .get per i vecchi.
+				if bool(raw_carcass.get(DomesticAnimalSlaughterService.CARCASS_KEPT_KEY, false)):
+					pile.carcasses[-1][DomesticAnimalSlaughterService.CARCASS_KEPT_KEY] = true
 				# Compagni di caccia (2026-11-11, ButcherAction.CARCASS_HELPERS_KEY): .get per i salvataggi precedenti.
 				var raw_helpers = raw_carcass.get("helpers", [])
 				if raw_helpers is Array and not (raw_helpers as Array).is_empty():

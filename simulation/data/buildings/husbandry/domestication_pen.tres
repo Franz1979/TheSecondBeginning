@@ -1,0 +1,33 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" uid="uid://b8pl3yflicmtn" path="res://simulation/scripts/core/BuildingRules.gd" id="1_domestication_pen"]
+
+; Recinto di addomesticazione (2026-11-18, richiesta utente — animali grossi): steccato 3x2 di pali e corde con le pietre
+; alla base, dove si tengono vivi gli animali grossi presi con l'imbuto di caccia (capra, pecora, maiale, bue, asino,
+; cavallo: keeps_big_animals, KeptAnimalService.selectable_species). Una specie per recinto, scelta nel pannello
+; (Qualunque/Nessuna come la tettoia delle gabbie). 10 posti, mangiatoia 1000. Regole di vita (lettiera, letame, vita
+; minima in cattività) da decidere: per ora nessuna lettiera né letame.
+[resource]
+script = ExtResource("1_domestication_pen")
+building_name = "building_domestication_pen"
+category = 11
+required_idea_id = "advanced_traps"
+min_construction_days = 6
+required_labor = 6000
+max_builders = 3
+lifespan_years = 15
+max_durability = 100
+defense = 10
+required_materials = {
+"fiber_rope": 20,
+"stick": 120,
+"stone": 20,
+"wood": 40
+}
+required_space = 6
+footprint = Vector2i(3, 2)
+has_door = false
+visibility_radius = 2
+animal_capacity = 10
+keeps_big_animals = true
+feeder_space_capacity = 1000

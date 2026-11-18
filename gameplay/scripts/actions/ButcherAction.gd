@@ -38,6 +38,9 @@ const CONTEXT_PILE_TRIPS := "butcher_pile_trips"
 const CARCASS_HELPERS_KEY := "helpers"
 const CONTEXT_PENDING_HELPERS := "butcher_pending_helpers"
 
+# Context della Task: macellazione di un animale tenuto in un edificio (2026-11-18), vedi activate.
+const CONTEXT_KEPT_ANIMAL_KEY := "butcher_kept_animal"
+
 var pile_macro_coords: Vector2i = Vector2i.ZERO
 var pile_microcell: Vector2i = Vector2i.ZERO
 var carcass_id: int = -1
@@ -91,6 +94,11 @@ func is_target_valid() -> bool:
 func activate(individual: Variant, context: Dictionary) -> void:
 	super(individual, context)
 	_done = false
+	# Animale tenuto in un edificio (2026-11-18, richiesta utente): skill Allevamento al posto di Artigianato, per la velocità
+	# qui e per la crescita a fine Task (TaskCompletionEffectService, CONTEXT_KEPT_ANIMAL_KEY nel context, salvato con lei).
+	if bool(_get_carcass().get(DomesticAnimalSlaughterService.CARCASS_KEPT_KEY, false)):
+		context[CONTEXT_KEPT_ANIMAL_KEY] = true
+	skill_effect_key = DomesticTransferService.SKILL_EFFECT_KEY if bool(context.get(CONTEXT_KEPT_ANIMAL_KEY, false)) else "butcher"
 	if _restored_from_save:
 		return
 	_elapsed = 0.0

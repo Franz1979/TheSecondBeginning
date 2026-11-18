@@ -16,7 +16,8 @@ extends RefCounted
 # mappa e anteprima con SmokehouseShape, qui solo l'icona (SmokehouseIcon).
 # Lo stesso per "drying_rack" (2026-10-31): mappa e anteprima con DryingRackShape, qui solo l'icona (DryingRackIcon).
 const TYPES: Array[String] = ["burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford",
-	"rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "clay_oven", "field_plot", "spinning_hut"]
+	"rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "clay_oven", "field_plot", "spinning_hut",
+	"domestication_pen"]
 
 # Filatoio (2026-11-15, segnaposto), vista dall'alto: capanna col tetto di frasche e, davanti a est, un fuso piantato col
 # suo disco e una matassa di fibra di lino appesa a un paletto.
@@ -80,6 +81,16 @@ const HUTCH_RUN_RECT := Rect2(0.4, -4.4, 9.2, 8.8)
 const HUTCH_FLOOR_RECT := Rect2(-9.6, -4.4, 9.6, 8.8)
 const HUTCH_BOX_RECT := Rect2(-9.0, -4.0, 8.4, 6.4)
 const HUTCH_TUFTS: Array[Vector2] = [Vector2(2.4, -1.8), Vector2(5.6, -2.6), Vector2(7.8, 0.6), Vector2(3.6, 2.4), Vector2(6.4, 3.0)]
+# Recinto di addomesticazione (2026-11-18): 3x2, prato con ciuffi, steccato di pali con due giri di corda e pietre alla base,
+# mangiatoia di legno col fieno nell'angolo nord-ovest, cancello al centro del lato sud.
+const PEN_RECT := Rect2(-14.2, -9.2, 28.4, 18.4)
+const PEN_TUFTS: Array[Vector2] = [Vector2(-10.0, -3.0), Vector2(-5.5, 4.5), Vector2(-1.0, -1.5), Vector2(3.5, 5.0),
+	Vector2(8.0, -2.5), Vector2(11.0, 3.5), Vector2(-11.5, 6.0), Vector2(6.0, 1.0)]
+const PEN_TROUGH_RECT := Rect2(-12.0, -7.6, 7.4, 2.6)
+# Mezza larghezza del cancello, al centro del lato sud (2026-11-18, richiesta utente).
+const PEN_GATE_HALF_WIDTH := 2.4
+const PEN_ROPE := Color(0.82, 0.74, 0.52, 1.0)
+const PEN_HAY := Color(0.80, 0.70, 0.42, 1.0)
 # Pollaio: casetta, nidi lungo il lato nord, recinto di terra battuta con posatoio e chicchi.
 const COOP_HOUSE_RECT := Rect2(-9.4, -3.0, 8.4, 7.0)
 const COOP_NESTS: Array[Vector2] = [Vector2(-7.6, -3.9), Vector2(-5.2, -3.9), Vector2(-2.8, -3.9)]
@@ -329,6 +340,64 @@ static func draw(
 				var stone_outline := stone.duplicate()
 				stone_outline.append(stone[0])
 				canvas.draw_polyline(stone_outline, tint.call(RUBBLE_OUTLINE), rw.call(0.2), true)
+		"domestication_pen":
+			var pen := Rect2(p.call(PEN_RECT.position.x, PEN_RECT.position.y), PEN_RECT.size * scale)
+			canvas.draw_rect(pen, tint.call(PEN_GRASS))
+			for tuft in PEN_TUFTS:
+				for side in [-0.35, 0.0, 0.35]:
+					canvas.draw_line(p.call(tuft.x, tuft.y), p.call(tuft.x + side, tuft.y - 0.9), tint.call(PEN_GRASS_DARK), w.call(0.22), true)
+			# Mangiatoia: cassa di tavole su quattro gambe, piena di fieno con le paglie che sporgono.
+			var trough := Rect2(p.call(PEN_TROUGH_RECT.position.x, PEN_TROUGH_RECT.position.y), PEN_TROUGH_RECT.size * scale)
+			for leg in [Vector2(0.4, 0.0), Vector2(PEN_TROUGH_RECT.size.x - 0.4, 0.0)]:
+				canvas.draw_line(p.call(PEN_TROUGH_RECT.position.x + leg.x, PEN_TROUGH_RECT.end.y - 0.2),
+					p.call(PEN_TROUGH_RECT.position.x + leg.x, PEN_TROUGH_RECT.end.y + 0.8), tint.call(WOOD_DARK), w.call(0.4), true)
+			canvas.draw_rect(trough, tint.call(WOOD_DARK))
+			canvas.draw_rect(trough.grow(-w.call(0.4)), tint.call(PEN_HAY))
+			for i in range(7):
+				var straw_x := PEN_TROUGH_RECT.position.x + 0.6 + float(i) * 1.0
+				canvas.draw_line(p.call(straw_x, PEN_TROUGH_RECT.position.y + 0.3), p.call(straw_x + 0.5, PEN_TROUGH_RECT.position.y - 0.6),
+					tint.call(STRAW_DARK), w.call(0.2), true)
+			canvas.draw_line(p.call(PEN_TROUGH_RECT.position.x, PEN_TROUGH_RECT.get_center().y),
+				p.call(PEN_TROUGH_RECT.end.x, PEN_TROUGH_RECT.get_center().y), tint.call(WOOD), w.call(0.2), true)
+			# Steccato aperto sul cancello (lato sud, al centro): pietre alla base, due giri di corda e i pali.
+			var left := PEN_RECT.position.x
+			var right := PEN_RECT.end.x
+			var top := PEN_RECT.position.y
+			var bottom := PEN_RECT.end.y
+			var fence := [Vector2(PEN_GATE_HALF_WIDTH, bottom), Vector2(right, bottom), Vector2(right, top), Vector2(left, top),
+				Vector2(left, bottom), Vector2(-PEN_GATE_HALF_WIDTH, bottom)]
+			for side_index in range(fence.size() - 1):
+				var from: Vector2 = fence[side_index]
+				var to: Vector2 = fence[side_index + 1]
+				var stones := maxi(int(round(from.distance_to(to) / 1.6)), 1)
+				for i in range(stones):
+					var at: Vector2 = from.lerp(to, (float(i) + 0.5) / float(stones))
+					canvas.draw_circle(p.call(at.x, at.y), w.call(0.5), tint.call(SLAB_EDGE))
+					canvas.draw_circle(p.call(at.x, at.y), w.call(0.38), tint.call(STONE))
+			for inset in [0.0, 0.6]:
+				var rope := PackedVector2Array()
+				for corner in fence:
+					var c: Vector2 = corner
+					var inner := Vector2(c.x - signf(c.x) * inset if absf(c.x) > PEN_GATE_HALF_WIDTH else c.x, c.y - signf(c.y) * inset)
+					rope.append(p.call(inner.x, inner.y))
+				canvas.draw_polyline(rope, tint.call(PEN_ROPE), w.call(0.25 if inset == 0.0 else 0.2), true)
+			for side_index in range(fence.size() - 1):
+				var from: Vector2 = fence[side_index]
+				var to: Vector2 = fence[side_index + 1]
+				var posts := maxi(int(round(from.distance_to(to) / 3.5)), 1)
+				for i in range(posts):
+					var at: Vector2 = from.lerp(to, float(i) / float(posts))
+					canvas.draw_circle(p.call(at.x, at.y), w.call(0.55), tint.call(WOOD_DARK))
+					canvas.draw_circle(p.call(at.x, at.y), w.call(0.35), tint.call(WOOD))
+			# Cancello: due pali grossi e un'anta di tre traverse con il saettone, chiusa.
+			for bar_y in [-0.5, 0.0, 0.5]:
+				canvas.draw_line(p.call(-PEN_GATE_HALF_WIDTH, bottom + bar_y), p.call(PEN_GATE_HALF_WIDTH, bottom + bar_y),
+					tint.call(WOOD), w.call(0.3), true)
+			canvas.draw_line(p.call(-PEN_GATE_HALF_WIDTH, bottom + 0.5), p.call(PEN_GATE_HALF_WIDTH, bottom - 0.5),
+				tint.call(WOOD_DARK), w.call(0.25), true)
+			for gate_x in [-PEN_GATE_HALF_WIDTH, PEN_GATE_HALF_WIDTH]:
+				canvas.draw_circle(p.call(gate_x, bottom), w.call(0.85), tint.call(WOOD_DARK))
+				canvas.draw_circle(p.call(gate_x, bottom), w.call(0.55), tint.call(WOOD))
 		"rabbit_hutch":
 			# 2x1 (2026-11-17, richiesta utente). Est: recinto d'erba con qualche ciuffo, steccato basso e una fila di pietre
 			# alla base contro lo scavo. Ovest: fondo d'argilla battuta (si vede sul davanti) e cassone di legno col tetto di

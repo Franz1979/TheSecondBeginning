@@ -59,7 +59,8 @@ func _resolve(individual: Variant, context: Dictionary) -> void:
 			moving = DomesticAnimalService.find_animal(game_data, int(entry["animal_id"]))
 			if moving == null:
 				continue
-		if KeptAnimalService.has_room_for(game_data, building, species, reserved):
+		# Selvatico appena catturato (voce senza animal_id): solo tettoie (2026-11-17, richiesta utente).
+		if KeptAnimalService.has_room_for(game_data, building, species, reserved, moving == null):
 			if moving != null:
 				moving.building_id = building.id
 				moving.carried_by = -1
@@ -81,7 +82,7 @@ func _resolve(individual: Variant, context: Dictionary) -> void:
 		if moving != null:
 			other = DomesticTransferService.nearest_breeding_building(game_data, world, species, macro, reserved)
 		else:
-			other = KeptAnimalService.find_building_with_room(game_data, world, species, macro, reserved)
+			other = KeptAnimalService.find_building_with_room(game_data, world, species, macro, reserved, null, true)
 		if other != null:
 			entry["building_id"] = other.id
 			reserved.append(entry)
@@ -99,6 +100,8 @@ func _resolve(individual: Variant, context: Dictionary) -> void:
 			DomesticTransferService.kill_on_spot(game_data, moving, building)
 			continue
 		_to_butcher.append(entry)
+		LiveCatchNoticeService.record(game_data, String(entry.get("wild_species", "")), species,
+			TrapService.live_building_type_for(TrapService.get_rules(String(entry.get("trap_name", "")))))
 		TrapService.log_line("#%d %s: nessun posto per %s, si macella" % [individual.id, individual.name, entry.get("wild_species", "?")])
 	entries = []
 	if not _to_butcher.is_empty():

@@ -19,7 +19,7 @@ static func domestic_species_for_wild(wild_species: String) -> String:
 
 
 # Scelta "Nessuna" (2026-11-16, richiesta utente): Building.kept_species = NO_SPECIES, la tettoia resta in piedi (per
-# un'emergenza) ma non accetta animali; i cesti la ignorano (TrapService.has_live_catch_building). Si sceglie solo a
+# un'emergenza) ma non accetta animali; i cesti la ignorano (le loro prede vive si macellano). Si sceglie solo a
 # edificio vuoto, come le altre.
 const NO_SPECIES := "none"
 
@@ -47,6 +47,7 @@ static func chosen_species(building: Building) -> String:
 
 # Specie che l'edificio può tenere (scelta nel pannello), come specie domestiche di arrivo. La tettoia delle gabbie: le
 # prede piccole delle mandrie (AnimalRules.max_hunters == 1, la stessa regola dei lacci) che hanno una specie domestica.
+# Il recinto di addomesticazione (BuildingRules.keeps_big_animals, 2026-11-18): le prede grosse (max_hunters > 1).
 # Conigliera e pollaio: solo la loro specie fissa.
 static func selectable_species(building: Building) -> Array[String]:
 	var result: Array[String] = []
@@ -58,7 +59,7 @@ static func selectable_species(building: Building) -> Array[String]:
 		return result
 	for wild_species in WildFaunaService.herd_species():
 		var wild_rules := AnimalCalculator.get_animal_rules(wild_species)
-		if wild_rules == null or wild_rules.max_hunters > 1:
+		if wild_rules == null or (wild_rules.max_hunters > 1) != building.rules.keeps_big_animals:
 			continue
 		var domestic := domestic_species_for_wild(wild_species)
 		if domestic != "" and not result.has(domestic):
@@ -88,7 +89,11 @@ static func capacity(building: Building) -> int:
 
 # true se l'edificio, finito, ha un posto libero per un animale di `species` (specie domestica). `reserved`: posti già
 # prenotati da chi porta un animale (reservations, voci make_entry): occupano un posto e fissano la specie.
-static func has_room_for(game_data: GameData, building: Building, species: String, reserved: Array = []) -> bool:
+# `wild` (2026-11-17, richiesta utente): l'animale è un selvatico appena catturato (cesto, domani imbuto). I selvatici vanno
+# solo nella tettoia delle gabbie (o nel recinto di addomesticazione), mai negli edifici a specie fissa (conigliera, pollaio,
+# stalla), nemmeno a specie già addomesticata: senza tettoia con posto si macellano.
+static func has_room_for(game_data: GameData, building: Building, species: String, reserved: Array = [],
+		wild: bool = false) -> bool:
 	if building == null or not building.is_complete or capacity(building) <= 0 or building.is_out_of_service():
 		return false
 	if accepts_none(building):
@@ -96,7 +101,7 @@ static func has_room_for(game_data: GameData, building: Building, species: Strin
 	if not selectable_species(building).has(species):
 		return false
 	# Specie fissa (conigliera, pollaio): solo animali domestici, quindi solo a specie addomesticata.
-	if fixed_species(building) != "" and not DomesticAnimalService.is_domesticated(game_data, species):
+	if fixed_species(building) != "" and (wild or not DomesticAnimalService.is_domesticated(game_data, species)):
 		return false
 	var current := current_species(game_data, building, reserved)
 	if current != "" and current != species:
@@ -111,14 +116,15 @@ static func has_room_for(game_data: GameData, building: Building, species: Strin
 # Edificio con posto per `species`, il più vicino a `macro_coords` (prima quelli della stessa macrocella). null se nessuno.
 # `same_kind_as` (2026-11-16): solo edifici dello stesso tipo di quello (tettoia → tettoie, allevamento → allevamenti):
 # lo spostamento istantaneo dei piccoli non porta mai in conigliera, ci si arriva col trasporto.
+# `wild`: selvatico appena catturato, solo tettoie (has_room_for).
 static func find_building_with_room(game_data: GameData, world: World, species: String, macro_coords: Vector2i,
-		reserved: Array = [], same_kind_as: Building = null) -> Building:
+		reserved: Array = [], same_kind_as: Building = null, wild: bool = false) -> Building:
 	if world == null:
 		return null
 	var best: Building = null
 	var best_distance := INF
 	for building in world.buildings:
-		if not has_room_for(game_data, building, species, reserved):
+		if not has_room_for(game_data, building, species, reserved, wild):
 			continue
 		if same_kind_as != null and (fixed_species(building) != "") != (fixed_species(same_kind_as) != ""):
 			continue
