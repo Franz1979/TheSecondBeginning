@@ -129,7 +129,9 @@ static func known_workstation_display_name(resource_name: String, folk: Folk) ->
 # Capanna del guaritore (2026-10-25, richiesta utente — fuoco interno): stessa regola per ogni tipo in SMOKING_TYPES, ma
 # fuma solo se la ricetta in lavorazione brucia combustibile (recipe_fuel_required > 0; l'infuso sì, l'unguento no).
 # Capanna del vasellaio (2026-11-07, richiesta utente): fuma mentre cuoce giare e ciotole (ricette a combustibile).
-const SMOKING_TYPES: Array[String] = ["smokehouse", "healer_hut", "potter_hut"]
+# Focolare (2026-11-19, richiesta utente — vista 3D): acceso mentre ci si fa una ricetta a combustibile (carne e pesce
+# cotti, lancia indurita al fuoco…). Il 2D del focolare non lo legge (disegna sempre la fiamma); lo usa la vista 3D.
+const SMOKING_TYPES: Array[String] = ["smokehouse", "healer_hut", "potter_hut", "campfire"]
 
 static func refresh_smoking(world: World, individuals: Array[HumanIndividual]) -> Array[Building]:
 	var changed: Array[Building] = []

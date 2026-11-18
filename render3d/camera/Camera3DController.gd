@@ -4,6 +4,7 @@ extends Camera3D
 # Camera della vista 3D: alta e inclinata, guarda lo stesso punto della camera 2D (che resta la fonte del "dove sono"
 # per il gioco: celle accese, ritorno al 2D). Comandi:
 # - WASD / frecce: spostamento (secondo la direzione in cui si guarda)
+# - mouse al bordo dello schermo: spostamento, con la stessa regola del 2D
 # - rotella: zoom
 # - tasto centrale trascinato: spostamento
 # - tasto destro trascinato: rotazione (orizzontale) e piccola correzione dell'inclinazione (verticale)
@@ -26,6 +27,7 @@ var _reader: GameStateReader
 var _yaw: float = 0.0
 var _pitch_offset_deg: float = 0.0
 var _distance: float = 80.0
+var _edge_pan_hover_time: float = 0.0
 
 
 func setup(reader: GameStateReader) -> void:
@@ -55,6 +57,16 @@ func _process(delta: float) -> void:
 			direction.x += 1
 		if direction != Vector2.ZERO:
 			_reader.move_camera(_screen_to_ground(direction.normalized()) * _distance * PAN_SPEED_PER_DISTANCE * delta)
+		# Mouse al bordo dello schermo: come nel 2D, parte dopo una breve attesa.
+		var edge := _reader.edge_pan_vector()
+		if edge == Vector2.ZERO:
+			_edge_pan_hover_time = 0.0
+		else:
+			_edge_pan_hover_time += delta
+			if _edge_pan_hover_time >= _reader.edge_pan_delay():
+				_reader.move_camera(_screen_to_ground(edge) * _distance * PAN_SPEED_PER_DISTANCE * delta)
+	else:
+		_edge_pan_hover_time = 0.0
 	_update_transform()
 
 

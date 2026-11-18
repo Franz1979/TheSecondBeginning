@@ -5,5 +5,6 @@ extends RefCounted
 # stato per la scheda video.
 
 var vertex_color: StandardMaterial3D = FlatMeshBuilder.vertex_color_material()
+var terrain: ShaderMaterial = TerrainMaterial3D.make()
 var water: StandardMaterial3D = WaterMesh3D.make_material()
 var grid: StandardMaterial3D = GridLines3D.make_material()

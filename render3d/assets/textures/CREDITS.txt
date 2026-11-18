@@ -1,0 +1,7 @@
+Texture CC0 (pubblico dominio) da ambientCG.com:
+- grass/ : Grass004 (1K-JPG)
+- dirt/  : Ground103 (1K-JPG)
+- clay/  : Clay005 (1K-JPG)
+Tenuti solo Color, NormalGL (normali OpenGL, quelle di Godot) e Roughness.
+- forest/ : Ground037 (1K-JPG), solo Color e NormalGL
+- gravel/ : Gravel040 (1K-JPG), solo Color e NormalGL

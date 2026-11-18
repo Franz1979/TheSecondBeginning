@@ -1,0 +1,87 @@
+class_name TerrainMaterial3D
+extends RefCounted
+
+# Materiale del terreno a texture (terrain.gdshader): carica erba, terra e argilla (colore, rilievo, ruvidità e colore
+# medio, per tingerle senza scurirle), sottobosco e ghiaia (solo colore e rilievo), tutte CC0 in render3d/assets/textures/,
+# e prepara il rumore dei bordi.
+# Creato una volta sola (Materials3D) e condiviso da tutte le celle.
+
+const SHADER_PATH := "res://render3d/objects/terrain/terrain.gdshader"
+const TEXTURE_DIR := "res://render3d/assets/textures/%s/%s_%s.jpg"
+const SURFACES := ["grass", "dirt", "clay"]
+# Suoli con solo colore e rilievo (la ruvidità è un numero fisso nello shader).
+const SIMPLE_SURFACES := ["forest", "gravel"]
+# Rumore dei bordi: immagine ripetibile, macchie di circa 1-2 microcelle (vedi noise_tile nello shader).
+const NOISE_SIZE := 256
+const NOISE_FREQUENCY := 0.05
+const AVERAGE_STEP := 16
+
+
+static func make() -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = load(SHADER_PATH)
+	for surface in SURFACES:
+		var albedo: Texture2D = load(TEXTURE_DIR % [surface, surface, "color"])
+		material.set_shader_parameter(surface + "_albedo", albedo)
+		material.set_shader_parameter(surface + "_normal", load(TEXTURE_DIR % [surface, surface, "normal"]))
+		material.set_shader_parameter(surface + "_roughness", load(TEXTURE_DIR % [surface, surface, "roughness"]))
+		material.set_shader_parameter(surface + "_average", _average_color(albedo))
+	for surface in SIMPLE_SURFACES:
+		material.set_shader_parameter(surface + "_albedo", load(TEXTURE_DIR % [surface, surface, "color"]))
+		material.set_shader_parameter(surface + "_normal", load(TEXTURE_DIR % [surface, surface, "normal"]))
+	material.set_shader_parameter("edge_noise", _edge_noise_texture())
+	return material
+
+
+# Copia del materiale per una cella: stesse texture condivise, più il suo angolo in microcelle assolute e, se c'è, la
+# maschera del ruscello (StreamMask3D).
+static func for_cell(shared: ShaderMaterial, cell_origin: Vector2, stream_mask: Image) -> ShaderMaterial:
+	var material := shared.duplicate() as ShaderMaterial
+	material.set_shader_parameter("cell_origin", cell_origin)
+	material.set_shader_parameter("cell_size", float(World.WIDTH))
+	if stream_mask != null:
+		material.set_shader_parameter("stream_mask", ImageTexture.create_from_image(stream_mask))
+	return material
+
+
+# Maschera dei suoli della cella (GroundCover3D): la prima volta crea la texture, poi la aggiorna sul posto.
+static func set_cover(material: ShaderMaterial, cover_image: Image) -> void:
+	var texture := material.get_shader_parameter("cover_mask") as ImageTexture
+	if texture == null:
+		material.set_shader_parameter("cover_mask", ImageTexture.create_from_image(cover_image))
+	else:
+		texture.update(cover_image)
+
+
+# Colore medio della texture (campionata a passo fisso: basta e costa poco).
+static func _average_color(texture: Texture2D) -> Color:
+	if texture == null:
+		return Color(0.5, 0.5, 0.5)
+	var image := texture.get_image()
+	if image == null:
+		return Color(0.5, 0.5, 0.5)
+	if image.is_compressed():
+		image.decompress()
+	var sum := Vector3.ZERO
+	var count := 0
+	for y in range(0, image.get_height(), AVERAGE_STEP):
+		for x in range(0, image.get_width(), AVERAGE_STEP):
+			var c := image.get_pixel(x, y)
+			sum += Vector3(c.r, c.g, c.b)
+			count += 1
+	if count == 0:
+		return Color(0.5, 0.5, 0.5)
+	sum /= float(count)
+	return Color(sum.x, sum.y, sum.z)
+
+
+static func _edge_noise_texture() -> ImageTexture:
+	var noise := FastNoiseLite.new()
+	noise.seed = 6161
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = NOISE_FREQUENCY
+	noise.fractal_type = FastNoiseLite.FRACTAL_FBM
+	noise.fractal_octaves = 4
+	var image := noise.get_seamless_image(NOISE_SIZE, NOISE_SIZE)
+	image.generate_mipmaps()
+	return ImageTexture.create_from_image(image)

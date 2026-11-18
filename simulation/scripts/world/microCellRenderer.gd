@@ -4440,7 +4440,6 @@ func _compute_shrub_visual(individual_key: Vector3i, lot_counts: Dictionary) -> 
 
 	# Stesse due scale indipendenti di _compute_tree_visual — vedi il commento lì.
 	var spacing := _resolve_density_scale_and_offset_range(int(lot_counts.get(pos, 1)))
-	var offset_range: float = spacing["offset_range"]
 	var density_scale: float = spacing["density_scale"]
 	var size_multiplier: float = age_size_multiplier * density_scale
 
@@ -4450,9 +4449,16 @@ func _compute_shrub_visual(individual_key: Vector3i, lot_counts: Dictionary) -> 
 	# stesso lotto ancorerebbero l'intero cluster di blob allo stesso identico punto,
 	# sovrapponendosi per costruzione indipendentemente da quanto i singoli blob si disperdono
 	# attorno al centro.
-	var center_offset_x: float = lerp(-offset_range, offset_range, float(hash(jitter_pos * 17 + Vector2i(53, 9)) % 1000) / 1000.0)
-	var center_offset_y: float = lerp(-offset_range, offset_range, float(hash(jitter_pos * 19 + Vector2i(9, 53)) % 1000) / 1000.0)
-	var center := base + Vector2(half, half) + Vector2(center_offset_x, center_offset_y)
+	# Cespugli sparsi su tutto il lotto (2026-11-19, richiesta utente, come gli alberi del 2026-11-17 in
+	# _compute_tree_visual): prima un cespuglio da solo stava entro ±1px dal centro e le macchie si leggevano come una
+	# griglia. Ora il singolo può stare ovunque entro ±SHRUB_SPREAD_RANGE; con più individui per lotto il disco di
+	# Fibonacci li separa sullo stesso raggio, più il piccolo wobble di sempre. Solo disegno: il cespuglio resta del suo lotto.
+	var local_count: int = int(lot_counts.get(pos, 1))
+	var wobble_range: float = SHRUB_SPREAD_RANGE if local_count <= 1 else BASE_OFFSET_RANGE
+	var center_offset_x: float = lerp(-wobble_range, wobble_range, float(hash(jitter_pos * 17 + Vector2i(53, 9)) % 1000) / 1000.0)
+	var center_offset_y: float = lerp(-wobble_range, wobble_range, float(hash(jitter_pos * 19 + Vector2i(9, 53)) % 1000) / 1000.0)
+	var disk_offset := _fibonacci_disk_offset(index, local_count, SHRUB_SPREAD_RANGE)
+	var center := base + Vector2(half, half) + disk_offset + Vector2(center_offset_x, center_offset_y)
 
 	return {
 		"is_fruit_bearing": is_fruit_bearing, "subtype_name": subtype_name, "age_band": age_band,
@@ -4809,6 +4815,9 @@ const MAX_OFFSET_RANGE: float = 3.0
 # Solo TREE (2026-11-17, vedi _compute_tree_visual): quanto un albero può allontanarsi dal centro del suo lotto
 # (CELL_SIZE/2 = 5px = bordo). Per tornare a prima: singolo ±BASE_OFFSET_RANGE e disco MAX_OFFSET_RANGE.
 const TREE_SPREAD_RANGE: float = 5.0
+# Lo stesso per SHRUB (2026-11-19, vedi _compute_shrub_visual): un po' meno degli alberi, così le macchie non si fondono
+# del tutto. Per tornare a prima: singolo ±BASE_OFFSET_RANGE e offset_range di _resolve_density_scale_and_offset_range.
+const SHRUB_SPREAD_RANGE: float = 4.0
 const MIN_DENSITY_SCALE: float = 0.4
 
 func _resolve_density_scale_and_offset_range(local_count: int) -> Dictionary:

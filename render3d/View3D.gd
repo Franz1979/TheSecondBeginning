@@ -106,5 +106,31 @@ func _sync_cells() -> void:
 		cell.set_grid_visible(grid_visible, _materials)
 		# Rocce e sassi: rifatti quando il gioco li cambia.
 		var stone_signature := _reader.stone_signature(coords)
-		if cell.needs_stone_refresh(stone_signature):
+		if cell.needs_refresh(&"stones", stone_signature):
 			cell.refresh_stones(_reader.stone_snapshot(coords), stone_signature, _materials)
+		# Suoli: prato dove c'è erba, sottobosco sotto alberi e cespugli, ghiaia sotto le rocce, terra altrove.
+		var cover_signature := _reader.ground_cover_signature(coords)
+		if cell.needs_refresh(&"ground_cover", cover_signature):
+			cell.refresh_ground_cover(_reader.ground_cover_snapshot(coords), cover_signature)
+		# Alberi: rifatti quando cambia l'elenco del 2D (nascite, tagli, nebbia) o l'anno.
+		var tree_signature := _reader.tree_signature(coords)
+		if cell.needs_refresh(&"trees", tree_signature):
+			cell.refresh_trees(_reader.tree_snapshot(coords), tree_signature, _materials)
+		# Cespugli (macchie, rovi da frutto, tagliati): come gli alberi.
+		var shrub_signature := _reader.shrub_signature(coords)
+		if cell.needs_refresh(&"shrubs", shrub_signature):
+			cell.refresh_shrubs(_reader.shrub_snapshot(coords), shrub_signature, _materials)
+		# Focolari: rifatti quando cambia l'elenco degli edifici del 2D o lo stato di un focolare (acceso, braci, spento).
+		var hearth_signature := _reader.hearth_signature(coords)
+		if cell.needs_refresh(&"hearths", hearth_signature):
+			cell.refresh_hearths(_reader.hearth_snapshot(coords), hearth_signature, _materials)
+		# Siti di deposito (per ora solo lo spiazzo di terra battuta): rifatti quando cambia l'elenco degli edifici.
+		var buildings_signature := _reader.buildings_signature(coords)
+		if cell.needs_refresh(&"deposit_sites", buildings_signature):
+			cell.refresh_deposit_sites(_reader.building_places(coords, "deposit_site"), buildings_signature, _materials)
+		# Terra battuta (l'edificio): mattonelle come nel 2D.
+		if cell.needs_refresh(&"dirt_ground", buildings_signature):
+			cell.refresh_dirt_ground(_reader.dirt_ground_tiles(coords), buildings_signature)
+		# Cerchi di sassi: come i depositi.
+		if cell.needs_refresh(&"pebble_circles", buildings_signature):
+			cell.refresh_pebble_circles(_reader.building_places(coords, "pebble_circle"), buildings_signature, _materials)

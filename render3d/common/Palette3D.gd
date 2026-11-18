@@ -18,6 +18,17 @@ const TERRAIN_BY_2D_COLOR := {
 	TerrainColors.CLIFF: Color("8b8a84"),
 }
 
+# Quanto il terreno è terra/roccia invece che prato (0 = prato, 1 = terra), per lo shader del terreno. Non elencati = prato.
+const DIRT_BY_2D_COLOR := {
+	TerrainColors.PLAIN_DESERT: 1.0,
+	TerrainColors.PLAIN_ROCKY: 0.6,
+	TerrainColors.HILL: 0.4,
+	TerrainColors.MOUNTAIN: 1.0,
+	TerrainColors.BEACH: 1.0,
+	TerrainColors.SEMI_CLIFF: 1.0,
+	TerrainColors.CLIFF: 1.0,
+}
+
 # Fondale sotto l'acqua.
 const SEABED := Color("5e5a3e")
 
@@ -29,3 +40,7 @@ const WATER_ALPHA := 0.82
 
 static func terrain_color(color_2d: Color) -> Color:
 	return TERRAIN_BY_2D_COLOR.get(color_2d, color_2d)
+
+
+static func dirt_amount(color_2d: Color) -> float:
+	return DIRT_BY_2D_COLOR.get(color_2d, 0.0)

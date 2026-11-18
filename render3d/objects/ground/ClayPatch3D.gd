@@ -3,13 +3,10 @@ extends RefCounted
 
 # Oggetto 3D: il giacimento d'argilla di UNA macrocella, come pozza nel terreno (non una lastra appoggiata sopra).
 # Per ogni angolo della griglia calcola "quanta argilla c'è qui attorno" (corner_weights), sfumato su un piccolo raggio
-# e reso un po' irregolare: il terreno (TerrainMesh3D) lo usa per scendere a conca e sfumare dal prato al rossiccio,
-# così gli spigoli delle caselle si arrotondano da soli. Le microcelle sono le stesse del 2D (clay_positions).
-# Qui si mettono anche le crepe e le poche zolle, solo nel pieno della pozza (decoro fisso per microcella).
+# e reso un po' irregolare: il terreno (TerrainMesh3D) lo usa per scendere a conca e lo passa allo shader del terreno,
+# che disegna argilla e orlo bagnato con un bordo frastagliato. Le microcelle sono le stesse del 2D (clay_positions).
+# Qui si mettono anche le poche zolle, solo nel pieno della pozza (decoro fisso per microcella).
 
-const COLOR_DARK := Color(0.44, 0.30, 0.22)
-const COLOR_LIGHT := Color(0.56, 0.39, 0.28)
-const CRACK_COLOR := Color("4a2e1c")
 const LUMP_COLOR := Color("7a4e34")
 # Profondità del fondo della pozza sotto il prato.
 const DEPTH := 0.16
@@ -17,10 +14,8 @@ const DEPTH := 0.16
 const BLUR_RADIUS := 1.6
 const EDGE_NOISE := 0.18
 const EDGE_NOISE_FREQUENCY := 0.35
-# Sopra questa "quantità d'argilla" si è nel pieno della pozza (crepe e zolle).
+# Sopra questa "quantità d'argilla" si è nel pieno della pozza (zolle).
 const FULL_WEIGHT := 0.85
-const CRACK_CHANCE := 0.18
-const CRACK_HALF_WIDTH := 0.016
 const LUMP_CHANCE := 0.15
 const LUMP_VARIANTS := 4
 
@@ -64,20 +59,13 @@ static func depth_for(weight: float) -> float:
 	return DEPTH * smoothstep(0.15, 0.85, weight)
 
 
-# Colore dell'angolo: dal prato all'argilla, sfumando.
-static func blend_color(ground: Color, corner: Vector2i, weight: float) -> Color:
-	var clay := COLOR_DARK.lerp(COLOR_LIGHT, Noise2DMatch.value(corner, 6))
-	return ground.lerp(clay, smoothstep(0.3, 0.6, weight))
-
-
-# Crepe e zolle nel pieno della pozza. null se non ce ne sono.
+# Zolle nel pieno della pozza. null se non ce ne sono.
 static func build(source: Cell3DSource, weights: PackedFloat32Array, material: Material) -> Node3D:
 	if weights.is_empty():
 		return null
 	_ensure_lumps()
 	var size := World.WIDTH
 	var base := Vector2(source.coords.x * World.WIDTH, source.coords.y * World.HEIGHT)
-	var builder := FlatMeshBuilder.new()
 	var lump_buckets: Array = []
 	for i in range(LUMP_VARIANTS):
 		lump_buckets.append([])
@@ -86,20 +74,12 @@ static func build(source: Cell3DSource, weights: PackedFloat32Array, material: M
 			continue
 		if not _is_full(weights, pos, size):
 			continue
-		if Noise2DMatch.value(pos, 7) < CRACK_CHANCE:
-			_add_crack(builder, base, pos)
 		if Noise2DMatch.value(pos, 9) < LUMP_CHANCE:
 			var p := Vector2(pos) + Vector2(0.5, 0.5) + Vector2(Noise2DMatch.value(pos, 10) - 0.5, Noise2DMatch.value(pos, 11) - 0.5) * 0.6
 			var angle := Noise2DMatch.value(pos, 12) * TAU
 			lump_buckets[posmod(hash(pos), LUMP_VARIANTS)].append(Transform3D(Basis(Vector3.UP, angle), _bottom_point(base, p)))
 	var node := Node3D.new()
 	node.name = "Clay"
-	if not builder.is_empty():
-		var cracks := MeshInstance3D.new()
-		cracks.mesh = builder.build()
-		cracks.material_override = material
-		cracks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		node.add_child(cracks)
 	node.add_child(MultiMeshGroup3D.build("Lumps", _lump_meshes, lump_buckets, material))
 	return node
 
@@ -114,25 +94,6 @@ static func _is_full(weights: PackedFloat32Array, pos: Vector2i, size: int) -> b
 # Punto sul fondo della pozza (dove l'argilla è piena il terreno è sceso di DEPTH).
 static func _bottom_point(base: Vector2, p: Vector2) -> Vector3:
 	return Vector3(p.x, GroundHeight3D.land_height(base.x + p.x, base.y + p.y) - DEPTH, p.y)
-
-
-# Crepa a zig-zag dentro la microcella: due tratti sottili appena sopra il fondo.
-static func _add_crack(builder: FlatMeshBuilder, base: Vector2, pos: Vector2i) -> void:
-	var origin := Vector2(pos)
-	var a := origin + Vector2(0.2 + 0.2 * Noise2DMatch.value(pos, 13), 0.25)
-	var b := origin + Vector2(0.4 + 0.3 * Noise2DMatch.value(pos, 14), 0.5)
-	var c := origin + Vector2(0.3 + 0.4 * Noise2DMatch.value(pos, 15), 0.78)
-	var lift := Vector3(0.0, 0.012, 0.0)
-	for segment in [[a, b], [b, c]]:
-		var from: Vector2 = segment[0]
-		var to: Vector2 = segment[1]
-		var side := (to - from).normalized().orthogonal() * CRACK_HALF_WIDTH
-		var p0 := _bottom_point(base, from + side) + lift
-		var p1 := _bottom_point(base, from - side) + lift
-		var p2 := _bottom_point(base, to - side) + lift
-		var p3 := _bottom_point(base, to + side) + lift
-		builder.add_ground_triangle(p0, p1, p2, CRACK_COLOR)
-		builder.add_ground_triangle(p0, p2, p3, CRACK_COLOR)
 
 
 static func _edge_noise_at(gx: float, gy: float) -> float:
