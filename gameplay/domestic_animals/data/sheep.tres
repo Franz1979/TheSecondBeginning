@@ -4,6 +4,9 @@
 
 ; Pecora (2026-11-17, richiesta utente — animali grossi passo 1): come la capra ma gemelli più rari, niente ghiande; macello = muflone. Latte e lana dopo (punto 7).
 [resource]
+lead_escape_chance_per_hour = 0.02
+lead_escape_chance_per_hour_domestic = 0.005
+lead_speed_scale = 0.9
 script = ExtResource("1_sheep")
 species_name = "sheep"
 display_name = "domestic_animal_sheep"

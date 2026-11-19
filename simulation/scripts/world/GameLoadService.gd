@@ -190,6 +190,22 @@ func load_game_from_json(file_path: String) -> LoadedGame:
 		if trap.trap_name != "":
 			game_data.placed_traps.append(trap)
 	game_data.next_placed_trap_id = int(data["game"].get("next_placed_trap_id", 1))
+	# Animali condotti con la cavezza (2026-11-18) — .get() per i save precedenti: nessuno. Numeri normalizzati (JSON float).
+	game_data.led_animals.clear()
+	for saved_led in data["game"].get("led_animals", []):
+		if not saved_led is Dictionary or not (saved_led as Dictionary).has("entry"):
+			continue
+		var led: Dictionary = (saved_led as Dictionary).duplicate(true)
+		for key in ["id", "catch_day", "holder_id", "macro_x", "macro_y"]:
+			led[key] = int(led.get(key, -1))
+		for key in ["x", "y"]:
+			led[key] = float(led.get(key, 0.0))
+		var led_entry: Dictionary = led["entry"]
+		for key in ["age_band", "building_id", "led_id", "catch_day", "animal_id"]:
+			if led_entry.has(key):
+				led_entry[key] = int(led_entry[key])
+		game_data.led_animals.append(led)
+	game_data.next_led_animal_id = int(data["game"].get("next_led_animal_id", 1))
 	game_data.broken_traps.clear()
 	for saved_broken in data["game"].get("broken_traps", []):
 		if saved_broken is Dictionary:

@@ -354,6 +354,18 @@ static func build_task(definition: TaskDefinition, context: Dictionary) -> Task:
 					continue
 				steps.append(ReapAction.new(context[step_definition.context_keys[0]]))
 				step_descriptions.append(step_definition.step_description)
+			TaskTypes.ActionType.PUT_HALTER:
+				# 1 argomento (l'id dell'imbuto) — 2026-11-18, Conduci al recinto.
+				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):
+					push_error("TaskFactory.build_task: context_keys[0] mancante per step PUT_HALTER di TaskDefinition '%s'." % definition.task_name)
+					continue
+				# 2° argomento (2026-11-18): l'animale legato da riprendere, -1 = dall'imbuto.
+				var led_key := step_definition.context_keys[1] if step_definition.context_keys.size() > 1 else ""
+				# 3° argomento (2026-11-19): l'animale domestico da portare dal recinto alla stalla, -1 = nessuno.
+				var domestic_key := step_definition.context_keys[2] if step_definition.context_keys.size() > 2 else ""
+				steps.append(PutHalterAction.new(int(context[step_definition.context_keys[0]]), int(context.get(led_key, -1)),
+					int(context.get(domestic_key, -1))))
+				step_descriptions.append(step_definition.step_description)
 			TaskTypes.ActionType.TAKE_ANIMALS:
 				# 1 argomento (la tettoia delle gabbie) — 2026-11-16, Trasferisci animali.
 				if step_definition.context_keys.is_empty() or not context.has(step_definition.context_keys[0]):

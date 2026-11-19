@@ -26,7 +26,9 @@ func _init(p_building: Building = null, p_entries: Array = []) -> void:
 	building = p_building
 	entries = p_entries
 	_is_transfer = not p_entries.is_empty() and Dictionary(p_entries[0]).has("animal_id")
-	skill_effect_key = DomesticTransferService.SKILL_EFFECT_KEY if _is_transfer else TrapService.SKILL_EFFECT_KEY
+	# Condotto con la cavezza dall'imbuto (2026-11-18, "Conduci al recinto"): lavoro di Allevamento, come il trasferimento.
+	var led := not p_entries.is_empty() and bool(Dictionary(p_entries[0]).get("led", false))
+	skill_effect_key = DomesticTransferService.SKILL_EFFECT_KEY if _is_transfer or led else TrapService.SKILL_EFFECT_KEY
 	disallowed_age_bands = [HumanTypes.AgeBand.INFANT, HumanTypes.AgeBand.CHILD]
 
 
@@ -54,6 +56,10 @@ func _resolve(individual: Variant, context: Dictionary) -> void:
 	var rerouted := {}
 	for entry in entries:
 		var species := String(entry.get("species", ""))
+		# Condotto con la cavezza (2026-11-18): solo se è ancora nelle mani di questa persona (altrimenti è legato altrove).
+		var led_id := int(entry.get("led_id", -1))
+		if led_id >= 0 and not LedAnimalService.is_held_by(game_data, led_id, individual):
+			continue
 		var moving: DomesticAnimal = null
 		if entry.has("animal_id"):
 			moving = DomesticAnimalService.find_animal(game_data, int(entry["animal_id"]))
@@ -64,10 +70,14 @@ func _resolve(individual: Variant, context: Dictionary) -> void:
 			if moving != null:
 				moving.building_id = building.id
 				moving.carried_by = -1
+				if led_id >= 0:
+					LedAnimalService.finish(game_data, led_id)
 				DebugLogging.print_event("[TRANSFER] #%d %s: %s #%d nella %s #%d" % [individual.id, individual.name, species,
 					moving.id, building.building_type_name, building.id])
 				continue
 			var animal := KeptAnimalService.keep_animal(game_data, building, entry)
+			if led_id >= 0:
+				LedAnimalService.finish(game_data, led_id)
 			# Punti addomesticazione all'arrivo (2026-11-12): li assegna la scena a fine tappa
 			# (HumanIndividualActionService.CONTEXT_PENDING_DOMESTICATION_POINTS), con l'eventuale scoperta.
 			# Anche a 0 punti (anziano): il primo arrivo scopre la specie (passo C).
@@ -98,8 +108,12 @@ func _resolve(individual: Variant, context: Dictionary) -> void:
 			DebugLogging.print_event("[TRANSFER] #%d %s: nessun posto per %s #%d, ucciso sul posto" % [individual.id,
 				individual.name, species, moving.id])
 			DomesticTransferService.kill_on_spot(game_data, moving, building)
+			if led_id >= 0:
+				LedAnimalService.finish(game_data, led_id)
 			continue
 		_to_butcher.append(entry)
+		if led_id >= 0:
+			LedAnimalService.finish(game_data, led_id)
 		LiveCatchNoticeService.record(game_data, String(entry.get("wild_species", "")), species,
 			TrapService.live_building_type_for(TrapService.get_rules(String(entry.get("trap_name", "")))))
 		TrapService.log_line("#%d %s: nessun posto per %s, si macella" % [individual.id, individual.name, entry.get("wild_species", "?")])

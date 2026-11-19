@@ -169,6 +169,10 @@ func allocate_domestic_animal_id() -> int:
 var placed_traps: Array[PlacedTrap] = []
 var next_placed_trap_id: int = 1
 var placed_traps_revision: int = 0
+# Animali condotti con la cavezza (2026-11-18, LedAnimalService): in mano a qualcuno o legati dove si è fermato. Salvati
+# ("led_animals"), col prossimo id.
+var led_animals: Array[Dictionary] = []
+var next_led_animal_id: int = 1
 # Prede vive macellate oggi per mancanza di posto (2026-11-18, LiveCatchNoticeService): tipo di edificio -> {specie
 # selvatica -> numero}. Svuotato ogni giorno dalla notifica; non salvato.
 var live_catch_slaughtered_today: Dictionary = {}

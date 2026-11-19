@@ -27,6 +27,8 @@ uniform sampler2D stream_mask : hint_default_black, filter_linear, repeat_disabl
 // Suoli della cella (GroundCover3D), un pixel per microcella: R = erba, G = alberi o cespugli, B = roccia.
 // Senza maschera = tutto prato.
 uniform sampler2D cover_mask : hint_default_white, filter_linear, repeat_disable;
+// Terra battuta (l'edificio, una per microcella, DirtGround3D): R = 1 dove c'è. Nero = niente.
+uniform sampler2D beaten_mask : hint_default_black, filter_linear, repeat_disable;
 
 // Colore medio di ogni texture (calcolato da TerrainMaterial3D): serve a tingerla senza scurirla.
 uniform vec3 grass_average : source_color = vec3(0.4, 0.5, 0.3);
@@ -45,6 +47,23 @@ uniform float noise_tile = 24.0;
 // Erba: quanto prende la tinta del bioma (0 = colore vero della texture, 1 = tutta tinta) e saturazione finale.
 uniform float grass_tint_strength = 0.55;
 uniform float grass_saturation = 0.92;
+// Prato stilizzato (stile dei modelli Quaternius, 2026-11-19): al posto della foto dell'erba, colori pieni a macchie
+// morbide (verde chiaro, verde scuro, chiazze secche) con la tinta del bioma. Spento (false) = prato a texture di prima.
+// Il sottobosco e il sottocespuglio restano come prima (texture mescolata col prato a texture).
+uniform bool stylized_grass = false;
+uniform vec3 stylized_light : source_color = vec3(0.60, 0.72, 0.26);
+uniform vec3 stylized_dark : source_color = vec3(0.38, 0.56, 0.18);
+uniform vec3 stylized_dry : source_color = vec3(0.74, 0.70, 0.36);
+// Quanto il bioma sposta il colore (0 = solo la tavolozza, 1 = solo la tinta del bioma alla stessa luminosità).
+uniform float stylized_biome_strength = 0.35;
+// Macchie: grandi (microcelle) e medie; chiazze secche oltre una soglia; grana fine appena visibile.
+uniform float stylized_patch_tile = 30.0;
+uniform float stylized_detail_tile = 7.0;
+uniform float stylized_dry_threshold = 0.64;
+uniform float stylized_dry_amount = 0.45;
+uniform float stylized_grain = 0.05;
+uniform float stylized_flatten = 0.85;
+uniform float stylized_roughness = 0.9;
 // Argilla: tinta (bruno-rossiccia, bagnata), contrasto del dettaglio, irregolarità del bordo, orlo di terra bagnata.
 uniform vec3 clay_tint : source_color = vec3(0.45, 0.31, 0.23);
 uniform float clay_detail_contrast = 2.2;
@@ -57,6 +76,11 @@ uniform float cover_edge_wiggle = 0.3;
 uniform float cover_edge_softness = 0.14;
 // Sottobosco e ghiaia: ruvidità fissa (non hanno la texture della ruvidità).
 uniform float forest_roughness = 0.95;
+// Terra battuta: la grana della stessa terra, ma color ocra chiaro (vicino al 2D) e più liscia (rilievo attenuato).
+uniform vec3 beaten_color : source_color = vec3(0.74, 0.62, 0.44);
+uniform float beaten_flatten = 0.75;
+// Terra battuta più scura (canale G della maschera, es. sotto il sito di deposito): quanto si scurisce al massimo.
+uniform float beaten_dark_amount = 0.32;
 // Sottobosco avvicinato al prato (0 = texture pura, 1 = prato) e bordo col prato più largo e più mosso degli altri.
 uniform float forest_grass_mix = 0.65;
 // Sottocespuglio (canale A della maschera): per ora uguale al sottobosco; tenuto a parte per poterlo distinguere.
@@ -105,6 +129,22 @@ float ripple_height(vec2 p, vec2 dir) {
 	return mix(a, b, abs(t0 * 2.0 - 1.0));
 }
 
+// Prato stilizzato: macchie morbide di verde chiaro e scuro (rumore grande + medio), chiazze secche dove il rumore
+// grande è alto, una grana fine appena accennata; poi spostato verso la tinta del bioma tenendo la luminosità.
+vec3 stylized_meadow(vec2 p, vec3 biome_tint) {
+	float big = texture(edge_noise, p / stylized_patch_tile + vec2(0.13, 0.57)).r;
+	float mid = texture(edge_noise, p / stylized_detail_tile + vec2(0.71, 0.29)).r;
+	float dry_n = texture(edge_noise, p / (stylized_patch_tile * 1.3) + vec2(0.45, 0.85)).r;
+	float fine = texture(edge_noise, p / 0.9 + vec2(0.37, 0.11)).r;
+	float shade = smoothstep(0.25, 0.75, big * 0.65 + mid * 0.35);
+	vec3 base = mix(stylized_dark, stylized_light, shade);
+	base = mix(base, stylized_dry, smoothstep(stylized_dry_threshold, stylized_dry_threshold + 0.12, dry_n) * stylized_dry_amount);
+	base *= 1.0 + (fine - 0.5) * 2.0 * stylized_grain;
+	float luma = dot(base, vec3(0.333));
+	vec3 biome = biome_tint / max(dot(biome_tint, vec3(0.333)), 0.01) * luma;
+	return mix(base, biome, stylized_biome_strength);
+}
+
 void vertex() {
 	ground_pos = UV;
 	weights = UV2;
@@ -150,6 +190,9 @@ void fragment() {
 		cover.g + (wiggle_b - 0.5) * forest_edge_wiggle + (fine_b - 0.5) * cover_edge_noise);
 	float shrub_w = smoothstep(0.5 - forest_edge_softness, 0.5 + forest_edge_softness,
 		cover.a + (wiggle_d - 0.5) * forest_edge_wiggle + (fine_d - 0.5) * cover_edge_noise);
+	vec2 beaten_rg = texture(beaten_mask, cell_uv).rg;
+	float beaten = beaten_rg.r;
+	float beaten_w = smoothstep(lo, hi, beaten + (wiggle_a - 0.5) * cover_edge_wiggle + (edge_n - 0.5) * cover_edge_noise + dirt_relief * 0.1);
 	float gravel_w = smoothstep(lo, hi, cover.b + (wiggle_c - 0.5) * cover_edge_wiggle + (edge_n - 0.5) * cover_edge_noise + dirt_relief * 0.1);
 	grass_w *= 1.0 - dirt_w;
 	forest_w *= 1.0 - dirt_w;
@@ -163,11 +206,17 @@ void fragment() {
 
 	vec3 grass_tinted = tint * grass / max(grass_average, vec3(0.01));
 	vec3 grass_color = saturate_color(mix(grass, grass_tinted, grass_tint_strength), grass_saturation);
-	vec3 ground = mix(dirt, grass_color, grass_w);
+	// Il prato vero e proprio: a texture (grass_color) o stilizzato. Sottobosco e sottocespuglio usano sempre grass_color.
+	vec3 meadow_color = grass_color;
+	if (stylized_grass) {
+		meadow_color = stylized_meadow(ground_pos, tint);
+	}
+	vec3 ground = mix(dirt, meadow_color, grass_w);
 	// Sottocespuglio, poi sottobosco sopra: dove ci sono alberi e cespugli insieme vince il sottobosco (le chiome lo
 	// coprono), e i due si sfumano ai bordi come gli altri suoli.
 	ground = mix(ground, mix(forest * shrub_tint, grass_color, shrub_grass_mix), shrub_w);
 	ground = mix(ground, mix(forest, grass_color, forest_grass_mix), forest_w);
+	ground = mix(ground, beaten_color * (1.0 - beaten_rg.g * beaten_dark_amount) * mix(vec3(1.0), dirt / max(dirt_average, vec3(0.01)), 0.6), beaten_w);
 	ground = mix(ground, sand_color * dirt / max(dirt_average, vec3(0.01)), dirt_w);
 	ground = mix(ground, dirt * rim_darkness, rim_w);
 	// Argilla: dettaglio della sua texture accentuato più un po' di grana della terra, così non è una tinta piatta.
@@ -178,19 +227,26 @@ void fragment() {
 	albedo = mix(albedo, gravel, gravel_w);
 
 	vec3 n_grass = texture(grass_normal, g_uv).rgb;
+	float r_meadow = texture(grass_roughness, g_uv).r;
+	if (stylized_grass) {
+		// Prato stilizzato quasi liscio: il rilievo della foto non c'è più.
+		n_grass = mix(n_grass, vec3(0.5, 0.5, 1.0), stylized_flatten);
+		r_meadow = stylized_roughness;
+	}
 	vec3 n_dirt = texture(dirt_normal, d_uv).rgb;
 	vec3 n_clay = texture(clay_normal, c_uv).rgb;
 	vec3 normal_map = mix(n_dirt, n_grass, grass_w);
 	normal_map = mix(normal_map, texture(forest_normal, f_uv).rgb, max(forest_w, shrub_w));
+	normal_map = mix(normal_map, mix(n_dirt, vec3(0.5, 0.5, 1.0), beaten_flatten), beaten_w);
 	normal_map = mix(normal_map, n_dirt, max(dirt_w, rim_w));
 	normal_map = mix(normal_map, n_clay, clay_w);
 	normal_map = mix(normal_map, texture(gravel_normal, s_uv).rgb, gravel_w);
 
-	float r_grass = texture(grass_roughness, g_uv).r;
 	float r_dirt = texture(dirt_roughness, d_uv).r;
 	float r_clay = texture(clay_roughness, c_uv).r * clay_roughness_scale;
-	float roughness = mix(r_dirt, r_grass, grass_w);
+	float roughness = mix(r_dirt, r_meadow, grass_w);
 	roughness = mix(roughness, forest_roughness, max(forest_w, shrub_w));
+	roughness = mix(roughness, r_dirt * 0.9, beaten_w);
 	roughness = mix(roughness, r_dirt, dirt_w);
 	roughness = mix(roughness, r_dirt * 0.7, rim_w);
 	roughness = mix(roughness, r_clay, clay_w);

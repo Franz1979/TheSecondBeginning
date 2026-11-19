@@ -4,6 +4,9 @@
 
 ; Bue (2026-11-17, richiesta utente — animali grossi passo 1): vita e macello = uro, un vitello all'anno, prima nascita a 3 anni (dati dell'uro), calorie/lettiera/letame = coniglio × (400 kg / 2 kg)^0.75.
 [resource]
+lead_escape_chance_per_hour = 0.05
+lead_escape_chance_per_hour_domestic = 0.0125
+lead_speed_scale = 0.7
 script = ExtResource("1_cattle")
 species_name = "cattle"
 display_name = "domestic_animal_cattle"

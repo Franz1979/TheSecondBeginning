@@ -10,7 +10,8 @@ extends Camera3D
 # - tasto destro trascinato: rotazione (orizzontale) e piccola correzione dell'inclinazione (verticale)
 # L'inclinazione segue lo zoom, come nei gestionali di villaggi: da lontano più dall'alto (PITCH_FAR_DEG), da vicino
 # più di fianco (PITCH_NEAR_DEG). Mai quasi verticale: lì il 3D sembra piatto.
-# I clic del mouse sulla mappa vengono fermati qui: in 3D la mappa è solo da guardare.
+# Il click sinistro passa al gioco (selezione come nel 2D, vedi ground_point e View3D._input); gli altri clic si
+# fermano qui.
 
 const PAN_SPEED_PER_DISTANCE := 1.1
 const ZOOM_FACTOR := 0.88
@@ -79,8 +80,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_distance = maxf(MIN_DISTANCE, _distance * ZOOM_FACTOR)
 		elif button.pressed and button.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_distance = minf(MAX_DISTANCE, _distance / ZOOM_FACTOR)
-		# Nessun clic arriva alla mappa 2D nascosta.
-		get_viewport().set_input_as_handled()
+		# Il tasto sinistro (click e doppio click) passa al gioco, che seleziona come nel 2D (View3D allinea la mappa 2D
+		# nascosta al puntatore). Gli altri tasti restano della camera: destro e centrale trascinati muovono la vista.
+		if button.button_index != MOUSE_BUTTON_LEFT:
+			get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion:
 		var motion := event as InputEventMouseMotion
 		if motion.button_mask & MOUSE_BUTTON_MASK_MIDDLE:
@@ -91,6 +94,23 @@ func _unhandled_input(event: InputEvent) -> void:
 			_yaw -= motion.relative.x * ROTATE_SPEED
 			_pitch_offset_deg = clampf(_pitch_offset_deg + motion.relative.y * ROTATE_SPEED * 40.0, -PITCH_OFFSET_MAX_DEG, PITCH_OFFSET_MAX_DEG)
 			get_viewport().set_input_as_handled()
+
+
+# Punto del terreno sotto un punto dello schermo, in microcelle (x, y della mappa 2D, coordinate della vista); null se
+# il raggio non scende verso il terreno. Prima col piano a quota 0, poi qualche ritocco con l'altezza vera del terreno.
+func ground_point(screen: Vector2) -> Variant:
+	if _reader == null:
+		return null
+	var origin := project_ray_origin(screen)
+	var direction := project_ray_normal(screen)
+	if direction.y > -0.001:
+		return null
+	var height := 0.0
+	var hit := origin
+	for i in range(4):
+		hit = origin + direction * ((height - origin.y) / direction.y)
+		height = _reader.ground_height_at(Vector2(hit.x, hit.z))
+	return Vector2(hit.x, hit.z)
 
 
 # Direzione sullo schermo (x a destra, y in basso) -> direzione sul terreno in microcelle (x, y della mappa 2D).

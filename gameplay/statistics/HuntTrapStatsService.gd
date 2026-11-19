@@ -28,6 +28,8 @@ const HUNT_BUTCHERED := "butchered"
 const HUNT_ROTTED := "rotted"
 const TRAP_RECOVERED := "recovered"
 const TRAP_SPOILED := "spoiled"
+# Scappati con la cavezza mentre li si conduceva al recinto (2026-11-18, LedAnimalService): già contati tra i recuperati.
+const TRAP_ESCAPED := "escaped"
 const HIDE_SOURCE_HUNT := "caccia"
 const HIDE_SOURCE_TRAPS := "trappole"
 const HIDE_SOURCE_OTHER := "altro"

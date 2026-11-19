@@ -256,6 +256,7 @@ const BUILDING_ICONS := {
 	# Conigliera e pollaio (2026-11-13, segnaposto) — emoji di riserva, la barra usa RabbitHutchIcon / ChickenCoopIcon.
 	"rabbit_hutch": "🐰",
 	"domestication_pen": "🐐",
+	"stable": "🐄",
 	"chicken_coop": "🐔",
 	# Piccolo granaio (2026-11-15) — emoji di riserva, la barra usa SmallGranaryIcon.
 	"small_granary": "🌾",
@@ -339,6 +340,7 @@ const BUILDING_ICON_NODES := {
 	# Conigliera e pollaio (2026-11-13, segnaposto): lo stesso disegno della mappa (PlaceholderBuildingShapes).
 	"rabbit_hutch": preload("res://simulation/scripts/ui/RabbitHutchIcon.gd"),
 	"domestication_pen": preload("res://simulation/scripts/ui/DomesticationPenIcon.gd"),
+	"stable": preload("res://simulation/scripts/ui/StableIcon.gd"),
 	"chicken_coop": preload("res://simulation/scripts/ui/ChickenCoopIcon.gd"),
 	# Piccolo granaio (2026-11-15): lo stesso disegno della mappa (PlaceholderBuildingShapes).
 	"small_granary": preload("res://simulation/scripts/ui/SmallGranaryIcon.gd"),

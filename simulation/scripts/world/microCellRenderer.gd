@@ -1722,6 +1722,9 @@ func _draw_buildings(canvas: CanvasItem) -> void:
 			continue
 		if PlaceholderBuildingShapes.TYPES.has(building_type_name):
 			PlaceholderBuildingShapes.draw(canvas, building_type_name, ground, false, 1.0, entry.get("rotation", GameTypes.Direction.SOUTH))
+			# Stalla (2026-11-19): il segno della specie tenuta sul tetto.
+			if String(entry.get("kept_species", "")) != "":
+				PlaceholderBuildingShapes.draw_species_sign(canvas, String(entry["kept_species"]), ground)
 			continue
 		# Campo con capanno (2026-11-15): terra a solchi, capanno nell'angolo, recinto e cancellino (FieldShape).
 		if building_type_name == FieldShape.TYPE:

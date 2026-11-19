@@ -385,6 +385,10 @@ func _resolve_plan(individual: Variant) -> float:
 func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -> float:
 	if _duration <= 0.0:
 		return 0.0
+	# Cantiere che parte sulla cella (2026-11-19, richiesta utente): la raccolta si chiude subito con la parte già fatta.
+	if _elapsed < _duration and _is_under_site_in_setup():
+		_stop_at_elapsed_share()
+		return 0.0
 	# Skill (2026-09-27, SkillEffectService "pickup"): durata divisa per il fattore, letto a ogni tick — il tempo
 	# maturato avanza del fattore, il costo al giorno resta _total_stamina_cost/_duration (quindi anche il costo
 	# totale si riduce dello stesso fattore).
@@ -568,6 +572,36 @@ func _collect_from_source(individual: Variant, entry_name: String, quantity: int
 	if not refused.is_empty():
 		GroundPileService.drop_entries(GameSettings.active_game_data, _source_macro_coords(), Vector2(target_position), {entry_name: refused})
 	return added_units
+
+
+# true se la microcella di raccolta (solo da terra) è sotto un cantiere il cui allestimento è partito
+# (BuildingConstructionStage.occupies_ground): da lì non si raccoglie più. Edifici finiti esclusi: lì non cambia niente.
+func _is_under_site_in_setup() -> bool:
+	if source_kind != SourceKind.TERRAIN or macro_state == null:
+		return false
+	var world: World = GameSettings.active_world
+	if world == null:
+		return false
+	var macro_coords := _source_macro_coords()
+	for building in world.buildings:
+		if building.is_complete or building.macro_x != macro_coords.x or building.macro_y != macro_coords.y:
+			continue
+		if BuildingFootprint.covers(building, macro_coords, target_position) and BuildingConstructionStage.occupies_ground(building):
+			return true
+	return false
+
+
+# Chiude la raccolta: il piano si riduce alla parte maturata (_elapsed / _duration, per difetto) e la durata è compiuta,
+# così on_complete raccoglie solo quella e il resto del giro (scarico al magazzino) prosegue come sempre.
+func _stop_at_elapsed_share() -> void:
+	var share := clampf(_elapsed / _duration, 0.0, 1.0)
+	var reduced: Array[Dictionary] = []
+	for entry in _plan:
+		var quantity := int(floor(float(entry["quantity"]) * share))
+		if quantity > 0:
+			reduced.append({"resource_name": entry["resource_name"], "quantity": quantity})
+	_plan = reduced
+	_elapsed = _duration
 
 
 func _source_macro_coords() -> Vector2i:

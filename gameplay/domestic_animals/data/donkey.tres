@@ -4,6 +4,9 @@
 
 ; Asino (2026-11-17, richiesta utente — animali grossi passo 1): vita e macello = asino selvatico, un puledro all'anno, prima nascita a 3 anni (dati del selvatico), calorie/lettiera/letame = coniglio × (200 kg / 2 kg)^0.75. Basto/trasporto dopo.
 [resource]
+lead_escape_chance_per_hour = 0.02
+lead_escape_chance_per_hour_domestic = 0.005
+lead_speed_scale = 0.85
 script = ExtResource("1_donkey")
 species_name = "donkey"
 display_name = "domestic_animal_donkey"

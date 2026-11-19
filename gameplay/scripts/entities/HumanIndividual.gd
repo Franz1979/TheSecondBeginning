@@ -1888,6 +1888,17 @@ func take_equipped_tool(slot_index: int, game_data: GameData) -> String:
 # ToolGateService.consume_tool_uses). A 0 usi l'attrezzo si rompe: sparisce dallo slot senza lasciare
 # nulla e la capacità di trasporto si aggiorna come per qualunque slot liberato. Ritorna true se si è
 # rotto. No-op (false) per uno slot vuoto o per un attrezzo con max_uses <= 0 (non si usura).
+# Attrezzo perso (2026-11-18: la cavezza resta al collo dell'animale scappato, LedAnimalService): lo slot si svuota, come
+# a usi finiti. false se lo slot era vuoto.
+func lose_equipped_tool(slot_index: int, game_data: GameData) -> bool:
+	if get_equipped_tool(slot_index) == "":
+		return false
+	var tool_bonus_before := HumanCalculator.get_equipped_carry_bonus(equipped_tools)
+	_set_tool_slot(slot_index, "")
+	_recalculate_carry_capacity_after_tool_change(game_data, 1, tool_bonus_before)
+	return true
+
+
 func consume_equipped_tool_use(slot_index: int, game_data: GameData) -> bool:
 	var resource_name: String = get_equipped_tool(slot_index)
 	if resource_name == "" or ToolInstance.get_max_uses(resource_name) <= 0:

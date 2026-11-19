@@ -1,0 +1,132 @@
+TSB - VISTA 3D: LINEE GUIDA DI PRODUZIONE
+==========================================
+(deciso il 2026-11-19; da aggiornare man mano)
+
+
+1. PRINCIPI
+-----------
+- Il 2D resta la vista di debug; il 3D sarà la vista finale. Tutto il 3D vive in render3d/.
+- Il 3D è solo da guardare: legge lo stato del gioco e non lo scrive mai.
+- UN SOLO file conosce il gioco: bridge/GameStateReader.gd. Tutto il resto riceve dati semplici (snapshot) da lui.
+- Formule e regole si riusano dal 2D, mai copiate (posizioni, taglie, età, stati).
+- I file del gioco non si toccano senza permesso esplicito dell'utente.
+- Un oggetto alla volta: proposta con anteprima -> ok dell'utente -> scrittura -> una compilazione -> prova in partita.
+
+
+2. COSA SI FA IN GODOT E COSA IN BLENDER
+---------------------------------------
+GODOT (procedurale, dentro render3d/)
+  Tutto ciò che dipende dai dati della partita o che si conta a migliaia:
+  - terreno e suoli: shader del terreno (objects/terrain/terrain.gdshader) che mescola le texture CC0 scaricate
+    (assets/textures/: prato, terra, argilla, sottobosco, ghiaia) secondo le maschere di ogni cella (erba, alberi,
+    cespugli, rocce, ruscello, terra battuta);
+  - acqua: ruscello nello shader del terreno (StreamMask3D), fiumi/laghi/mare (WaterMesh3D);
+  - posizione, taglia, colore, età, stagione di alberi, cespugli, rocce, sassi: vengono dal 2D;
+  - effetti animati: fuoco, braci, fumo, scintille, luce (shader e particelle);
+  - impronte a terra: cenere, spiazzi (Decal o maschere del terreno);
+  - forme che dipendono dallo stato: sentieri e palizzate che si uniscono ai vicini, campi coi lotti, mucchi che
+    crescono, fasi del cantiere scelte dallo stato dell'edificio.
+
+BLENDER (modelli pronti, file .glb)
+  Le forme dei singoli oggetti, quando costruirle a mano nel codice di Godot diventa scomodo o povero:
+  - edifici (tenda di rami, tenda di pelli, capanna, affumicatoio, legnaia, ...) con le loro fasi di cantiere;
+  - oggetti (attrezzi, giare, travois, mucchi del deposito per tipo di risorsa);
+  - persone e animali (con scheletro e animazioni; probabilmente da modelli CC0 adattati, es. Quaternius);
+  - in futuro, se servirà: forme base più ricche per alberi, cespugli e rocce. Godot continua a decidere dove,
+    quanti, quanto grandi e di che colore: cambia solo la forma del singolo esemplare.
+
+
+3. MODELLI BLENDER: UNA SOLA FONTE DI VERITÀ PER MODELLO
+-------------------------------------------------------
+Caso normale - MODELLO DA SCRIPT:
+  - la ricetta è uno script Python per Blender: render3d/blender/scripts/<nome>.py
+  - lo script costruisce il modello, salva il .blend (per guardarlo) ed esporta il .glb
+  - per cambiare il modello si cambia lo script e lo si rilancia: il .glb si rifà da solo
+Eccezione - MODELLO A MANO:
+  - quando l'utente modifica un modello a mano in Blender (o si parte da un modello CC0), la fonte diventa il
+    .blend; lo script di quel modello si ritira e non si rilancia più (non cancella il lavoro a mano)
+  - va segnato nell'elenco dei modelli (sezione 7)
+
+Cosa sta nel progetto (e si committa):
+  render3d/blender/scripts/<nome>.py        ricetta (solo modelli da script)
+  render3d/blender/scripts/tsb_style.py     libreria condivisa: colori, materiali, pezzi comuni
+  render3d/blender/sources/<nome>.blend     file Blender (per guardare/modificare; il gioco non lo usa)
+  render3d/assets/models/<categoria>/<nome>.glb   modello finito, l'unico che usa il gioco
+Chi gioca NON ha bisogno di Blender: il .glb entra nel pacchetto del gioco come le texture.
+
+Come si lancia (lo fa Claude): blender -b -P render3d/blender/scripts/<nome>.py
+Revisione: prima dell'export il .blend si apre in Blender sul PC dell'utente, che lo guarda, lo gira, chiede
+modifiche (fatte nello script) o lo ritocca a mano (diventa "a mano"). Si esporta in Godot solo dopo l'ok.
+
+
+4. STILE (uguale per Godot e Blender)
+------------------------------------
+- "Realistico stilizzato": forme semplici e leggibili, un po' irregolari (niente simmetrie perfette), facce piatte
+  o appena smussate come le rocce e le chiome di oggi.
+- Colori caldi e naturali, nei vertici o in una piccola tavolozza condivisa (tsb_style.py); niente texture
+  dipinte sui modelli, salvo eccezioni decise insieme.
+- Luce, ombre, cielo e materiale finale li decide Godot (Lighting3D, Materials3D): un modello Blender e una roccia
+  procedurale devono sembrare dello stesso mondo.
+- Misure vere: nella vista 3D 1 microcella = 1 unità = 10 m. In Blender si modella in metri e si scala
+  all'import (x 0,1).
+  Riferimenti: persona ~1,7 m; focolare al massimo 1/3 di microcella; cerchio di sassi quasi tutta la
+  microcella; un albero adulto ~2 microcelle di altezza (stilizzato, più grande del vero).
+- Ogni modello: base al centro e a terra (origine), alto lungo +Y in Godot, davanti verso lo stesso lato per tutti.
+- Poligoni pochi: budget indicativo di triangoli per categoria da fissare col primo edificio.
+- Cantieri: 2-3 fasi (es. pali -> struttura -> finito), come modelli separati o un modello solo mostrato "fino a
+  un'altezza" dallo shader secondo l'avanzamento. Si decide con la tenda di rami.
+
+
+5. COME GODOT USA I MODELLI
+---------------------------
+- Il lettore (GameStateReader) resta l'unico a conoscere il gioco.
+- I costruttori in render3d/objects/ caricano il .glb invece di costruire la forma triangolo per triangolo;
+  usano MultiMesh quando le copie sono tante.
+- Ogni livello si rifà solo quando la sua "impronta" cambia (Cell3D.needs_refresh).
+
+
+6. FLUSSO PER OGNI OGGETTO
+--------------------------
+1. Claude legge come lo disegna il 2D e quali dati il gioco ha (stati, misure).
+2. Proposta: in Blender (.blend aperto sul PC dell'utente) o anteprima 3D ruotabile; mai disegni piatti.
+3. Correzioni finché piace all'utente.
+4. Export .glb, aggancio nel 3D, una compilazione headless.
+5. Prova in partita dell'utente (screenshot). Commit solo quando l'utente lo chiede.
+
+
+7. ELENCO DEI MODELLI BLENDER
+----------------------------
+(nome - categoria - fonte: script / a mano - stato)
+- stick_tent (tenda di rami) - buildings - script (stick_tent.py) - 4 modelli: 0 cantiere, 1 struttura, 2 copertura,
+  3 finita; agganciata in BuildingModels3D (2026-11-19)
+- wip_sign (cartello di cantiere) - buildings - script (wip_sign.py) - su ogni edificio piazzato e non allestito
+  (fase 0), di qualsiasi tipo, come nel 2D (2026-11-19)
+- stacked_stones (pietre rituali) - buildings - script (stacked_stones.py) - 3 modelli: 1 base, 2 metà, 3 finita
+  (soglie [0.0, 0.5] nel .tres); agganciate in BuildingModels3D (2026-11-19)
+- pile (mucchietto segnaposto delle scorte) - props - script (pile.py) - 3 forme neutre (cumulo, fagotti, sacchi)
+  colorate per risorsa; magazzini e mucchi a terra, in Piles3D (2026-11-19)
+- conifer (conifera) - vegetation - script (conifer.py) - 5 varianti in prova, non esportate né agganciate; superata
+  dai pini Quaternius
+- pines (pini) - vegetation/pines - Quaternius CC0 preparati da script (pines.py, pezzi comuni in quaternius_lib.py) -
+  Pine_1..5 con texture in comune, origine al piede, misure in metri; tutte le conifere in Trees3D (2026-11-19)
+- rocks (rocce e sassi) - rocks - Quaternius CC0 preparati da script (rocks.py) - Rock_Medium_1..3 per le rocce della
+  cava (Rock3D), Pebble_Round_1..5 e Pebble_Square_1..6 per i sassi (Pebble3D); larghezza 1, la taglia la dà il 2D
+  (2026-11-19)
+
+Modelli Quaternius (Stylized Nature MegaKit, CC0): il pacchetto originale sta fuori dal progetto in
+Project_TheSecondBeginning/third_party/quaternius_nature_megakit/ e non si modifica; le ricette lo importano, mettono
+l'origine al piede ed esportano .gltf + .bin con le texture in comune nella cartella del gruppo (textures/), perché un
+.glb terrebbe una copia delle texture per ogni modello. Godot carica le forme con ModelMesh3D (render3d/common/).
+Eccezione alla regola "niente texture" della sezione 4: questi modelli tengono le texture del pacchetto.
+
+Fasi del cantiere (regola generale, 2026-11-19): le soglie stanno nel .tres dell'edificio
+(BuildingRules.construction_stage_thresholds, frazioni di required_labor); la fase la decide il gioco
+(gameplay/buildings/scripts/BuildingConstructionStage.gd: -1 finito, 0 cantiere non allestito, 1..N fasi del
+lavoro). Il 3D mostra il modello della fase se esiste (BuildingModels3D.MODELS); se manca, non la applica.
+
+
+8. FATTO FINORA IN GODOT (procedurale)
+-------------------------------------
+Terreno a texture con bordi sfumati; ruscello con acqua che scorre; argilla; rocce e sassi; alberi (latifoglie,
+conifere); cespugli (macchia, rovo da frutto, tagliati); focolare (acceso / braci / spento); sito di deposito
+(spiazzo + paletti; mucchi da fare); cerchio di sassi; terra battuta; griglia; spostamento al bordo dello schermo.

@@ -1967,6 +1967,9 @@ build_bar_cage_shelter_tooltip,Cage shelter
 build_bar_cage_shelter_description,"Brushwood shelter with rope-tied cages beneath: small animals caught alive will be kept here, twenty places, one species only. Catching them alive will also require the Advanced traps idea."
 build_bar_domestication_pen_tooltip,Domestication pen
 build_bar_domestication_pen_description,"A fence of rope-tied stakes with stones at the base: big animals caught alive with the hunting funnel will be kept here (goat, sheep, pig, cattle, donkey, horse), ten places, one species only. It can be built after Advanced traps."
+building_stable,Stable
+build_bar_stable_tooltip,Stable
+build_bar_stable_description,"A straw-thatched stable with clay walls and a fenced yard in front: home of the big animals already domesticated (goat, sheep, pig, donkey, horse, cattle), one species per stable, chosen in the panel. Places depend on the species: 40 goats or sheep, 30 pigs, 24 donkeys, 20 horses or cattle. Feeder, bedding and manure like the rabbit hutch. It can be built after Advanced traps, once at least one big species is domesticated."
 building_info_animal_capacity,"Animal places: {capacity}, one species only"
 carried_resource_tooltip_drop_basket,Drop basket
 carried_resource_tooltip_hunting_funnel,Hunting funnel
@@ -1999,6 +2002,7 @@ building_chicken_coop,Chicken coop
 build_bar_chicken_coop_tooltip,Chicken coop
 build_bar_chicken_coop_description,"A covered little house with a fence of stakes where chickens will live. It can be built once the chicken is domesticated."
 build_bar_requires_domesticated_tooltip,Requires: {species} domesticated
+build_bar_requires_domesticated_big_tooltip,Requires: a big animal domesticated (goat, sheep, pig, donkey, horse or cattle)
 carried_resource_tooltip_seed_jar,Seed jar
 building_info_toolkit_seed_jars,"Holds seed jars: only the ones set up here take in seeds"
 carried_resource_tooltip_wild_seeds,Wild barley
@@ -2086,6 +2090,8 @@ notification_kept_animal_starved,"{animal} starved to death in {building}: the f
 notification_kept_animal_starved_points,(−{points} domestication points)
 notification_kept_young_escaped,"{building} is full: {count} young {species} escaped into the wild."
 notification_live_catch_slaughtered,"Caught alive and butchered: {list}. No {building} with room for them: to domesticate them build a {building} or make room."
+notification_led_animal_escaped,"A {species} escaped while being led to the pen, halter and all."
+notification_led_animal_escaped_stable,"An animal ({species}) escaped while being led to the stable, halter and all: it goes wild again."
 building_slaughter_above,Slaughter above:
 building_slaughter_above_tooltip,"Number of animals above which the warehouse manager has some slaughtered in this shelter: first males beyond the first adult, then old ones, then young males, adult females last. ∞ = never slaughters: young that do not fit go to another shelter with room, otherwise they escape. With a number young enter even over capacity, and after 10 days the youngest extra ones escape. The lower of this and the species threshold (Animals panel) applies."
 building_feeder_wm_keeps,Stock days:
@@ -2282,6 +2288,17 @@ task_transfer_animals_step_take,Taking the animals
 task_transfer_animals_step_walk_hutch,Going to the breeding pen
 task_transfer_animals_step_place,Settling the animals
 job_transfer_animals,"Move {species} ({count})"
+job_lead_animal,"Lead {species} to the pen"
+task_lead_animal_name,Lead to the pen
+task_lead_animal_step_walk_trap,To the hunting funnel
+task_lead_animal_step_halter,Putting on the halter
+task_lead_animal_step_walk_pen,To the pen with the animal
+task_lead_animal_step_place,Settling the animal in the pen
+job_lead_animal_stable,"Lead {species} to the stable"
+task_lead_animal_stable_name,Lead to the stable
+task_lead_animal_step_walk_from_pen,To the pen
+task_lead_animal_step_walk_stable,To the stable with the animal
+task_lead_animal_step_place_stable,Settling the animal in the stable
 building_kept_animal_in_transit,being moved
 notification_domestic_animal_extinct,"{domestic}: extinct, no domestic animal is left. To get it back, catch wild ones alive ({wild}) and keep them in the {shelter}: their young will be born domestic."
 notification_domestic_plant_extinct,"{domestic}: extinct, no domestic seed is left in storage or in the fields. To get it back, sow {wild} in the {garden}: the harvest will give domestic seed again."
@@ -2340,3 +2357,4 @@ domestic_animals_live_product_collect_tooltip,"Share of the capacity above which
 drawer_order_live_product_row,"{building}: collection, take away {quantity} {resource}"
 pending_stock_live_product,"Animal products to collect"
 pending_stock_live_product_missing,"No storage with room for the products of: {buildings}"
+microcell_inspection_building_occupied,Cell occupied by {building} — single click for details

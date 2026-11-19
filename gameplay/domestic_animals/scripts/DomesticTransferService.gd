@@ -13,7 +13,7 @@ const SKILL_EFFECT_KEY := "husbandry"
 
 # true per un edificio d'allevamento (conigliera, pollaio: specie fissa), false per la tettoia delle gabbie.
 static func is_breeding_building(building: Building) -> bool:
-	return KeptAnimalService.fixed_species(building) != ""
+	return KeptAnimalService.is_breeding(building)
 
 
 # Posti liberi per `species` in tutti gli edifici d'allevamento finiti e in servizio (meno i posti prenotati `reserved`).
@@ -22,13 +22,19 @@ static func breeding_room(game_data: GameData, world: World, species: String, re
 	if world == null:
 		return room
 	for building in world.buildings:
-		if KeptAnimalService.fixed_species(building) != species or not building.is_complete or building.is_out_of_service():
+		if not is_breeding_building(building) or not building.is_complete or building.is_out_of_service():
+			continue
+		# Specie fissa o scelta (stalla, 2026-11-19): ammessa, e l'edificio non tiene già un'altra specie.
+		if KeptAnimalService.accepts_none(building) or not KeptAnimalService.selectable_species(building).has(species):
+			continue
+		var current := KeptAnimalService.current_species(game_data, building, reserved)
+		if current != "" and current != species:
 			continue
 		var taken := DomesticAnimalService.get_kept_animals(game_data, building.id).size()
 		for entry in reserved:
 			if int(entry.get("building_id", -1)) == building.id:
 				taken += 1
-		room += maxi(KeptAnimalService.capacity(building) - taken, 0)
+		room += maxi(KeptAnimalService.capacity(building, species) - taken, 0)
 	return room
 
 
@@ -52,6 +58,12 @@ static func breeding_building_type(species: String) -> String:
 	for type_name in BuildingCalculator.list_building_type_names():
 		var rules := BuildingCalculator.get_building_rules(type_name)
 		if rules != null and rules.animal_capacity > 0 and rules.required_domesticated_species == species:
+			return type_name
+	# Specie scelta (stalla, 2026-11-19): l'edificio d'allevamento a scelta della sua taglia.
+	for type_name in BuildingCalculator.list_building_type_names():
+		var rules := BuildingCalculator.get_building_rules(type_name)
+		if rules != null and rules.animal_capacity > 0 and rules.breeding_with_choice \
+				and rules.keeps_big_animals == KeptAnimalService.is_big_species(species):
 			return type_name
 	return ""
 
@@ -121,6 +133,10 @@ static func shelter_waiting(game_data: GameData, shelter: Building) -> Array[Dom
 		return result
 	for animal in game_data.domestic_animals:
 		if animal.building_id == shelter.id and not animal.is_wild and not animal.slaughter_requested and animal.carried_by < 0:
+			# Specie grosse (2026-11-19, stalla passo 1): in braccio no, si porteranno con la cavezza (passo 2). Intanto
+			# restano nel recinto: contano in attesa (waiting_animals), quindi non si macellano se una stalla ha posto.
+			if KeptAnimalService.is_big_species(animal.species):
+				continue
 			result.append(animal)
 	result.sort_custom(func(a: DomesticAnimal, b: DomesticAnimal) -> bool: return a.id < b.id)
 	return result

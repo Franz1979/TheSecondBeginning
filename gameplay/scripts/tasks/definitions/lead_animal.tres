@@ -1,0 +1,12 @@
+[gd_resource type="Resource" script_class="TaskDefinition" format=3]
+
+[ext_resource type="Script" uid="uid://1t46mu8mn6hq" path="res://gameplay/scripts/tasks/task_definition.gd" id="1_def"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_lead_walk_trap.tres" id="2_walk"]
+[ext_resource type="Resource" path="res://gameplay/scripts/tasks/definitions/step_put_halter.tres" id="3_halter"]
+
+[resource]
+script = ExtResource("1_def")
+task_name = "task_lead_animal_name"
+steps = [ExtResource("2_walk"), ExtResource("3_halter")]
+allowed_age_bands = Array[int]([2, 3, 4, 5])
+is_suspendable = true

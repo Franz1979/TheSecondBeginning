@@ -1206,6 +1206,52 @@ func _check_pit_fall(group: AnimalVisualGroup) -> void:
 		_fallen_ids[group.id] = true
 
 
+# Rientro bloccato (2026-11-19, richiesta utente — coniglio che girava su se stesso contro le rocce): il centro del
+# gruppetto non urta niente e può stare oltre un ostacolo; l'individuo rimasto indietro tirava dritto verso di lui e la
+# collisione lo teneva fermo per sempre. Stesso rimedio del GO_TO (_check_go_to_progress): se mentre è indietro si
+# avvicina al centro di meno di GO_TO_BLOCKED_PROGRESS_RATIO del balzo per GO_TO_BLOCKED_HOPS balzi interi, segue un
+# percorso (PathfindingService.plan_waypoints, prima dal centro della sua microcella) finché non è di nuovo vicino.
+func _steer_wander_detour(group: AnimalVisualGroup) -> void:
+	if group.wander_detour.is_empty():
+		return
+	if not _is_behind_cluster(group):
+		group.wander_detour.clear()
+		return
+	while not group.wander_detour.is_empty() \
+			and group.position.distance_to(group.wander_detour[0]) <= PathfindingService.WAYPOINT_REACH_DISTANCE:
+		group.wander_detour.pop_front()
+	if group.wander_detour.is_empty():
+		return
+	var to_point := group.wander_detour[0] - group.position
+	if to_point.length_squared() > 0.000001:
+		group.direction = to_point.normalized()
+
+
+func _check_wander_progress(group: AnimalVisualGroup, from_position: Vector2, step: float, delta: float) -> void:
+	if step <= 0.0 or not _is_behind_cluster(group):
+		group.wander_stuck_time = 0.0
+		return
+	var center: Vector2 = (_clusters[group.cluster_index] as AnimalVisualGroup).position
+	var goal: Vector2 = group.wander_detour[0] if not group.wander_detour.is_empty() else center
+	if from_position.distance_to(goal) - group.position.distance_to(goal) >= step * GO_TO_BLOCKED_PROGRESS_RATIO:
+		group.wander_stuck_time = 0.0
+		return
+	group.wander_stuck_time += delta
+	if group.wander_stuck_time < hop_duration_max * GO_TO_BLOCKED_HOPS:
+		return
+	group.wander_stuck_time = 0.0
+	# Fermo anche sul percorso (punto non raggiungibile in linea retta): salta quel punto e prova il successivo.
+	if not group.wander_detour.is_empty():
+		group.wander_detour.pop_front()
+		return
+	var plan := PathfindingService.plan_waypoints(macro_coords, group.position, center)
+	group.wander_detour.assign(plan["path"])
+	group.wander_detour.push_front(group.position.floor() + Vector2(0.5, 0.5))
+	if DebugLogging.ENABLED and DebugLogging.SHOW_ANIMAL_GO_TO_LOGS:
+		print("[ANIMAL WANDER] corpo %d fermo in %s lontano dal suo gruppetto: aggira l'ostacolo (%d punti)." % [
+			group.id, Vector2i(group.position.floor()), group.wander_detour.size()])
+
+
 func _is_behind_cluster(group: AnimalVisualGroup) -> bool:
 	if _clusters.is_empty() or group.cluster_index < 0 or group.cluster_index >= _clusters.size():
 		return false
@@ -1302,9 +1348,13 @@ func _process(real_delta: float) -> void:
 		# Il disagio dei singoli individui non agisce qui a ogni frame: piega la direzione solo all'inizio di
 		# ogni balzo, dentro _update_group_phase (_apply_avoidance_on_hop).
 		_update_group_phase(group, delta)
+		_steer_wander_detour(group)
 		if group.macro_phase == AnimalVisualGroup.MacroPhase.MOVING and group.micro_phase == AnimalVisualGroup.MicroPhase.HOPPING:
 			var gait_speed := hop_speed if group.running_phase else hop_speed * walk_speed_fraction
-			_move_with_collision(group, group.direction * gait_speed * _wounded_speed_factor(group) * delta, true)
+			var step := gait_speed * _wounded_speed_factor(group) * delta
+			var from_position := group.position
+			_move_with_collision(group, group.direction * step, true)
+			_check_wander_progress(group, from_position, step, delta)
 		_write_instance_transform(i, group)
 
 	# Caduti in una fossa: tolti come gli usciti dal bordo.

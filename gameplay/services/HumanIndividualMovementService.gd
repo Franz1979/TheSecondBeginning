@@ -46,7 +46,9 @@ func advance_movement(individual: HumanIndividual, delta: float, live_cells: Dic
 		goal = individual.path[0]
 	var to_goal := goal - individual.position
 	var distance := to_goal.length()
-	var step := individual.move_speed * individual.move_speed_multiplier * individual.terrain_speed_multiplier * delta
+	# Con un animale alla cavezza va più piano (2026-11-18, LedAnimalService.lead_speed_scale).
+	var step := individual.move_speed * individual.move_speed_multiplier * individual.terrain_speed_multiplier \
+		* LedAnimalService.lead_speed_scale(individual) * delta
 
 	if distance > 0.01:
 		individual.facing_direction = to_goal.normalized()

@@ -186,6 +186,8 @@ func _on_day_advanced(_checkpoint_ran: bool) -> void:
 	GroundPileService.advance_daily(_game_data)
 	# Trappole montate (2026-11-07, TrapService): prede che marciscono e tiro della cattura del giorno.
 	TrapService.advance_daily(_game_data, _world)
+	# Animali legati con la cavezza (2026-11-18): oltre i giorni senza cibo muoiono lì (LedAnimalService).
+	LedAnimalService.advance_daily(_game_data)
 	TrapService.release_needless_empty_tasks(_build_random_event_context(null, {}).game_context(), GameEffects.new())
 	# Punti di influenza degli edifici (2026-10-03, punti e soglie): perdita annua senza riti.
 	InfluenceService.advance_daily_neglected_rites(_world, _game_data)

@@ -89,6 +89,9 @@ func save_game_to_json(
 				func(trap: PlacedTrap) -> Dictionary: return trap.to_save_data()
 			),
 			"next_placed_trap_id": game_data.next_placed_trap_id,
+			# Animali condotti con la cavezza (2026-11-18, LedAnimalService), record JSON-nativi.
+			"led_animals": game_data.led_animals,
+			"next_led_animal_id": game_data.next_led_animal_id,
 			"broken_traps": game_data.broken_traps,
 			"snare_passages": game_data.snare_passages,
 			"snare_disturbances": game_data.snare_disturbances,

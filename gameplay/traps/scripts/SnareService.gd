@@ -226,6 +226,7 @@ static func _on_pit_fall(renderer: AnimalGroupRenderer, body: AnimalVisualGroup,
 	var alive := TrapService.is_live_catch(rules)
 	trap.catch_sexes.append((1 if randf() < 0.5 else 0) if alive else -1)
 	trap.catch_death_days.append(-1 if alive else day)
+	TrapService.reserve_pen(game_data, trap, rules, trap.get_caught() - 1)
 	game_data.placed_traps_revision += 1
 	HuntTrapStatsService.add_trap_catch(game_data, trap.trap_name, species)
 	TrapService.log_line("%s #%d in %s %s: %s in fuga ci cade dentro (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot,

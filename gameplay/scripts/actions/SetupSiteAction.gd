@@ -38,6 +38,9 @@ extends Action
 # task_at) decide come reagire visivamente (i 4 placeholder "legnetti", vedi
 # GameScene._spawn_build_site_placeholders).
 signal site_setup_completed(building: Building)
+# Primo lavoro dell'allestimento (2026-11-19, richiesta utente): da qui il cantiere occupa il terreno
+# (BuildingConstructionStage.occupies_ground) — GameScene ridisegna la vegetazione della cella.
+signal site_setup_started(building: Building)
 
 # Drain di stamina al GIORNO — STESSO valore di ThinkAction.STAMINA_DRAIN_PER_DAY (10.0): nessun
 # valore migliore noto per "allestire un cantiere" oggi, stesso trattamento "da bilanciare in
@@ -180,7 +183,10 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 		return 0.0
 	if _get_site_setup_days_done() >= get_duration_days(target_building):
 		return 0.0
+	var first_work: bool = _get_site_setup_days_done() <= 0.0 and delta > 0.0
 	target_building.construction_progress["site_setup_days_done"] = _get_site_setup_days_done() + delta
+	if first_work:
+		site_setup_started.emit(target_building)
 	return -STAMINA_DRAIN_PER_DAY * delta
 
 

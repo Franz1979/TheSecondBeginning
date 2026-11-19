@@ -44,13 +44,23 @@ static func for_cell(shared: ShaderMaterial, cell_origin: Vector2, stream_mask: 
 	return material
 
 
-# Maschera dei suoli della cella (GroundCover3D): la prima volta crea la texture, poi la aggiorna sul posto.
+# Maschera dei suoli della cella (GroundCover3D).
 static func set_cover(material: ShaderMaterial, cover_image: Image) -> void:
-	var texture := material.get_shader_parameter("cover_mask") as ImageTexture
+	_set_mask(material, "cover_mask", cover_image)
+
+
+# Maschera della terra battuta della cella (DirtGround3D).
+static func set_beaten(material: ShaderMaterial, beaten_image: Image) -> void:
+	_set_mask(material, "beaten_mask", beaten_image)
+
+
+# La prima volta crea la texture, poi la aggiorna sul posto (stesso formato e misura).
+static func _set_mask(material: ShaderMaterial, parameter: String, image: Image) -> void:
+	var texture := material.get_shader_parameter(parameter) as ImageTexture
 	if texture == null:
-		material.set_shader_parameter("cover_mask", ImageTexture.create_from_image(cover_image))
+		material.set_shader_parameter(parameter, ImageTexture.create_from_image(image))
 	else:
-		texture.update(cover_image)
+		texture.update(image)
 
 
 # Colore medio della texture (campionata a passo fisso: basta e costa poco).

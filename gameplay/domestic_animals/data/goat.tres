@@ -4,6 +4,9 @@
 
 ; Capra (2026-11-17, richiesta utente — animali grossi passo 1): vita = bezoar, macello = bezoar (prime capre domestiche più piccole), calorie/lettiera/letame = coniglio × (40 kg / 2 kg)^0.75. Latte dopo (punto 7).
 [resource]
+lead_escape_chance_per_hour = 0.03
+lead_escape_chance_per_hour_domestic = 0.0075
+lead_speed_scale = 0.9
 script = ExtResource("1_goat")
 species_name = "goat"
 display_name = "domestic_animal_goat"

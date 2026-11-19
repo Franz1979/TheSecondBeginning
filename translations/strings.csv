@@ -415,7 +415,7 @@ carried_resource_tooltip_bone,Ossa
 microcell_inspection_title,Microcella ({x}; {y})
 microcell_inspection_only_grass,Contiene solo erba.
 microcell_inspection_empty,Cella senza risorse.
-microcell_inspection_building_occupied,Cella occupata da un edificio — click singolo per i dettagli
+microcell_inspection_building_occupied,Cella occupata da {building} — click singolo per i dettagli
 microcell_inspection_resources_header,Risorse raccoglibili:
 microcell_inspection_resource_line,- {resource}: {quantity}
 microcell_inspection_unknown_resource,- Risorsa sconosciuta
@@ -2022,6 +2022,9 @@ build_bar_cage_shelter_tooltip,Tettoia delle gabbie
 build_bar_cage_shelter_description,"Tettoia di frasche con sotto le gabbie legate con la corda: qui si terranno gli animali piccoli presi vivi, venti posti, una specie sola. Per catturarli vivi servirà anche l'idea Trappole avanzate."
 build_bar_domestication_pen_tooltip,Recinto di addomesticazione
 build_bar_domestication_pen_description,"Steccato di pali legati con la corda e pietre alla base: qui si terranno gli animali grossi presi vivi con l'imbuto di caccia (capra, pecora, maiale, bue, asino, cavallo), dieci posti, una specie sola. Si costruisce dopo le Trappole avanzate."
+building_stable,Stalla
+build_bar_stable_tooltip,Stalla
+build_bar_stable_description,"Stalla coperta di paglia con le pareti d'argilla e un cortile recintato davanti: qui vivono gli animali grossi già addomesticati (capra, pecora, maiale, asino, cavallo, bue), una specie per stalla, scelta nel pannello. Posti secondo la specie: 40 capre o pecore, 30 maiali, 24 asini, 20 cavalli o buoi. Mangiatoia, lettiera e letame come la conigliera. Si costruisce dopo le Trappole avanzate, quando almeno una specie grossa è addomesticata."
 building_info_animal_capacity,"Posti per animali: {capacity}, una sola specie"
 carried_resource_tooltip_drop_basket,Cesto a caduta
 carried_resource_tooltip_hunting_funnel,Imbuto di caccia
@@ -2054,6 +2057,7 @@ building_chicken_coop,Pollaio
 build_bar_chicken_coop_tooltip,Pollaio
 build_bar_chicken_coop_description,"Casetta coperta con un recinto di paletti dove vivranno le galline. Si costruisce quando la gallina è addomesticata."
 build_bar_requires_domesticated_tooltip,Richiede: {species} addomesticato
+build_bar_requires_domesticated_big_tooltip,Richiede: un animale grosso addomesticato (capra, pecora, maiale, asino, cavallo o bue)
 carried_resource_tooltip_seed_jar,Vaso da semi
 building_info_toolkit_seed_jars,"Tiene i vasi da semi: solo quelli montati qui accolgono i semi"
 carried_resource_tooltip_wild_seeds,Orzo selvatico
@@ -2141,6 +2145,8 @@ notification_kept_animal_starved,"{animal} è morto di fame in {building}: la ma
 notification_kept_animal_starved_points,(−{points} punti addomesticazione)
 notification_kept_young_escaped,"{building} piena: {count} piccoli di {species} sono scappati nei dintorni."
 notification_live_catch_slaughtered,"Prese vive e macellate: {list}. Nessuna {building} con posto per loro: per addomesticarle costruisci una {building} o fai posto."
+notification_led_animal_escaped,"Un {species} è scappato mentre lo conducevano al recinto, con la cavezza."
+notification_led_animal_escaped_stable,"Un animale ({species}) è scappato mentre lo conducevano alla stalla, con la cavezza: torna selvatico."
 building_slaughter_above,Macella oltre:
 building_slaughter_above_tooltip,"Numero di animali oltre il quale il gestore scorte ne fa macellare in questa tettoia: prima i maschi oltre il primo adulto, poi i vecchi, poi i giovani maschi, per ultime le femmine adulte. ∞ = non macella mai: i piccoli che non ci stanno vanno in un'altra tettoia con posto, altrimenti scappano. Con un numero i piccoli entrano anche oltre la capienza, e dopo 10 giorni i più giovani in più scappano. Vale la più bassa tra questa e quella della specie (pannello Animali)."
 building_feeder_wm_keeps,Giorni di scorta:
@@ -2337,6 +2343,17 @@ task_transfer_animals_step_take,Prendendo gli animali
 task_transfer_animals_step_walk_hutch,Verso l'allevamento
 task_transfer_animals_step_place,Sistemando gli animali
 job_transfer_animals,"Trasferisci {species} ({count})"
+job_lead_animal,"Conduci {species} al recinto"
+task_lead_animal_name,Conduci al recinto
+task_lead_animal_step_walk_trap,Verso l'imbuto di caccia
+task_lead_animal_step_halter,Mettendo la cavezza
+task_lead_animal_step_walk_pen,Verso il recinto con l'animale
+task_lead_animal_step_place,Sistemando l'animale nel recinto
+job_lead_animal_stable,"Conduci {species} alla stalla"
+task_lead_animal_stable_name,Conduci alla stalla
+task_lead_animal_step_walk_from_pen,Verso il recinto
+task_lead_animal_step_walk_stable,Verso la stalla con l'animale
+task_lead_animal_step_place_stable,Sistemando l'animale nella stalla
 building_kept_animal_in_transit,in trasporto
 notification_domestic_animal_extinct,"{domestic}: specie estinta, non resta nessun esemplare domestico. Per riaverla cattura vivi degli esemplari selvatici ({wild}) e tienili nella {shelter}: i loro piccoli nasceranno già domestici."
 notification_domestic_plant_extinct,"{domestic}: specie estinta, non resta nessun seme domestico né in magazzino né nei campi. Per riaverla semina {wild} nell'{garden}: la mietitura darà di nuovo il seme domestico."

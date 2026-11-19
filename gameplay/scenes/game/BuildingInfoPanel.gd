@@ -2034,12 +2034,14 @@ func _refresh_kept_animals(building: Building) -> void:
 	var current := KeptAnimalService.current_species(game_data, building)
 	for i in range(choices.size()):
 		var species := choices[i]
-		var text := tr("building_kept_species_any") if species == "" else KeptAnimalService.species_display_name(species, true)
+		# Edificio d'allevamento (stalla, 2026-11-19): nomi domestici; tettoia e recinto: selvatici.
+		var wild_names := not KeptAnimalService.is_breeding(building)
+		var text := tr("building_kept_species_any") if species == "" else KeptAnimalService.species_display_name(species, wild_names)
 		if species == KeptAnimalService.NO_SPECIES:
 			text = tr("building_kept_species_none")
 		# Qualunque con un animale dentro: dice quale specie l'ha fissata.
 		if species == "" and building.kept_species == "" and current != "":
-			text = tr("building_kept_species_any_fixed").format({"species": KeptAnimalService.species_display_name(current, true)})
+			text = tr("building_kept_species_any_fixed").format({"species": KeptAnimalService.species_display_name(current, wild_names)})
 		picker.add_item(text, i)
 		if species == KeptAnimalService.chosen_species(building):
 			picker.select(i)

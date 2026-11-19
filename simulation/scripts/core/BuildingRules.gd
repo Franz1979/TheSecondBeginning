@@ -48,6 +48,12 @@ extends Resource
 # Demolish, che costa sempre metà del lavoro di costruzione (DemolishAction.get_required_labor), quindi 300.
 @export var required_labor: int = 0
 
+# Fasi visibili del cantiere (2026-11-19, richiesta utente — regola generale per la vista 3D): frazione di required_labor
+# da cui parte ogni fase dopo l'allestimento, in ordine crescente (es. tenda di rami [0.0, 0.4] = struttura da 0%,
+# copertura dal 40%). Vuoto = nessuna fase propria (cantiere generico). Letto da BuildingConstructionStage; se mancano i
+# disegni della fase, chi disegna non la applica.
+@export var construction_stage_thresholds: Array[float] = []
+
 # -1 = non degrada mai (nessuna scadenza per età) — mai 0, che si leggerebbe come "degrada subito".
 @export var lifespan_years: int = -1
 
@@ -160,6 +166,11 @@ extends Resource
 # > 1: capra, pecora, maiale, bue, asino, cavallo), false = quelle piccole (max_hunters == 1, la tettoia delle gabbie).
 # KeptAnimalService.selectable_species; ignorato con la specie fissa.
 @export var keeps_big_animals: bool = false
+# Allevamento con la specie a scelta (2026-11-19, stalla): edificio d'allevamento come conigliera e pollaio (solo domestici,
+# arrivo dei trasferimenti) ma con la specie scelta nel pannello fra quelle già addomesticate (KeptAnimalService.is_breeding).
+@export var breeding_with_choice: bool = false
+# Posti per specie domestica (2026-11-19, stalla): specie -> posti. Vuoto = animal_capacity per tutte (KeptAnimalService.capacity).
+@export var animal_capacity_by_species: Dictionary = {}
 # Mangiatoia (2026-11-13, punto 4 — AnimalFeederService): spazio per il cibo, come la saccoccia delle persone (il cibo
 # entrato diventa calorie); 0 = nessuna mangiatoia.
 @export var feeder_space_capacity: int = 0

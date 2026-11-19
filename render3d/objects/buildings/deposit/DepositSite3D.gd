@@ -29,6 +29,23 @@ static var _stake_mesh: ArrayMesh
 
 
 # base_global: angolo della cella in microcelle assolute (per l'altezza del terreno). null se non ci sono depositi.
+# Spiazzo colorato del 2D (DEPOSIT_SITE_COLOR) sotto il deposito. Spento il 2026-11-19 (prova dell'utente): sotto gli
+# edifici finiti c'è la terra battuta (GameStateReader.BEATEN_UNDER_BUILDINGS), restano i paletti. true = com'era prima.
+const SHOW_GROUND_PATCH := false
+# Paletti agli angoli (false = senza: il deposito resta solo terra battuta più scura).
+const SHOW_STAKES := true
+
+
+static func _make_patch(center: Vector2, side: float, base_global: Vector2) -> Decal:
+	var decal := Decal.new()
+	decal.name = "DepositSite"
+	decal.size = Vector3(side, DECAL_HEIGHT, side)
+	decal.texture_albedo = _get_texture()
+	decal.cull_mask = TERRAIN_LAYERS
+	decal.position = Vector3(center.x, GroundHeight3D.land_height(base_global.x + center.x, base_global.y + center.y), center.y)
+	return decal
+
+
 static func build(snapshot: BuildingPlacesSnapshot3D, base_global: Vector2, material: Material) -> Node3D:
 	if snapshot.size() == 0:
 		return null
@@ -39,13 +56,8 @@ static func build(snapshot: BuildingPlacesSnapshot3D, base_global: Vector2, mate
 	var stake_transforms: Array = []
 	for i in range(snapshot.size()):
 		var center := snapshot.centers[i]
-		var decal := Decal.new()
-		decal.name = "DepositSite"
-		decal.size = Vector3(side, DECAL_HEIGHT, side)
-		decal.texture_albedo = _get_texture()
-		decal.cull_mask = TERRAIN_LAYERS
-		decal.position = Vector3(center.x, GroundHeight3D.land_height(base_global.x + center.x, base_global.y + center.y), center.y)
-		node.add_child(decal)
+		if SHOW_GROUND_PATCH:
+			node.add_child(_make_patch(center, side, base_global))
 		var rng := RandomNumberGenerator.new()
 		rng.seed = snapshot.seeds[i]
 		for offset in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
@@ -56,7 +68,8 @@ static func build(snapshot: BuildingPlacesSnapshot3D, base_global: Vector2, mate
 			basis = basis * Basis(Vector3.FORWARD, rng.randf_range(-0.08, 0.08))
 			var height := rng.randf_range(0.9, 1.1)
 			stake_transforms.append(Transform3D(basis.scaled(Vector3(1.0, height, 1.0)), Vector3(local.x, y, local.y)))
-	node.add_child(MultiMeshGroup3D.build("Stakes", [_get_stake_mesh()], [stake_transforms], material))
+	if SHOW_STAKES:
+		node.add_child(MultiMeshGroup3D.build("Stakes", [_get_stake_mesh()], [stake_transforms], material))
 	return node
 
 

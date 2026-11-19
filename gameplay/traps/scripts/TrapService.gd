@@ -244,6 +244,10 @@ static func needs_emptying(game_data: GameData, trap: PlacedTrap) -> bool:
 	var rules := get_rules(trap.trap_name)
 	if rules == null or trap.catch_days.is_empty():
 		return false
+	# Imbuto (2026-11-18): gli animali vivi col recinto prenotato aspettano "Conduci", non lo svuotamento; si svuota appena
+	# c'è da macellare (morti o senza posto).
+	if is_led_catch(rules):
+		return not emptyable_indices(trap, rules).is_empty()
 	if trap.get_caught() >= rules.trap_capacity:
 		return true
 	return game_data.get_absolute_day() - trap.catch_days.min() >= rules.trap_empty_after_days
@@ -261,18 +265,24 @@ static func empty(game_data: GameData, trap: PlacedTrap) -> Dictionary:
 	if rules == null or trap.catch_days.is_empty():
 		return result
 	var day := game_data.get_absolute_day()
-	result["preys"] = trap.get_caught()
-	_count_outcome(game_data, trap, rules, HuntTrapStatsService.TRAP_RECOVERED)
 	if is_herd_quarry(rules):
-		result["products"] = catch_products(trap, day)
+		# Imbuto (2026-11-18): restano dentro gli animali vivi che aspettano "Conduci"; l'uso si toglie quando resta vuoto.
+		var indices := emptyable_indices(trap, rules)
+		result["preys"] = indices.size()
+		_count_outcome(game_data, trap, rules, HuntTrapStatsService.TRAP_RECOVERED, indices)
+		result["products"] = catch_products(trap, day, indices)
 		for product in result["products"]:
 			result["quantity"] = int(result["quantity"]) + int(product["quantity"])
 			if String(product["resource"]) == "hide":
 				HuntTrapStatsService.add_hides_produced(game_data, HuntTrapStatsService.HIDE_SOURCE_TRAPS, int(product["quantity"]))
-		trap.clear_catches()
-		_consume_use(game_data, trap, rules, day, "ultimo svuotamento")
+		for i in range(indices.size() - 1, -1, -1):
+			_remove_catch(trap, indices[i])
+		if trap.catch_days.is_empty():
+			_consume_use(game_data, trap, rules, day, "ultimo svuotamento")
 		game_data.placed_traps_revision += 1
 		return result
+	result["preys"] = trap.get_caught()
+	_count_outcome(game_data, trap, rules, HuntTrapStatsService.TRAP_RECOVERED)
 	var total_age := 0
 	for catch_day in trap.catch_days:
 		total_age += maxi(day - catch_day, 0)
@@ -291,9 +301,11 @@ static func empty(game_data: GameData, trap: PlacedTrap) -> Dictionary:
 
 # Prodotti della macellazione delle prede di un laccio (2026-11-09): per preda ButcherAction.compute_yields(specie, età),
 # ognuno vecchio quanto la preda (giorni dalla cattura / day_durability del prodotto). Una voce per preda e prodotto.
-static func catch_products(trap: PlacedTrap, day: int) -> Array:
+static func catch_products(trap: PlacedTrap, day: int, indices: Array[int] = []) -> Array:
 	var products: Array = []
 	for i in range(trap.catch_days.size()):
+		if not indices.is_empty() and not indices.has(i):
+			continue
 		var species := trap.catch_species[i] if i < trap.catch_species.size() else ""
 		var age_band := trap.catch_ages[i] if i < trap.catch_ages.size() else int(GameTypes.AgeBand.ADULT)
 		var yields := ButcherAction.compute_yields(species, age_band)
@@ -326,7 +338,9 @@ static func prey_space(species: String, age_band: int) -> float:
 static func take_live_catches(game_data: GameData, world: World, trap: PlacedTrap, reserved: Array) -> Array:
 	var taken: Array = []
 	var rules := get_rules(trap.trap_name)
-	if not is_live_catch(rules) or trap.catch_days.is_empty():
+	# Imbuto (2026-11-18): le prede grosse non si portano in braccio; il posto lo prenotano alla cattura (reserve_pen) e le
+	# porta "Conduci al recinto". Quelle senza posto le macella empty().
+	if not is_live_catch(rules) or is_led_catch(rules) or trap.catch_days.is_empty():
 		return taken
 	for i in range(trap.catch_days.size() - 1, -1, -1):
 		if not trap.is_catch_alive(i):
@@ -354,6 +368,106 @@ static func take_live_catches(game_data: GameData, world: World, trap: PlacedTra
 	return taken
 
 
+# Prede grosse condotte (2026-11-18, imbuto di caccia — lavoro "Conduci al recinto"): le trappole con QUARRY_LIVE_BIG_GAME.
+static func is_led_catch(rules: SecondaryResourceRules) -> bool:
+	return rules != null and rules.trap_quarry == QUARRY_LIVE_BIG_GAME
+
+
+# true se la preda `index` aspetta "Conduci": viva e con un recinto prenotato.
+static func is_waiting_to_be_led(trap: PlacedTrap, index: int) -> bool:
+	return trap.is_catch_alive(index) and trap.pen_id_of(index) >= 0
+
+
+# Prede che lo svuotamento prende: tutte, tranne (imbuto) quelle che aspettano "Conduci".
+static func emptyable_indices(trap: PlacedTrap, rules: SecondaryResourceRules) -> Array[int]:
+	var indices: Array[int] = []
+	for i in range(trap.catch_days.size()):
+		if is_led_catch(rules) and is_waiting_to_be_led(trap, i):
+			continue
+		indices.append(i)
+	return indices
+
+
+# Prenota alla cattura il recinto per la preda `index` appena presa (2026-11-18, richiesta utente: "alla cattura"). Solo
+# imbuto e animale vivo: il recinto con posto più vicino, contando i posti già prenotati (KeptAnimalService.reservations,
+# anche quelli delle trappole). Nessuno: resta -1, avviso, e allo svuotamento si macella.
+static func reserve_pen(game_data: GameData, trap: PlacedTrap, rules: SecondaryResourceRules, index: int) -> void:
+	while trap.catch_pen_ids.size() <= index:
+		trap.catch_pen_ids.append(-1)
+	if not is_led_catch(rules) or not trap.is_catch_alive(index):
+		return
+	var wild_species := trap.catch_species[index] if index < trap.catch_species.size() else ""
+	var species := KeptAnimalService.domestic_species_for_wild(wild_species)
+	if species == "":
+		return
+	var pen := KeptAnimalService.find_building_with_room(game_data, GameSettings.active_world, species, trap.macro_coords,
+		KeptAnimalService.reservations(GameSettings.active_human_individuals), null, true)
+	if pen == null:
+		log_line("%s #%d: %s vivo ma nessun recinto con posto, si macellerà" % [trap.trap_name, trap.id, wild_species])
+		LiveCatchNoticeService.record(game_data, wild_species, species, live_building_type_for(rules))
+		return
+	trap.catch_pen_ids[index] = pen.id
+	log_line("%s #%d: %s vivo, posto prenotato nel %s #%d" % [trap.trap_name, trap.id, wild_species, pen.building_type_name, pen.id])
+
+
+# Voci (KeptAnimalService.make_entry, "led" e spazio 0) delle prede che aspettano "Conduci" in tutte le trappole: posti
+# prenotati per KeptAnimalService.reservations.
+static func waiting_entries(game_data: GameData) -> Array:
+	var entries: Array = []
+	if game_data == null:
+		return entries
+	for trap in game_data.placed_traps:
+		for i in range(trap.catch_days.size()):
+			if is_waiting_to_be_led(trap, i):
+				entries.append(led_entry(trap, i, trap.pen_id_of(i)))
+	return entries
+
+
+# Voce dell'animale `index` della trappola condotto al recinto `pen_id`: senza spazio nello zaino (non si porta in braccio).
+static func led_entry(trap: PlacedTrap, index: int, pen_id: int) -> Dictionary:
+	var wild_species := trap.catch_species[index] if index < trap.catch_species.size() else ""
+	var age_band := trap.catch_ages[index] if index < trap.catch_ages.size() else int(GameTypes.AgeBand.ADULT)
+	var is_male := index < trap.catch_sexes.size() and trap.catch_sexes[index] == 1
+	var entry := KeptAnimalService.make_entry(wild_species, KeptAnimalService.domestic_species_for_wild(wild_species), is_male,
+		age_band, pen_id, trap.trap_name)
+	entry["space"] = 0.0
+	entry["led"] = true
+	entry["catch_day"] = trap.catch_days[index]
+	return entry
+
+
+# Indici delle prede che aspettano "Conduci" in `trap`, prima quelle con meno giorni da vivere.
+static func waiting_indices(trap: PlacedTrap, day: int) -> Array[int]:
+	var indices: Array[int] = []
+	for i in range(trap.catch_days.size()):
+		if is_waiting_to_be_led(trap, i):
+			indices.append(i)
+	indices.sort_custom(func(a: int, b: int) -> bool:
+		return live_survival_days(trap, a) - (day - trap.catch_days[a]) < live_survival_days(trap, b) - (day - trap.catch_days[b]))
+	return indices
+
+
+# Giorni che restano da vivere alla preda che ne ha meno fra quelle che aspettano "Conduci" in `trap` (INF se nessuna).
+static func days_left_to_lead(trap: PlacedTrap, day: int) -> float:
+	var best := INF
+	for i in waiting_indices(trap, day):
+		best = minf(best, float(live_survival_days(trap, i) - (day - trap.catch_days[i])))
+	return best
+
+
+# Toglie dalla trappola la preda `index` presa con la cavezza (PutHalterAction) e ne restituisce la voce. Contata come
+# recuperata; trappola vuota: un uso in meno, come l'ultimo svuotamento.
+static func take_led_catch(game_data: GameData, trap: PlacedTrap, index: int) -> Dictionary:
+	var rules := get_rules(trap.trap_name)
+	var entry := led_entry(trap, index, trap.pen_id_of(index))
+	HuntTrapStatsService.add_trap_outcome(game_data, trap.trap_name, String(entry["wild_species"]), HuntTrapStatsService.TRAP_RECOVERED)
+	_remove_catch(trap, index)
+	if trap.catch_days.is_empty() and rules != null:
+		_consume_use(game_data, trap, rules, game_data.get_absolute_day(), "ultimo animale condotto via")
+	game_data.placed_traps_revision += 1
+	return entry
+
+
 # Giorni di macellazione sul posto delle prede di un laccio (ritmo di ButcherAction); 0 per le altre trappole. Dal
 # 2026-11-18 contano anche gli animali vivi (cesto, imbuto): senza posto si macellano lì (take_live_catches), e quelli
 # che hanno posto allungano di poco la tappa (stima, da rivedere con la cavezza).
@@ -363,6 +477,8 @@ static func butcher_days(trap: PlacedTrap) -> float:
 		return 0.0
 	var days := 0.0
 	for i in range(trap.catch_days.size()):
+		if is_waiting_to_be_led(trap, i):
+			continue
 		var species := trap.catch_species[i] if i < trap.catch_species.size() else ""
 		var age_band := trap.catch_ages[i] if i < trap.catch_ages.size() else int(GameTypes.AgeBand.ADULT)
 		var meat := float(ButcherAction.compute_yields(species, age_band)["meat"])
@@ -701,6 +817,7 @@ static func advance_daily(game_data: GameData, world: World) -> void:
 			var alive := is_live_catch(rules)
 			trap.catch_sexes.append((1 if randf() < 0.5 else 0) if alive else -1)
 			trap.catch_death_days.append(-1 if alive else day)
+			reserve_pen(game_data, trap, rules, trap.get_caught() - 1)
 			changed = true
 			HuntTrapStatsService.add_trap_catch(game_data, trap.trap_name, species)
 			log_line("%s #%d in %s %s: preso %s%s (ora %d/%d)" % [trap.trap_name, trap.id, trap.macro_coords, trap.lot, species,
@@ -740,7 +857,7 @@ static func release_needless_empty_tasks(ctx: GameContext, effects: GameEffects)
 			var has_catch := false
 			for trap_id in trap_ids:
 				var trap := find_trap(ctx.game_data, trap_id)
-				if trap != null and trap.get_caught() > 0:
+				if trap != null and not emptyable_indices(trap, get_rules(trap.trap_name)).is_empty():
 					has_catch = true
 					break
 			if has_catch:
@@ -872,7 +989,12 @@ static func _spoil_old_catches(game_data: GameData, trap: PlacedTrap, rules: Sec
 # i giorni senza cibo della sua specie domestica d'arrivo (DomesticAnimalRules.max_days_without_food: coniglio 5, gallina 6,
 # capra 7, bue 10...). Almeno 1.
 static func live_survival_days(trap: PlacedTrap, index: int) -> int:
-	var wild_species := trap.catch_species[index] if index < trap.catch_species.size() else ""
+	return survival_days_for(trap.catch_species[index] if index < trap.catch_species.size() else "")
+
+
+# Giorni senza cibo della specie domestica d'arrivo di `wild_species` (almeno 1): anche per l'animale legato con la cavezza
+# (LedAnimalService), contati dalla cattura.
+static func survival_days_for(wild_species: String) -> int:
 	var domestic := DomesticAnimalCalculator.get_rules(KeptAnimalService.domestic_species_for_wild(wild_species))
 	return maxi(domestic.max_days_without_food if domestic != null else 0, 1)
 
@@ -893,8 +1015,11 @@ static func _kill_live_catches(trap: PlacedTrap, rules: SecondaryResourceRules, 
 
 
 # Contatori di debug (2026-11-15, HuntTrapStatsService): ogni preda ancora dentro la trappola, come `kind`.
-static func _count_outcome(game_data: GameData, trap: PlacedTrap, rules: SecondaryResourceRules, kind: String) -> void:
+static func _count_outcome(game_data: GameData, trap: PlacedTrap, rules: SecondaryResourceRules, kind: String,
+		indices: Array[int] = []) -> void:
 	for i in range(trap.catch_days.size()):
+		if not indices.is_empty() and not indices.has(i):
+			continue
 		HuntTrapStatsService.add_trap_outcome(game_data, trap.trap_name, _catch_label(trap, rules, i), kind)
 
 
@@ -906,7 +1031,7 @@ static func _catch_label(trap: PlacedTrap, rules: SecondaryResourceRules, index:
 
 # Toglie la preda `index` da tutti gli elenchi paralleli della trappola.
 static func _remove_catch(trap: PlacedTrap, index: int) -> void:
-	for list in [trap.catch_days, trap.catch_species, trap.catch_ages, trap.catch_sexes, trap.catch_death_days]:
+	for list in [trap.catch_days, trap.catch_species, trap.catch_ages, trap.catch_sexes, trap.catch_death_days, trap.catch_pen_ids]:
 		if index < list.size():
 			list.remove_at(index)
 

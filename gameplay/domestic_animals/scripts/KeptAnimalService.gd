@@ -37,6 +37,44 @@ static func fixed_species(building: Building) -> String:
 	return building.rules.required_domesticated_species
 
 
+# Edificio d'allevamento (2026-11-19): a specie fissa (conigliera, pollaio) o a specie scelta fra le addomesticate (stalla,
+# BuildingRules.breeding_with_choice). Solo domestici; i domestici nati in tettoia o recinto ci vanno col trasferimento.
+static func is_breeding(building: Building) -> bool:
+	if building == null or building.rules == null or building.rules.animal_capacity <= 0:
+		return false
+	return fixed_species(building) != "" or building.rules.breeding_with_choice
+
+
+# true per le specie domestiche che vengono da prede grosse (AnimalRules.max_hunters > 1): capra, pecora, maiale, ...
+static func is_big_species(species: String) -> bool:
+	var wild_rules := DomesticAnimalCalculator.get_wild_rules(species)
+	return wild_rules != null and wild_rules.max_hunters > 1
+
+
+# Specie di un edificio d'allevamento a scelta (`rules`, la stalla) già addomesticate: grosse o piccole come keeps_big_animals.
+static func domesticated_choices(game_data: GameData, rules: BuildingRules) -> Array[String]:
+	var result: Array[String] = []
+	if game_data == null or rules == null:
+		return result
+	for species in _herd_domestic_species(rules.keeps_big_animals):
+		if DomesticAnimalService.is_domesticated(game_data, species):
+			result.append(species)
+	return result
+
+
+# Specie domestiche delle prede delle mandrie, grosse (`big`) o piccole.
+static func _herd_domestic_species(big: bool) -> Array[String]:
+	var result: Array[String] = []
+	for wild_species in WildFaunaService.herd_species():
+		var wild_rules := AnimalCalculator.get_animal_rules(wild_species)
+		if wild_rules == null or (wild_rules.max_hunters > 1) != big:
+			continue
+		var domestic := domestic_species_for_wild(wild_species)
+		if domestic != "" and not result.has(domestic):
+			result.append(domestic)
+	return result
+
+
 # Specie scelta: quella fissa dell'edificio, altrimenti quella del pannello ("" = Qualunque, NO_SPECIES = Nessuna).
 static func chosen_species(building: Building) -> String:
 	if building == null:
@@ -48,7 +86,7 @@ static func chosen_species(building: Building) -> String:
 # Specie che l'edificio può tenere (scelta nel pannello), come specie domestiche di arrivo. La tettoia delle gabbie: le
 # prede piccole delle mandrie (AnimalRules.max_hunters == 1, la stessa regola dei lacci) che hanno una specie domestica.
 # Il recinto di addomesticazione (BuildingRules.keeps_big_animals, 2026-11-18): le prede grosse (max_hunters > 1).
-# Conigliera e pollaio: solo la loro specie fissa.
+# Conigliera e pollaio: solo la loro specie fissa. La stalla (2026-11-19): le grosse già addomesticate.
 static func selectable_species(building: Building) -> Array[String]:
 	var result: Array[String] = []
 	if building == null or building.rules == null or building.rules.animal_capacity <= 0:
@@ -57,14 +95,9 @@ static func selectable_species(building: Building) -> Array[String]:
 	if fixed != "":
 		result.append(fixed)
 		return result
-	for wild_species in WildFaunaService.herd_species():
-		var wild_rules := AnimalCalculator.get_animal_rules(wild_species)
-		if wild_rules == null or (wild_rules.max_hunters > 1) != building.rules.keeps_big_animals:
-			continue
-		var domestic := domestic_species_for_wild(wild_species)
-		if domestic != "" and not result.has(domestic):
-			result.append(domestic)
-	return result
+	if building.rules.breeding_with_choice:
+		return domesticated_choices(GameSettings.active_game_data, building.rules)
+	return _herd_domestic_species(building.rules.keeps_big_animals)
 
 
 # Specie tenuta adesso: quella scelta, altrimenti quella del primo animale dentro, altrimenti quella del primo posto
@@ -83,8 +116,18 @@ static func current_species(game_data: GameData, building: Building, reserved: A
 	return ""
 
 
-static func capacity(building: Building) -> int:
-	return building.rules.animal_capacity if building != null and building.rules != null else 0
+# Posti dell'edificio. Con i posti per specie (stalla, 2026-11-19): quelli di `species`, o della specie tenuta adesso; senza
+# specie (Qualunque vuota, Nessuna) il massimo, animal_capacity.
+static func capacity(building: Building, species: String = "") -> int:
+	if building == null or building.rules == null:
+		return 0
+	var by_species := building.rules.animal_capacity_by_species
+	if by_species.is_empty():
+		return building.rules.animal_capacity
+	var kept := species if species != "" else current_species(GameSettings.active_game_data, building)
+	if kept == "" or kept == NO_SPECIES:
+		return building.rules.animal_capacity
+	return int(by_species.get(kept, 0))
 
 
 # true se l'edificio, finito, ha un posto libero per un animale di `species` (specie domestica). `reserved`: posti già
@@ -100,8 +143,8 @@ static func has_room_for(game_data: GameData, building: Building, species: Strin
 		return false
 	if not selectable_species(building).has(species):
 		return false
-	# Specie fissa (conigliera, pollaio): solo animali domestici, quindi solo a specie addomesticata.
-	if fixed_species(building) != "" and (wild or not DomesticAnimalService.is_domesticated(game_data, species)):
+	# Allevamento (conigliera, pollaio, stalla): solo animali domestici, quindi solo a specie addomesticata.
+	if is_breeding(building) and (wild or not DomesticAnimalService.is_domesticated(game_data, species)):
 		return false
 	var current := current_species(game_data, building, reserved)
 	if current != "" and current != species:
@@ -110,7 +153,7 @@ static func has_room_for(game_data: GameData, building: Building, species: Strin
 	for entry in reserved:
 		if int(entry.get("building_id", -1)) == building.id:
 			taken += 1
-	return taken < capacity(building)
+	return taken < capacity(building, species)
 
 
 # Edificio con posto per `species`, il più vicino a `macro_coords` (prima quelli della stessa macrocella). null se nessuno.
@@ -126,7 +169,7 @@ static func find_building_with_room(game_data: GameData, world: World, species: 
 	for building in world.buildings:
 		if not has_room_for(game_data, building, species, reserved, wild):
 			continue
-		if same_kind_as != null and (fixed_species(building) != "") != (fixed_species(same_kind_as) != ""):
+		if same_kind_as != null and is_breeding(building) != is_breeding(same_kind_as):
 			continue
 		var distance := Vector2(Vector2i(building.macro_x, building.macro_y) - macro_coords).length()
 		if distance < best_distance:
@@ -199,7 +242,10 @@ static func carried_live_space(task: Task) -> float:
 # Posti prenotati: gli animali in braccio di tutti (context dei giri e tappe KeepAnimalAction ancora da fare), tranne
 # quelli di `excluded` (la tappa che li sta sistemando). Si ricavano dalle Task aperte: una Task abbandonata li libera.
 static func reservations(individuals: Array[HumanIndividual], excluded: Action = null) -> Array:
-	var result: Array = []
+	# Animali nell'imbuto col recinto prenotato alla cattura (2026-11-18): il posto è già loro.
+	var result: Array = TrapService.waiting_entries(GameSettings.active_game_data)
+	# E quelli legati con la cavezza, lasciati da chi li conduceva (LedAnimalService).
+	result.append_array(LedAnimalService.tied_entries(GameSettings.active_game_data))
 	for member in individuals:
 		for task in JobWorkScanService.open_tasks(member):
 			result.append_array(task.context.get(TrapService.CONTEXT_LIVE_ANIMALS, []))

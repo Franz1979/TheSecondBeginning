@@ -162,6 +162,8 @@ enum ActionType {
 	RETILL,
 	# TAKE_ANIMALS (2026-11-16, Trasferisci animali — TakeAnimalsAction, transfer_animals.tres) — IN CODA (54).
 	TAKE_ANIMALS,
+	# PUT_HALTER (2026-11-18, Conduci al recinto — PutHalterAction, lead_animal.tres) — IN CODA (55).
+	PUT_HALTER,
 }
 
 # Categorie di tool richiedibili da un'Action (2026-09-08, richiesta utente — SOLO struttura dati,

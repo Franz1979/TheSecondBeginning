@@ -67,6 +67,7 @@ func try_select(event: InputEvent, live_cells: Dictionary, required_button: int 
 static func _is_occupied_by_building(buildings: Array, macro_coords: Vector2i, lot: Vector2i) -> bool:
 	for building in buildings:
 		# Ingombro (2026-10-17): qualunque microcella del rettangolo.
-		if BuildingFootprint.covers(building, macro_coords, lot):
+		# Cantiere solo piazzato (2026-11-19): si raccoglie finché non parte l'allestimento.
+		if BuildingFootprint.covers(building, macro_coords, lot) and BuildingConstructionStage.occupies_ground(building):
 			return true
 	return false

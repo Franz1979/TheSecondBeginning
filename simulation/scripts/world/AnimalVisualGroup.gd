@@ -82,6 +82,11 @@ var behavior_path_block_version: int = -1
 # centro della sua microcella (behavior_replan_via_center). Vedi AnimalGroupRenderer._step_go_to.
 var behavior_blocked_time: float = 0.0
 var behavior_replan_via_center: bool = false
+# WANDER, rientro verso il centro del gruppetto bloccato da un ostacolo (2026-11-19, richiesta utente — coniglio che
+# girava su se stesso contro le rocce): tempo dei balzi senza avvicinarsi e percorso di aggiramento. Vedi
+# AnimalGroupRenderer._steer_wander_detour / _check_wander_progress.
+var wander_stuck_time: float = 0.0
+var wander_detour: Array[Vector2] = []
 # STAND_AROUND: punto dell'anello verso cui sta andando e punto verso cui si gira da fermo (di norma il centro).
 var behavior_stand_point: Vector2 = Vector2.ZERO
 var behavior_look_point: Vector2 = Vector2.ZERO

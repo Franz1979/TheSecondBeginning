@@ -49,6 +49,13 @@ extends Resource
 @export var roam_radius_min: float = 3.0
 @export var roam_radius_max: float = 9.0
 @export var roam_speed_scale: float = 0.5
+# Condotto con la cavezza (2026-11-18, LedAnimalService): chi lo conduce cammina a questa frazione del suo passo.
+@export var lead_speed_scale: float = 1.0
+# Probabilità che scappi a ogni ora di cammino con la cavezza (2026-11-18, LedAnimalService), divisa per il fattore
+# Allevamento di chi lo conduce. Oggi si conducono solo selvatici presi nell'imbuto.
+@export var lead_escape_chance_per_hour: float = 0.0
+# Lo stesso per un animale già domestico condotto dal recinto alla stalla (2026-11-19): più basso.
+@export var lead_escape_chance_per_hour_domestic: float = 0.0
 
 @export_group("Life")
 # Età a cui l'animale muore di vecchiaia (passo 4), più o meno max_age_variation_years: ognuno ha il suo giorno, così chi è

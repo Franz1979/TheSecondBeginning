@@ -17,7 +17,34 @@ extends RefCounted
 # Lo stesso per "drying_rack" (2026-10-31): mappa e anteprima con DryingRackShape, qui solo l'icona (DryingRackIcon).
 const TYPES: Array[String] = ["burial", "earthwork", "stacked_stones", "rubble", "teaching_stump", "waste_pit", "stone_ford",
 	"rabbit_hutch", "chicken_coop", "small_granary", "farmer_hut", "trial_garden", "clay_oven", "field_plot", "spinning_hut",
-	"domestication_pen"]
+	"domestication_pen", "stable"]
+
+# Stalla (2026-11-19, richiesta utente), 4x3 vista dall'alto: x da -20 a 20, y da -15 a 15. Dietro (nord) la stalla
+# coperta, davanti (sud) il cortile. Il segno della specie tenuta sta su una tavoletta sulla falda sud (draw_species_sign).
+const STABLE_ROOF_RECT := Rect2(-19.4, -14.4, 38.8, 18.4)
+const STABLE_RIDGE_Y: float = -5.2
+const STABLE_WALL_DEPTH: float = 1.2
+const STABLE_DOOR_RECT := Rect2(-3.2, 3.4, 6.4, 1.9)
+const STABLE_YARD_RECT := Rect2(-19.4, 5.2, 38.8, 9.2)
+const STABLE_TROUGH_RECT := Rect2(-17.4, 5.9, 9.0, 1.6)
+const STABLE_GATE_HALF_WIDTH: float = 2.6
+const STABLE_YARD := Color(0.56, 0.45, 0.31, 1.0)
+const STABLE_DUNG_COLOR := Color(0.30, 0.22, 0.12, 1.0)
+const STABLE_STRAW_BITS: Array[Vector2] = [Vector2(-12.0, 9.0), Vector2(-7.5, 11.6), Vector2(-3.0, 8.4), Vector2(2.5, 10.8),
+	Vector2(6.8, 7.6), Vector2(10.4, 11.2), Vector2(14.6, 8.8), Vector2(-15.6, 12.2), Vector2(0.4, 12.6)]
+const STABLE_DUNG: Array[Vector2] = [Vector2(-9.6, 12.4), Vector2(4.6, 12.2), Vector2(12.2, 9.6), Vector2(-4.8, 10.0)]
+const STABLE_SIGN_RECT := Rect2(8.4, -3.6, 8.4, 6.0)
+const STABLE_SIGN_BOARD := Color(0.76, 0.62, 0.42, 1.0)
+# Sagome di fianco, rivolte a destra: colore, semiassi del corpo, zampe, testa, segno particolare.
+const STABLE_SIGN_ANIMALS := {
+	"goat": {"color": Color(0.55, 0.45, 0.35), "rx": 1.7, "ry": 0.85, "leg": 1.1, "head": 0.55, "feature": "horns"},
+	"sheep": {"color": Color(0.93, 0.91, 0.84), "rx": 1.9, "ry": 1.15, "leg": 0.8, "head": 0.5, "feature": "wool"},
+	"pig": {"color": Color(0.88, 0.62, 0.60), "rx": 2.0, "ry": 1.05, "leg": 0.6, "head": 0.6, "feature": "snout"},
+	"donkey": {"color": Color(0.58, 0.56, 0.54), "rx": 1.9, "ry": 0.95, "leg": 1.3, "head": 0.55, "feature": "long_ears"},
+	"horse": {"color": Color(0.50, 0.32, 0.18), "rx": 2.1, "ry": 0.95, "leg": 1.45, "head": 0.55, "feature": "mane"},
+	"cattle": {"color": Color(0.32, 0.22, 0.16), "rx": 2.2, "ry": 1.15, "leg": 1.1, "head": 0.65, "feature": "wide_horns"},
+}
+const STABLE_HORN := Color(0.90, 0.86, 0.72, 1.0)
 
 # Filatoio (2026-11-15, segnaposto), vista dall'alto: capanna col tetto di frasche e, davanti a est, un fuso piantato col
 # suo disco e una matassa di fibra di lino appesa a un paletto.
@@ -486,6 +513,67 @@ static func draw(
 				var rung := 0.5 + float(i) * 0.65
 				canvas.draw_line(p.call(COOP_HOUSE_RECT.end.x + rung, 0.4 + rung * 0.46), p.call(COOP_HOUSE_RECT.end.x + rung, 1.2 + rung * 0.46),
 					tint.call(WOOD_DARK), w.call(0.2), true)
+		"stable":
+			# Cortile davanti: terra battuta, paglia sparsa, letame, la mangiatoia contro il muro.
+			canvas.draw_rect(Rect2(p.call(STABLE_YARD_RECT.position.x, STABLE_YARD_RECT.position.y), STABLE_YARD_RECT.size * scale),
+				tint.call(STABLE_YARD))
+			for bit in STABLE_STRAW_BITS:
+				canvas.draw_line(p.call(bit.x, bit.y), p.call(bit.x + 0.9, bit.y - 0.4), tint.call(STRAW), w.call(0.22), true)
+			for dung in STABLE_DUNG:
+				canvas.draw_circle(p.call(dung.x, dung.y), w.call(0.45), tint.call(STABLE_DUNG_COLOR))
+			var stable_trough := Rect2(p.call(STABLE_TROUGH_RECT.position.x, STABLE_TROUGH_RECT.position.y), STABLE_TROUGH_RECT.size * scale)
+			canvas.draw_rect(stable_trough, tint.call(WOOD_DARK))
+			canvas.draw_rect(stable_trough.grow(-w.call(0.35)), tint.call(PEN_HAY))
+			# Steccato del cortile, aperto al centro del lato sud dal cancelletto.
+			var yard_left := STABLE_YARD_RECT.position.x
+			var yard_right := STABLE_YARD_RECT.end.x
+			var yard_top := STABLE_YARD_RECT.position.y
+			var yard_bottom := STABLE_YARD_RECT.end.y
+			var fence_runs := [
+				[Vector2(STABLE_GATE_HALF_WIDTH, yard_bottom), Vector2(yard_right, yard_bottom), Vector2(yard_right, yard_top)],
+				[Vector2(yard_left, yard_top), Vector2(yard_left, yard_bottom), Vector2(-STABLE_GATE_HALF_WIDTH, yard_bottom)],
+			]
+			for fence_run in fence_runs:
+				var rope := PackedVector2Array()
+				for corner in fence_run:
+					rope.append(p.call((corner as Vector2).x, (corner as Vector2).y))
+				canvas.draw_polyline(rope, tint.call(PEN_ROPE), w.call(0.25), true)
+				for side_index in range(fence_run.size() - 1):
+					var from: Vector2 = fence_run[side_index]
+					var to: Vector2 = fence_run[side_index + 1]
+					var posts := maxi(int(round(from.distance_to(to) / 3.0)), 1)
+					for i in range(posts + 1):
+						var at := from.lerp(to, float(i) / float(posts))
+						canvas.draw_circle(p.call(at.x, at.y), w.call(0.5), tint.call(WOOD_DARK))
+						canvas.draw_circle(p.call(at.x, at.y), w.call(0.32), tint.call(WOOD))
+			for bar_y in [-0.3, 0.3]:
+				canvas.draw_line(p.call(-STABLE_GATE_HALF_WIDTH, yard_bottom + bar_y), p.call(STABLE_GATE_HALF_WIDTH, yard_bottom + bar_y),
+					tint.call(WOOD), w.call(0.3), true)
+			# Stalla coperta: due falde di paglia (nord più scura), righe della paglia, colmo, bordo.
+			var roof := STABLE_ROOF_RECT
+			canvas.draw_rect(Rect2(p.call(roof.position.x, roof.position.y), Vector2(roof.size.x, STABLE_RIDGE_Y - roof.position.y) * scale),
+				tint.call(STRAW_DARK))
+			canvas.draw_rect(Rect2(p.call(roof.position.x, STABLE_RIDGE_Y), Vector2(roof.size.x, roof.end.y - STABLE_RIDGE_Y) * scale),
+				tint.call(STRAW))
+			var stroke_x := roof.position.x + 0.8
+			while stroke_x < roof.end.x - 0.4:
+				canvas.draw_line(p.call(stroke_x, roof.position.y + 0.5), p.call(stroke_x, STABLE_RIDGE_Y - 0.6), tint.call(STRAW), w.call(0.18), true)
+				canvas.draw_line(p.call(stroke_x, STABLE_RIDGE_Y + 0.6), p.call(stroke_x, roof.end.y - 0.5), tint.call(STRAW_DARK), w.call(0.18), true)
+				stroke_x += 1.3
+			canvas.draw_line(p.call(roof.position.x, STABLE_RIDGE_Y), p.call(roof.end.x, STABLE_RIDGE_Y), tint.call(WOOD_DARK), w.call(0.6), true)
+			canvas.draw_rect(Rect2(p.call(roof.position.x, roof.position.y), roof.size * scale), tint.call(OUTLINE), false, w.call(0.3))
+			# Muro d'argilla sul davanti, la porta larga di assi, i pali agli angoli.
+			canvas.draw_rect(Rect2(p.call(roof.position.x, roof.end.y), Vector2(roof.size.x, STABLE_WALL_DEPTH) * scale), tint.call(CLAY_WALL))
+			canvas.draw_rect(Rect2(p.call(STABLE_DOOR_RECT.position.x, STABLE_DOOR_RECT.position.y), STABLE_DOOR_RECT.size * scale),
+				tint.call(WOOD))
+			for plank in range(1, 4):
+				var plank_x := STABLE_DOOR_RECT.position.x + STABLE_DOOR_RECT.size.x * float(plank) / 4.0
+				canvas.draw_line(p.call(plank_x, STABLE_DOOR_RECT.position.y), p.call(plank_x, STABLE_DOOR_RECT.end.y), tint.call(WOOD_DARK),
+					w.call(0.18), true)
+			for corner in [Vector2(roof.position.x, roof.position.y), Vector2(roof.end.x, roof.position.y),
+					Vector2(roof.position.x, roof.end.y + STABLE_WALL_DEPTH), Vector2(roof.end.x, roof.end.y + STABLE_WALL_DEPTH)]:
+				canvas.draw_circle(p.call(corner.x, corner.y), w.call(0.7), tint.call(WOOD_DARK))
+				canvas.draw_circle(p.call(corner.x, corner.y), w.call(0.45), tint.call(WOOD))
 		"spinning_hut":
 			var walls := Rect2(p.call(SPINNING_HUT_RECT.position.x, SPINNING_HUT_RECT.position.y), SPINNING_HUT_RECT.size * scale)
 			canvas.draw_rect(walls, tint.call(WOOD_DARK))
@@ -654,6 +742,63 @@ static func draw(
 					p.call(stick_dir.x * STACKED_STONES_STICK_OUTER, stick_dir.y * STACKED_STONES_STICK_OUTER),
 					tint.call(StickIcon.STICK_COLOR_DARK), w.call(STACKED_STONES_STICK_WIDTH), true
 				)
+	canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+# Segno della specie tenuta nella stalla (2026-11-19, richiesta utente): una tavoletta sulla falda sud del tetto con la
+# sagoma dell'animale di fianco. `canvas_center` come in draw (centro dell'ingombro). Specie senza sagoma: niente.
+static func draw_species_sign(canvas: CanvasItem, species: String, canvas_center: Vector2, scale: float = 1.0) -> void:
+	var look: Dictionary = STABLE_SIGN_ANIMALS.get(species, {})
+	if look.is_empty():
+		return
+	canvas.draw_set_transform(canvas_center, 0.0, Vector2.ONE)
+	var p := func(x: float, y: float) -> Vector2: return Vector2(x, y) * scale
+	var w := func(width: float) -> float: return width * scale
+	var board := STABLE_SIGN_RECT
+	canvas.draw_rect(Rect2(p.call(board.position.x, board.position.y), board.size * scale), WOOD_DARK)
+	canvas.draw_rect(Rect2(p.call(board.position.x + 0.4, board.position.y + 0.4), (board.size - Vector2(0.8, 0.8)) * scale),
+		STABLE_SIGN_BOARD)
+	var color: Color = look["color"]
+	var dark := color.darkened(0.3)
+	var rx := float(look["rx"])
+	var ry := float(look["ry"])
+	var leg := float(look["leg"])
+	var head := float(look["head"])
+	var feature := String(look["feature"])
+	var c := board.get_center() + Vector2(-0.5, -0.1 - leg * 0.35)
+	for leg_x in [-rx * 0.65, -rx * 0.35, rx * 0.35, rx * 0.65]:
+		canvas.draw_line(p.call(c.x + leg_x, c.y + ry * 0.5), p.call(c.x + leg_x, c.y + ry * 0.5 + leg), dark, w.call(0.35), true)
+	# Coda.
+	canvas.draw_line(p.call(c.x - rx * 0.95, c.y - ry * 0.2), p.call(c.x - rx - 0.4, c.y + ry * 0.4), dark, w.call(0.22), true)
+	var body := PackedVector2Array()
+	for i in range(16):
+		var angle := TAU * float(i) / 16.0
+		body.append(p.call(c.x + cos(angle) * rx, c.y + sin(angle) * ry))
+	canvas.draw_colored_polygon(body, color)
+	var head_center := Vector2(c.x + rx + head * 0.5, c.y - ry * 0.55)
+	canvas.draw_line(p.call(c.x + rx * 0.7, c.y - ry * 0.2), p.call(head_center.x, head_center.y), color, w.call(head * 1.2), true)
+	canvas.draw_circle(p.call(head_center.x, head_center.y), w.call(head), color)
+	canvas.draw_circle(p.call(head_center.x + head * 0.35, head_center.y - head * 0.2), w.call(0.12), OUTLINE)
+	match feature:
+		"horns":
+			canvas.draw_line(p.call(head_center.x - 0.1, head_center.y - head * 0.8),
+				p.call(head_center.x - 0.8, head_center.y - head - 0.8), STABLE_HORN.darkened(0.3), w.call(0.22), true)
+		"wide_horns":
+			canvas.draw_line(p.call(head_center.x - 0.2, head_center.y - head * 0.7),
+				p.call(head_center.x - 0.9, head_center.y - head - 0.6), STABLE_HORN, w.call(0.25), true)
+			canvas.draw_line(p.call(head_center.x + 0.2, head_center.y - head * 0.7),
+				p.call(head_center.x + 0.7, head_center.y - head - 0.7), STABLE_HORN, w.call(0.25), true)
+		"wool":
+			for i in range(5):
+				canvas.draw_circle(p.call(c.x - rx * 0.7 + float(i) * rx * 0.35, c.y - ry * 0.75), w.call(0.45), color.lightened(0.15))
+		"snout":
+			canvas.draw_circle(p.call(head_center.x + head * 0.95, head_center.y + head * 0.15), w.call(head * 0.4), color.darkened(0.15))
+		"long_ears":
+			canvas.draw_line(p.call(head_center.x - 0.1, head_center.y - head * 0.8), p.call(head_center.x - 0.4, head_center.y - head - 1.0),
+				color, w.call(0.3), true)
+		"mane":
+			canvas.draw_line(p.call(head_center.x - 0.2, head_center.y - head * 0.7), p.call(c.x + rx * 0.5, c.y - ry * 0.9),
+				dark, w.call(0.35), true)
 	canvas.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 

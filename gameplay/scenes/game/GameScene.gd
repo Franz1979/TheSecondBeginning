@@ -397,6 +397,9 @@ var _visitor_party_views: Dictionary = {}
 var _wild_animal_visit_renderers: Dictionary = {}
 # Corpi degli animali domestici (2026-11-03, cane passo 3 — DomesticAnimalBodyService): specie e macrocella -> renderer.
 var _domestic_animal_renderers: Dictionary = {}
+# Corpi degli animali condotti con la cavezza (2026-11-18, LedAnimalBodyService): renderer per specie e cella, stato per animale.
+var _led_animal_renderers: Dictionary = {}
+var _led_animal_bodies: Dictionary = {}
 # Overlay di debug del pathfinding col tasto N TOLTO il 2026-10-04 (richiesta utente, tasto N liberato): lo stesso
 # disegno (PathfindingDebugOverlay) resta nel layer della mappa "Percorribilità" (MapLayerRegistry, "walkability").
 # Layer della mappa (2026-09-27, richiesta utente — menu "Layer" della barra in alto, MapLayerRegistry): id del layer
@@ -1331,6 +1334,8 @@ func _process(delta: float) -> void:
 	if game_data != null:
 		DomesticAnimalBodyService.sync_bodies(game_data, macro_world, _domestic_animal_renderers, _make_domestic_animal_renderer,
 			human_individuals, game_delta)
+		LedAnimalBodyService.sync(game_data, human_individuals, _led_animal_bodies, _led_animal_renderers,
+			_make_led_animal_renderer)
 		var camera_view: Rect2 = get_viewport().get_canvas_transform().affine_inverse() * get_viewport_rect()
 		for framed in DomesticAnimalBodyService.collect_newly_framed(game_data, _domestic_animal_renderers, camera_view):
 			domestic_animal_called.emit(framed["position"], framed["species"])
@@ -6221,7 +6226,9 @@ func _handle_microcell_inspection_double_click(event: InputEvent) -> void:
 	# Cantiere nel bosco in attesa del taglio (2026-10-18): la cella mostra ancora le piante e le risorse.
 	var inspected_building := _find_building_at_microcell(macro_coords, lot)
 	if inspected_building != null and not inspected_building.awaiting_site_cut:
-		_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": [tr("microcell_inspection_building_occupied")]})
+		# Nome dell'edificio nel messaggio (2026-11-19, richiesta utente): "Cella occupata da Tenda di rami".
+		var occupied_by: String = tr(inspected_building.rules.building_name) if inspected_building.rules != null else inspected_building.building_type_name
+		_select_microcell({"macro_coords": macro_coords, "lot": lot, "lines": [tr("microcell_inspection_building_occupied").format({"building": occupied_by})]})
 		return
 
 	var candidates: Array[Dictionary] = _resolve_pickup_candidates(event, current_absolute_day, MOUSE_BUTTON_LEFT, true)
@@ -7893,6 +7900,23 @@ func _make_domestic_animal_renderer(cell: LiveMacroCell, rules: DomesticAnimalRu
 	return body_renderer
 
 
+# Renderer dei corpi di una specie selvatica condotta con la cavezza (LedAnimalBodyService), come quello del cane; null se
+# la specie non ha una configurazione.
+func _make_led_animal_renderer(cell: LiveMacroCell, wild_species: String, domestic_species: String) -> AnimalGroupRenderer:
+	var configs := _get_animal_renderer_configs()
+	if not configs.has(wild_species):
+		return null
+	var config: Dictionary = configs[wild_species]
+	# Domestico dal recinto (2026-11-19): taglia e colore della specie domestica, come il cane.
+	var domestic_rules := DomesticAnimalCalculator.get_rules(domestic_species) if domestic_species != "" else null
+	if domestic_rules != null:
+		config = DomesticAnimalBodyService.build_renderer_config(config, domestic_rules)
+	var body_renderer := _build_animal_renderer(cell.container, config)
+	_setup_animal_renderer(cell, body_renderer)
+	body_renderer.disturbance_source = Callable()
+	return body_renderer
+
+
 # --- Layer della mappa (2026-09-27, richiesta utente — menu "Layer") ---
 # Menu a tendina sotto il bottone "Layer" (MapLayersMenu: un PanelContainer nel CanvasLayer dell'interfaccia, accanto
 # al pannello laterale — non più un PopupMenu, che come finestra separata usava tema e misure di default ed era enorme
@@ -9216,6 +9240,18 @@ func _job_board_providers() -> Array[Dictionary]:
 			"cancel": func(_job: Dictionary) -> void: pass,
 			"release": _transfer_job_release,
 		})
+		# Conduci al recinto (2026-11-18, riga Allevamento): un animale dell'imbuto per lavoro, vedi LeadAnimalJobProvider.
+		_job_board_provider_list.append({
+			"name": "lead_animal",
+			"collect": func(provider: Dictionary, assigned: Dictionary) -> Array[Dictionary]: return LeadAnimalJobProvider.collect(_game_context(), provider, assigned),
+			"probe_key": func(job: Dictionary) -> String: return LeadAnimalJobProvider.definition_path(job),
+			"rejection": func(worker: HumanIndividual, job: Dictionary) -> String: return LeadAnimalJobProvider.rejection(_game_context(), worker, job),
+			"assign": _assign_lead_animal_job,
+			"workers": func(job: Dictionary) -> Array[HumanIndividual]: return LeadAnimalJobProvider.workers(_game_context(), job),
+			"cancel_fields": func(_job: Dictionary) -> Dictionary: return {"cancel_disabled": true, "cancel_tooltip": ""},
+			"cancel": func(_job: Dictionary) -> void: pass,
+			"release": _lead_animal_job_release,
+		})
 	return _job_board_provider_list
 
 
@@ -9259,6 +9295,35 @@ func _assign_transfer_job(worker: HumanIndividual, job: Dictionary) -> void:
 	_ensure_step_signals(task)
 	if worker == individual:
 		_refresh_selected_individual_panel()
+
+
+# Conduci al recinto preso dalla lista (2026-11-18): un lavoratore per animale; la cavezza da prendere in deposito, se serve.
+func _assign_lead_animal_job(worker: HumanIndividual, job: Dictionary) -> void:
+	if not LeadAnimalJobProvider.workers(_game_context(), job).is_empty():
+		return
+	var task := LeadAnimalJobProvider.build_task(_game_context(), worker, job)
+	if task == null:
+		return
+	# Animale legato: la cavezza ce l'ha già, niente da prendere in deposito.
+	var fetch_plan: Array[Dictionary] = []
+	if int(job.get("led_id", -1)) < 0:
+		fetch_plan = ToolFetchService.plan_fetch(macro_world, worker, LeadAnimalJobProvider.tool_categories())
+	if not worker.assign_task(task, _resolve_age_band(worker)) or (worker.current_task != task and not worker.task_queue.has(task)):
+		return
+	_ensure_step_signals(task)
+	if not fetch_plan.is_empty():
+		_start_zone_order_tool_fetch(worker, fetch_plan, String(job["key"]))
+	if worker == individual:
+		_refresh_selected_individual_panel()
+
+
+# Rimetti in coda / Blocca: chi non ha ancora messo la cavezza si ferma e l'animale resta ad aspettare nell'imbuto; chi
+# l'ha già messa finisce il cammino (l'animale è fuori dall'imbuto, non c'è dove rimetterlo).
+func _lead_animal_job_release(job: Dictionary) -> void:
+	for member in LeadAnimalJobProvider.workers(_game_context(), job):
+		if LeadAnimalJobProvider.is_lead_task(member.current_task):
+			member.skip_job_board_once = true
+			_stop_member_task(member)
 
 
 # Rimetti in coda / Blocca: il trasporto si ferma e gli animali in braccio tornano in attesa nella tettoia.
@@ -10762,6 +10827,8 @@ func _task_board_reason(task: Task, pile_job_keys: Dictionary) -> String:
 		return "macellazione"
 	if DomesticTransferJobProvider.is_transfer_task(task):
 		return "trasferimento animali"
+	if LeadAnimalJobProvider.is_lead_task(task):
+		return "conduci alla stalla" if int(task.context.get(LeadAnimalJobProvider.CONTEXT_DOMESTIC_ID, -1)) >= 0 else "conduci al recinto"
 	# Riparazione (2026-10-10): della coda solo se l'edificio ha la riparazione richiesta (col mirino è un comando diretto).
 	if JobWorkScanService.REPAIR_TASK_NAMES.has(task.task_name):
 		for step in task.steps:
@@ -15576,6 +15643,8 @@ func _on_slaughter_above_changed(building: Building, value: int) -> void:
 # Specie tenuta della tettoia delle gabbie (2026-11-12, KeptAnimalService): solo a edificio vuoto.
 func _on_kept_species_changed(building: Building, species: String) -> void:
 	KeptAnimalService.set_kept_species(game_data, building, species)
+	# Stalla (2026-11-19): il segno della specie sul tetto.
+	_refresh_building_marker(building)
 	_refresh_selected_building_panel()
 
 
@@ -16591,6 +16660,9 @@ func _building_type_availability(rules: BuildingRules, building_type_name: Strin
 			"disabled_tooltip": tr("build_bar_requires_domesticated_tooltip").format({
 				"species": KeptAnimalService.species_display_name(required_species, false)}),
 		}
+	# Stalla (2026-11-19): specie a scelta, solo se almeno una delle sue specie è addomesticata.
+	if rules.breeding_with_choice and KeptAnimalService.domesticated_choices(game_data, rules).is_empty():
+		return {"is_buildable": false, "disabled_tooltip": tr("build_bar_requires_domesticated_big_tooltip")}
 	return {"is_buildable": true, "disabled_tooltip": ""}
 
 
@@ -17104,6 +17176,7 @@ func _twig_polygon(rng: RandomNumberGenerator) -> PackedVector2Array:
 func _reconnect_build_task_signals(step: Action) -> void:
 	if step is SetupSiteAction:
 		(step as SetupSiteAction).site_setup_completed.connect(_spawn_build_site_placeholders)
+		(step as SetupSiteAction).site_setup_started.connect(_on_site_setup_started)
 	elif step is ClearAction:
 		(step as ClearAction).site_cleared.connect(_on_site_cleared)
 	elif step is BuildAction:
@@ -17361,6 +17434,19 @@ func _on_individual_jumped(individual_ref: HumanIndividual) -> void:
 # needs_full_vegetation_recompute invalida la cache posizioni di QUESTA cella viva (i dati sono
 # cambiati, la vegetazione rimossa deve sparire dal disegno SUBITO, non al prossimo trigger
 # naturale), poi _refresh_resource_visuals la rigenera davvero.
+# Allestimento partito (2026-11-19, richiesta utente): da qui le celle del cantiere escono dalla vegetazione
+# (BuildingConstructionStage.occupies_ground) — solo il ridisegno, come al piazzamento di prima.
+func _on_site_setup_started(building: Building) -> void:
+	if building == null:
+		return
+	var macro_coords := Vector2i(building.macro_x, building.macro_y)
+	if not live_cells.has(macro_coords):
+		return
+	var cell: LiveMacroCell = live_cells[macro_coords]
+	cell.needs_full_vegetation_recompute = true
+	_refresh_resource_visuals(cell, "allestimento")
+
+
 func _on_site_cleared(building: Building) -> void:
 	if building == null:
 		return
@@ -17719,6 +17805,9 @@ func _building_positions_for_cell(cell: LiveMacroCell) -> Array:
 		return positions
 	for building in macro_world.buildings:
 		if building.macro_x == cell.macro_x and building.macro_y == cell.macro_y:
+			# Cantiere solo piazzato (2026-11-19): la cella resta com'è finché non parte l'allestimento.
+			if not BuildingConstructionStage.occupies_ground(building):
+				continue
 			# Ingombro (2026-10-17): tutte le microcelle del rettangolo, altrimenti la vegetazione ci ricresce.
 			# Cantiere nel bosco (2026-10-18): finché non è ripulito, le sue celle con alberi o cespugli vivi restano fuori
 			# dall'esclusione, così le piante si vedono e si tagliano (SiteCutService); dopo la pulizia tornano escluse.
@@ -17779,6 +17868,9 @@ func _buildings_for_cell(cell: LiveMacroCell) -> Array:
 				"id": building.id,
 				# Campo (2026-11-15, appezzamenti): la sua forma in celle di base, che il recinto segue (FieldShape.draw).
 				"field_cells": FieldShape.base_cells_of(building) if building.building_type_name == FieldShape.TYPE else ([] as Array[Vector2i]),
+				# Stalla (2026-11-19): specie tenuta, per il segno sul tetto (PlaceholderBuildingShapes.draw_species_sign).
+				"kept_species": KeptAnimalService.current_species(game_data, building) \
+					if building.rules != null and building.rules.breeding_with_choice else "",
 				# "building_type_name" (2026-09-07, richiesta utente, Pebble Circle) — prima di
 				# questo passo tutti gli edifici erano capanne, quindi MicroCellRenderer._draw_
 				# buildings non aveva bisogno di distinguere: ora sì, vedi lì.

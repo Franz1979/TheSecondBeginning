@@ -1,0 +1,45 @@
+[gd_resource type="Resource" script_class="BuildingRules" format=3]
+
+[ext_resource type="Script" path="res://simulation/scripts/core/BuildingRules.gd" id="1_stable"]
+
+; Stalla (2026-11-19, richiesta utente — animali grossi domestici): edificio d'allevamento 4x3 con la specie a scelta
+; (breeding_with_choice, KeptAnimalService.is_breeding): capra, pecora, maiale, asino, cavallo, bue già addomesticati.
+; Capienza per specie (animal_capacity = la più alta, per i controlli "è un edificio per animali"). Mangiatoia, lettiera
+; e letame come la conigliera. Si costruisce solo con almeno una specie grossa addomesticata.
+[resource]
+script = ExtResource("1_stable")
+building_name = "building_stable"
+category = 11
+required_idea_id = "advanced_traps"
+min_construction_days = 8
+required_labor = 10000
+max_builders = 4
+lifespan_years = 30
+max_durability = 100
+defense = 10
+required_materials = {
+"clay": 150,
+"fiber_rope": 30,
+"stick": 200,
+"stone": 40,
+"straw": 200,
+"wood": 120
+}
+required_space = 12
+footprint = Vector2i(4, 3)
+has_door = false
+visibility_radius = 2
+animal_capacity = 40
+keeps_big_animals = true
+breeding_with_choice = true
+animal_capacity_by_species = {
+"cattle": 20,
+"donkey": 24,
+"goat": 40,
+"horse": 20,
+"pig": 30,
+"sheep": 40
+}
+feeder_space_capacity = 2000
+bedding_capacity = 1000
+manure_capacity = 1500

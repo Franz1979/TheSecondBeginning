@@ -11,6 +11,12 @@ skill_effects_by_task_name = {
 "task_transfer_animals_name": {
 "skill_husbandry": 0.5
 },
+"task_lead_animal_name": {
+"skill_husbandry": 0.5
+},
+"task_lead_animal_stable_name": {
+"skill_husbandry": 0.5
+},
 "task_butcher_kept_animal_name": {
 "skill_husbandry": 0.5
 },

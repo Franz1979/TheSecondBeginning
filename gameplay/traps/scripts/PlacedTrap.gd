@@ -28,6 +28,9 @@ var catch_ages: Array[int] = []
 # trappola i giorni senza cibo della sua specie (TrapService.live_survival_days), poi muore e si svuota come la preda di un laccio.
 var catch_sexes: Array[int] = []
 var catch_death_days: Array[int] = []
+# Imbuto di caccia (2026-11-18, lavoro "Conduci al recinto"): per ogni preda, stesso ordine, l'id del recinto prenotato alla
+# cattura (-1 = nessuno: senza posto si macella allo svuotamento). Può essere più corto di catch_days (manca = -1).
+var catch_pen_ids: Array[int] = []
 # Giorno assoluto dell'ultimo uso consumato (montaggio, svuotamento o usura a riposo): da qui contano i
 # trap_idle_wear_days dell'usura a riposo (TrapService.advance_daily), 2026-11-07.
 var last_wear_day: int = 0
@@ -49,12 +52,18 @@ func get_catch_spoil_start(index: int) -> int:
 	return catch_days[index]
 
 
+# Recinto prenotato per la preda `index`, -1 se nessuno.
+func pen_id_of(index: int) -> int:
+	return catch_pen_ids[index] if index < catch_pen_ids.size() else -1
+
+
 func clear_catches() -> void:
 	catch_days.clear()
 	catch_species.clear()
 	catch_ages.clear()
 	catch_sexes.clear()
 	catch_death_days.clear()
+	catch_pen_ids.clear()
 
 
 func get_remaining_uses() -> int:
@@ -78,6 +87,7 @@ func to_save_data() -> Dictionary:
 		"catch_ages": Array(catch_ages),
 		"catch_sexes": Array(catch_sexes),
 		"catch_death_days": Array(catch_death_days),
+		"catch_pen_ids": Array(catch_pen_ids),
 		"last_wear_day": last_wear_day,
 	}
 
@@ -105,4 +115,7 @@ static func from_save_data(data: Dictionary) -> PlacedTrap:
 		trap.catch_sexes.append(int(sex))
 	for death_day in data.get("catch_death_days", []):
 		trap.catch_death_days.append(int(death_day))
+	# Recinti prenotati (2026-11-18): salvataggi più vecchi senza la chiave, nessuna prenotazione.
+	for pen_id in data.get("catch_pen_ids", []):
+		trap.catch_pen_ids.append(int(pen_id))
 	return trap

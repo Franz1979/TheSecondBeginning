@@ -426,6 +426,8 @@ static func tick_second(ctx: GameContext, now: float, effects: GameEffects) -> v
 	# Attrezzi presi in deposito per un lavoro (2026-10-11): la restituzione avviene appena libero (2026-10-24,
 	# ToolFetchService.try_return_borrowed_tools in resolve_idle_individual); qui solo la pulizia dei prestiti.
 	ToolFetchService.prune_borrowed_tools(ctx)
+	# Animali condotti con la cavezza (2026-11-18): chi si è fermato li lega lì dov'è (LedAnimalService).
+	LedAnimalService.settle(ctx, effects, now)
 	# Veglia delle stelle (2026-10-29): chiamata 3 giorni prima, inizio all'alba, fine dopo un giorno.
 	StarVigilService.tick(ctx.world, ctx.game_data, ctx.individuals, now)
 	# Fumo degli affumicatoi (2026-10-23): ridisegno solo delle celle il cui affumicatoio ha iniziato o smesso di lavorare.

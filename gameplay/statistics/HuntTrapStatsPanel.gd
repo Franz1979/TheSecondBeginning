@@ -227,18 +227,18 @@ func _add_trap_catch_section(placed: Dictionary, catches: Dictionary, outcomes: 
 		for dict in [by_species, outcome_by_species]:
 			for species in dict:
 				species_names[species] = true
-		var totals := [0, 0, 0]
+		var totals := [0, 0, 0, 0]
 		var species_rows: Array = []
 		for species in _sorted_keys(species_names):
 			var outcome: Dictionary = outcome_by_species.get(species, {})
 			var values := [int(by_species.get(species, 0)), int(outcome.get(HuntTrapStatsService.TRAP_RECOVERED, 0)),
-				int(outcome.get(HuntTrapStatsService.TRAP_SPOILED, 0))]
-			for i in range(3):
+				int(outcome.get(HuntTrapStatsService.TRAP_SPOILED, 0)), int(outcome.get(HuntTrapStatsService.TRAP_ESCAPED, 0))]
+			for i in range(4):
 				totals[i] += values[i]
-			species_rows.append(["", "", "  " + String(species), str(values[0]), str(values[1]), str(values[2]), ""])
+			species_rows.append(["", "", "  " + String(species), str(values[0]), str(values[1]), str(values[2]), str(values[3]), ""])
 		var placed_count := int(placed.get(trap_name, 0))
 		var row := [_trap_label(trap_name), str(placed_count), "Tutte", str(totals[0]), str(totals[1]), str(totals[2]),
-			_ratio(totals[0], placed_count)]
+			str(totals[3]), _ratio(totals[0], placed_count)]
 		if species_rows.size() == 1:
 			row[2] = String(species_rows[0][2]).strip_edges()
 		elif species_rows.is_empty():
@@ -246,7 +246,7 @@ func _add_trap_catch_section(placed: Dictionary, catches: Dictionary, outcomes: 
 		rows.append(row)
 		if species_rows.size() > 1:
 			rows.append_array(species_rows)
-	_add_table(["Trappola", "Pos.", "Specie", "Catt.", "Recup.", "Marcite", "C/P"], rows, "nessuna posata né cattura")
+	_add_table(["Trappola", "Pos.", "Specie", "Catt.", "Recup.", "Marcite", "Scapp.", "C/P"], rows, "nessuna posata né cattura")
 
 
 func _add_drive_section(drive: Dictionary) -> void:

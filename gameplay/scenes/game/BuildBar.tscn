@@ -54,4 +54,4 @@ slot_count = 12
 
 [node name="SubmenuRow" parent="Panel/MarginContainer/HBoxContainer/ContentContainer" instance=ExtResource("2_iconrow")]
 layout_mode = 2
-slot_count = 42
+slot_count = 43
