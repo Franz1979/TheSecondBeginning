@@ -10,8 +10,7 @@ const ICON_SIZE := 20.0
 const ICON_SEPARATION := 2
 const PANEL_COLOR := Color(0.0, 0.0, 0.0, 0.55)
 const PANEL_MARGIN := 2.0
-# Altezza di una riga della scritta rispetto alla grandezza del carattere, e spazio tra scritta e icone (pixel schermo).
-const LINE_HEIGHT_RATIO := 1.3
+# Spazio tra la scritta e le icone (pixel schermo).
 const GAP := 1.0
 
 # Una voce per fondino: {"panel": PanelContainer, "row": HBoxContainer, "signature": String}.
@@ -26,7 +25,6 @@ func _init() -> void:
 func update(labels: Array, camera: Camera3D) -> void:
 	var count := 0
 	if camera != null:
-		var text_height := _text_height_px(camera)
 		for label in labels:
 			var label3d := label as Label3D
 			var keys: PackedStringArray = label3d.get_meta(WorkAreas3D.ICON_KEYS_META, PackedStringArray())
@@ -43,17 +41,10 @@ func update(labels: Array, camera: Camera3D) -> void:
 			var panel: PanelContainer = entry["panel"]
 			panel.visible = true
 			panel.reset_size()
-			panel.position = (camera.unproject_position(anchor) + Vector2(0.0, text_height + GAP)).round()
+			# La scritta poggia sul centro della zona (WorkAreas3D): le icone subito sotto, centrate.
+			panel.position = (camera.unproject_position(anchor) + Vector2(-panel.size.x * 0.5, GAP)).round()
 	for i in range(count, _entries.size()):
 		(_entries[i]["panel"] as PanelContainer).visible = false
-
-
-# Altezza sullo schermo della scritta delle zone: Label3D a misura fissa (fixed_size) = font_size × pixel_size per unità
-# di profondità, proiettata dalla camera prospettica.
-func _text_height_px(camera: Camera3D) -> float:
-	var viewport_height := camera.get_viewport().get_visible_rect().size.y
-	var world_height := WorkAreas3D.LABEL_FONT_SIZE * WorkAreas3D.LABEL_PIXEL_SIZE * LINE_HEIGHT_RATIO
-	return world_height / tan(deg_to_rad(camera.fov) / 2.0) * viewport_height / 2.0
 
 
 func _create_entry() -> Dictionary:

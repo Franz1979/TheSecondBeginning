@@ -13,6 +13,6 @@ id = "animal_husbandry"
 display_name = "idea_animal_husbandry"
 summary = "idea_animal_husbandry_summary"
 description = "idea_animal_husbandry_description"
-thoughts_cost = 80
+thoughts_cost = 70
 prerequisites = Array[String](["animal_domestication"])
 era = "paleolithic"

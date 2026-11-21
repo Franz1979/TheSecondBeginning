@@ -46,9 +46,8 @@ static func catch_up_frozen_cell(cell: MacroCellData, state: MacroCellState, gam
 	if frozen_since < 0:
 		return
 	var states: Array = [state]
-	# Saltata la fine di una primavera: raccolti annuali azzerati e segni delle piante morte tolti.
+	# Saltata la fine di una primavera: segni delle piante morte tolti.
 	if VegetationPoolService.most_recent_growth_checkpoint_absolute_day(game_data) > frozen_since:
-		LotCapacityService.reset_harvests_for_resources_without_seasonal_rise(states)
 		state.vegetation_death_exceptions.clear()
 	var today: int = game_data.get_absolute_day()
 	for absolute_day in range(maxi(frozen_since, today - GameData.DAYS_PER_YEAR) + 1, today + 1):
@@ -58,4 +57,4 @@ static func catch_up_frozen_cell(cell: MacroCellData, state: MacroCellState, gam
 		var new_season := SeasonCalculator.get_season_for_day(day_of_year)
 		var previous_season := SeasonCalculator.get_previous_season(new_season)
 		update_cell_stock(cell, state, previous_season, new_season)
-		LotCapacityService.reset_all_lot_harvests_on_season_rise(states, previous_season, new_season)
+		LotCapacityService.reset_all_lot_harvests_on_season_start(states)

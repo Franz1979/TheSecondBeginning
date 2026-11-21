@@ -107,6 +107,9 @@ const SCOPE_ALL := 0
 @onready var births_breakdown_label: Label = $MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/BirthsBreakdownLabel
 @onready var births_per_year_chart: LineChart = $MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/BirthsPerYearChart
 @onready var average_children_label: Label = $MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/AverageChildrenLabel
+# Donne incinte ora (2026-11-20, richiesta utente): quante e, per ciascuna, fra quanti giorni partorisce.
+@onready var pregnant_women_label: Label = $MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/PregnantWomenLabel
+@onready var pregnant_women_list_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/PregnantWomenListContainer
 @onready var fertile_women_list_caption: Label = $MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/FertileWomenListCaption
 @onready var fertile_women_list_container: VBoxContainer = $MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent/FertileWomenListScroll/FertileWomenListContainer
 
@@ -454,6 +457,29 @@ func _refresh_births_tab(
 		for entry in fertile_women_counts:
 			total_children += int(entry["count"])
 		average_children_label.text = tr("statistics_average_children").format({"value": "%.2f" % (float(total_children) / fertile_women_counts.size())})
+
+	# Donne incinte al momento, dal parto più vicino.
+	var pregnant: Array[HumanIndividual] = []
+	for individual in human_individuals:
+		if individual.is_pregnant:
+			pregnant.append(individual)
+	pregnant.sort_custom(func(a: HumanIndividual, b: HumanIndividual) -> bool: return a.scheduled_birth_day < b.scheduled_birth_day)
+	pregnant_women_label.text = tr("statistics_pregnant_women").format({"count": pregnant.size()})
+	for child in pregnant_women_list_container.get_children():
+		child.queue_free()
+	for woman in pregnant:
+		var row := Label.new()
+		row.add_theme_font_size_override("font_size", 10)
+		var days := maxi(woman.scheduled_birth_day - today, 0) if woman.scheduled_birth_day >= 0 else 0
+		# Solo una stima a mesi (2026-11-20, richiesta utente): il giorno esatto del parto non si sa.
+		var months := roundi(days / (GameData.DAYS_PER_YEAR / 12.0))
+		var row_key := "statistics_pregnant_woman_row"
+		if months <= 0:
+			row_key = "statistics_pregnant_woman_row_soon"
+		elif months == 1:
+			row_key = "statistics_pregnant_woman_row_one"
+		row.text = tr(row_key).format({"name": woman.name, "months": months})
+		pregnant_women_list_container.add_child(row)
 
 	for child in fertile_women_list_container.get_children():
 		child.queue_free()

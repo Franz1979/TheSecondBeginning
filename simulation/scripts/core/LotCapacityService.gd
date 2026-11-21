@@ -312,9 +312,8 @@ static func _log_lot_capacity(
 
 # Unità raccoglibili in più su un lotto (2026-10-04, richiesta utente — task Cut: un albero abbattuto lascia 3 stick):
 # il conto del raccolto scende di `quantity`, anche sotto zero, così la disponibilità (capacità − raccolto) sale della
-# stessa quantità. Nessun sistema nuovo: spariscono quando il registro di quella risorsa viene azzerato (fine primavera
-# per le risorse senza stagionalità come stick, reset_harvests_for_resources_without_seasonal_rise; inizio della
-# stagione in cui il moltiplicatore sale per le altre). Per STONE_POSITION (pebble in più su una roccia, 2026-10-05 —
+# stessa quantità. Nessun sistema nuovo: spariscono quando il registro di quella risorsa viene azzerato (inizio di ogni
+# stagione, reset_all_lot_harvests_on_season_start). Per STONE_POSITION (pebble in più su una roccia, 2026-10-05 —
 # RockStoneService.add_pebbles) restano per sempre, perché quel registro non si azzera mai.
 static func add_extra_units(macro_state: MacroCellState, resource_name: String, position: Vector2i, quantity: int) -> void:
 	if macro_state == null or quantity <= 0:
@@ -356,81 +355,22 @@ static func _apply_seasonal_availability_to_capacity(rules: SecondaryResourceRul
 # STONE_POSITION, un sasso estratto non deve mai ricrescere qualunque sia la sua curva stagionale)
 # ============================================================================================
 
-# Chiamata una volta per checkpoint stagionale (WorldTimeService, inizio di OGNI stagione) — per
-# ciascuna risorsa nei tre lot_source rigenerabili, decide UNA SOLA VOLTA (non per cella) se il
-# moltiplicatore stagionale sale rispetto alla stagione precedente; se nessuna risorsa sale, esce
-# subito senza toccare `states`. `states`: le celle da aggiornare (LODOrchestrator.engine_states, o una sola che si
-# riaccende, vedi SeasonalResourceService). Azzeramento per intero del registro di quella risorsa
-# (mai un "harvested" separato da preservare — a differenza del vecchio formato combinato di
-# stick/plant_fiber/mushroom, il registro unificato contiene ORA SOLO "harvested" per questi tre
-# lot_source, azzerarlo per intero è quindi sempre corretto, nessun sotto-campo da spegnare a
-# parte).
-static func reset_all_lot_harvests_on_season_rise(
-	states: Array, previous_season: GameTypes.Season, new_season: GameTypes.Season
-) -> void:
+# Ricrescita a ogni stagione (2026-11-21, richiesta utente — prima si azzerava solo quando il moltiplicatore SALIVA,
+# più un azzeramento annuale a parte al giorno 181 per le risorse piatte come stick e plant_fiber: un lotto raccolto
+# tornava di fatto una volta l'anno). Ora a ogni inizio stagione il raccolto di TUTTE le risorse rigenerabili
+# (TREE_INDIVIDUAL/SHRUB_INDIVIDUAL/GRASS_PATCH, mai STONE_POSITION: un sasso estratto non ricresce) torna a zero, e il
+# moltiplicatore della stagione decide solo QUANTO ce n'è. Chiamata da WorldTimeService (inizio di ogni stagione, celle
+# accese) e da SeasonalResourceService.catch_up_frozen_cell (celle che si riaccendono). Le unità in più lasciate da un
+# albero abbattuto (add_extra_units, raccolto negativo) spariscono anch'esse al cambio di stagione.
+static func reset_all_lot_harvests_on_season_start(states: Array) -> void:
 	var resources_to_reset: Array[String] = []
 	for lot_source in [
 		SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL,
 		SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL,
 		SecondaryResourceTypes.LotSource.GRASS_PATCH,
 	]:
-		for resource_name in get_resource_names_for_lot_source(lot_source):
-			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
-			if rules == null:
-				continue
-			var previous_multiplier: float = float(rules.seasonal_availability_multiplier[previous_season])
-			var new_multiplier: float = float(rules.seasonal_availability_multiplier[new_season])
-			if new_multiplier > previous_multiplier:
-				resources_to_reset.append(resource_name)
-	if resources_to_reset.is_empty():
-		return
+		resources_to_reset.append_array(get_resource_names_for_lot_source(lot_source))
 	for state in states:
 		for resource_name in resources_to_reset:
 			if not state.lot_registry.get(resource_name, {}).is_empty():
 				state.lot_registry[resource_name] = {}
-
-
-# Azzeramento ANNUALE del raccolto per le risorse a lotto SENZA variazione stagionale (2026-09-19,
-# richiesta utente - es. stick: un albero maturo produce ogni anno, non una volta sola). Chiamata una
-# volta all'anno dal checkpoint di crescita della vegetazione (WorldTimeService._run_growth_checkpoint,
-# fine SPRING, giorno 181), stesso momento in cui la capacita' per lotto viene ricalcolata.
-#
-# Complementare a reset_all_lot_harvests_on_season_rise sopra, che azzera solo quando il moltiplicatore
-# stagionale SALE: una risorsa il cui moltiplicatore non sale mai (tutti e 4 i valori uguali, come il
-# default [1.0, 1.0, 1.0, 1.0]) non verrebbe resettata da nessuno. Qui si azzera ESATTAMENTE quel
-# complemento (_has_seasonal_rise falso), quindi nessuna risorsa e' resettata da entrambi i percorsi.
-# Generica: scansiona i lot_source rigenerabili (TREE_INDIVIDUAL/SHRUB_INDIVIDUAL/GRASS_PATCH), mai un
-# nome di risorsa scritto a mano; MAI STONE_POSITION (un sasso estratto non ricresce). Non tocca il
-# seasonal_availability_multiplier.
-static func reset_harvests_for_resources_without_seasonal_rise(states: Array) -> void:
-	var resources_to_reset: Array[String] = []
-	for lot_source in [
-		SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL,
-		SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL,
-		SecondaryResourceTypes.LotSource.GRASS_PATCH,
-	]:
-		for resource_name in get_resource_names_for_lot_source(lot_source):
-			var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
-			if rules == null:
-				continue
-			if not _has_seasonal_rise(rules):
-				resources_to_reset.append(resource_name)
-	if resources_to_reset.is_empty():
-		return
-	for state in states:
-		for resource_name in resources_to_reset:
-			if not state.lot_registry.get(resource_name, {}).is_empty():
-				state.lot_registry[resource_name] = {}
-
-
-# Vero se in almeno una stagione il moltiplicatore e' MAGGIORE di quello della stagione precedente: lo
-# stesso confronto di reset_all_lot_harvests_on_season_rise, valutato su tutte e 4 le transizioni
-# dell'anno. Per un array ciclico questo equivale a "non tutti i valori sono uguali".
-static func _has_seasonal_rise(rules: SecondaryResourceRules) -> bool:
-	for season in [
-		GameTypes.Season.WINTER, GameTypes.Season.SPRING, GameTypes.Season.SUMMER, GameTypes.Season.AUTUMN
-	]:
-		var previous_season := SeasonCalculator.get_previous_season(season)
-		if float(rules.seasonal_availability_multiplier[season]) > float(rules.seasonal_availability_multiplier[previous_season]):
-			return true
-	return false

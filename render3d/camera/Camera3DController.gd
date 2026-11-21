@@ -29,6 +29,16 @@ var _yaw: float = 0.0
 var _pitch_offset_deg: float = 0.0
 var _distance: float = 80.0
 var _edge_pan_hover_time: float = 0.0
+# Tasto destro (2026-11-20, richiesta utente: nel 3D il destro non annullava il piazzamento né deselezionava come nel 2D):
+# trascinato gira la vista; premuto e lasciato quasi fermo è un clic destro del gioco, ripassato al gioco al rilascio.
+const RIGHT_CLICK_MAX_DRAG := 6.0
+var _right_drag: float = 0.0
+var _passing_right_click := false
+
+
+# Distanza dal punto guardato (zoom): la usa la luce per le ombre vicine (Lighting3D.follow_camera_distance).
+func distance() -> float:
+	return _distance
 
 
 func setup(reader: GameStateReader) -> void:
@@ -72,10 +82,15 @@ func _process(delta: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _reader == null or _reader.camera_input_locked():
+	if _reader == null or _reader.camera_input_locked() or _passing_right_click:
 		return
 	if event is InputEventMouseButton:
 		var button := event as InputEventMouseButton
+		if button.button_index == MOUSE_BUTTON_RIGHT:
+			if button.pressed:
+				_right_drag = 0.0
+			elif _right_drag <= RIGHT_CLICK_MAX_DRAG:
+				_pass_right_click(button)
 		if button.pressed and button.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_distance = maxf(MIN_DISTANCE, _distance * ZOOM_FACTOR)
 		elif button.pressed and button.button_index == MOUSE_BUTTON_WHEEL_DOWN:
@@ -91,9 +106,21 @@ func _unhandled_input(event: InputEvent) -> void:
 			_reader.move_camera(_screen_to_ground(-motion.relative) * world_per_pixel)
 			get_viewport().set_input_as_handled()
 		elif motion.button_mask & MOUSE_BUTTON_MASK_RIGHT:
+			_right_drag += motion.relative.length()
 			_yaw -= motion.relative.x * ROTATE_SPEED
 			_pitch_offset_deg = clampf(_pitch_offset_deg + motion.relative.y * ROTATE_SPEED * 40.0, -PITCH_OFFSET_MAX_DEG, PITCH_OFFSET_MAX_DEG)
 			get_viewport().set_input_as_handled()
+
+
+# Clic destro senza trascinamento: lo stesso evento (premuto, poi rilasciato) rimandato al gioco, che lo tratta come nel
+# 2D (annulla il piazzamento, deseleziona, ordini col destro). Mentre passa la camera non lo trattiene.
+func _pass_right_click(release: InputEventMouseButton) -> void:
+	var press := release.duplicate() as InputEventMouseButton
+	press.pressed = true
+	_passing_right_click = true
+	get_viewport().push_input(press)
+	get_viewport().push_input(release.duplicate())
+	_passing_right_click = false
 
 
 # Punto del terreno sotto un punto dello schermo, in microcelle (x, y della mappa 2D, coordinate della vista); null se

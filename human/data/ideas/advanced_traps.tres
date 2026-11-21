@@ -13,6 +13,6 @@ id = "advanced_traps"
 display_name = "idea_advanced_traps"
 summary = "idea_advanced_traps_summary"
 description = "idea_advanced_traps_description"
-thoughts_cost = 70
+thoughts_cost = 60
 prerequisites = Array[String](["animal_husbandry", "advanced_paleolithic_constructions"])
 era = "paleolithic"

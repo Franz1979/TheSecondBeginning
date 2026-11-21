@@ -8,6 +8,6 @@ id = "drying"
 display_name = "idea_drying"
 summary = "idea_drying_summary"
 description = "idea_drying_description"
-thoughts_cost = 20
+thoughts_cost = 15
 era = "paleolithic"
 tree_order = 30

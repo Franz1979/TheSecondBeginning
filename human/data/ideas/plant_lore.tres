@@ -8,6 +8,6 @@ id = "plant_lore"
 display_name = "idea_plant_lore"
 summary = "idea_plant_lore_summary"
 description = "idea_plant_lore_description"
-thoughts_cost = 20
+thoughts_cost = 15
 era = "paleolithic"
 tree_order = 5

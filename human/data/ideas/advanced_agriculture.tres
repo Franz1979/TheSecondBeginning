@@ -10,6 +10,6 @@ id = "advanced_agriculture"
 display_name = "idea_advanced_agriculture"
 summary = "idea_advanced_agriculture_summary"
 description = "idea_advanced_agriculture_description"
-thoughts_cost = 150
+thoughts_cost = 100
 prerequisites = Array[String](["agriculture"])
 era = "neolithic"

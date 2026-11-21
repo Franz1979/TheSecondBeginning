@@ -129,6 +129,17 @@ toggle_mode = true
 button_group = SubResource("ButtonGroup_game_speed")
 text = "4x"
 
+[node name="Speed8xButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
+custom_minimum_size = Vector2(36, 0)
+layout_mode = 2
+theme_override_colors/font_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_colors/font_hover_pressed_color = Color(0.15, 0.1, 0.02, 1)
+theme_override_styles/pressed = SubResource("StyleBoxFlat_speed_selected")
+theme_override_styles/hover_pressed = SubResource("StyleBoxFlat_speed_selected")
+toggle_mode = true
+button_group = SubResource("ButtonGroup_game_speed")
+text = "8x"
+
 [node name="SpeedDebugButton" type="Button" parent="CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer"]
 custom_minimum_size = Vector2(36, 0)
 layout_mode = 2

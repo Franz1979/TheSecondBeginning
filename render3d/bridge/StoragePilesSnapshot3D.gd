@@ -13,6 +13,14 @@ var seeds := PackedInt32Array()
 # Taglia rispetto al mucchietto del magazzino (mucchi a terra: GroundPileView.ICON_SCALE).
 var scales := PackedFloat32Array()
 
+# --- Carcasse dei mucchi a terra (GroundPileView._draw_carcass): posizione, lunghezza in microcelle, rotazione del
+# 2D, colore della specie, 1 = uccello (pernice e derivate) ---
+var carcass_positions := PackedVector2Array()
+var carcass_lengths := PackedFloat32Array()
+var carcass_rotations := PackedFloat32Array()
+var carcass_colors := PackedColorArray()
+var carcass_bird := PackedByteArray()
+
 
 func size() -> int:
 	return positions.size()
@@ -26,5 +34,17 @@ func add(position: Vector2, resource_name: String, seed: int, scale := 1.0) -> v
 
 
 # Impronta per Cell3D.needs_refresh: cambia quando un posto si riempie, si svuota o cambia risorsa.
+func is_empty() -> bool:
+	return positions.is_empty() and carcass_positions.is_empty()
+
+
+func add_carcass(position: Vector2, length: float, rotation: float, color: Color, bird: bool) -> void:
+	carcass_positions.append(position)
+	carcass_lengths.append(length)
+	carcass_rotations.append(rotation)
+	carcass_colors.append(color)
+	carcass_bird.append(1 if bird else 0)
+
+
 func signature() -> Array:
-	return [positions, resource_names]
+	return [positions, resource_names, carcass_positions, carcass_lengths]

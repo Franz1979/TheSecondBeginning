@@ -8,6 +8,6 @@ id = "herbal_medicine"
 display_name = "idea_herbal_medicine"
 summary = "idea_herbal_medicine_summary"
 description = "idea_herbal_medicine_description"
-thoughts_cost = 30
+thoughts_cost = 25
 prerequisites = Array[String](["plant_lore"])
 era = "paleolithic"

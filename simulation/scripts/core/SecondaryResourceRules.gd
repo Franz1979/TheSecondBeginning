@@ -43,9 +43,9 @@ extends Resource
 #     si pesca (1 pescato = 1 fish_meat), nessuno stock da resettare;
 #   - pebble/stick/plant_fiber/mushroom/wild_vegetables (modello "capacità per lotto", vedi
 #     TerrainScatteredResourceService): non hanno mai avuto un ciclo legato a questo campo — il
-#     loro raccolto (dove esiste, vedi reset_all_lot_harvests_on_season_rise) si azzera quando il
-#     LORO seasonal_availability_multiplier SALE rispetto alla stagione precedente, un confronto
-#     dinamico tra due stagioni consecutive, non un singolo "giorno dell'anno" fisso come questo
+#     loro raccolto (dove esiste, vedi reset_all_lot_harvests_on_season_start) si azzera a ogni inizio
+#     stagione (dal 2026-11-21; prima solo quando il moltiplicatore saliva), un evento
+#     legato al cambio di stagione, non un singolo "giorno dell'anno" fisso come questo
 #     campo. Impostare cycle_start_season su uno di questi sei .tres non ha ALCUN effetto — non è
 #     un uso pianificato per il futuro, è semplicemente un campo della classe base non pertinente
 #     per questo modello, lasciato qui invece che reso condizionale per non introdurre una

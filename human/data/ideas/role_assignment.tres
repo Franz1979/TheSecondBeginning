@@ -8,6 +8,6 @@ id = "role_assignment"
 display_name = "idea_role_assignment"
 summary = "idea_role_assignment_summary"
 description = "idea_role_assignment_description"
-thoughts_cost = 100
+thoughts_cost = 80
 prerequisites = Array[String](["village_chief", "warehouse_management"])
 era = "paleolithic"

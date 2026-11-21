@@ -3,7 +3,8 @@ extends Node2D
 
 const CELL_SIZE: int = 10
 const NEIGHBOR_STRIP_DEPTH: int = 40 # px, solo un'anteprima, non è territorio giocabile
-const COLOR_STONE := Color(0.45, 0.45, 0.45, 0.6) # alpha bassa: i cerchi sovrapposti si fondono per densità
+# Alpha bassa: i cerchi sovrapposti si fondono per densità. Un filo più chiare il 2026-11-19 (richiesta utente; era 0.45).
+const COLOR_STONE := Color(0.55, 0.55, 0.55, 0.6)
 # Sassi/pebble (2026-09-08, richiesta utente: "colore un po' più simile a stone, magari un po'
 # più scuri") — stesso grigio di base di COLOR_STONE ma un filo più scuro, invece del tono
 # bruno-chiaro precedente.

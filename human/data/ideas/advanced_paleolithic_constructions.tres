@@ -8,6 +8,6 @@ id = "advanced_paleolithic_constructions"
 display_name = "idea_advanced_paleolithic_constructions"
 summary = "idea_advanced_paleolithic_constructions_summary"
 description = "idea_advanced_paleolithic_constructions_description"
-thoughts_cost = 50
+thoughts_cost = 40
 prerequisites = Array[String](["paleolithic_constructions"])
 era = "paleolithic"

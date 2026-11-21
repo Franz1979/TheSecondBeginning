@@ -265,6 +265,15 @@ size_flags_vertical = 3
 layout_mode = 2
 size_flags_horizontal = 3
 
+[node name="HSeparatorPregnant" type="HSeparator" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="PregnantWomenLabel" type="Label" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
+[node name="PregnantWomenListContainer" type="VBoxContainer" parent="MarginContainer/VBoxContainer/TabContainer/BirthsTab/BirthsContent"]
+layout_mode = 2
+
 [node name="MortalityTab" type="ScrollContainer" parent="MarginContainer/VBoxContainer/TabContainer"]
 visible = false
 layout_mode = 2

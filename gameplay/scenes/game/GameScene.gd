@@ -591,6 +591,8 @@ var hunt_trap_stats_panel: HuntTrapStatsPanel
 	GameClockController.Speed.X1: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed1xButton,
 	GameClockController.Speed.X2: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed2xButton,
 	GameClockController.Speed.X4: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed4xButton,
+	# 8x visibile (2026-11-21, richiesta utente, insieme al giorno da 12 s).
+	GameClockController.Speed.X8: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/Speed8xButton,
 	# Visibile solo a DebugLogging.ENABLED (vedi _setup_clock) — stesso meccanismo già in uso per
 	# debug_bar/debug_animal_container.
 	GameClockController.Speed.DEBUG: $CanvasLayer/Sidebar/MarginContainer/VBoxContainer/ClockControlsContainer/SpeedDebugButton,

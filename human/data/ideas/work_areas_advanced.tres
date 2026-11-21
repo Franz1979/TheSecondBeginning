@@ -8,6 +8,6 @@ id = "work_areas_advanced"
 display_name = "idea_work_areas_advanced"
 summary = "idea_work_areas_advanced_summary"
 description = "idea_work_areas_advanced_description"
-thoughts_cost = 20
+thoughts_cost = 15
 prerequisites = Array[String](["work_areas"])
 era = "paleolithic"

@@ -3,7 +3,7 @@ extends RefCounted
 
 # Oggetto 3D: le rocce (quelle della cava) di UNA macrocella, larghe quasi una microcella, nelle stesse posizioni del 2D;
 # le esaurite non compaiono. Forme: le 3 rocce Quaternius (CC0) con la loro texture, preparate da
-# render3d/blender/scripts/rocks.py (origine al centro della base, larghezza 1). Forma scelta per microcella come fa il
+# SOURCES_PER_GIOCO/blender/scripts/rocks.py (origine al centro della base, larghezza 1). Forma scelta per microcella come fa il
 # 2D, poi girata, scalata e un po' alzata per roccia. Tutte le rocce di una forma = un solo disegno (MultiMesh).
 
 const MODEL_DIR := "res://render3d/assets/models/rocks/"

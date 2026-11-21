@@ -3,7 +3,7 @@ extends RefCounted
 
 # Sovrapposizione 3D: le aree di lavoro di UNA cella (WorkAreasSnapshot3D), come WorkAreaOverlay/WorkAreaDragPreview nel
 # 2D: riempimento leggero e bordo nel colore della zona, poggiati sul terreno e appena sollevati (seguono le colline), più
-# il nome (o le misure del trascinamento) all'angolo in alto a sinistra, sempre leggibile (Label3D a misura fissa sullo
+# il nome (o le misure del trascinamento) al centro della zona, sempre leggibile (Label3D a misura fissa sullo
 # schermo, girata verso la camera). Senza luce né ombre: è interfaccia, non mondo.
 
 # Bordo: i pixel del 2D (su CELL_SIZE) ridotti, nel 3D la striscia piena pesa di più.
@@ -14,10 +14,9 @@ const MAX_FILL_QUADS_PER_SIDE := 40
 const LABEL_FONT_SIZE := 26
 const LABEL_OUTLINE := 8
 const LABEL_PIXEL_SIZE := 0.0016
-# Scritta DENTRO la zona (2026-11-19, richiesta utente: sopra l'angolo usciva e copriva la zona vicina): appesa all'angolo
-# in alto a sinistra e allungata verso il basso dello schermo, appena sollevata da terra.
+# Scritta al CENTRO della zona (2026-11-20, richiesta utente: appesa all'angolo in alto a sinistra, girando o allontanando la
+# camera usciva dalla zona): centrata, poggiata sul centro (le icone sotto, WorkAreaIcons3D), appena sollevata da terra.
 const LABEL_HEIGHT := 0.05
-const LABEL_CORNER_INSET := 0.5
 const ICON_KEYS_META := &"icon_keys"
 
 static var _material: StandardMaterial3D
@@ -115,10 +114,10 @@ static func _make_label(text: String, rect: Rect2i, base_global: Vector2) -> Lab
 	label.fixed_size = true
 	label.pixel_size = LABEL_PIXEL_SIZE
 	label.no_depth_test = true
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	var corner := Vector2(rect.position) + Vector2(LABEL_CORNER_INSET, LABEL_CORNER_INSET)
-	label.position = _on_ground(corner, base_global) + Vector3(0.0, LABEL_HEIGHT, 0.0)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	var center := Rect2(rect).get_center()
+	label.position = _on_ground(center, base_global) + Vector3(0.0, LABEL_HEIGHT, 0.0)
 	return label
 
 

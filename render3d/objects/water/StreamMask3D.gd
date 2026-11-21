@@ -35,7 +35,7 @@ static func build(source: Cell3DSource) -> Image:
 	flow.resize(size * size)
 
 	for path in paths:
-		var points: PackedVector2Array = path
+		var points := smooth_path(path)
 		var radii := PackedFloat32Array()
 		var margins := PackedFloat32Array()
 		for p in points:
@@ -60,6 +60,48 @@ static func build(source: Cell3DSource) -> Image:
 		bytes[k * 4 + 2] = int(clampf(flow[k].x * 0.5 + 0.5, 0.0, 1.0) * 255.0)
 		bytes[k * 4 + 3] = int(clampf(flow[k].y * 0.5 + 0.5, 0.0, 1.0) * 255.0)
 	return Image.create_from_data(size, size, false, Image.FORMAT_RGBA8, bytes)
+
+
+# Linea del ruscello più morbida per il 3D (2026-11-19, richiesta utente: "angoli retti che non sono naturali").
+# La linea del 2D segue ancora i gradini delle microcelle (due sole passate di Chaikin): qui la si ricampiona a passo
+# fisso e la si leviga a lungo (ogni punto verso la media dei vicini), tenendo fermi gli estremi, così il ruscello
+# combacia ancora con le celle vicine. Si scosta dal 2D di mezza microcella al più. Il gioco non cambia.
+const SMOOTH_SPACING := 0.25
+const SMOOTH_ITERATIONS := 40
+const SMOOTH_PINNED := 2
+
+
+static func smooth_path(source: PackedVector2Array) -> PackedVector2Array:
+	var points := _resample(source, SMOOTH_SPACING)
+	if points.size() < SMOOTH_PINNED * 2 + 1:
+		return points
+	for _pass in range(SMOOTH_ITERATIONS):
+		var next := points.duplicate()
+		for i in range(SMOOTH_PINNED, points.size() - SMOOTH_PINNED):
+			next[i] = points[i] * 0.5 + (points[i - 1] + points[i + 1]) * 0.25
+		points = next
+	return points
+
+
+# Punti a distanza fissa lungo la linea (estremi compresi).
+static func _resample(source: PackedVector2Array, spacing: float) -> PackedVector2Array:
+	var result := PackedVector2Array()
+	if source.size() < 2:
+		return source
+	result.append(source[0])
+	var carry := 0.0
+	for i in range(source.size() - 1):
+		var a := source[i]
+		var b := source[i + 1]
+		var length := a.distance_to(b)
+		var d := spacing - carry
+		while d <= length:
+			result.append(a.lerp(b, d / length))
+			d += spacing
+		carry = length - (d - spacing)
+	if result[result.size() - 1].distance_to(source[source.size() - 1]) > 0.001:
+		result.append(source[source.size() - 1])
+	return result
 
 
 # Quanto scende il terreno all'angolo (i, j) della griglia: letto del ruscello appena incassato.

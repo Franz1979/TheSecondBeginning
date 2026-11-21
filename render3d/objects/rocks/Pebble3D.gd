@@ -4,7 +4,7 @@ extends RefCounted
 # Oggetto 3D: i sassi (pebble, da raccogliere) di UNA macrocella, sparsi attorno alle rocce. Quanti e dove: la stessa
 # regola del 2D (MicroCellRenderer._pebble_tier_count e _rebuild_pebble_multimeshes), copiata qui con gli stessi numeri
 # e gli stessi hash, così 2D e 3D coincidono. Forme: gli 11 sassi Quaternius (CC0, tondi e squadrati) con la loro
-# texture, preparati da render3d/blender/scripts/rocks.py (origine al centro della base, larghezza 1).
+# texture, preparati da SOURCES_PER_GIOCO/blender/scripts/rocks.py (origine al centro della base, larghezza 1).
 
 const MODEL_DIR := "res://render3d/assets/models/rocks/"
 const MODELS := ["pebble_round_1", "pebble_round_2", "pebble_round_3", "pebble_round_4", "pebble_round_5",

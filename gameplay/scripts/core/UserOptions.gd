@@ -22,7 +22,9 @@ const IT_TRANSLATION_PATH := "res://translations/strings.it.translation"
 # Aggiunto insieme a translations/strings.en.csv (richiesta utente, 2026-09-06) — prima ENGLISH
 # era un placeholder puro (vedi apply_language sotto), caricava silenziosamente l'IT come tutte le
 # altre lingue non ancora reali.
-const EN_TRANSLATION_PATH := "res://translations/strings.en.translation"
+# strings.en.en.translation (2026-11-21): è il nome che Godot dà all'importazione di strings.en.csv (nome del file +
+# lingua della colonna, vedi strings.en.csv.import); col vecchio strings.en.translation, che non esiste, l'inglese non si caricava.
+const EN_TRANSLATION_PATH := "res://translations/strings.en.en.translation"
 
 var show_notification_popups: bool = true
 # Spiegazioni delle scoperte nel DiscoveryPopup (2026-09-28, richiesta utente) — indipendente da
@@ -70,6 +72,14 @@ var autosave_enabled: bool = true
 # Cambiarla con set_show_grid, che avvisa la scena aperta.
 var show_grid: bool = true
 signal show_grid_changed
+# Grafica 3D (2026-11-20, richiesta utente — menu Opzioni, sezione "Grafica 3D"): ombreggiatura ambientale (SSAO) sì/no
+# e risoluzione della scena 3D in percento (100/75/50; sotto 100 FSR ingrandisce, scritte e pannelli restano nitidi).
+# Su una scheda integrata l'SSAO costa 6-10 fps. Chiavi in options.cfg con lo stesso nome. Cambiarle con
+# set_graphics_3d, che avvisa la vista 3D aperta (View3D).
+const RESOLUTION_3D_CHOICES := [100, 75, 50]
+var ssao_enabled: bool = true
+var resolution_3d_percent: int = 100
+signal graphics_changed
 # Minimappa della sidebar chiusa (2026-09-20, richiesta utente): true = nascosta, resta solo il bottone per
 # riaprirla; false (default) = visibile. Salvato a ogni click sul bottone.
 var minimap_collapsed: bool = false
@@ -159,6 +169,10 @@ func load_from_disk() -> void:
 	show_health_icons = bool(config.get_value(SECTION, "show_health_icons", true))
 	autosave_enabled = bool(config.get_value(SECTION, "autosave_enabled", true))
 	show_grid = bool(config.get_value(SECTION, "show_grid", true))
+	ssao_enabled = bool(config.get_value(SECTION, "ssao_enabled", true))
+	resolution_3d_percent = int(config.get_value(SECTION, "resolution_3d_percent", 100))
+	if not RESOLUTION_3D_CHOICES.has(resolution_3d_percent):
+		resolution_3d_percent = 100
 	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
 	work_area_auto_zone = bool(config.get_value(SECTION, "work_area_auto_zone", true))
 	# Letti così come sono: i dialog li riportano nei valori ammessi (PickupChoiceDialog, anche in modalità caccia).
@@ -186,6 +200,14 @@ func set_show_grid(value: bool) -> void:
 	show_grid_changed.emit()
 
 
+func set_graphics_3d(ssao: bool, resolution_percent: int) -> void:
+	if ssao_enabled == ssao and resolution_3d_percent == resolution_percent:
+		return
+	ssao_enabled = ssao
+	resolution_3d_percent = resolution_percent
+	graphics_changed.emit()
+
+
 func save_to_disk() -> void:
 	var config := ConfigFile.new()
 	config.set_value(SECTION, "show_notification_popups", show_notification_popups)
@@ -200,6 +222,8 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "show_health_icons", show_health_icons)
 	config.set_value(SECTION, "autosave_enabled", autosave_enabled)
 	config.set_value(SECTION, "show_grid", show_grid)
+	config.set_value(SECTION, "ssao_enabled", ssao_enabled)
+	config.set_value(SECTION, "resolution_3d_percent", resolution_3d_percent)
 	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
 	config.set_value(SECTION, "work_area_auto_zone", work_area_auto_zone)
 	config.set_value(SECTION, "work_area_gather_trips", work_area_gather_trips)

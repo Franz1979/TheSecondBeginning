@@ -158,6 +158,33 @@ size_flags_horizontal = 3
 [node name="CheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/GridRow"]
 layout_mode = 2
 
+[node name="Graphics3DSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Graphics3DHeader" type="Label" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+
+[node name="SsaoRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/SsaoRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CheckBox" type="CheckBox" parent="MarginContainer/VBoxContainer/SsaoRow"]
+layout_mode = 2
+
+[node name="Resolution3DRow" type="HBoxContainer" parent="MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBoxContainer/Resolution3DRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="OptionButton" type="OptionButton" parent="MarginContainer/VBoxContainer/Resolution3DRow"]
+layout_mode = 2
+
 [node name="GameSeparator" type="HSeparator" parent="MarginContainer/VBoxContainer"]
 layout_mode = 2
 

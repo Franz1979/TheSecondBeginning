@@ -69,7 +69,7 @@ func show_pile(pile: GroundPile) -> void:
 
 
 # Scala della carcassa: taglia della specie (radice di max_health rispetto al riferimento) × fascia d'età.
-func _carcass_scale(species: String, age_band: int) -> float:
+static func _carcass_scale(species: String, age_band: int) -> float:
 	var rules := AnimalCalculator.get_animal_rules(species)
 	# Specie domestica (cane, passo 6): taglia della selvatica da cui deriva.
 	if rules == null:

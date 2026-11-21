@@ -1527,6 +1527,10 @@ statistics_total_births,Parti: {count}
 statistics_survived,Sopravvissuti: {count}
 statistics_average_children,Media figli per donna fertile: {value}
 statistics_fertile_woman_row,{name} — {count} figli
+statistics_pregnant_women,Donne incinte ora: {count}
+statistics_pregnant_woman_row,{name} — parto tra circa {months} mesi
+statistics_pregnant_woman_row_one,{name} — parto tra circa un mese
+statistics_pregnant_woman_row_soon,{name} — parto entro il mese
 statistics_total_population,Popolazione totale: {count}
 statistics_males,Maschi: {count}
 statistics_females,Femmine: {count}
@@ -2358,6 +2362,9 @@ building_kept_animal_in_transit,in trasporto
 notification_domestic_animal_extinct,"{domestic}: specie estinta, non resta nessun esemplare domestico. Per riaverla cattura vivi degli esemplari selvatici ({wild}) e tienili nella {shelter}: i loro piccoli nasceranno già domestici."
 notification_domestic_plant_extinct,"{domestic}: specie estinta, non resta nessun seme domestico né in magazzino né nei campi. Per riaverla semina {wild} nell'{garden}: la mietitura darà di nuovo il seme domestico."
 options_show_grid,Mostra la griglia delle microcelle
+options_group_graphics_3d,Grafica 3D
+options_ssao,Ombreggiatura ambientale (SSAO)
+options_resolution_3d,Risoluzione 3D
 options_group_display,Schermo e suoni
 options_group_game,Partita
 options_group_defaults,Impostazioni di default dei comandi

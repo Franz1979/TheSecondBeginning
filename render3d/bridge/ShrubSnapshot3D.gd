@@ -11,6 +11,13 @@ var centers := PackedVector2Array()
 var seeds := PackedInt32Array()
 # 1 = cespuglio da frutto (rovo, coi tralci), 0 = solo legno (macchia).
 var fruit_bearing := PackedByteArray()
+# Solo per i cespugli da frutto, con le regole del 2D (stagione, età, raccolta): FRUIT_FLOWERS in primavera, FRUIT_BERRIES
+# in estate e autunno se le bacche di quel cespuglio sono ancora da raccogliere, FRUIT_BARE altrimenti (raccolte,
+# cespuglio giovane, inverno). 0 per i cespugli solo legno.
+const FRUIT_FLOWERS := 0
+const FRUIT_BERRIES := 1
+const FRUIT_BARE := 2
+var fruit_state := PackedByteArray()
 # Bolle del 2D dell'individuo: dove iniziano in blob_* (blob_starts[i] .. blob_starts[i + 1]).
 var blob_starts := PackedInt32Array()
 
@@ -23,6 +30,11 @@ var blob_colors := PackedColorArray()
 var cut_centers := PackedVector2Array()
 var cut_radii := PackedFloat32Array()
 var cut_seeds := PackedInt32Array()
+
+# --- Cespugli morti (pianta secca del 2D, _build_dead_marker_transform) ---
+var dead_centers := PackedVector2Array()
+var dead_radii := PackedFloat32Array()
+var dead_seeds := PackedInt32Array()
 
 
 func size() -> int:

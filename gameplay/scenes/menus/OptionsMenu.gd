@@ -47,6 +47,12 @@ extends Window
 @onready var display_header: Label = $MarginContainer/VBoxContainer/DisplayHeader
 @onready var game_header: Label = $MarginContainer/VBoxContainer/GameHeader
 @onready var defaults_header: Label = $MarginContainer/VBoxContainer/DefaultsHeader
+# Grafica 3D (2026-11-20, UserOptions.ssao_enabled / resolution_3d_percent, applicate subito alla vista 3D aperta).
+@onready var graphics_3d_header: Label = $MarginContainer/VBoxContainer/Graphics3DHeader
+@onready var ssao_label: Label = $MarginContainer/VBoxContainer/SsaoRow/Label
+@onready var ssao_check_box: CheckBox = $MarginContainer/VBoxContainer/SsaoRow/CheckBox
+@onready var resolution_3d_label: Label = $MarginContainer/VBoxContainer/Resolution3DRow/Label
+@onready var resolution_3d_option_button: OptionButton = $MarginContainer/VBoxContainer/Resolution3DRow/OptionButton
 @onready var close_button: Button = $MarginContainer/VBoxContainer/CloseButton
 
 # Righe volume audio (2026-09-21, richiesta utente): nome del nodo riga, chiave tr() dell'etichetta e campo di
@@ -87,6 +93,8 @@ const LANGUAGE_LABEL_KEYS := [
 func _ready() -> void:
 	for key in LANGUAGE_LABEL_KEYS:
 		language_option_button.add_item(tr(key))
+	for percent in UserOptions.RESOLUTION_3D_CHOICES:
+		resolution_3d_option_button.add_item("%d%%" % percent)
 	for row_data in VOLUME_ROWS:
 		var row_path: String = "MarginContainer/VBoxContainer/%s" % row_data["row"]
 		var slider: HSlider = get_node(row_path + "/Slider")
@@ -105,6 +113,8 @@ func _ready() -> void:
 	health_icons_check_box.toggled.connect(_on_health_icons_toggled)
 	autosave_check_box.toggled.connect(_on_autosave_toggled)
 	grid_check_box.toggled.connect(_on_grid_toggled)
+	ssao_check_box.toggled.connect(_on_ssao_toggled)
+	resolution_3d_option_button.item_selected.connect(_on_resolution_3d_selected)
 	close_button.pressed.connect(hide)
 	# I volumi si applicano in tempo reale (_on_volume_changed) ma si salvano su disco alla chiusura del
 	# menu: visibility_changed copre il CloseButton e qualunque altro hide(), anche per le modifiche da tastiera
@@ -139,6 +149,8 @@ func open_menu(show_language: bool = true) -> void:
 	health_icons_check_box.set_pressed_no_signal(UserOptions.show_health_icons)
 	autosave_check_box.set_pressed_no_signal(UserOptions.autosave_enabled)
 	grid_check_box.set_pressed_no_signal(UserOptions.show_grid)
+	ssao_check_box.set_pressed_no_signal(UserOptions.ssao_enabled)
+	resolution_3d_option_button.select(maxi(0, UserOptions.RESOLUTION_3D_CHOICES.find(UserOptions.resolution_3d_percent)))
 	for field in _volume_sliders.keys():
 		(_volume_sliders[field] as HSlider).set_value_no_signal(float(UserOptions.get(field)))
 	exclusive = true
@@ -153,6 +165,16 @@ func _on_autosave_toggled(pressed: bool) -> void:
 
 func _on_grid_toggled(pressed: bool) -> void:
 	UserOptions.set_show_grid(pressed)
+	UserOptions.save_to_disk()
+
+
+func _on_ssao_toggled(pressed: bool) -> void:
+	UserOptions.set_graphics_3d(pressed, UserOptions.resolution_3d_percent)
+	UserOptions.save_to_disk()
+
+
+func _on_resolution_3d_selected(index: int) -> void:
+	UserOptions.set_graphics_3d(UserOptions.ssao_enabled, int(UserOptions.RESOLUTION_3D_CHOICES[index]))
 	UserOptions.save_to_disk()
 
 
@@ -210,6 +232,9 @@ func _refresh_texts() -> void:
 	health_icons_label.text = tr("options_show_health_icons")
 	autosave_label.text = tr("options_autosave")
 	grid_label.text = tr("options_show_grid")
+	graphics_3d_header.text = tr("options_group_graphics_3d")
+	ssao_label.text = tr("options_ssao")
+	resolution_3d_label.text = tr("options_resolution_3d")
 	display_header.text = tr("options_group_display")
 	game_header.text = tr("options_group_game")
 	defaults_header.text = tr("options_group_defaults")

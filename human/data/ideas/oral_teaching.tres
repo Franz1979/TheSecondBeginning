@@ -8,6 +8,6 @@ id = "oral_teaching"
 display_name = "idea_oral_teaching"
 summary = "idea_oral_teaching_summary"
 description = "idea_oral_teaching_description"
-thoughts_cost = 30
+thoughts_cost = 25
 prerequisites = Array[String](["paleolithic_constructions"])
 era = "paleolithic"

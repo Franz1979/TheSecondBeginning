@@ -47,11 +47,13 @@ enum Speed { X1, X2, X4, X8, DEBUG }
 # (formula abbandonata insieme a X3, richiesta utente 2026-09-04). Ritarati (richiesta utente,
 # 2026-09-07, in coppia con l'aggiunta di X8): X1/X2/X4/X8 ora dimezzano da 8.0 a 1.0 secondi/giorno
 # (X8 = X1 diviso 8, coerente col nome). DEBUG=0.25 invariato (non menzionato dalla richiesta).
+# 2026-11-21 (richiesta utente, per la vista 3D: a 8 s le persone sembravano correre): X1 = 12 s, poi 16 s; le altre la metà
+# della precedente (X8 = X1 / 8). DEBUG invariato. Tutto il gioco ragiona in giorni: cambia solo quanto dura un giorno.
 const SECONDS_PER_DAY_BY_SPEED := {
-	Speed.X1: 8.0,
-	Speed.X2: 4.0,
-	Speed.X4: 2.0,
-	Speed.X8: 1.0,
+	Speed.X1: 16.0,
+	Speed.X2: 8.0,
+	Speed.X4: 4.0,
+	Speed.X8: 2.0,
 	Speed.DEBUG: 0.25,
 }
 

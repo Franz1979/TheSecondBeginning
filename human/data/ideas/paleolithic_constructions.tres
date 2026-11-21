@@ -8,6 +8,6 @@ id = "paleolithic_constructions"
 display_name = "idea_paleolithic_constructions"
 summary = "idea_paleolithic_constructions_summary"
 description = "idea_paleolithic_constructions_description"
-thoughts_cost = 20
+thoughts_cost = 15
 era = "paleolithic"
 tree_order = 40

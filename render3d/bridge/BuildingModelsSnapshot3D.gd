@@ -13,6 +13,12 @@ var centers := PackedVector2Array()
 var doors := PackedVector2Array()
 # BuildingConstructionStage: COMPLETE (-1), 0 = cantiere non allestito, 1..N fasi del lavoro.
 var stages := PackedInt32Array()
+# Quanto è piena una fossa dei rifiuti finita (WasteDisposalService.get_pit_fill / waste_capacity, tra 0 e 1); -1 per
+# tutti gli altri edifici.
+var fills := PackedFloat32Array()
+# Carichi appesi all'essiccatoio finito, uno per posto occupato nell'ordine dei posti (BuildingModels3D.RACK_ITEMS:
+# "carne", "pesce", "pelle"; "" = posto con altro); vuoto per tutti gli altri edifici.
+var rack_loads: Array[PackedStringArray] = []
 
 
 func size() -> int:

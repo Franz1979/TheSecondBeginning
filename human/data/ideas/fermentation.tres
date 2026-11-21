@@ -12,6 +12,6 @@ id = "fermentation"
 display_name = "idea_fermentation"
 summary = "idea_fermentation_summary"
 description = "idea_fermentation_description"
-thoughts_cost = 80
+thoughts_cost = 70
 prerequisites = Array[String](["agriculture"])
 era = "paleolithic"

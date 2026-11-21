@@ -18,6 +18,13 @@ const DARKER_BEATEN_TYPES := ["deposit_site"]
 var _game: Node2D
 # Etichette 2D in spazio schermo nascoste mentre il 3D è acceso (work_areas), rimesse da set_2d_visible(true).
 var _hidden_screen_labels: Array = []
+# Sagoma 2D di ogni renderer degli animali (id del renderer -> {"length", "color"}), letta una volta (animals).
+var _animal_shapes: Dictionary = {}
+# Lista dei visibili rifatta a turni (animals, _visible_animals): per ogni renderer (id dell'istanza) ->
+# {"shown": Array degli individui visibili, "building": id -> individuo della lista in costruzione, "seen": fotogramma}.
+const ANIMAL_VISIBILITY_TURNS := 6
+var _animal_lists: Dictionary = {}
+var _animal_turn := 0
 
 
 func _init(game: Node2D) -> void:
@@ -36,6 +43,175 @@ func cell_origin(coords: Vector2i) -> Vector2:
 	if cell == null or cell.container == null:
 		return Vector2.ZERO
 	return cell.container.position / float(MicroCellRenderer.CELL_SIZE)
+
+
+# Persone visibili, dalle stesse HumanIndividualView del 2D (una per persona nelle celle accese): grandezza per età e
+# sesso, fase del passo e colori (pelle, vestito, capelli, grigi da anziani, copricapo) come li calcola il 2D.
+# Riempie `snapshot` (riusato a ogni fotogramma).
+func people(snapshot: PeopleSnapshot3D) -> void:
+	snapshot.clear()
+	var live: Dictionary = _game.get("live_cells")
+	var views: Dictionary = _game.get("human_individual_views")
+	for value in views.values():
+		if not is_instance_valid(value):
+			continue
+		var view := value as HumanIndividualView
+		if view == null or not view.visible or view.individual == null:
+			continue
+		var individual := view.individual
+		var cell: LiveMacroCell = live.get(individual.home_macro_coords)
+		if cell == null or cell.container == null:
+			continue
+		var band := view._current_age_band
+		var hair: Color = HumanIndividualView.HAIR_COLOR_BY_TRAIT.get(individual.hair_color,
+			HumanIndividualView.HAIR_COLOR_BY_TRAIT[HumanTypes.HairColor.BROWN])
+		if band == HumanTypes.AgeBand.OLD:
+			hair = HumanIndividualView.GRAY_HAIR_COLOR
+		var origin := cell.container.position / float(MicroCellRenderer.CELL_SIZE)
+		snapshot.ids.append(individual.id)
+		snapshot.positions.append(origin + individual.position)
+		snapshot.grounds.append(Vector2(individual.home_macro_coords) * float(World.WIDTH) + individual.position)
+		snapshot.facings.append(individual.facing_direction)
+		snapshot.sizes.append(absf(view.scale.x) / HumanIndividualView.BASE_DRAW_SCALE)
+		snapshot.walk_phases.append(view.walk_phase)
+		snapshot.body_colors.append(HumanIndividualView.body_draw_color(individual, band))
+		snapshot.hair_colors.append(hair)
+		snapshot.cap_colors.append(HumanIndividualView.head_cap_color(individual, band))
+		snapshot.females.append(1 if individual.sex == HumanTypes.Sex.FEMALE else 0)
+		snapshot.pregnant.append(1 if individual.is_pregnant else 0)
+		snapshot.selected.append(1 if individual.is_selected else 0)
+
+
+# Animali visibili: tutti i renderer della fauna stanno nelle celle accese (selvatici per specie, visite degli animali
+# seguiti, domestici, condotti con la cavezza), quindi si leggono tutti da lì, con lo stesso test del disegno 2D (nebbia,
+# pulsante "animali"). Lunghezza e colore dalla sagoma 2D della specie (i domestici col loro colore e la loro taglia), per
+# età come nel 2D. Riempie `snapshot` (riusato a ogni fotogramma).
+func animals(snapshot: AnimalsSnapshot3D) -> void:
+	snapshot.clear()
+	_animal_turn += 1
+	var live: Dictionary = _game.get("live_cells")
+	for coords in live:
+		var cell: LiveMacroCell = live[coords]
+		if cell == null or cell.container == null:
+			continue
+		var origin := cell.container.position / float(MicroCellRenderer.CELL_SIZE)
+		var ground := Vector2(coords) * float(World.WIDTH)
+		for child in cell.container.get_children():
+			var renderer := child as AnimalGroupRenderer
+			if renderer == null or not renderer.are_animals_shown():
+				continue
+			var shape := _animal_shape(renderer)
+			if shape.is_empty():
+				continue
+			var ages: Array = renderer.size_multiplier_by_age
+			for value in _visible_animals(renderer):
+				var individual := value as AnimalVisualGroup
+				var age_scale := 1.0
+				if individual.age_band >= 0 and individual.age_band < ages.size():
+					age_scale = float(ages[individual.age_band])
+				var position := renderer.position / float(MicroCellRenderer.CELL_SIZE) + individual.position
+				snapshot.ids.append(individual.id)
+				snapshot.species.append(renderer.species_name)
+				snapshot.positions.append(origin + position)
+				snapshot.grounds.append(ground + position)
+				snapshot.facings.append(individual.direction)
+				snapshot.lengths.append(float(shape["length"]) * age_scale)
+				snapshot.colors.append(shape["color"])
+				snapshot.selected.append(1 if renderer._selected_individual_id == individual.id else 0)
+
+
+# Lista dei visibili rifatta a turni (2026-11-21, misura [3D TIME]: scorrere a ogni fotogramma tutti gli animali della
+# cella, ~580, costava 1-2 ms anche con la nebbia a turni, per vederne 12-37). A ogni fotogramma si controlla solo un
+# sesto degli individui di ogni renderer (uno ogni ANIMAL_VISIBILITY_TURNS, a partire dal turno) e si mettono da parte i
+# visibili; finito il giro la lista nuova prende il posto di quella mostrata. Gli individui sono gli oggetti del 2D,
+# quindi le posizioni restano di ogni fotogramma; solo comparire/sparire (nebbia, nascite, morti) arriva fino a
+# ANIMAL_VISIBILITY_TURNS fotogrammi dopo. Un renderer nuovo si controlla tutto subito.
+func _visible_animals(renderer: AnimalGroupRenderer) -> Array:
+	var key := renderer.get_instance_id()
+	var individuals: Array = renderer.get_individuals()
+	var entry: Dictionary = _animal_lists.get(key, {})
+	if entry.is_empty():
+		var shown: Array = []
+		for value in individuals:
+			if renderer.is_individual_visible(value as AnimalVisualGroup):
+				shown.append(value)
+		entry = {"shown": shown, "building": {}, "seen": _animal_turn}
+		_animal_lists[key] = entry
+		_forget_old_animal_lists()
+		return shown
+	entry["seen"] = _animal_turn
+	var phase := _animal_turn % ANIMAL_VISIBILITY_TURNS
+	var building: Dictionary = entry["building"]
+	for i in range(phase, individuals.size(), ANIMAL_VISIBILITY_TURNS):
+		var individual := individuals[i] as AnimalVisualGroup
+		if renderer.is_individual_visible(individual):
+			building[individual.id] = individual
+	if phase == ANIMAL_VISIBILITY_TURNS - 1:
+		entry["shown"] = building.values()
+		entry["building"] = {}
+	return entry["shown"]
+
+
+# Toglie le liste dei renderer non più letti da un po' (celle spente, specie sparite).
+func _forget_old_animal_lists() -> void:
+	for key in _animal_lists.keys():
+		if _animal_turn - int(_animal_lists[key]["seen"]) > ANIMAL_VISIBILITY_TURNS * 10:
+			_animal_lists.erase(key)
+
+
+# Lunghezza (microcelle) e colore della sagoma 2D di un renderer, letti una volta dalla sua mesh e tenuti da parte.
+func _animal_shape(renderer: AnimalGroupRenderer) -> Dictionary:
+	var id := renderer.get_instance_id()
+	if _animal_shapes.has(id):
+		return _animal_shapes[id]
+	var shape := {}
+	var multimesh: MultiMesh = renderer._multimesh
+	if multimesh != null and multimesh.mesh != null and multimesh.mesh.get_surface_count() > 0:
+		var colors: PackedColorArray = multimesh.mesh.surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+		var color: Color = colors[0] if not colors.is_empty() else Color.GRAY
+		color.a = 1.0
+		shape = {"length": multimesh.mesh.get_aabb().size.x / float(MicroCellRenderer.CELL_SIZE), "color": color}
+	_animal_shapes[id] = shape
+	return shape
+
+
+# Icone e animazioni del 2D sulla mappa (2026-11-20, richiesta utente: "paro paro quelle del 2D"): lampadina dell'idea,
+# icone dei comandi (costruisci, raccogli, caccia, produci...), riti, funerale, fumetto della chiacchiera, icone che salgono
+# dagli edifici. Nel 2D nascono tutte come figlie della cella con z_index 2 (il segno comune di GameScene); in più, sopra
+# ogni persona, l'icona di salute (malattia, ferita) e l'icona passeggera (sorso). Le si rilegge così come sono (posizione,
+# trasparenza, scala animate dai tween del 2D): una voce per icona visibile, in `out` (riusato).
+# Voce: {"source": CanvasItem, "origin": origine 3D della cella (x, z), "ground": origine della cella in microcelle
+# assolute, "local": posizione attuale nella cella (pixel 2D), "anchor": punto della cella a cui sta attaccata (pixel 2D;
+# Vector2.INF = dov'era quando è comparsa), "scale": scala nella cella, "person_size": grandezza della persona (0 = no)}.
+func overhead_icons(out: Array) -> void:
+	out.clear()
+	var live: Dictionary = _game.get("live_cells")
+	for coords in live:
+		var cell: LiveMacroCell = live[coords]
+		if cell == null or cell.container == null:
+			continue
+		var origin := cell.container.position / float(MicroCellRenderer.CELL_SIZE)
+		var ground := Vector2(coords) * float(World.WIDTH)
+		for child in cell.container.get_children():
+			if child is HumanIndividualView:
+				var view := child as HumanIndividualView
+				if not view.visible:
+					continue
+				var size := absf(view.scale.x) / HumanIndividualView.BASE_DRAW_SCALE
+				for icon in view.get_children():
+					var item := icon as Node2D
+					if item == null or not item.visible or not (item is HealthConditionIcon or item.z_index == 2):
+						continue
+					out.append({"source": item, "origin": origin, "ground": ground, "local": view.transform * item.position,
+						"anchor": view.position, "scale": (item.scale * view.scale).abs(), "person_size": size})
+			elif child is CanvasItem and (child as CanvasItem).z_index == 2 and not (child is FogOfWarRenderer):
+				var item := child as CanvasItem
+				if not item.visible:
+					continue
+				var local: Vector2 = item.get("position")
+				var item_scale: Vector2 = item.get("scale")
+				out.append({"source": item, "origin": origin, "ground": ground, "local": local, "anchor": Vector2.INF,
+					"scale": item_scale, "person_size": 0.0})
 
 
 func cell_source(coords: Vector2i) -> Cell3DSource:
@@ -73,6 +249,23 @@ func stone_snapshot(coords: Vector2i) -> StoneSnapshot3D:
 	return snapshot
 
 
+# Bastoni a terra della cella: la disponibilità per lotto che riceve il 2D (MicroCellRenderer.stick_availability).
+func sticks_snapshot(coords: Vector2i) -> SticksSnapshot3D:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	var snapshot := SticksSnapshot3D.new()
+	if cell != null and cell.renderer != null:
+		snapshot.quantities = cell.renderer.stick_availability.duplicate()
+	return snapshot
+
+
+# "Impronta" dei bastoni: il 2D riceve un dizionario nuovo a ogni rinfresco (set_stick_availability).
+func sticks_signature(coords: Vector2i) -> Array:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null or cell.renderer == null:
+		return []
+	return [cell.renderer.stick_availability]
+
+
 # "Impronta" di rocce e sassi della cella: cambia quando il 2D riceve dati nuovi (rocce esaurite, sassi raccolti).
 # Confrontata con is_same/size, costa pochissimo a ogni frame.
 func stone_signature(coords: Vector2i) -> Array:
@@ -84,7 +277,8 @@ func stone_signature(coords: Vector2i) -> Array:
 		renderer.depleted_stone_positions.size(), renderer.pebble_availability]
 
 
-# Alberi vivi della cella, con la stessa posizione e taglia del 2D (riusa la sua formula, mai una copia).
+# Alberi vivi, tagliati (ceppi) e morti della cella, con la stessa posizione e taglia del 2D (riusa le sue formule, mai
+# una copia; tagliati e morti con la taglia salvata al momento del taglio o della morte).
 func tree_snapshot(coords: Vector2i) -> TreeSnapshot3D:
 	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
 	var snapshot := TreeSnapshot3D.new()
@@ -92,10 +286,26 @@ func tree_snapshot(coords: Vector2i) -> TreeSnapshot3D:
 		return snapshot
 	var renderer := cell.renderer
 	var positions: Array = renderer.vegetation_positions.get(GameTypes.WorldObjectType.TREE, [])
-	if positions.is_empty():
+	var cut: Array = renderer.cut_positions.get(GameTypes.WorldObjectType.TREE, [])
+	var dead: Array = renderer.dead_positions.get(GameTypes.WorldObjectType.TREE, [])
+	if positions.is_empty() and cut.is_empty() and dead.is_empty():
 		return snapshot
 	var lot_counts: Dictionary = renderer._lot_extent_counts(GameTypes.WorldObjectType.TREE)
 	var cell_size := float(MicroCellRenderer.CELL_SIZE)
+	for entry in cut:
+		var key: Vector3i = entry["key"]
+		var t: Transform2D = renderer._build_tree_stump_transform(key, float(entry["size_multiplier"]), lot_counts)
+		var width := t.x.length()
+		snapshot.stump_grounds.append((t.origin + Vector2(width * 0.5, t.y.length())) / cell_size)
+		snapshot.stump_widths.append(width / cell_size)
+		snapshot.stump_seeds.append(hash(key))
+	for entry in dead:
+		var key: Vector3i = entry["key"]
+		var t: Transform2D = renderer._build_dead_tree_transform(key, float(entry["size_multiplier"]), lot_counts)
+		# Il piede è il punto (0,5; 1) del quadrato unitario della sagoma (vedi _build_dead_tree_transform).
+		snapshot.dead_grounds.append((t.origin + t.x * 0.5 + t.y) / cell_size)
+		snapshot.dead_heights.append(t.y.length() / cell_size)
+		snapshot.dead_seeds.append(hash(key))
 	for key in positions:
 		var visual: Dictionary = renderer._compute_tree_visual(key, lot_counts)
 		snapshot.grounds.append(visual["ground"] / cell_size)
@@ -104,6 +314,7 @@ func tree_snapshot(coords: Vector2i) -> TreeSnapshot3D:
 		snapshot.canopy_radii.append(float(visual["canopy_radius"]) / cell_size)
 		snapshot.seeds.append(hash(visual["jitter_pos"]))
 		snapshot.conifer.append(1 if visual["is_conifer"] else 0)
+		snapshot.fruit_bearing.append(1 if visual["is_fruit_bearing"] else 0)
 	return snapshot
 
 
@@ -114,10 +325,13 @@ func tree_signature(coords: Vector2i) -> Array:
 		return []
 	var renderer := cell.renderer
 	var positions: Array = renderer.vegetation_positions.get(GameTypes.WorldObjectType.TREE, [])
-	return [renderer.vegetation_positions, positions, positions.size(), renderer.tree_current_year]
+	var cut: Array = renderer.cut_positions.get(GameTypes.WorldObjectType.TREE, [])
+	var dead: Array = renderer.dead_positions.get(GameTypes.WorldObjectType.TREE, [])
+	return [renderer.vegetation_positions, positions, positions.size(), renderer.tree_current_year,
+		renderer.cut_positions, cut, cut.size(), renderer.dead_positions, dead, dead.size()]
 
 
-# Cespugli vivi e tagliati della cella, con le stesse bolle (posizione, taglia, colore) del 2D: riusa le sue formule,
+# Cespugli vivi, tagliati e morti della cella, con le stesse bolle (posizione, taglia, colore) del 2D: riusa le sue formule,
 # mai una copia. Dagli stessi elenchi del 2D (filtrati dalla nebbia).
 func shrub_snapshot(coords: Vector2i) -> ShrubSnapshot3D:
 	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
@@ -133,6 +347,7 @@ func shrub_snapshot(coords: Vector2i) -> ShrubSnapshot3D:
 		snapshot.centers.append(visual["center"] / cell_size)
 		snapshot.seeds.append(hash(visual["jitter_pos"]))
 		snapshot.fruit_bearing.append(1 if visual["is_fruit_bearing"] else 0)
+		snapshot.fruit_state.append(_shrub_fruit_state(renderer, key, visual))
 		snapshot.blob_starts.append(snapshot.blob_centers.size())
 		var transforms: Array = geometry["blob_transforms"]
 		var colors: Array = geometry["blob_colors"]
@@ -148,10 +363,31 @@ func shrub_snapshot(coords: Vector2i) -> ShrubSnapshot3D:
 		snapshot.cut_centers.append(t.origin / cell_size)
 		snapshot.cut_radii.append(t.x.length() / cell_size)
 		snapshot.cut_seeds.append(hash(key))
+	for entry in renderer.dead_positions.get(GameTypes.WorldObjectType.SHRUB, []):
+		var key: Vector3i = entry["key"]
+		var t: Transform2D = renderer._build_dead_marker_transform(GameTypes.WorldObjectType.SHRUB, key,
+			float(entry["size_multiplier"]), lot_counts)
+		snapshot.dead_centers.append(t.origin / cell_size)
+		snapshot.dead_radii.append(t.x.length() / cell_size)
+		snapshot.dead_seeds.append(hash(key))
 	return snapshot
 
 
-# "Impronta" dei cespugli: cambia quando il 2D riceve elenchi nuovi (nascite, tagli, nebbia) o cambia l'anno (età).
+# Stato dei frutti di un cespuglio con le regole del 2D (_rebuild_shrub_multimeshes): niente frutti sui giovani, bacche
+# solo in FRUITING_SEASONS e solo sui cespugli ancora da raccogliere (_fruit_stock_shows, sempre gli stessi individui);
+# i fiori (solo 3D, il 2D non li ha) nella stagione prima delle bacche, la primavera.
+static func _shrub_fruit_state(renderer: MicroCellRenderer, key: Vector3i, visual: Dictionary) -> int:
+	if not visual["is_fruit_bearing"] or visual["age_band"] == GameTypes.AgeBand.YOUNG:
+		return ShrubSnapshot3D.FRUIT_BARE
+	if renderer.current_season == GameTypes.Season.SPRING:
+		return ShrubSnapshot3D.FRUIT_FLOWERS
+	if renderer.current_season in MicroCellRenderer.FRUITING_SEASONS 			and renderer._fruit_stock_shows("berry", key, visual["jitter_pos"]):
+		return ShrubSnapshot3D.FRUIT_BERRIES
+	return ShrubSnapshot3D.FRUIT_BARE
+
+
+# "Impronta" dei cespugli: cambia quando il 2D riceve elenchi nuovi (nascite, tagli, nebbia) o cambia l'anno (età), la
+# stagione o la raccolta delle bacche.
 func shrub_signature(coords: Vector2i) -> Array:
 	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
 	if cell == null or cell.renderer == null:
@@ -159,8 +395,10 @@ func shrub_signature(coords: Vector2i) -> Array:
 	var renderer := cell.renderer
 	var positions: Array = renderer.vegetation_positions.get(GameTypes.WorldObjectType.SHRUB, [])
 	var cut: Array = renderer.cut_positions.get(GameTypes.WorldObjectType.SHRUB, [])
+	var dead: Array = renderer.dead_positions.get(GameTypes.WorldObjectType.SHRUB, [])
 	return [renderer.vegetation_positions, positions, positions.size(), renderer.shrub_current_year,
-		renderer.cut_positions, cut, cut.size()]
+		renderer.cut_positions, cut, cut.size(), renderer.dead_positions, dead, dead.size(), renderer.current_season,
+		renderer.fruit_stock_available_ratio_by_lot.get("berry", {})]
 
 
 # Focolari finiti della cella (dallo stesso elenco di edifici che disegna il 2D) col loro stato: acceso mentre ci si fa
@@ -209,6 +447,8 @@ func building_models(coords: Vector2i) -> BuildingModelsSnapshot3D:
 		snapshot.centers.append(MicroCellRenderer._building_entry_center(entry) / float(MicroCellRenderer.CELL_SIZE))
 		snapshot.doors.append(TentShapes.direction_vector(entry.get("rotation", GameTypes.Direction.SOUTH)))
 		snapshot.stages.append(_stage_of_entry(entry, by_id))
+		snapshot.fills.append(_pit_fill(entry, by_id))
+		snapshot.rack_loads.append(_rack_loads(entry, by_id))
 	return snapshot
 
 
@@ -224,6 +464,8 @@ func building_models_signature(coords: Vector2i) -> Array:
 	var by_id := _buildings_by_id()
 	for entry in entries:
 		signature.append(_stage_of_entry(entry, by_id))
+		signature.append(_pit_fill(entry, by_id))
+		signature.append(",".join(_rack_loads(entry, by_id)))
 	return signature
 
 
@@ -235,6 +477,33 @@ func _model_entries(renderer: MicroCellRenderer) -> Array:
 		if not_set_up or BuildingModels3D.has_models(String(entry.get("building_type_name", ""))):
 			entries.append(entry)
 	return entries
+
+
+# Cosa è appeso all'essiccatoio finito: un carico per posto occupato, nell'ordine dei posti del gioco
+# (BuildingStorageService.get_slot_breakdown, gli stessi del pannello). Ingrediente in essiccazione e prodotto già secco
+# restano appesi uguali finché qualcuno non lo porta via. Vuoto se l'edificio non è un essiccatoio finito.
+func _rack_loads(entry: Dictionary, by_id: Dictionary) -> PackedStringArray:
+	var loads := PackedStringArray()
+	if String(entry.get("building_type_name", "")) != BuildingModels3D.RACK_TYPE or not entry.get("is_complete", true):
+		return loads
+	var building: Building = by_id.get(int(entry.get("id", -1)))
+	if building == null:
+		return loads
+	for slot in BuildingStorageService.get_slot_breakdown(building):
+		loads.append(String(BuildingModels3D.RACK_ITEM_BY_RESOURCE.get(String((slot as Dictionary).get("resource_name", "")), "")))
+	return loads
+
+
+# Riempimento di una fossa dei rifiuti finita, tra 0 e 1, a passi di 1% (il modello si rifà solo quando cambia
+# davvero); -1 se l'edificio non è una fossa finita. Rifiuti più detriti, come il gioco (WasteDisposalService).
+func _pit_fill(entry: Dictionary, by_id: Dictionary) -> float:
+	if not entry.get("is_complete", true):
+		return -1.0
+	var building: Building = by_id.get(int(entry.get("id", -1)))
+	if not WasteDisposalService.is_pit(building):
+		return -1.0
+	var fill := float(WasteDisposalService.get_pit_fill(building)) / float(building.rules.waste_capacity)
+	return snappedf(clampf(fill, 0.0, 1.0), 0.01)
 
 
 func _stage_of_entry(entry: Dictionary, by_id: Dictionary) -> int:
@@ -373,7 +642,7 @@ func storage_piles(coords: Vector2i) -> StoragePilesSnapshot3D:
 
 # Mucchi a terra della cella (GameData.ground_piles), come GroundPileView: le prime MAX_ICONS risorse in ordine di nome,
 # sparse attorno al centro della microcella con le STESSE posizioni stabili (stessa sequenza casuale, seme = id del
-# mucchio), più piccole del magazzino. Le carcasse no (modello a parte, più avanti).
+# mucchio), più piccole del magazzino. Le carcasse con il loro modello (_add_carcasses).
 func _add_ground_piles(snapshot: StoragePilesSnapshot3D, coords: Vector2i) -> void:
 	var game_data: GameData = GameSettings.active_game_data
 	if game_data == null:
@@ -382,6 +651,7 @@ func _add_ground_piles(snapshot: StoragePilesSnapshot3D, coords: Vector2i) -> vo
 	for pile in game_data.ground_piles:
 		if pile.macro_coords != coords:
 			continue
+		_add_carcasses(snapshot, pile)
 		var names := pile.get_resource_names().slice(0, GroundPileView.MAX_ICONS)
 		if names.is_empty():
 			continue
@@ -395,6 +665,47 @@ func _add_ground_piles(snapshot: StoragePilesSnapshot3D, coords: Vector2i) -> vo
 			rng.randf_range(-PI, PI) # rotazione dell'icona del 2D: qui la decide Piles3D, ma la sequenza resta la stessa
 			var offset := Vector2.from_angle(angle) * distance / px
 			snapshot.add(pile.get_position() + offset, names[i], hash([pile.id, i]), GroundPileView.ICON_SCALE)
+
+
+# Carcasse di un mucchio come GroundPileView.show_pile: stessa rotazione e spostamento stabili (seme id*31+i), stessa
+# taglia (_carcass_scale), colore della sagoma 2D della specie (i domestici col loro colore).
+func _add_carcasses(snapshot: StoragePilesSnapshot3D, pile: GroundPile) -> void:
+	var px := float(MicroCellRenderer.CELL_SIZE)
+	for i in range(pile.carcasses.size()):
+		var carcass: Dictionary = pile.carcasses[i]
+		var species := String(carcass.get("species", ""))
+		var rng := RandomNumberGenerator.new()
+		rng.seed = pile.id * 31 + i
+		var rotation := rng.randf_range(-0.6, 0.6)
+		var offset := Vector2(rng.randf_range(-0.8, 0.8), rng.randf_range(-0.6, 0.6))
+		var scale := GroundPileView._carcass_scale(species, int(carcass.get("age_band", GameTypes.AgeBand.ADULT)))
+		var wild := species
+		var color := Color.GRAY
+		var domestic := DomesticAnimalCalculator.get_rules(species)
+		if domestic != null:
+			wild = domestic.wild_species_name
+			color = domestic.body_color
+		else:
+			color = _species_color(species)
+		color.a = 1.0
+		snapshot.add_carcass(pile.get_position() + offset / px, GroundPileView.CARCASS_BODY_LENGTH * scale / px, rotation,
+			color, wild == "partridge")
+
+
+# Colore della sagoma 2D di una specie selvatica (AnimalGroupRenderer.build_species_mesh).
+static func _species_color(species: String) -> Color:
+	match species:
+		"rabbit": return AnimalGroupRenderer.RABBIT_COLOR
+		"deer": return AnimalGroupRenderer.DEER_COLOR
+		"boar": return AnimalGroupRenderer.BOAR_COLOR
+		"tarpan": return AnimalGroupRenderer.TARPAN_COLOR
+		"wild_donkey": return AnimalGroupRenderer.WILD_DONKEY_COLOR
+		"aurochs": return AnimalGroupRenderer.AUROCHS_COLOR
+		"mouflon": return AnimalGroupRenderer.MOUFLON_COLOR
+		"bezoar": return AnimalGroupRenderer.BEZOAR_COLOR
+		"wolf": return AnimalGroupRenderer.WOLF_COLOR
+		"partridge": return AnimalGroupRenderer.PARTRIDGE_COLOR
+	return GroundPileView.CARCASS_FUR_COLOR
 
 
 func _complete_entries_of_type(renderer: MicroCellRenderer, type_name: String) -> Array:

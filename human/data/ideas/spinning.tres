@@ -10,6 +10,6 @@ id = "spinning"
 display_name = "idea_spinning"
 summary = "idea_spinning_summary"
 description = "idea_spinning_description"
-thoughts_cost = 80
+thoughts_cost = 60
 prerequisites = Array[String](["plant_domestication"])
 era = "paleolithic"

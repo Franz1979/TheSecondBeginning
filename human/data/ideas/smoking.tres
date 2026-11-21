@@ -8,6 +8,6 @@ id = "smoking"
 display_name = "idea_smoking"
 summary = "idea_smoking_summary"
 description = "idea_smoking_description"
-thoughts_cost = 40
+thoughts_cost = 30
 prerequisites = Array[String](["drying", "paleolithic_constructions"])
 era = "paleolithic"

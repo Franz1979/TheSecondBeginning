@@ -155,12 +155,12 @@ func _run_seasonal_checkpoints(world: World, game_data: GameData, year_rolled_ov
 			# stesso giorno, refactor lot_source) — STESSO momento del checkpoint sopra (inizio di
 			# ogni stagione), ma percorso SEPARATO: quello sopra presuppone uno stock aggregato di
 			# macrocella (CaloricCalculator.SECONDARY_SOURCES), che le risorse a capacità per lotto
-			# non hanno — vedi LotCapacityService.reset_all_lot_harvests_on_season_rise per il
+			# non hanno — vedi LotCapacityService.reset_all_lot_harvests_on_season_start per il
 			# dettaglio (un solo punto per tutte, derivato da lot_source, non più un elenco scritto
 			# a mano).
 			_run_timed(
 				"lot_capacity_harvest_reset_checkpoint",
-				func(): LotCapacityService.reset_all_lot_harvests_on_season_rise(LODOrchestrator.engine_states(world), SeasonCalculator.get_previous_season(season), season)
+				func(): LotCapacityService.reset_all_lot_harvests_on_season_start(LODOrchestrator.engine_states(world))
 			)
 			_run_timed("natural_events_checkpoint", func(): _run_natural_events_checkpoint(world, game_data, season))
 			checkpoint_ran = true
@@ -279,11 +279,9 @@ func _run_growth_checkpoint(world: World, game_data: GameData) -> void:
 	# slot. Solo sulle celle accese; una cella spenta li perde alla riaccensione (SeasonalResourceService).
 	_run_timed("  clear_natural_death_markers", func(): _clear_natural_death_markers(world))
 
-	# Rigenerazione ANNUALE delle risorse a lotto senza stagionalita' (2026-09-19, richiesta utente): il
-	# raccolto accumulato sui lotti (es. stick) si azzera qui, insieme al ricalcolo annuale della capacita'.
-	# Le risorse con moltiplicatore che sale sono gia' azzerate all'inizio della stagione in cui sale, vedi
-	# LotCapacityService.reset_harvests_for_resources_without_seasonal_rise.
-	_run_timed("  lot_harvest_reset_annuale (senza stagionalita')", func(): LotCapacityService.reset_harvests_for_resources_without_seasonal_rise(LODOrchestrator.engine_states(world)))
+	# (2026-11-21) L'azzeramento annuale del raccolto delle risorse a lotto piatte (stick, plant_fiber) non c'è più:
+	# tutte le risorse a lotto rigenerabili si azzerano a ogni inizio stagione
+	# (LotCapacityService.reset_all_lot_harvests_on_season_start).
 
 	if VEGETATION_ENGINE_ENABLED:
 		var encroach_start_usec := Time.get_ticks_usec()

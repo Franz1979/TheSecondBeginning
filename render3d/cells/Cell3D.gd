@@ -75,6 +75,10 @@ func refresh_stones(snapshot: StoneSnapshot3D, signature: Array, materials: Mate
 	_set_layer(&"stones", stones, signature)
 
 
+func refresh_sticks(snapshot: SticksSnapshot3D, signature: Array, materials: Materials3D) -> void:
+	_set_layer(&"sticks", Sticks3D.build(snapshot, _base_global(), materials.vertex_color), signature)
+
+
 # Suoli (prato, sottobosco, ghiaia, terra): non è un nodo, è la maschera del materiale del terreno (aggiornata sul posto).
 func refresh_ground_cover(snapshot: GroundCoverSnapshot3D, signature: Array) -> void:
 	_layer_signatures[&"ground_cover"] = signature
