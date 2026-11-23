@@ -59,8 +59,9 @@ static func depth_for(weight: float) -> float:
 	return DEPTH * smoothstep(0.15, 0.85, weight)
 
 
-# Zolle nel pieno della pozza. null se non ce ne sono.
-static func build(source: Cell3DSource, weights: PackedFloat32Array, material: Material) -> Node3D:
+# Zolle nel pieno della pozza, tranne sulle microcelle di `hidden` (sotto il nero della nebbia: non si creano). null se
+# non ce ne sono.
+static func build(source: Cell3DSource, weights: PackedFloat32Array, material: Material, hidden: Dictionary = {}) -> Node3D:
 	if weights.is_empty():
 		return null
 	_ensure_lumps()
@@ -72,7 +73,7 @@ static func build(source: Cell3DSource, weights: PackedFloat32Array, material: M
 	for pos: Vector2i in source.clay_positions:
 		if pos.x < 0 or pos.y < 0 or pos.x >= size or pos.y >= size:
 			continue
-		if not _is_full(weights, pos, size):
+		if not _is_full(weights, pos, size) or hidden.has(pos):
 			continue
 		if Noise2DMatch.value(pos, 9) < LUMP_CHANCE:
 			var p := Vector2(pos) + Vector2(0.5, 0.5) + Vector2(Noise2DMatch.value(pos, 10) - 0.5, Noise2DMatch.value(pos, 11) - 0.5) * 0.6

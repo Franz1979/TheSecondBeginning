@@ -18,7 +18,8 @@ var _entries: Array[Dictionary] = []
 
 
 func _init() -> void:
-	layer = 1
+	# Sotto l'interfaccia (CanvasLayer di GameScene, livello 1), come la mappa 2D: i pannelli coprono le icone.
+	layer = 0
 
 
 # labels: le Label3D delle zone (meta WorkAreas3D.ICON_KEYS_META = icone). Quelle senza icone non hanno fondino.

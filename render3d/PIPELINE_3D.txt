@@ -100,6 +100,20 @@ modifiche (fatte nello script) o lo ritocca a mano (diventa "a mano"). Si esport
 (nome - categoria - fonte: script / a mano - stato)
 - stick_tent (tenda di rami) - buildings - script (stick_tent.py) - 4 modelli: 0 cantiere, 1 struttura, 2 copertura,
   3 finita; agganciata in BuildingModels3D (2026-11-19)
+- hide_tent (tenda di pelli) - buildings - script (hide_tent.py, pezzi comuni da stick_tent.py) - 3 modelli:
+  1 struttura, 2 copertura, 3 finita (soglie [0.0, 0.4] aggiunte a hide_tent.tres come la tenda di rami); pianta 5/4
+  della tenda di rami (5 posti) (2026-11-23)
+- toolmaker_hut (capanna dell'attrezzaio) - buildings - script (toolmaker_hut.py) - 3 modelli: 1 struttura,
+  2 copertura, 3 finita (soglie [0.0, 0.4] aggiunte a toolmaker_hut.tres); a parte un modello per attrezzo pronto
+  (lancia, arco, frecce, ascia, piccone, borsa, borsa_affumicata, otre, travois), messo se è nei Prodotti finiti
+  (2026-11-23)
+- covered_depot (deposito coperto) - buildings - script (covered_depot.py) - 3 modelli: 1 pali, 2 telaio,
+  3 finito (soglie [0.0, 0.4] aggiunte a covered_depot.tres); solo la tettoia, i mucchi li mette Piles3D (2026-11-23)
+- burial (cumulo sepolcrale) - buildings - script (burial.py) - 3 modelli: 1 scavo, 2 tumulo, 3 finito (soglie
+  [0.0, 0.4] aggiunte a burial.tres) (2026-11-23)
+- feast_ground (spiazzo delle feste, 2x2) - buildings - script (feast_ground.py, pietre del fuoco da campfire.py) - 3
+  modelli: 1 mucchi, 2 cerchio, 3 finito (soglie [0.0, 0.4] aggiunte a feast_ground.tres); il falò è un focolare
+  (Hearth3D), acceso durante il banchetto (2026-11-23)
 - wip_sign (cartello di cantiere) - buildings - script (wip_sign.py) - su ogni edificio piazzato e non allestito
   (fase 0), di qualsiasi tipo, come nel 2D (2026-11-19)
 - stacked_stones (pietre rituali) - buildings - script (stacked_stones.py) - 3 modelli: 1 base, 2 metà, 3 finita
@@ -110,8 +124,38 @@ modifiche (fatte nello script) o lo ritocca a mano (diventa "a mano"). Si esport
 - drying_rack (essiccatoio) - buildings - script (drying_rack.py) - 1 cantiere (fase 1, il .tres non ha soglie),
   2 finito vuoto, più i carichi carne/pesce/pelle appesi uno per posto occupato secondo il contenuto vero
   (BuildingModels3D._add_rack_loads, dato da GameStateReader._rack_loads) (2026-11-20)
+- smokehouse (affumicatoio) - buildings - script (smokehouse.py) - 1 cantiere (fase 1, il .tres non ha soglie),
+  2 finito vuoto (tettoia di corteccia, pareti, anello di pietre del focolare), più ceppi (se c'è firewood) e rametti
+  (se ci sono bastoni) sul fianco (_add_fuel_piles) e i carichi dell'essiccatoio agli 8 posti (SMOKEHOUSE_SLOTS);
+  fuoco/braci/fumo dal focolare HearthFire3D senza le sue pietre (2026-11-22)
+- stone_ford (guado di pietre) - buildings - nessun .glb: sassi Quaternius della vista 3D (rocks/pebble_*) ingranditi,
+  composti da BuildingModels3D._ford_mesh (FORD_STONES, FORD_HEAP); stone_ford.py è solo la scena di revisione con gli
+  stessi numeri. 1 cantiere (pietre delle rive + mucchietto), 2 finito; girato di traverso al ruscello con
+  StreamMicrocellService.ford_angle come il 2D, quota sulla riva scavata (_ford_ground) (2026-11-22)
+- earthwork (vallo di terra) - buildings - script (earthwork.py) - 3 pezzi: centro, braccio (verso nord), angolo
+  (nord+est); BuildingModels3D._earthwork_mesh li gira e li fonde per la maschera dei vicini del 2D (linear_neighbors,
+  come LinearShape); cantiere = stessa forma schiacciata (EARTHWORK_CANTIERE_HEIGHT); anteprima dal _linear_mask del
+  BuildingGhost (2026-11-23)
 - pile (mucchietto segnaposto delle scorte) - props - script (pile.py) - 3 forme neutre (cumulo, fagotti, sacchi)
-  colorate per risorsa; magazzini e mucchi a terra, in Piles3D (2026-11-19)
+  colorate per risorsa (2026-11-19); NON PIÙ USATE dal 2026-11-21: in Piles3D ogni risorsa senza modello è un
+  adesivo con la sua icona del 2D (PileStickers3D), e le risorse col modello stanno nell'elenco Piles3D.MODELS
+- storage_piles (mucchi del magazzino) - props - script (storage_piles.py) - storage_acorn, storage_fruit (mele),
+  storage_berry: un mucchio per casella su foglie, in metri (scala 0,1); in Piles3D.MODELS (2026-11-21)
+- raw_material_piles (mucchi delle materie prime) - props - script (raw_material_piles.py) - storage_<risorsa> per
+  wood, stick, pebble, stone, clay, bone, hide, meat, fish_meat, sinew, flax_fiber, plant_fiber, straw, hay,
+  medicinal_herbs: in metri (scala 0,1), 60-520 triangoli; in Piles3D.MODELS (2026-11-23)
+- semi_finished_piles (mucchi dei semilavorati) - props - script (semi_finished_piles.py, riusa raw_material_piles.py) -
+  storage_<risorsa> per firewood, fiber_rope, flax_rope, flax_thread, dried_hide, smoked_hide: in metri (scala 0,1),
+  170-430 triangoli; in Piles3D.MODELS (2026-11-23)
+- food_piles (mucchi del cibo) - props - script (food_piles.py, riusa raw_material_piles.py) - storage_<risorsa> per
+  cooked/dried/smoked_meat, cooked/dried/smoked_fish, barley_pita, oat_cake, rye_bread, wheat_bread, mushroom, eggs,
+  wild_vegetables: in metri (scala 0,1), 100-470 triangoli; in Piles3D.MODELS (2026-11-23)
+- apparel_medicinal_piles (mucchi di medicinali e vestiario) - props - script (apparel_medicinal_piles.py) -
+  storage_<risorsa> per herbal_infusion, herbal_ointment, splint, fur_dress, fur_cap, worked_hide_dress,
+  worked_hide_cap, hide_footwear: in metri (scala 0,1), 100-450 triangoli; in Piles3D.MODELS (2026-11-23).
+  Granaglie: nessun mucchio (nei depositi non entrano: solo vasi della capanna magazzino e Casa delle granaglie).
+- rubble (macerie) - buildings - script (rubble.py) - un modello solo, anche sui cantieri coi detriti dei ceppi
+  (site_debris); senza terra battuta sotto; in BuildingModels3D.MODELS (2026-11-23)
 - conifer (conifera) - vegetation - script (conifer.py) - 5 varianti in prova, non esportate né agganciate; superata
   dai pini Quaternius
 - pines (pini) - vegetation/pines - Quaternius CC0 preparati da script (pines.py, pezzi comuni in quaternius_lib.py) -

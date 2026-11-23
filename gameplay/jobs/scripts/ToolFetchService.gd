@@ -1419,7 +1419,8 @@ static func try_swap_seasonal_apparel(individual: HumanIndividual, age_band: Hum
 
 
 static func _apparel_choice_log(individual: HumanIndividual, text: String) -> void:
-	DebugLogging.print_event("[APPAREL CHOICE] #%d %s: %s" % [individual.id, individual.name, text])
+	# print diretto: il gruppo di print_event (SHOW_GAME_EVENT_LOGS) è spento e lo zittiva anche con il suo interruttore acceso.
+	print("[APPAREL CHOICE] #%d %s: %s" % [individual.id, individual.name, text])
 
 
 # "nome punteggio" per ogni voce di `candidates` ({"name", "score"}), per i log.

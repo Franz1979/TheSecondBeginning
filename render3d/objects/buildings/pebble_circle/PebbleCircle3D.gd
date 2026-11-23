@@ -6,6 +6,9 @@ extends RefCounted
 # stessa misura del 2D (già largo quasi tutta la microcella: allargato uscirebbe dalla cella). Sassi piatti a facce piatte (FacetedStoneMesh), poche forme fisse; ogni sasso
 # girato, scalato e spostato un poco. Tutti i sassi di una forma = un solo disegno (MultiMesh).
 
+# Spento il 2026-11-21 (richiesta utente): il cerchio è ora il modello Blender (BuildingModels3D.MODELS["pebble_circle"],
+# SOURCES_PER_GIOCO/blender/scripts/pebble_circle.py), con lo stesso stile e più sassi più piccoli. true = com'era prima.
+const SHOW := false
 const SCALE := 1.0
 const STONE_SIZE := 0.05
 const STONE_HEIGHT_RATIO := 0.5
@@ -18,7 +21,7 @@ static var _meshes: Array = []
 
 # base_global: angolo della cella in microcelle assolute (per l'altezza del terreno). null se non ci sono cerchi.
 static func build(snapshot: BuildingPlacesSnapshot3D, base_global: Vector2, material: Material) -> Node3D:
-	if snapshot.size() == 0:
+	if not SHOW or snapshot.size() == 0:
 		return null
 	_ensure_meshes()
 	var transforms: Array = []

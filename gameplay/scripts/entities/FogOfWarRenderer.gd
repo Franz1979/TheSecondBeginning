@@ -982,6 +982,33 @@ func compute_visible_positions(current_absolute_day: int) -> Dictionary:
 	return visible
 
 
+# Texture della nebbia (100x100, un pixel per microcella, alfa = velo: 0 in vista, 0,1 dettaglio fresco, 0,25 risorse
+# fresche, 0,5 solo terreno ricordato, 1 mai vista o dimenticata). La legge la vista 3D (GameStateReader), mai la scrive.
+func get_fog_texture() -> ImageTexture:
+	return _fog_texture
+
+
+# Velo di una microcella (alfa della stessa immagine, vedi get_fog_texture): 1 = nero pieno. Per la vista 3D, che non
+# crea gli oggetti che il 2D coprirebbe col nero (rocce). Fuori dalla cella: 1.
+func get_fog_alpha(pos: Vector2i) -> float:
+	if _fog_image == null or pos.x < 0 or pos.y < 0 or pos.x >= World.WIDTH or pos.y >= World.HEIGHT:
+		return 1.0
+	return _fog_image.get_pixel(pos.x, pos.y).a
+
+
+# Per la vista 3D (2026-11-21): col 2D nascosto Godot non chiama _draw(), quindi la texture non si aggiornerebbe più.
+# Stesso lavoro di _draw() (_flush_fog_image), solo se c'è qualcosa da riscrivere; gli hint della vegetazione restano a
+# _draw(), che girerà quando il 2D torna visibile. Il primo giro di un renderer appena creato si rimanda di un turno come
+# in _draw() (_first_draw_deferred), per non disegnare prima che update_visibility abbia le posizioni vere.
+func update_fog_texture() -> void:
+	if _first_draw_deferred:
+		_first_draw_deferred = false
+		return
+	if not _full_flush_pending and _dirty_positions.is_empty():
+		return
+	_flush_fog_image()
+
+
 func _draw() -> void:
 	# Guardia "rimanda il primo flush di UN turno" (2026-09-18, richiesta utente — bugfix GENERALE:
 	# "renderer creato con posizioni non aggiornate", il fix di ieri in GameScene.
@@ -1047,6 +1074,35 @@ func _draw() -> void:
 	# _flush_position() sotto contiene la logica per-cella condivisa da entrambi i percorsi
 	# (trasparente se in-raggio, altrimenti cache hit/miss sul cascade dei tre tier) — UNA sola
 	# definizione, mai duplicata tra i due rami.
+	var _cells_processed := _flush_fog_image()
+	# Gate sul dirty-flag (2026-09-17, richiesta utente — bugfix DXGI_ERROR_DEVICE_REMOVED su Intel
+	# UHD): PRIMA questa chiamata era incondizionata, quindi girava ad ogni singolo _draw() del
+	# padre — cioè ad ogni frame di movimento (vedi update_visibility). Fix (A): niente rebuild/
+	# redraw se nulla è cambiato. Fix (C): quando serve, _rebuild_hint_multimesh() ricostruisce le
+	# istanze (vedi sotto) e il layer hint le disegna con UNA sola draw_multimesh() in
+	# _on_hint_layer_draw, non più migliaia di draw_circle() indipendenti (causa reale
+	# dell'E_OUTOFMEMORY su command_buffer_end). Azzerato SOLO qui, dopo aver inoltrato il redraw —
+	# vedi _hint_layer_dirty per dove viene marcato true.
+	if _hint_layer_dirty:
+		_rebuild_hint_multimesh()
+		_hint_layer.queue_redraw()
+		_hint_layer_dirty = false
+
+	if DebugLogging.SHOW_FOW_REDRAW_TIMING_LOGS:
+		var elapsed_ms: float = (Time.get_ticks_usec() - _draw_start_usec) / 1000.0
+		print("[FOW REDRAW TIMING] totale=%.1fms | celle_processate=%d | memoria=%.1fms | sorgenti=%d" % [
+			elapsed_ms, _cells_processed, _memory_lookup_usec / 1000.0, source_positions.size()
+		])
+		# Resettato QUI (non più a inizio funzione, vedi campo _memory_lookup_usec sopra): questa
+		# stampa deve riflettere il lavoro svolto dall'ultima stampa, ovunque sia avvenuto
+		# (update_visibility/set_building_visible_positions incluse), non solo dentro _draw().
+		_memory_lookup_usec = 0
+
+
+# Ricolora le microcelle cambiate (o tutte, col flush pieno) e carica la texture: il cuore di _draw(), tenuto a parte
+# (2026-11-21, vista 3D) perché la vista 3D lo chiama col 2D nascosto (update_fog_texture), quando _draw() non gira.
+# Restituisce quante microcelle ha riscritto.
+func _flush_fog_image() -> int:
 	var _cells_processed := 0
 	# PASSO B RIMANDATO (2026-10-04, richiesta utente). Oggi a ogni cambio di giorno questo flush ripassa tutte le
 	# microcelle viste almeno una volta (passo A, _flush_all_seen_positions), anche se quasi tutte restano nello stesso
@@ -1086,28 +1142,7 @@ func _draw() -> void:
 	_dirty_positions.clear()
 
 	_fog_texture.update(_fog_image)
-	# Gate sul dirty-flag (2026-09-17, richiesta utente — bugfix DXGI_ERROR_DEVICE_REMOVED su Intel
-	# UHD): PRIMA questa chiamata era incondizionata, quindi girava ad ogni singolo _draw() del
-	# padre — cioè ad ogni frame di movimento (vedi update_visibility). Fix (A): niente rebuild/
-	# redraw se nulla è cambiato. Fix (C): quando serve, _rebuild_hint_multimesh() ricostruisce le
-	# istanze (vedi sotto) e il layer hint le disegna con UNA sola draw_multimesh() in
-	# _on_hint_layer_draw, non più migliaia di draw_circle() indipendenti (causa reale
-	# dell'E_OUTOFMEMORY su command_buffer_end). Azzerato SOLO qui, dopo aver inoltrato il redraw —
-	# vedi _hint_layer_dirty per dove viene marcato true.
-	if _hint_layer_dirty:
-		_rebuild_hint_multimesh()
-		_hint_layer.queue_redraw()
-		_hint_layer_dirty = false
-
-	if DebugLogging.SHOW_FOW_REDRAW_TIMING_LOGS:
-		var elapsed_ms: float = (Time.get_ticks_usec() - _draw_start_usec) / 1000.0
-		print("[FOW REDRAW TIMING] totale=%.1fms | celle_processate=%d | memoria=%.1fms | sorgenti=%d" % [
-			elapsed_ms, _cells_processed, _memory_lookup_usec / 1000.0, source_positions.size()
-		])
-		# Resettato QUI (non più a inizio funzione, vedi campo _memory_lookup_usec sopra): questa
-		# stampa deve riflettere il lavoro svolto dall'ultima stampa, ovunque sia avvenuto
-		# (update_visibility/set_building_visible_positions incluse), non solo dentro _draw().
-		_memory_lookup_usec = 0
+	return _cells_processed
 
 
 # Flush pieno senza ripassare le 10.000 microcelle (2026-10-04, richiesta utente — passo A): una microcella fuori raggio

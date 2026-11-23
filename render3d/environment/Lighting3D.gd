@@ -9,7 +9,14 @@ const SUN_COLOR := Color("ffe6bd")
 const SUN_ENERGY := 1.2
 # Sole da sinistra-dietro, alto 50°.
 const SUN_ROTATION_DEG := Vector3(-50.0, -60.0, 0.0)
-const SKY_COLOR := Color("a9c8dc")
+# Sfondo nero (2026-11-22, misura FPS con RenderDoc): era l'azzurro "a9c8dc". La camera non inquadra mai l'orizzonte,
+# lo sfondo si vede solo oltre le celle accese; nero come il mai visto. (Lo scarto dei pixel sotto la nebbia nera nello
+# shader del terreno, che lo richiedeva, è stato tolto il 2026-11-23: spegneva il test di profondità anticipato e da
+# vicino il terreno costava il doppio. Lo sfondo nero resta: non costa niente.)
+const SKY_COLOR := Color.BLACK
+# Bagliore spento (2026-11-21, misura FPS col profilatore visivo: 9-12 ms di GPU su 30-40 sulla Intel UHD). Di giorno,
+# con la soglia 1,2, non si vedeva quasi niente; da riaccendere con la notte e i fuochi.
+const GLOW_ENABLED := false
 # Ambiente un po' freddo e debole: ombre fresche e marcate, come nel bozzetto.
 const AMBIENT_COLOR := Color("a9b8cc")
 const AMBIENT_ENERGY := 0.35
@@ -47,7 +54,7 @@ func _ready() -> void:
 	environment.ssao_enabled = UserOptions.ssao_enabled # opzione del giocatore (Opzioni > Grafica 3D)
 	environment.ssao_radius = 1.5
 	environment.ssao_intensity = 1.6
-	environment.glow_enabled = true
+	environment.glow_enabled = GLOW_ENABLED
 	# Bagliore solo per ciò che è davvero luminoso (fuochi di notte, più avanti).
 	environment.glow_intensity = 0.2
 	environment.glow_bloom = 0.0

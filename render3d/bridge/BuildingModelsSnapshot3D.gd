@@ -17,8 +17,19 @@ var stages := PackedInt32Array()
 # tutti gli altri edifici.
 var fills := PackedFloat32Array()
 # Carichi appesi all'essiccatoio finito, uno per posto occupato nell'ordine dei posti (BuildingModels3D.RACK_ITEMS:
-# "carne", "pesce", "pelle"; "" = posto con altro); vuoto per tutti gli altri edifici.
+# "carne", "pesce", "pelle"; "" = posto con altro); per l'affumicatoio finito i carichi uno dopo l'altro, senza buchi
+# (BuildingModels3D.SMOKEHOUSE_SLOTS); vuoto per tutti gli altri edifici.
 var rack_loads: Array[PackedStringArray] = []
+# Pezzi a parte, già al loro posto nel modello, secondo quello che c'è davvero: la catasta dell'affumicatoio finito per il
+# combustibile che ha (BuildingModels3D.SMOKEHOUSE_FUEL_PILES), gli attrezzi pronti dell'attrezzeria finita
+# (BuildingModels3D.TOOLMAKER_TOOL_BY_RESOURCE); vuoto per tutti gli altri edifici.
+var fuel_piles: Array[PackedStringArray] = []
+# Vicini di un edificio lineare (il vallo), come li calcola il 2D ("linear_neighbors": bit 1 << lato, N E S O); 0 per gli
+# altri edifici.
+var linear_masks := PackedInt32Array()
+# Cantiere con i detriti dei ceppi ancora da portare via ("site_debris" del 2D): sopra ci vanno le macerie
+# (BuildingModels3D.RUBBLE_TYPE), come nel 2D; false per tutti gli altri.
+var site_debris: Array[bool] = []
 
 
 func size() -> int:

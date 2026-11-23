@@ -129,9 +129,39 @@ func update(snapshot: PeopleSnapshot3D) -> void:
 		if snapshot.selected[i] == 1:
 			var ring := Transform3D(Basis.IDENTITY.scaled(Vector3(size, 1.0, size)), Vector3(place.x, y + 0.01, place.y))
 			_put(Part.RING, ring, RING_COLOR)
+	_put_dead(snapshot)
 	for buffer in _buffers:
 		buffer.commit()
 	_steps.end_frame()
+
+
+# Morti a terra (2026-11-21, come DeadBodyView del 2D: la stessa figurina distesa a faccia in giù): lo stesso pupazzo
+# coricato, la testa verso `dead_heads`, il davanti (-Z) contro il terreno, braccia lungo i fianchi, niente passo, niente
+# viso (non si vede). Il busto sta sul punto del 2D, appoggiato al terreno.
+func _put_dead(snapshot: PeopleSnapshot3D) -> void:
+	for i in range(snapshot.dead_positions.size()):
+		var size := HEIGHT * snapshot.dead_sizes[i]
+		var head := Vector3(snapshot.dead_heads[i].x, 0.0, snapshot.dead_heads[i].y).normalized()
+		var basis := Basis(head.cross(Vector3.UP), head, Vector3.UP).scaled(Vector3.ONE * size)
+		var ground := snapshot.dead_grounds[i]
+		var place := snapshot.dead_positions[i]
+		var female := snapshot.dead_females[i] == 1
+		var torso := TORSO * (FEMALE_TORSO if female else 1.0)
+		var y := GroundHeight3D.land_height(ground.x, ground.y) + torso.z * 0.5 * size
+		var body := Transform3D(basis, Vector3(place.x, y, place.y) - head * TORSO_Y * size)
+		var clothes := snapshot.dead_body_colors[i]
+		var hair := snapshot.dead_hair_colors[i]
+		_put(Part.TORSO, body * _box(Vector3(0.0, TORSO_Y, 0.0), torso), clothes)
+		_put(Part.HEAD, body * _box(Vector3(0.0, HEAD_Y, 0.0), Vector3.ONE * HEAD), hair)
+		_put(Part.LEG_L, body * _limb(Vector3(-HIP_X, HIP_Y, 0.0), LEG, 0.0), SKIN)
+		_put(Part.LEG_R, body * _limb(Vector3(HIP_X, HIP_Y, 0.0), LEG, 0.0), SKIN)
+		_put(Part.ARM_L, body * _limb(Vector3(-SHOULDER_X, SHOULDER_Y, 0.0), ARM, 0.0), clothes)
+		_put(Part.ARM_R, body * _limb(Vector3(SHOULDER_X, SHOULDER_Y, 0.0), ARM, 0.0), clothes)
+		if female:
+			_put(Part.LONG_HAIR, body * _box(Vector3(0.0, HEAD_Y - 0.1, HEAD * 0.35), LONG_HAIR), hair)
+		if snapshot.dead_selected[i] == 1:
+			var ring := Transform3D(Basis.IDENTITY.scaled(Vector3(size, 1.0, size) * 1.4), Vector3(place.x, y - torso.z * 0.5 * size + 0.01, place.y))
+			_put(Part.RING, ring, RING_COLOR)
 
 
 # Pezzo fermo: forma unitaria scalata a `extent` e messa in `center` (coordinate del pupazzo alto 1).

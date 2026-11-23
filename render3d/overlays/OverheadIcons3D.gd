@@ -20,7 +20,8 @@ var _entries: Array = []
 
 
 func _init() -> void:
-	layer = 1
+	# Sotto l'interfaccia (CanvasLayer di GameScene, livello 1), come la mappa 2D: i pannelli coprono le icone.
+	layer = 0
 
 
 func update(reader: GameStateReader, camera: Camera3D) -> void:

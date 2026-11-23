@@ -13,7 +13,8 @@ static func build(snapshot: HearthSnapshot3D, base_global: Vector2, vertex_mater
 	for i in range(snapshot.size()):
 		var center := snapshot.centers[i]
 		var hearth := HearthFire3D.new()
-		hearth.setup(snapshot.states[i], snapshot.seeds[i], vertex_material)
+		var with_stones := i >= snapshot.with_stones.size() or snapshot.with_stones[i] != 0
+		hearth.setup(snapshot.states[i], snapshot.seeds[i], vertex_material, with_stones)
 		hearth.position = Vector3(center.x, GroundHeight3D.land_height(base_global.x + center.x, base_global.y + center.y), center.y)
 		node.add_child(hearth)
 	return node

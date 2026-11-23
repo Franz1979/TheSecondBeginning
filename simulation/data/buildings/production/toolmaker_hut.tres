@@ -8,6 +8,7 @@ building_name = "building_toolmaker_hut"
 category = 4
 required_idea_id = "paleolithic_constructions"
 min_construction_days = 4
+construction_stage_thresholds = Array[float]([0.0, 0.4])
 required_labor = 2800
 lifespan_years = 30
 storage_slot_count = 10

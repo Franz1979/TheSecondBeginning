@@ -15,7 +15,8 @@ extends Action
 #     un'uccisione: qui si controlla soltanto il limite (gli avvistamenti non lo azzerano più);
 #   - zona eliminata o irraggiungibile: l'uscita finisce.
 # Nessun attrezzo richiesto qui: il coltello è controllato al comando (HuntZoneService.get_hunt_rejection) e gli step
-# di caccia hanno il loro gate HUNTING.
+# di caccia hanno il loro gate HUNTING. L'arma da caccia (2026-11-21) si controlla all'avvio e a ogni ricerca di prede:
+# senza, l'uscita si chiude con il messaggio "senza armi" invece di pattugliare e restare fermi davanti alla preda.
 
 # Ogni quanto (giorni di gioco) si cerca una preda: abbastanza spesso da non "mancare" un animale che attraversa il
 # raggio di vista, senza scorrere gli animali della macrocella a ogni frame.
@@ -43,6 +44,9 @@ var _found: bool = false
 var _timed_out: bool = false
 var _zone_missing: bool = false
 var _zone_unreachable: bool = false
+# Nessuna arma da caccia in cintura o nello zaino (2026-11-21, richiesta utente — pattugliava senza lancia): l'uscita si
+# chiude con il messaggio "senza armi" (HuntService.CONTEXT_NO_WEAPON, come RecoverWeaponAction).
+var _no_weapon: bool = false
 
 
 func _init(p_work_area_id: int = -1) -> void:
@@ -67,11 +71,15 @@ func activate(individual: Variant, context: Dictionary) -> void:
 	_timed_out = false
 	_zone_missing = false
 	_zone_unreachable = false
+	_no_weapon = false
 	var area := _get_area()
 	if area == null:
 		HuntZoneService.log_event(individual, "pattuglia: zona #%d non trovata, uscita chiusa." % work_area_id)
 		_zone_missing = true
 		_done = true
+		return
+	# Arma controllata a ogni avvio, anche alla ripresa dalla coda (l'arma può essersi persa o rotta nel frattempo).
+	if _stop_if_unarmed(individual):
 		return
 	HuntZoneService.log_event(individual, "pattuglia avviata in %s #%d (senza catture da %.2f giorni)." % [
 		area.name, area.id, HuntZoneService.get_days_without_capture(context)
@@ -116,6 +124,9 @@ func get_stamina_delta(individual: Variant, context: Dictionary, delta: float) -
 	_check_elapsed += delta
 	if _check_elapsed >= CHECK_INTERVAL_DAYS:
 		_check_elapsed = 0.0
+		# Arma ricontrollata a ogni ricerca di prede: senza, niente inseguimento (ApproachPreyAction resterebbe ferma).
+		if _stop_if_unarmed(individual):
+			return stamina_delta
 		if _try_sight(individual, context, area):
 			return stamina_delta
 
@@ -146,6 +157,10 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 		return
 	if _zone_missing:
 		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "zona di caccia eliminata"
+	elif _no_weapon:
+		context.erase(HuntService.CONTEXT_HUNT_WEAPON)
+		context[HuntService.CONTEXT_NO_WEAPON] = true
+		context[HumanIndividualActionService.CONTEXT_PENDING_TASK_ABORT] = "nessuna arma da caccia per pattugliare"
 	elif _zone_unreachable:
 		abort_task_unreachable(individual, context, "zona di caccia irraggiungibile")
 	elif _timed_out:
@@ -157,6 +172,18 @@ func on_complete(individual: Variant, context: Dictionary) -> void:
 
 func get_save_data() -> Dictionary:
 	return {"work_area_id": work_area_id}
+
+
+# true (e step concluso) se il cacciatore non ha più un'arma da caccia (stesso controllo di HuntZoneService.get_hunt_rejection).
+func _stop_if_unarmed(individual: Variant) -> bool:
+	if HuntService.has_hunting_weapon_available(individual):
+		return false
+	# Al primo avvio di un ordine con prelievo dell'arma (ToolFetchService.start_fetch) succede prima del prelievo: la caccia
+	# va subito in coda e alla ripresa activate rifà il controllo, con l'arma ormai in cintura.
+	HuntZoneService.log_event(individual, "pattuglia: nessuna arma da caccia in cintura o nello zaino.")
+	_no_weapon = true
+	_finish(individual)
+	return true
 
 
 func _get_area() -> WorkArea:

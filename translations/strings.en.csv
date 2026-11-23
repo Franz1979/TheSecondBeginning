@@ -2306,6 +2306,10 @@ options_show_grid,Show the microcell grid
 options_group_graphics_3d,3D graphics
 options_ssao,Ambient occlusion (SSAO)
 options_resolution_3d,3D resolution
+options_quality_3d,3D graphics quality
+options_quality_3d_low,Low
+options_quality_3d_medium,Medium
+options_quality_3d_high,High
 options_group_display,Screen and sound
 options_group_game,Game
 options_group_defaults,Command defaults

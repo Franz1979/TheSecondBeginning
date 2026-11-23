@@ -15,6 +15,8 @@ var door_direction: Vector2 = Vector2(0, 1)
 # Punto a metà del lato della porta rispetto al centro del rettangolo; Vector2.INF = senza porta.
 var door_offset: Vector2 = Vector2.INF
 var buildable: bool = true
+# Vicini del pezzo per gli edifici lineari (il vallo), dall'anteprima 2D (BuildingGhost._linear_mask); 0 per gli altri.
+var linear_mask: int = 0
 
 
 # Impronta: cambia quando va rifatto il rettangolo a terra (non a ogni fotogramma).

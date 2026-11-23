@@ -243,39 +243,53 @@ func apply_action(individual: HumanIndividual, delta: float, world: World = null
 	# current_stamina sopra. Il tetto massimo resta quello giornaliero.
 	individual.current_happiness = maxf(individual.current_happiness + happiness_delta, 0.0)
 
-	# Interrupt/coda da bisogno stamina (2026-09-13, richiesta utente) - valutato QUI, SUBITO DOPO
-	# i due delta sopra (stesso frame, stessa lettura di current_stamina appena aggiornata), PRIMA
-	# di record_step_cost/is_complete: se scatta, individual.current_task punta ORA a una
-	# Task-bisogno diversa da `task` - `task`/`action` locali sono a questo punto riferimenti alla
-	# Task VECCHIA (scartata o messa in coda), quindi ritorna immediatamente per non continuare a
-	# operare su di loro in questo stesso frame. La nuova Task-bisogno riceve il proprio primo
-	# apply_action dal prossimo frame, stesso principio gia' in uso per un normale cambio di step
-	# (activate() ora, delta dal prossimo giro del ciclo).
-	if _handle_stamina_interrupt(individual, task, world, game_data):
-		return
-	# Sete (2026-10-30): bere urgente, blocco a sé come le provviste sotto (ThirstService.handle_interrupt esce al primo
-	# confronto finché l'acqua è sopra la soglia d'emergenza).
-	if ThirstService.needs_emergency_drink(individual) and game_data != null 			and ThirstService.handle_interrupt(individual, task, _resolve_age_band(individual, game_data)):
-		return
-	# Bisogno di PROVVISTE (2026-09-19, richiesta utente): blocco a se', MAI fuso con quello di stamina
-	# sopra (come dice il commento su _resolve_active_stamina_need_priority). Stesso schema: bool di
-	# ritorno, return immediato se ha sostituito individual.current_task.
-	if _handle_food_interrupt(individual, task, world, game_data):
-		return
-	# Caccia in zona (2026-10-10): giorni senza catture dell'uscita, con la chiusura durante l'inseguimento.
-	if _tick_zone_hunt_without_capture(individual, task, action, delta, world, game_data):
+	# Step concluso in questo tick (2026-11-21, richiesta utente — lancia persa a caccia): si chiude PRIMA dei bisogni qui
+	# sotto. Uno step istantaneo (ThrowAction) produce il suo effetto dentro get_stamina_delta e lascia nel context le
+	# richieste che solo finish_current_step consuma (recupero dell'arma, macellazione): un bisogno valutato prima le
+	# lasciava in sospeso con lo step già sparito — la lancia, che vive solo nel recupero, si perdeva. Ora lo step si chiude,
+	# i seguiti entrano nella Task e il bisogno scatta al frame dopo, sullo step successivo (la sospensione lo conserva).
+	var step_completed := action.is_complete(individual, task.context)
+	if not step_completed and _handle_needs_and_hunt_limit(individual, task, action, delta, world, game_data):
 		return
 
 	# Accumulo costo per-step (2026-09-07, richiesta utente; happiness aggiunta 2026-09-13) — stessi
 	# stamina_delta/happiness_delta/delta appena applicati sopra, nessun ricalcolo: vedi Task.
 	# record_step_cost/print_cost_summary.
 	task.record_step_cost(stamina_delta, happiness_delta, delta)
-	if action.is_complete(individual, task.context):
+	if step_completed:
 		# Tempo REALE dello step appena concluso (2026-09-20, richiesta utente): DOPO record_step_cost (l'ultimo
 		# delta e' gia' incluso), PRIMA di finish_current_step (che avanza current_step_index).
 		if DebugLogging.ENABLED and DebugLogging.SHOW_ACTION_TIME_LOGS:
 			_log_action_time(individual, task, action)
 		finish_current_step(individual, task, world, game_data)
+
+
+# Bisogni che interrompono la Task in corso e limite dei giorni senza catture della caccia in zona, nell'ordine di sempre.
+# true = la Task corrente è stata sostituita o chiusa: `task`/`action` non valgono più per questo frame.
+func _handle_needs_and_hunt_limit(
+	individual: HumanIndividual, task: Task, action: Action, delta: float, world: World, game_data: GameData
+) -> bool:
+	# Interrupt/coda da bisogno stamina (2026-09-13, richiesta utente) - valutato SUBITO DOPO i due
+	# delta di apply_action (stesso frame, stessa lettura di current_stamina appena aggiornata), solo se
+	# lo step non si è concluso in questo frame (2026-11-21), PRIMA di record_step_cost: se scatta, individual.current_task punta ORA a una
+	# Task-bisogno diversa da `task` - `task`/`action` locali sono a questo punto riferimenti alla
+	# Task VECCHIA (scartata o messa in coda), quindi ritorna immediatamente per non continuare a
+	# operare su di loro in questo stesso frame. La nuova Task-bisogno riceve il proprio primo
+	# apply_action dal prossimo frame, stesso principio gia' in uso per un normale cambio di step
+	# (activate() ora, delta dal prossimo giro del ciclo).
+	if _handle_stamina_interrupt(individual, task, world, game_data):
+		return true
+	# Sete (2026-10-30): bere urgente, blocco a sé come le provviste sotto (ThirstService.handle_interrupt esce al primo
+	# confronto finché l'acqua è sopra la soglia d'emergenza).
+	if ThirstService.needs_emergency_drink(individual) and game_data != null 			and ThirstService.handle_interrupt(individual, task, _resolve_age_band(individual, game_data)):
+		return true
+	# Bisogno di PROVVISTE (2026-09-19, richiesta utente): blocco a se', MAI fuso con quello di stamina
+	# sopra (come dice il commento su _resolve_active_stamina_need_priority). Stesso schema: bool di
+	# ritorno, true se ha sostituito individual.current_task.
+	if _handle_food_interrupt(individual, task, world, game_data):
+		return true
+	# Caccia in zona (2026-10-10): giorni senza catture dell'uscita, con la chiusura durante l'inseguimento.
+	return _tick_zone_hunt_without_capture(individual, task, action, delta, world, game_data)
 
 
 # Log [ACTION TIME] (DebugLogging.SHOW_ACTION_TIME_LOGS): nome dell'azione (get_script().get_global_name(), come

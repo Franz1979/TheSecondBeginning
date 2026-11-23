@@ -10,10 +10,12 @@ const DIRT_GROUND_STEPS := 10.0
 # Terra battuta anche sotto ogni edificio finito (2026-11-19, prova dell'utente, come nel 2D): le sue microcelle entrano
 # nella maschera della terra battuta. false = com'era prima (terra nuda della cella vuota). Mai sotto i campi.
 const BEATEN_UNDER_BUILDINGS := true
-const NO_BEATEN_UNDER_TYPES := ["field", "dirt_ground"]
+# Macerie (2026-11-23, richiesta utente): appoggiate sul terreno della cella com'è, senza la terra battuta degli edifici.
+const NO_BEATEN_UNDER_TYPES := ["field", "dirt_ground", "rubble"]
 # Edifici con la terra battuta un po' più scura sotto (2026-11-19, richiesta utente: il deposito non deve sembrare un
-# cantiere). Vuoto = tutti uguali; quanto più scura: beaten_dark_amount in terrain.gdshader.
-const DARKER_BEATEN_TYPES := ["deposit_site"]
+# cantiere). Vuoto = tutti uguali; quanto più scura: beaten_dark_amount in terrain.gdshader. Tolto il deposito il 2026-11-21
+# (richiesta utente): col modello dei bastoni sul contorno il fondo torna chiaro come sotto la tenda di rami.
+const DARKER_BEATEN_TYPES := []
 
 var _game: Node2D
 # Etichette 2D in spazio schermo nascoste mentre il 3D è acceso (work_areas), rimesse da set_2d_visible(true).
@@ -27,8 +29,26 @@ var _animal_lists: Dictionary = {}
 var _animal_turn := 0
 
 
+# Braci del focolare (2026-11-21, richiesta utente), solo vista: dopo una cottura le braci restano accese per
+# HEARTH_EMBERS_AFTER_COOKING_DAYS (un giorno di gioco) anche se la ricetta ha bruciato tutto il combustibile, invece di
+# passare subito a spento. Con combustibile in deposito restano sempre braci (si capisce che lì c'è legna). Il
+# combustibile e la simulazione non cambiano. Ultimo momento acceso per id dell'edificio (giorni assoluti + frazione),
+# solo mentre la cella è accesa e non salvato: dopo un caricamento un focolare senza combustibile riparte spento.
+const HEARTH_EMBERS_AFTER_COOKING_DAYS := 1.0
+var _hearth_last_burning: Dictionary = {}
+
+
 func _init(game: Node2D) -> void:
 	_game = game
+
+
+# Momento di gioco in giorni (assoluti più la frazione del giorno in corso), come GameScene._job_board_now.
+func _game_time_days() -> float:
+	var game_data: GameData = GameSettings.active_game_data
+	if game_data == null:
+		return 0.0
+	var clock: GameClockController = _game.get("clock")
+	return float(game_data.get_absolute_day()) + (clock.get_day_progress() if clock != null else 0.0)
 
 
 # Coordinate delle macrocelle accese adesso.
@@ -43,6 +63,17 @@ func cell_origin(coords: Vector2i) -> Vector2:
 	if cell == null or cell.container == null:
 		return Vector2.ZERO
 	return cell.container.position / float(MicroCellRenderer.CELL_SIZE)
+
+
+# Nebbia della cella (2026-11-21): la STESSA texture del 2D (FogOfWarRenderer.get_fog_texture, un pixel per microcella,
+# alfa = velo), nessuna copia. Col 2D nascosto il suo _draw() non gira: update_fog_texture fa lo stesso lavoro (solo il
+# disegno della nebbia, non lo stato del gioco). null se la cella non ha nebbia.
+func fog_texture(coords: Vector2i) -> Texture2D:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null or cell.fog_of_war_renderer == null:
+		return null
+	cell.fog_of_war_renderer.update_fog_texture()
+	return cell.fog_of_war_renderer.get_fog_texture()
 
 
 # Persone visibili, dalle stesse HumanIndividualView del 2D (una per persona nelle celle accese): grandezza per età e
@@ -80,6 +111,71 @@ func people(snapshot: PeopleSnapshot3D) -> void:
 		snapshot.females.append(1 if individual.sex == HumanTypes.Sex.FEMALE else 0)
 		snapshot.pregnant.append(1 if individual.is_pregnant else 0)
 		snapshot.selected.append(1 if individual.is_selected else 0)
+	_dead_bodies(snapshot, live)
+
+
+# Armi scagliate a terra in attesa di recupero (2026-11-21): i DroppedWeaponMarker del 2D (GameScene.
+# _dropped_weapon_markers, cacciatore -> segnaposto), figli del contenitore della cella del punto di caduta.
+func weapon_drops(snapshot: WeaponDropsSnapshot3D) -> void:
+	snapshot.clear()
+	var markers: Dictionary = _game.get("_dropped_weapon_markers")
+	if markers == null or markers.is_empty():
+		return
+	var live: Dictionary = _game.get("live_cells")
+	for hunter_id in markers:
+		var marker := markers[hunter_id] as DroppedWeaponMarker
+		if marker == null or not is_instance_valid(marker):
+			continue
+		var container := marker.get_parent() as Node2D
+		if container == null:
+			continue
+		for coords in live:
+			var cell: LiveMacroCell = live[coords]
+			if cell == null or cell.container != container:
+				continue
+			var local := marker.position / float(MicroCellRenderer.CELL_SIZE)
+			snapshot.weapons.append(marker.weapon_name)
+			snapshot.positions.append(container.position / float(MicroCellRenderer.CELL_SIZE) + local)
+			snapshot.grounds.append(Vector2(coords) * float(World.WIDTH) + local)
+			snapshot.rotations.append(marker.rotation)
+			snapshot.seeds.append(int(hunter_id))
+			break
+
+
+# Morti a terra (2026-11-21): le DeadBodyView del 2D (GameScene.dead_body_views), figlie del contenitore di una cella
+# accesa; anche quelle trascinate verso la sepoltura (la posizione la muove il 2D). Colori e grandezza come le disegna
+# il 2D; la testa sta dalla parte -X locale della figurina (SUPINE_HEAD_AXIS_OFFSET < 0), ruotata con `rotation`.
+func _dead_bodies(snapshot: PeopleSnapshot3D, live: Dictionary) -> void:
+	var views: Dictionary = _game.get("dead_body_views")
+	if views == null or views.is_empty():
+		return
+	var coords_of: Dictionary = {} # contenitore della cella -> coordinate
+	for coords in live:
+		var cell: LiveMacroCell = live[coords]
+		if cell != null and cell.container != null:
+			coords_of[cell.container] = coords
+	for value in views.values():
+		if not is_instance_valid(value):
+			continue
+		var view := value as DeadBodyView
+		if view == null or not view.visible or not coords_of.has(view.get_parent()):
+			continue
+		var coords: Vector2i = coords_of[view.get_parent()]
+		var container := view.get_parent() as Node2D
+		var local := view.position / float(MicroCellRenderer.CELL_SIZE)
+		var body_color: Color = view._body_color
+		if body_color.a <= 0.0:
+			body_color = HumanIndividualView.CLOTHING_COLOR_BY_TRAIT.get(view._clothing_color,
+				HumanIndividualView.CLOTHING_COLOR_BY_TRAIT[HumanTypes.ClothingColor.TAN])
+		snapshot.dead_positions.append(container.position / float(MicroCellRenderer.CELL_SIZE) + local)
+		snapshot.dead_grounds.append(Vector2(coords) * float(World.WIDTH) + local)
+		snapshot.dead_heads.append(-Vector2.from_angle(view.rotation))
+		snapshot.dead_sizes.append(absf(view.scale.x) / HumanIndividualView.BASE_DRAW_SCALE)
+		snapshot.dead_body_colors.append(body_color)
+		snapshot.dead_hair_colors.append(HumanIndividualView.HAIR_COLOR_BY_TRAIT.get(view._hair_color,
+			HumanIndividualView.HAIR_COLOR_BY_TRAIT[HumanTypes.HairColor.BROWN]))
+		snapshot.dead_females.append(1 if view._sex == HumanTypes.Sex.FEMALE else 0)
+		snapshot.dead_selected.append(1 if view.is_selected else 0)
 
 
 # Animali visibili: tutti i renderer della fauna stanno nelle celle accese (selvatici per specie, visite degli animali
@@ -233,6 +329,22 @@ func cell_source(coords: Vector2i) -> Cell3DSource:
 	return source
 
 
+# Stagione della cella, come la usa il 2D (MicroCellRenderer.current_season).
+func season(coords: Vector2i) -> GameTypes.Season:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null or cell.renderer == null:
+		return GameTypes.Season.SUMMER
+	return cell.renderer.current_season
+
+
+# "Impronta" del giacimento d'argilla: cambia quando una microcella si esaurisce ed esce da clay_positions.
+func clay_deposit_signature(coords: Vector2i) -> Array:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null or cell.macro_state == null:
+		return [0]
+	return [cell.macro_state.clay_positions.size()]
+
+
 # Rocce e sassi della cella, come li disegna il 2D (MicroCellRenderer: posizioni, esaurite, disponibilità dei sassi).
 func stone_snapshot(coords: Vector2i) -> StoneSnapshot3D:
 	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
@@ -243,7 +355,7 @@ func stone_snapshot(coords: Vector2i) -> StoneSnapshot3D:
 	for pos in renderer.stone_positions:
 		var center := renderer.get_stone_screen_position(pos) / float(MicroCellRenderer.CELL_SIZE)
 		snapshot.all_centers[pos] = center
-		if not renderer.depleted_stone_positions.has(pos):
+		if not renderer.depleted_stone_positions.has(pos) and not _is_under_black_fog(cell, pos):
 			snapshot.rock_centers[pos] = center
 	snapshot.pebble_quantities = renderer.pebble_availability.duplicate()
 	return snapshot
@@ -274,7 +386,76 @@ func stone_signature(coords: Vector2i) -> Array:
 		return []
 	var renderer := cell.renderer
 	return [renderer.stone_positions, renderer.stone_positions.size(), renderer.depleted_stone_positions,
-		renderer.depleted_stone_positions.size(), renderer.pebble_availability]
+		renderer.depleted_stone_positions.size(), renderer.pebble_availability,
+		black_fog_positions(coords, renderer.stone_positions).hash()]
+
+
+# Le microcelle di `positions` (chiavi Vector2i di un Dictionary o elementi di un Array) che il 2D copre col nero pieno
+# della nebbia, nell'ordine dato. Nelle impronte va il suo hash() (un numero, confrontato per valore: un elenco nuovo a
+# ogni fotogramma sembrerebbe sempre cambiato, vedi Cell3D._same_value).
+func black_fog_positions(coords: Vector2i, positions: Variant) -> Array:
+	var hidden: Array = []
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null:
+		return hidden
+	for pos in positions:
+		if _is_under_black_fog(cell, pos):
+			hidden.append(pos)
+	return hidden
+
+
+# true se il 2D copre la microcella col nero pieno della nebbia (mai vista o dimenticata): lì il 3D non crea gli oggetti
+# (rocce), invece di disegnarli e coprirli.
+func _is_under_black_fog(cell: LiveMacroCell, pos: Vector2i) -> bool:
+	if cell.fog_of_war_renderer == null:
+		return false
+	return cell.fog_of_war_renderer.get_fog_alpha(pos) >= 0.99
+
+
+# Frutti caduti a terra (2026-11-21): per ogni risorsa degli alberi da frutto che ha un modello a terra
+# (GroundFruit3D.MODELS_BY_RESOURCE), quanto resta su ogni lotto rispetto alla capacità piena dell'anno, con le formule
+# dei lotti (LotCapacityService: capacità × moltiplicatore della stagione − raccolto). Solo lotti con un albero in vista.
+func ground_fruit_snapshot(coords: Vector2i) -> GroundFruitSnapshot3D:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	var snapshot := GroundFruitSnapshot3D.new()
+	if cell == null or cell.renderer == null or cell.macro_state == null:
+		return snapshot
+	var visible_lots: Dictionary = {}
+	for key in cell.renderer.vegetation_positions.get(GameTypes.WorldObjectType.TREE, []):
+		visible_lots[Vector2i(key.x, key.y)] = true
+	if visible_lots.is_empty():
+		return snapshot
+	for resource_name: String in GroundFruit3D.MODELS_BY_RESOURCE:
+		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		if rules == null:
+			continue
+		var cache: Dictionary = cell.macro_state.lot_capacity_cache.get(resource_name, {})
+		var registry: Dictionary = cell.macro_state.lot_registry.get(resource_name, {})
+		var fractions: Dictionary = {}
+		for lot in cache:
+			var base := int(cache[lot])
+			if base <= 0 or not visible_lots.has(lot):
+				continue
+			var seasonal := LotCapacityService._apply_seasonal_availability_to_capacity(rules, base)
+			var available := maxi(seasonal - int(registry.get(lot, 0)), 0)
+			if available > 0:
+				fractions[lot] = minf(float(available) / float(base), 1.0)
+		if not fractions.is_empty():
+			snapshot.fractions_by_resource[resource_name] = fractions
+	return snapshot
+
+
+# "Impronta" dei frutti a terra: stagione, capacità e raccolto dei lotti (LotCapacityService.get_visual_ratio_signature)
+# e l'elenco degli alberi in vista (nebbia).
+func ground_fruit_signature(coords: Vector2i) -> Array:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null or cell.renderer == null or cell.macro_state == null:
+		return []
+	var positions: Array = cell.renderer.vegetation_positions.get(GameTypes.WorldObjectType.TREE, [])
+	var signature: Array = [cell.renderer.vegetation_positions, positions, positions.size()]
+	for resource_name: String in GroundFruit3D.MODELS_BY_RESOURCE:
+		signature.append_array(LotCapacityService.get_visual_ratio_signature(cell.macro_state, resource_name))
+	return signature
 
 
 # Alberi vivi, tagliati (ceppi) e morti della cella, con la stessa posizione e taglia del 2D (riusa le sue formule, mai
@@ -290,10 +471,13 @@ func tree_snapshot(coords: Vector2i) -> TreeSnapshot3D:
 	var dead: Array = renderer.dead_positions.get(GameTypes.WorldObjectType.TREE, [])
 	if positions.is_empty() and cut.is_empty() and dead.is_empty():
 		return snapshot
+	snapshot.season = renderer.current_season
 	var lot_counts: Dictionary = renderer._lot_extent_counts(GameTypes.WorldObjectType.TREE)
 	var cell_size := float(MicroCellRenderer.CELL_SIZE)
 	for entry in cut:
 		var key: Vector3i = entry["key"]
+		if _is_under_black_fog(cell, Vector2i(key.x, key.y)):
+			continue
 		var t: Transform2D = renderer._build_tree_stump_transform(key, float(entry["size_multiplier"]), lot_counts)
 		var width := t.x.length()
 		snapshot.stump_grounds.append((t.origin + Vector2(width * 0.5, t.y.length())) / cell_size)
@@ -301,6 +485,8 @@ func tree_snapshot(coords: Vector2i) -> TreeSnapshot3D:
 		snapshot.stump_seeds.append(hash(key))
 	for entry in dead:
 		var key: Vector3i = entry["key"]
+		if _is_under_black_fog(cell, Vector2i(key.x, key.y)):
+			continue
 		var t: Transform2D = renderer._build_dead_tree_transform(key, float(entry["size_multiplier"]), lot_counts)
 		# Il piede è il punto (0,5; 1) del quadrato unitario della sagoma (vedi _build_dead_tree_transform).
 		snapshot.dead_grounds.append((t.origin + t.x * 0.5 + t.y) / cell_size)
@@ -315,10 +501,24 @@ func tree_snapshot(coords: Vector2i) -> TreeSnapshot3D:
 		snapshot.seeds.append(hash(visual["jitter_pos"]))
 		snapshot.conifer.append(1 if visual["is_conifer"] else 0)
 		snapshot.fruit_bearing.append(1 if visual["is_fruit_bearing"] else 0)
+		snapshot.domesticable.append(1 if visual["is_domesticable"] else 0)
+		snapshot.fruit_shown.append(1 if _tree_fruit_shown(renderer, key, visual) else 0)
 	return snapshot
 
 
-# "Impronta" degli alberi: cambia quando il 2D riceve un elenco nuovo (nascite, tagli, nebbia) o cambia l'anno (età).
+# Frutti di un albero in vista con le regole del 2D (_compute_tree_geometry e _draw): niente sui giovani e sulle conifere,
+# solo in FRUITING_SEASONS e solo sugli alberi del lotto ancora da raccogliere (_fruit_stock_shows, sempre gli stessi
+# individui). Ghiande (acorn) sui wild_fruit, frutti (fruit) sui domesticable_fruit.
+static func _tree_fruit_shown(renderer: MicroCellRenderer, key: Vector3i, visual: Dictionary) -> bool:
+	if visual["is_conifer"] or not visual["is_fruit_bearing"] or visual["age_band"] == GameTypes.AgeBand.YOUNG:
+		return false
+	if not renderer.current_season in MicroCellRenderer.FRUITING_SEASONS:
+		return false
+	return renderer._fruit_stock_shows("fruit" if visual["is_domesticable"] else "acorn", key, visual["jitter_pos"])
+
+
+# "Impronta" degli alberi: cambia quando il 2D riceve un elenco nuovo (nascite, tagli, nebbia), cambia l'anno (età), la
+# stagione o la raccolta dei frutti.
 func tree_signature(coords: Vector2i) -> Array:
 	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
 	if cell == null or cell.renderer == null:
@@ -328,11 +528,13 @@ func tree_signature(coords: Vector2i) -> Array:
 	var cut: Array = renderer.cut_positions.get(GameTypes.WorldObjectType.TREE, [])
 	var dead: Array = renderer.dead_positions.get(GameTypes.WorldObjectType.TREE, [])
 	return [renderer.vegetation_positions, positions, positions.size(), renderer.tree_current_year,
-		renderer.cut_positions, cut, cut.size(), renderer.dead_positions, dead, dead.size()]
+		renderer.cut_positions, cut, cut.size(), renderer.dead_positions, dead, dead.size(), renderer.current_season,
+		renderer.fruit_stock_available_ratio_by_lot.get("acorn", {}), renderer.fruit_stock_available_ratio_by_lot.get("fruit", {}),
+		_hidden_remains_hash(cell, cut, dead)]
 
 
 # Cespugli vivi, tagliati e morti della cella, con le stesse bolle (posizione, taglia, colore) del 2D: riusa le sue formule,
-# mai una copia. Dagli stessi elenchi del 2D (filtrati dalla nebbia).
+# mai una copia. Dagli stessi elenchi del 2D (i vivi filtrati dalla nebbia; tagliati e morti saltati qui sotto il nero).
 func shrub_snapshot(coords: Vector2i) -> ShrubSnapshot3D:
 	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
 	var snapshot := ShrubSnapshot3D.new()
@@ -348,6 +550,10 @@ func shrub_snapshot(coords: Vector2i) -> ShrubSnapshot3D:
 		snapshot.seeds.append(hash(visual["jitter_pos"]))
 		snapshot.fruit_bearing.append(1 if visual["is_fruit_bearing"] else 0)
 		snapshot.fruit_state.append(_shrub_fruit_state(renderer, key, visual))
+		if _shrub_berry_candidate(renderer, visual):
+			snapshot.berry_index.append(snapshot.centers.size() - 1)
+			snapshot.berry_keys.append(key)
+			snapshot.berry_jitters.append(visual["jitter_pos"])
 		snapshot.blob_starts.append(snapshot.blob_centers.size())
 		var transforms: Array = geometry["blob_transforms"]
 		var colors: Array = geometry["blob_colors"]
@@ -359,12 +565,16 @@ func shrub_snapshot(coords: Vector2i) -> ShrubSnapshot3D:
 	snapshot.blob_starts.append(snapshot.blob_centers.size())
 	for entry in renderer.cut_positions.get(GameTypes.WorldObjectType.SHRUB, []):
 		var key: Vector3i = entry["key"]
+		if _is_under_black_fog(cell, Vector2i(key.x, key.y)):
+			continue
 		var t: Transform2D = renderer._build_shrub_stump_transform(key, float(entry["size_multiplier"]), lot_counts)
 		snapshot.cut_centers.append(t.origin / cell_size)
 		snapshot.cut_radii.append(t.x.length() / cell_size)
 		snapshot.cut_seeds.append(hash(key))
 	for entry in renderer.dead_positions.get(GameTypes.WorldObjectType.SHRUB, []):
 		var key: Vector3i = entry["key"]
+		if _is_under_black_fog(cell, Vector2i(key.x, key.y)):
+			continue
 		var t: Transform2D = renderer._build_dead_marker_transform(GameTypes.WorldObjectType.SHRUB, key,
 			float(entry["size_multiplier"]), lot_counts)
 		snapshot.dead_centers.append(t.origin / cell_size)
@@ -381,13 +591,42 @@ static func _shrub_fruit_state(renderer: MicroCellRenderer, key: Vector3i, visua
 		return ShrubSnapshot3D.FRUIT_BARE
 	if renderer.current_season == GameTypes.Season.SPRING:
 		return ShrubSnapshot3D.FRUIT_FLOWERS
-	if renderer.current_season in MicroCellRenderer.FRUITING_SEASONS 			and renderer._fruit_stock_shows("berry", key, visual["jitter_pos"]):
+	if _shrub_berry_candidate(renderer, visual) and renderer._fruit_stock_shows("berry", key, visual["jitter_pos"]):
 		return ShrubSnapshot3D.FRUIT_BERRIES
 	return ShrubSnapshot3D.FRUIT_BARE
 
 
+# Cespuglio che in questa stagione può avere le bacche: da frutto, adulto, estate o autunno. Se le ha davvero lo dice la
+# raccolta (_fruit_stock_shows), che cambia spesso: per questi soli il 3D cambia modello senza rifare la cella.
+static func _shrub_berry_candidate(renderer: MicroCellRenderer, visual: Dictionary) -> bool:
+	return visual["is_fruit_bearing"] and visual["age_band"] != GameTypes.AgeBand.YOUNG \
+		and renderer.current_season in MicroCellRenderer.FRUITING_SEASONS
+
+
+# Per ciascun cespuglio candidato (ShrubSnapshot3D.berry_keys/berry_jitters): 1 se ha le bacche da mostrare, con la
+# regola del 2D. Letto solo quando cambia la raccolta (shrub_berry_signature).
+func shrub_berries_shown(coords: Vector2i, keys: Array, jitters: Array) -> PackedByteArray:
+	var shown := PackedByteArray()
+	shown.resize(keys.size())
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null or cell.renderer == null:
+		return shown
+	for i in range(keys.size()):
+		shown[i] = 1 if cell.renderer._fruit_stock_shows("berry", keys[i], jitters[i]) else 0
+	return shown
+
+
+# Impronta della raccolta delle bacche: l'elenco per lotto del 2D, che GameScene sostituisce solo quando cambia
+# (set_fruit_stock_available_ratio_by_lot). A parte da shrub_signature, come il 2D che lì rifà solo i frutti.
+func shrub_berry_signature(coords: Vector2i) -> Array:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null or cell.renderer == null:
+		return []
+	return [cell.renderer.fruit_stock_available_ratio_by_lot.get("berry", {})]
+
+
 # "Impronta" dei cespugli: cambia quando il 2D riceve elenchi nuovi (nascite, tagli, nebbia) o cambia l'anno (età), la
-# stagione o la raccolta delle bacche.
+# stagione. La raccolta delle bacche no (dal 2026-11-21): ha la sua impronta, shrub_berry_signature.
 func shrub_signature(coords: Vector2i) -> Array:
 	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
 	if cell == null or cell.renderer == null:
@@ -398,21 +637,39 @@ func shrub_signature(coords: Vector2i) -> Array:
 	var dead: Array = renderer.dead_positions.get(GameTypes.WorldObjectType.SHRUB, [])
 	return [renderer.vegetation_positions, positions, positions.size(), renderer.shrub_current_year,
 		renderer.cut_positions, cut, cut.size(), renderer.dead_positions, dead, dead.size(), renderer.current_season,
-		renderer.fruit_stock_available_ratio_by_lot.get("berry", {})]
+		_hidden_remains_hash(cell, cut, dead)]
+
+
+# Tagliati e morti (alberi o cespugli) sotto il nero della nebbia: il 2D non li filtra (li copre col nero), il 3D non li
+# crea (2026-11-21). Nell'impronta va questo numero, così compaiono e spariscono quando la nebbia si apre o si chiude.
+func _hidden_remains_hash(cell: LiveMacroCell, cut: Array, dead: Array) -> int:
+	var hidden: Array = []
+	for list in [cut, dead]:
+		for entry in list:
+			var key: Vector3i = entry["key"]
+			if _is_under_black_fog(cell, Vector2i(key.x, key.y)):
+				hidden.append(key)
+	return hidden.hash()
 
 
 # Focolari finiti della cella (dallo stesso elenco di edifici che disegna il 2D) col loro stato: acceso mentre ci si fa
 # una ricetta a combustibile (Building.smoking_now, ProductionService.refresh_smoking), braci se ha combustibile nel
-# deposito, spento altrimenti.
+# deposito, spento altrimenti. Spiazzo delle feste (2026-11-23): il falò al centro, acceso durante il banchetto.
 func hearth_snapshot(coords: Vector2i) -> HearthSnapshot3D:
 	var snapshot := HearthSnapshot3D.new()
 	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
 	if cell == null or cell.renderer == null:
 		return snapshot
 	for entry in _hearth_entries(cell.renderer):
-		snapshot.centers.append(MicroCellRenderer._building_entry_center(entry) / float(MicroCellRenderer.CELL_SIZE))
+		var center := MicroCellRenderer._building_entry_center(entry) / float(MicroCellRenderer.CELL_SIZE)
+		# Affumicatoio (2026-11-22): il focolare sta davanti, dentro l'anello di pietre del suo modello.
+		var smokehouse := String(entry.get("building_type_name", "")) == BuildingModels3D.SMOKEHOUSE_TYPE
+		if smokehouse:
+			center += BuildingModels3D.smokehouse_hearth_offset(TentShapes.direction_vector(entry.get("rotation", GameTypes.Direction.SOUTH)))
+		snapshot.centers.append(center)
 		snapshot.states.append(_hearth_state(int(entry.get("id", -1))))
 		snapshot.seeds.append(hash(int(entry.get("id", -1))))
+		snapshot.with_stones.append(0 if smokehouse else 1)
 	return snapshot
 
 
@@ -430,7 +687,7 @@ func hearth_signature(coords: Vector2i) -> Array:
 
 
 func _hearth_entries(renderer: MicroCellRenderer) -> Array:
-	return _complete_entries_of_type(renderer, "campfire")
+	return _complete_entries_of_type(renderer, "campfire") + _complete_entries_of_type(renderer, BuildingModels3D.SMOKEHOUSE_TYPE) 		+ _complete_entries_of_type(renderer, BuildingModels3D.FEAST_GROUND_TYPE)
 
 
 # Edifici con modello Blender (BuildingModels3D.MODELS), finiti o in cantiere, più ogni cantiere non ancora allestito
@@ -445,10 +702,13 @@ func building_models(coords: Vector2i) -> BuildingModelsSnapshot3D:
 		snapshot.type_names.append(String(entry.get("building_type_name", "")))
 		snapshot.ids.append(int(entry.get("id", -1)))
 		snapshot.centers.append(MicroCellRenderer._building_entry_center(entry) / float(MicroCellRenderer.CELL_SIZE))
-		snapshot.doors.append(TentShapes.direction_vector(entry.get("rotation", GameTypes.Direction.SOUTH)))
+		snapshot.doors.append(_model_door(entry, cell))
 		snapshot.stages.append(_stage_of_entry(entry, by_id))
 		snapshot.fills.append(_pit_fill(entry, by_id))
 		snapshot.rack_loads.append(_rack_loads(entry, by_id))
+		snapshot.fuel_piles.append(_fuel_piles(entry, by_id))
+		snapshot.linear_masks.append(int(entry.get("linear_neighbors", 0)))
+		snapshot.site_debris.append(_has_site_debris(entry))
 	return snapshot
 
 
@@ -466,7 +726,22 @@ func building_models_signature(coords: Vector2i) -> Array:
 		signature.append(_stage_of_entry(entry, by_id))
 		signature.append(_pit_fill(entry, by_id))
 		signature.append(",".join(_rack_loads(entry, by_id)))
+		signature.append(",".join(_fuel_piles(entry, by_id)))
+		signature.append(int(entry.get("linear_neighbors", 0)))
+		signature.append(_has_site_debris(entry))
 	return signature
+
+
+# Verso dove si gira il modello: la porta come nel 2D; il guado di pietre (2026-11-22) invece di traverso al ruscello,
+# con lo stesso angolo che usa il 2D (StreamMicrocellService.ford_angle: la fila, lungo +y, ruotata di quell'angolo).
+func _model_door(entry: Dictionary, cell: LiveMacroCell) -> Vector2:
+	if String(entry.get("building_type_name", "")) == BuildingModels3D.FORD_TYPE:
+		return ford_door(StreamMicrocellService.ford_angle(cell.stream_positions, entry.get("position", Vector2i.ZERO)))
+	return TentShapes.direction_vector(entry.get("rotation", GameTypes.Direction.SOUTH))
+
+
+static func ford_door(angle: float) -> Vector2:
+	return Vector2(0.0, 1.0).rotated(angle)
 
 
 func _model_entries(renderer: MicroCellRenderer) -> Array:
@@ -474,24 +749,86 @@ func _model_entries(renderer: MicroCellRenderer) -> Array:
 	for entry in renderer.buildings:
 		# Anche ogni cantiere non ancora allestito, di qualsiasi tipo: ha il cartello (come nel 2D).
 		var not_set_up: bool = not entry.get("is_complete", true) and not entry.get("site_setup_complete", false)
-		if not_set_up or BuildingModels3D.has_models(String(entry.get("building_type_name", ""))):
+		# E ogni cantiere coi detriti dei ceppi (2026-11-23): le macerie sopra, anche se il tipo non ha modello.
+		if not_set_up or _has_site_debris(entry) or BuildingModels3D.has_models(String(entry.get("building_type_name", ""))):
 			entries.append(entry)
 	return entries
+
+
+# Cantiere coi detriti dei ceppi ancora da portare via: lo stesso campo con cui il 2D ci disegna sopra le macerie.
+static func _has_site_debris(entry: Dictionary) -> bool:
+	return not entry.get("is_complete", true) and entry.get("site_debris", false)
 
 
 # Cosa è appeso all'essiccatoio finito: un carico per posto occupato, nell'ordine dei posti del gioco
 # (BuildingStorageService.get_slot_breakdown, gli stessi del pannello). Ingrediente in essiccazione e prodotto già secco
 # restano appesi uguali finché qualcuno non lo porta via. Vuoto se l'edificio non è un essiccatoio finito.
+# Affumicatoio finito (2026-11-22): carne, pesce e pelle da affumicare (posti del deposito, gli stessi del pannello) e poi
+# quelli già affumicati che aspettano nei Prodotti finiti (uno per tipo), uno dopo l'altro senza buchi (combustibile e
+# altro non si appendono).
+# Misura del carico (2026-11-23, richiesta utente): "carne_1".."carne_3" secondo quanto è pieno il posto (spazio usato sul
+# suo spazio), a terzi; l'impronta cambia solo quando un posto passa di misura.
 func _rack_loads(entry: Dictionary, by_id: Dictionary) -> PackedStringArray:
 	var loads := PackedStringArray()
-	if String(entry.get("building_type_name", "")) != BuildingModels3D.RACK_TYPE or not entry.get("is_complete", true):
+	var type_name := String(entry.get("building_type_name", ""))
+	var smokehouse := type_name == BuildingModels3D.SMOKEHOUSE_TYPE
+	if (type_name != BuildingModels3D.RACK_TYPE and not smokehouse) or not entry.get("is_complete", true):
 		return loads
 	var building: Building = by_id.get(int(entry.get("id", -1)))
 	if building == null:
 		return loads
+	if not smokehouse:
+		for slot in BuildingStorageService.get_slot_breakdown(building):
+			var item := String(BuildingModels3D.RACK_ITEM_BY_RESOURCE.get(String((slot as Dictionary).get("resource_name", "")), ""))
+			loads.append(_sized_load(item, float(slot.get("space_used", 0)), float(slot.get("space_capacity", 0))))
+		return loads
 	for slot in BuildingStorageService.get_slot_breakdown(building):
-		loads.append(String(BuildingModels3D.RACK_ITEM_BY_RESOURCE.get(String((slot as Dictionary).get("resource_name", "")), "")))
+		var item := String(BuildingModels3D.SMOKEHOUSE_ITEM_BY_RESOURCE.get(String((slot as Dictionary).get("resource_name", "")), ""))
+		if not item.is_empty():
+			loads.append(_sized_load(item, float(slot.get("space_used", 0)), float(slot.get("space_capacity", 0))))
+	for output_name in building.production_output.keys():
+		var item := String(BuildingModels3D.SMOKEHOUSE_ITEM_BY_RESOURCE.get(String(output_name), ""))
+		var quantity := int(building.production_output[output_name])
+		if not item.is_empty() and quantity > 0:
+			var rules := CaloricCalculator.get_caloric_source_rules(String(output_name))
+			var space := float(quantity) * (rules.space_per_unit if rules != null else 0.0)
+			loads.append(_sized_load(item, space, float(building.rules.storage_space_per_slot)))
 	return loads
+
+
+# Carico con la sua misura (BuildingModels3D.RACK_LOAD_LEVELS): 1 fino a un terzo del posto, 2 fino a due terzi, 3 oltre.
+# Senza capienza nota, la misura piena. "" resta "" (posto con altro).
+static func _sized_load(item: String, space_used: float, space_capacity: float) -> String:
+	if item.is_empty():
+		return item
+	var levels := BuildingModels3D.RACK_LOAD_LEVELS
+	var level := levels
+	if space_capacity > 0.0:
+		level = clampi(ceili(space_used / space_capacity * levels - 0.0001), 1, levels)
+	return "%s_%d" % [item, level]
+
+
+# Catasta dell'affumicatoio finito: ceppi se ha legna da ardere, fascine se ha bastoni (nel deposito).
+# Attrezzeria finita (2026-11-23): un attrezzo per tipo pronto nei Prodotti finiti (production_output), attorno alla
+# rastrelliera. Vuota per gli altri edifici.
+func _fuel_piles(entry: Dictionary, by_id: Dictionary) -> PackedStringArray:
+	var piles := PackedStringArray()
+	var type_name := String(entry.get("building_type_name", ""))
+	var toolmaker := type_name == BuildingModels3D.TOOLMAKER_TYPE
+	if (type_name != BuildingModels3D.SMOKEHOUSE_TYPE and not toolmaker) or not entry.get("is_complete", true):
+		return piles
+	var building: Building = by_id.get(int(entry.get("id", -1)))
+	if building == null:
+		return piles
+	if toolmaker:
+		for resource_name in BuildingModels3D.TOOLMAKER_TOOL_BY_RESOURCE:
+			if int(building.production_output.get(resource_name, 0)) > 0:
+				piles.append(String(BuildingModels3D.TOOLMAKER_TOOL_BY_RESOURCE[resource_name]))
+		return piles
+	for resource_name in BuildingModels3D.SMOKEHOUSE_FUEL_PILES:
+		if int((building.stored_resources.get(resource_name, {}) as Dictionary).get("quantity", 0)) > 0:
+			piles.append(String(BuildingModels3D.SMOKEHOUSE_FUEL_PILES[resource_name]))
+	return piles
 
 
 # Riempimento di una fossa dei rifiuti finita, tra 0 e 1, a passi di 1% (il modello si rifà solo quando cambia
@@ -555,6 +892,7 @@ func dirt_ground_tiles(coords: Vector2i) -> DirtGroundSnapshot3D:
 		snapshot.neighbor_masks.append(int(entry.get("dirt_neighbors", 0)))
 		snapshot.strengths.append(strength)
 		snapshot.shades.append(0.0)
+		snapshot.tiles.append(1)
 	if BEATEN_UNDER_BUILDINGS:
 		for entry in cell.renderer.buildings:
 			if String(entry.get("building_type_name", "")) in NO_BEATEN_UNDER_TYPES:
@@ -572,6 +910,7 @@ func dirt_ground_tiles(coords: Vector2i) -> DirtGroundSnapshot3D:
 					snapshot.neighbor_masks.append(0)
 					snapshot.strengths.append(1.0)
 					snapshot.shades.append(shade)
+					snapshot.tiles.append(0)
 	return snapshot
 
 
@@ -723,8 +1062,22 @@ func _hearth_state(building_id: int) -> int:
 	for building in macro_world.buildings:
 		if building.id != building_id:
 			continue
+		var now := _game_time_days()
+		# Falò dello spiazzo delle feste: acceso solo durante il banchetto, poi braci per un po' e spento (il combustibile
+		# nel deposito è quello della prossima festa, non tiene le braci).
+		if building.building_type_name == BuildingModels3D.FEAST_GROUND_TYPE:
+			if SocialRiteService.has_lit_bonfire(building):
+				_hearth_last_burning[building_id] = now
+				return HearthSnapshot3D.BURNING
+			if now - float(_hearth_last_burning.get(building_id, -INF)) < HEARTH_EMBERS_AFTER_COOKING_DAYS:
+				return HearthSnapshot3D.EMBERS
+			return HearthSnapshot3D.OUT
 		if building.smoking_now:
+			_hearth_last_burning[building_id] = now
 			return HearthSnapshot3D.BURNING
+		var since_burning := now - float(_hearth_last_burning.get(building_id, -INF))
+		if since_burning < HEARTH_EMBERS_AFTER_COOKING_DAYS:
+			return HearthSnapshot3D.EMBERS
 		if ProductionService.get_available_fuel(building) > 0.0:
 			return HearthSnapshot3D.EMBERS
 		return HearthSnapshot3D.OUT
@@ -761,6 +1114,91 @@ func ground_cover_signature(coords: Vector2i) -> Array:
 		signature.append(positions.size())
 	signature.append_array([renderer.stone_positions, renderer.stone_positions.size(),
 		renderer.depleted_stone_positions, renderer.depleted_stone_positions.size()])
+	return signature
+
+
+# Erba-risorsa della cella (le microcelle d'erba del 2D) e stagione del 2D, per i ciuffi (GrassTufts3D).
+func grass_snapshot(coords: Vector2i) -> GrassSnapshot3D:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	var snapshot := GrassSnapshot3D.new()
+	if cell == null or cell.renderer == null:
+		return snapshot
+	snapshot.positions = cell.renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
+	snapshot.season = cell.renderer.current_season
+	return snapshot
+
+
+# "Impronta" dei ciuffi: cambia con l'elenco dell'erba del 2D o con la stagione.
+func grass_signature(coords: Vector2i) -> Array:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null or cell.renderer == null:
+		return []
+	var positions: Array = cell.renderer.vegetation_positions.get(GameTypes.WorldObjectType.GRASS, [])
+	return [cell.renderer.vegetation_positions, positions, positions.size(), cell.renderer.current_season]
+
+
+# Risorse "chiazza d'erba" della cella (verdure, erbe medicinali, granaglie, lino), come le riceve il 2D
+# (MicroCellRenderer.grass_patch_availability), col punto della figurina del 2D (_lot_marker_offset, in microcelle).
+const GROUND_PATCH_OWN_MODEL_GRAIN := "wild_flax"
+
+
+func ground_patch_snapshot(coords: Vector2i) -> GroundPatchSnapshot3D:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	var snapshot := GroundPatchSnapshot3D.new()
+	if cell == null or cell.renderer == null:
+		return snapshot
+	var renderer := cell.renderer
+	var px := float(MicroCellRenderer.CELL_SIZE)
+	# Granaglie (2026-11-21): il 2D le disegna tutte con una spighetta per lotto (chiave GRAIN_MARKER_KEY, unione); il 3D
+	# mette nello stesso punto una spiga per OGNI granaglia del lotto (utente: si vede che sono diverse anche prima di
+	# sapere quali sono), "grain" = il suo nome, "cluster" = [posto, quante] per aprirle a ciuffetto (GroundPlants3D).
+	# Il lino selvatico resta a parte: avrà il suo modello.
+	var grains_by_lot: Dictionary = {} # lotto -> Array di nomi
+	for resource in renderer.grass_patch_availability:
+		var name := String(resource)
+		if name == MicroCellRenderer.GRAIN_MARKER_KEY:
+			continue
+		var is_grain := name != GROUND_PATCH_OWN_MODEL_GRAIN and MicroCellRenderer._is_grain_resource(name)
+		var lots: Dictionary = renderer.grass_patch_availability[resource]
+		for lot in lots:
+			var quantity := int(lots[lot])
+			if quantity <= 0:
+				continue
+			if is_grain:
+				if not grains_by_lot.has(lot):
+					grains_by_lot[lot] = []
+				(grains_by_lot[lot] as Array).append(name)
+				continue
+			var offset: Vector2 = renderer._lot_marker_offset(lot, name) / px
+			snapshot.items.append({"resource": name, "lot": lot, "pos": Vector2(lot) + Vector2(0.5, 0.5) + offset})
+	# Uova (2026-11-21): il 2D le tiene a parte (egg_nest_availability, set_grass_patch_availability le devia lì); un nido
+	# per lotto con uova, nello stesso punto dell'ovetto del 2D.
+	for lot in renderer.egg_nest_availability:
+		if int(renderer.egg_nest_availability[lot]) <= 0:
+			continue
+		var egg_offset: Vector2 = renderer._lot_marker_offset(lot, MicroCellRenderer.EGG_RESOURCE_NAME) / px
+		snapshot.items.append({"resource": MicroCellRenderer.EGG_RESOURCE_NAME, "lot": lot, "pos": Vector2(lot) + Vector2(0.5, 0.5) + egg_offset})
+	for lot in grains_by_lot:
+		var offset: Vector2 = renderer._lot_marker_offset(lot, MicroCellRenderer.GRAIN_MARKER_KEY) / px
+		var names: Array = grains_by_lot[lot]
+		names.sort() # ordine fisso: ogni granaglia tiene il suo posto nel ciuffetto
+		for i in range(names.size()):
+			snapshot.items.append({"resource": MicroCellRenderer.GRAIN_MARKER_KEY, "grain": names[i], "lot": lot,
+				"pos": Vector2(lot) + Vector2(0.5, 0.5) + offset, "cluster": [i, names.size()]})
+	return snapshot
+
+
+# "Impronta" delle risorse "chiazza d'erba": cambia quando il 2D riceve una disponibilità nuova per una risorsa.
+func ground_patch_signature(coords: Vector2i) -> Array:
+	var cell: LiveMacroCell = (_game.get("live_cells") as Dictionary).get(coords)
+	if cell == null or cell.renderer == null:
+		return []
+	var availability: Dictionary = cell.renderer.grass_patch_availability
+	var eggs: Dictionary = cell.renderer.egg_nest_availability
+	var signature: Array = [availability, availability.size(), eggs, eggs.size()]
+	for resource in availability:
+		signature.append(availability[resource])
+		signature.append((availability[resource] as Dictionary).size())
 	return signature
 
 
@@ -905,6 +1343,15 @@ func selection(coords: Vector2i, hovered_building_id: int) -> SelectionSnapshot3
 				radius = (MicroCellRenderer.SHRUB_BLOB_MAX_DISTANCE_RATIO * float(visual["density_scale"])
 					+ MicroCellRenderer.SHRUB_BLOB_MAX_RADIUS_RATIO * float(visual["size_multiplier"])) * padding
 		_add_halo(snapshot, center / px, radius / px, SelectionSnapshot3D.SELECTED)
+	# Mucchio a terra selezionato (2026-11-21): la selezione sta in GameScene, non nel renderer; stesso raggio del 2D
+	# (GroundPileView._draw: sparpagliamento delle icone più 0,8 lati d'icona).
+	var pile_id: int = _game.get("selected_ground_pile_id")
+	if pile_id != -1:
+		var pile := GroundPileService.find_by_id(_game.get("game_data"), pile_id)
+		if pile != null and pile.macro_coords == coords:
+			var icon_side := MicroCellRenderer.DEPOSIT_SITE_STORAGE_SQUARE_SIDE * GroundPileView.ICON_SCALE
+			var pile_radius := (GroundPileView.SCATTER_RADIUS + icon_side * 0.8) * padding
+			_add_halo(snapshot, pile.get_position(), pile_radius / px, SelectionSnapshot3D.SELECTED)
 	return snapshot
 
 
@@ -1009,6 +1456,13 @@ func placement_ghost() -> PlacementGhostSnapshot3D:
 		snapshot.origin = origin
 		snapshot.rect = Rect2(local - size / 2.0, size)
 		snapshot.door_direction = TentShapes.direction_vector(ghost.rotation_dir)
+		# Guado di pietre: di traverso al ruscello sotto il mouse, come l'anteprima 2D (BuildingGhost).
+		if ghost.building_type_name == BuildingModels3D.FORD_TYPE:
+			snapshot.door_direction = ford_door(ghost._stream_crossing_angle)
+		# Vallo: la forma dai vicini dell'anteprima 2D; i pezzi sono già girati per lato (nord a -Z).
+		if ghost.building_type_name == BuildingModels3D.EARTHWORK_TYPE:
+			snapshot.linear_mask = ghost._linear_mask
+			snapshot.door_direction = Vector2(0.0, -1.0)
 		if ghost._footprint_door_px != Vector2.INF:
 			snapshot.door_offset = ghost._footprint_door_px / px
 		snapshot.buildable = ghost.is_buildable

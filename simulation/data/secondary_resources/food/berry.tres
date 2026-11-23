@@ -15,3 +15,5 @@ day_durability = 20
 space_per_unit = 0.5
 eat_happiness_per_100_calories = 5.0
 eat_health_per_100_calories = 0.0
+units_per_mature_plant = 100
+lot_source = 2

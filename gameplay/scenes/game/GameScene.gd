@@ -1253,6 +1253,7 @@ func _debug_describe_task(watched: HumanIndividual, task: Task, detailed: bool) 
 # (il player deve poter esplorare la macrocella anche a simulazione in pausa — confermato con
 # l'utente). Non tocca in alcun modo il pipeline giorno/anno di WorldTimeService.
 func _process(delta: float) -> void:
+	Perf3D.begin() # TEMPORANEO misura FPS
 	_debug_watch_task(delta)
 	# Fotogrammi già girati (2026-10-09): il coordinatore decide solo a scena pronta (_is_coordinator_scene_ready).
 	if _coordinator_frames < 2:
@@ -1325,12 +1326,14 @@ func _process(delta: float) -> void:
 	# movimento e azioni di chi ha una Task attiva, passaggi di macrocella e figli al seguito, visitatori, corpi in spalla,
 	# cortei. Prima i segnali degli step della Task corrente di ciascuno (prelievi/depositi ecc.), qualunque sia chi l'ha
 	# creata — vedi _ensure_step_signals. Poi gli effetti verso la scena (viste, celle, telecamera).
+	Perf3D.mark(&"gs_inizio")
 	for member in human_individuals:
 		if member.current_task != null and not member.current_task.is_finished():
 			_ensure_step_signals(member.current_task)
 	var frame_effects := GameEffects.new()
 	sim.tick_frame(delta, game_delta, clock != null and clock.is_playing, individual, frame_effects)
 	_apply_effects(frame_effects)
+	Perf3D.mark(&"gs_simulazione")
 	_sync_visitor_party_views()
 	_sync_wild_animal_visit_bodies()
 	if game_data != null:
@@ -1354,9 +1357,11 @@ func _process(delta: float) -> void:
 	_sync_ground_pile_views()
 	# Corpi in spalla e loro viste (2026-10-04, cumulo sepolcrale passo 2).
 	_sync_body_burial()
+	Perf3D.mark(&"gs_sync_viste")
 
 	if individual != null:
 		_update_live_neighbor()
+	Perf3D.mark(&"gs_celle_vicine")
 
 	# Step 4 FoW multi-sorgente, 2026-09-02 — SOSTITUISCE il vecchio meccanismo a proxy (un solo
 	# "individuo ombra" per cella vicina, sincronizzato sul bersaglio corrente): ogni cella viva
@@ -1372,6 +1377,7 @@ func _process(delta: float) -> void:
 		# DEBUG TEMPORANEO [FOW DIAG] — rimuovere. Vedi _debug_source_context_for_cell/
 		# FogOfWarRenderer._debug_source_context — early-out interno al flag, nessun costo se spento.
 		cell.fog_of_war_renderer.set_debug_source_context(_debug_source_context_for_cell(cell))
+	Perf3D.mark(&"gs_nebbia")
 
 	# Proposta 2 (mitigazione "pop-in", diagnostica lentezza) — rinfresca la vegetazione della cella
 	# centrale quando il player si è spostato abbastanza da poter aver scoperto area non coperta
@@ -1419,6 +1425,9 @@ func _process(delta: float) -> void:
 				SiteCutService.village_has_axe(_game_context())
 			)
 		)
+	Perf3D.mark(&"gs_fine")
+	var view_3d := get_tree().get_first_node_in_group(View3D.GROUP) as View3D
+	Perf3D.tick(get_viewport(), view_3d != null and view_3d.active) # TEMPORANEO misura FPS
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -6048,10 +6057,8 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] stone_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stone_hit))
 
-	# TREE_INDIVIDUAL (stick/mushroom) — STESSO loop generico, sullo stesso hit-test di sempre
-	# (StickLotSelectorController, su tree_claimed_lots). Acorn/fruit restano hardcoded qui (mai
-	# lot_source: sono FRUIT_STOCK_SOURCES, stock aggregato ripartito per peso — fuori scope di
-	# questo refactor), ancorati allo STESSO lotto per costruzione.
+	# TREE_INDIVIDUAL (stick/mushroom, e dal 2026-11-21 acorn/fruit) — STESSO loop generico, sullo stesso hit-test di
+	# sempre (StickLotSelectorController, su tree_claimed_lots).
 	var stick_lot_hit := stick_lot_selector_controller.try_select(
 		event, live_cells, required_button, macro_world.buildings if macro_world != null else []
 	)
@@ -6059,14 +6066,11 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 		if FogOfWarVerificationService.is_detail_visible(live_cells, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], current_absolute_day):
 			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.TREE_INDIVIDUAL):
 				_append_unlocked_pickup_candidate(candidates, resource_name, stick_lot_hit["macro_coords"], stick_lot_hit["lot"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES, include_locked)
-			_append_unlocked_pickup_candidate(candidates, "acorn", stick_lot_hit["macro_coords"], stick_lot_hit["lot"], false, include_locked)
-			_append_unlocked_pickup_candidate(candidates, "fruit", stick_lot_hit["macro_coords"], stick_lot_hit["lot"], false, include_locked)
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] stick_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(stick_lot_hit))
 
-	# SHRUB_INDIVIDUAL (plant_fiber) — STESSO loop generico, sullo stesso hit-test di sempre
-	# (PlantFiberLotSelectorController, su shrub_claimed_lots). Berry resta hardcoded qui per lo
-	# stesso motivo di acorn/fruit sopra.
+	# SHRUB_INDIVIDUAL (plant_fiber, e dal 2026-11-21 berry) — STESSO loop generico, sullo stesso hit-test di sempre
+	# (PlantFiberLotSelectorController, su shrub_claimed_lots).
 	var plant_fiber_lot_hit := plant_fiber_lot_selector_controller.try_select(
 		event, live_cells, required_button, macro_world.buildings if macro_world != null else []
 	)
@@ -6074,7 +6078,6 @@ func _resolve_pickup_candidates(event: InputEvent, current_absolute_day: int, re
 		if FogOfWarVerificationService.is_detail_visible(live_cells, plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], current_absolute_day):
 			for resource_name in LotCapacityService.get_resource_names_for_lot_source(SecondaryResourceTypes.LotSource.SHRUB_INDIVIDUAL):
 				_append_unlocked_pickup_candidate(candidates, resource_name, plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], resource_name in REQUIRE_AVAILABLE_PICKUP_RESOURCE_NAMES, include_locked)
-			_append_unlocked_pickup_candidate(candidates, "berry", plant_fiber_lot_hit["macro_coords"], plant_fiber_lot_hit["lot"], false, include_locked)
 		elif DebugLogging.ENABLED and DebugLogging.SHOW_RECONNECT_FACTORY_LOGS:
 			print("[PICKUP CMD DEBUG] plant_fiber_lot_hit=%s trovato ma cella non visibile con dettaglio, ignorato." % str(plant_fiber_lot_hit))
 
@@ -8498,6 +8501,28 @@ func _create_dead_body_view(record: Dictionary, parent: Node) -> DeadBodyView:
 	view.z_index = 1
 	dead_body_views[int(record["individual_id"])] = view
 	return view
+
+
+# Corpi a terra di una macrocella appena accesa (2026-11-21): la vista nasce alla morte solo se la cella era viva, e va
+# persa con il container quando la cella si spegne — qui la si rifà, anche dopo un caricamento. Esclusi i corpi in spalla
+# (li disegna _drag_carried_body_view) e quelli scaduti; sulla lastra di un cumulo disteso dritto, come in _sync_body_burial.
+func _restore_dead_body_views_for_cell(cell: LiveMacroCell) -> void:
+	var cell_coords := Vector2i(cell.macro_x, cell.macro_y)
+	for record in game_data.expired_objects:
+		if record["object_type"] != ExpiredObjectTypes.ExpiredObjectType.DEAD_BODY:
+			continue
+		if ExpiredObjectCalculator.is_carried(record) or Vector2i(record["home_macro_coords"]) != cell_coords:
+			continue
+		if BodyBurialService.is_expired(record):
+			continue
+		var body_id := int(record["individual_id"])
+		_free_dead_body_view(body_id)
+		var view := _create_dead_body_view(record, cell.container)
+		if BodyBurialService.is_on_slab(record):
+			view.rotation = 0.0
+		if selected_dead_body_individual_id == body_id:
+			view.is_selected = true
+			view.queue_redraw()
 
 
 func _free_dead_body_view(body_id: int) -> void:
@@ -12865,6 +12890,7 @@ func _activate_live_cell(mx: int, my: int, p_debug_source: String = "unknown") -
 					FeastFireNode.light(cell.container, feast_building)
 
 	live_cells[Vector2i(mx, my)] = cell
+	_restore_dead_body_views_for_cell(cell)
 	return cell
 
 
@@ -13769,11 +13795,11 @@ func _refresh_resource_visuals(cell: LiveMacroCell, reason: String = "", cut: Di
 		# per ricostruire il ratio per lotto.
 		_step_start_usec = Time.get_ticks_usec()
 		for resource_name in TerrainScatteredResourceService.FRUIT_STOCK_SOURCES.keys():
-			var signature: Array = TerrainScatteredResourceService.get_fruit_stock_recompute_signature(resource_name, cell.macro_state)
+			# Dal 2026-11-21 dai lotti (LotCapacityService), non più dalla scorta di macrocella.
+			var signature: Array = LotCapacityService.get_visual_ratio_signature(cell.macro_state, resource_name)
 			if signature == cell.last_berry_signature.get(resource_name, []):
 				continue
-			# Un solo passaggio su scorte e pesi (2026-10-03, passo B), stesso esito del calcolo lotto per lotto.
-			var ratio_by_lot: Dictionary = TerrainScatteredResourceService.get_fruit_stock_visual_ratios_by_lot(resource_name, cell.macro_state)
+			var ratio_by_lot: Dictionary = LotCapacityService.get_visual_ratios_by_lot(cell.macro_state, resource_name)
 			cell.cached_berry_ratio_by_lot[resource_name] = ratio_by_lot
 			cell.last_berry_signature[resource_name] = signature
 			var object_type: GameTypes.WorldObjectType = TerrainScatteredResourceService.FRUIT_STOCK_SOURCES[resource_name]["object_type"]
@@ -14085,10 +14111,9 @@ func _refresh_collected_resource_visuals(cell: LiveMacroCell, collected: Diction
 		# Frutti per lotto: stessa firma del ridisegno completo; set_fruit_stock_available_ratio_by_lot segna da rifare
 		# solo alberi o arbusti (ricostruiti a fine ciclo, end_vegetation_batch).
 		if TerrainScatteredResourceService.FRUIT_STOCK_SOURCES.has(resource_key):
-			var signature: Array = TerrainScatteredResourceService.get_fruit_stock_recompute_signature(resource_key, cell.macro_state)
+			var signature: Array = LotCapacityService.get_visual_ratio_signature(cell.macro_state, resource_key)
 			if signature != cell.last_berry_signature.get(resource_key, []):
-				# Tutti i lotti: le scorte della cella scendono con la raccolta, quindi cambia il rapporto di ogni lotto.
-				var ratio_by_lot: Dictionary = TerrainScatteredResourceService.get_fruit_stock_visual_ratios_by_lot(resource_key, cell.macro_state)
+				var ratio_by_lot: Dictionary = LotCapacityService.get_visual_ratios_by_lot(cell.macro_state, resource_key)
 				cell.cached_berry_ratio_by_lot[resource_key] = ratio_by_lot
 				cell.last_berry_signature[resource_key] = signature
 				var object_type: GameTypes.WorldObjectType = TerrainScatteredResourceService.FRUIT_STOCK_SOURCES[resource_key]["object_type"]

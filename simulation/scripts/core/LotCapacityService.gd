@@ -310,6 +310,41 @@ static func _log_lot_capacity(
 	])
 
 
+# Segnini dei frutti (2026-11-21, bacche/ghiande/frutta sui lotti): per ogni lotto della risorsa, quanto resta della
+# quantità della stagione (disponibile / capacità stagionale, 0..1), stessa formula di _capacity_minus_harvested. Un
+# lotto con capacità stagionale 0 (nessuna pianta matura del sottotipo, o stagione senza frutti) vale 0: le sue piante
+# non mostrano frutti. Solo per il disegno (MicroCellRenderer.set_fruit_stock_available_ratio_by_lot).
+static func get_visual_ratios_by_lot(macro_state: MacroCellState, resource_name: String) -> Dictionary:
+	var ratios: Dictionary = {}
+	var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+	if rules == null:
+		return ratios
+	var cache: Dictionary = macro_state.lot_capacity_cache.get(resource_name, {})
+	var registry: Dictionary = macro_state.lot_registry.get(resource_name, {})
+	for lot in cache.keys():
+		var seasonal_capacity := _apply_seasonal_availability_to_capacity(rules, maxi(int(cache[lot]), 0))
+		if seasonal_capacity <= 0:
+			ratios[lot] = 0.0
+			continue
+		var available: int = maxi(seasonal_capacity - int(registry.get(lot, 0)), 0)
+		ratios[lot] = minf(float(available) / float(seasonal_capacity), 1.0)
+	return ratios
+
+
+# Firma leggera per get_visual_ratios_by_lot: stagione, checkpoint e numero dei lotti della capacità, e il registro del
+# raccolto (piccolo: solo i lotti toccati). Uguale = rapporti invariati, il chiamante non li ricalcola.
+static func get_visual_ratio_signature(macro_state: MacroCellState, resource_name: String) -> Array:
+	var season := -1
+	if GameSettings.active_game_data != null:
+		season = SeasonCalculator.get_season_for_day(GameSettings.active_game_data.current_day)
+	return [
+		season,
+		int(macro_state.lot_capacity_checkpoint_day.get(resource_name, -1)),
+		(macro_state.lot_capacity_cache.get(resource_name, {}) as Dictionary).size(),
+		(macro_state.lot_registry.get(resource_name, {}) as Dictionary).hash(),
+	]
+
+
 # Unità raccoglibili in più su un lotto (2026-10-04, richiesta utente — task Cut: un albero abbattuto lascia 3 stick):
 # il conto del raccolto scende di `quantity`, anche sotto zero, così la disponibilità (capacità − raccolto) sale della
 # stessa quantità. Nessun sistema nuovo: spariscono quando il registro di quella risorsa viene azzerato (inizio di ogni

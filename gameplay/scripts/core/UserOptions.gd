@@ -80,6 +80,19 @@ const RESOLUTION_3D_CHOICES := [100, 75, 50]
 var ssao_enabled: bool = true
 var resolution_3d_percent: int = 100
 signal graphics_changed
+# Qualità grafica 3D (2026-11-23, richiesta utente, dalle misure FPS con RenderDoc su Intel UHD): Bassa / Media / Alta.
+# Scegliere un livello imposta SSAO e risoluzione (che restano regolabili a mano sotto, come "avanzate") e decide da solo
+# LOD degli alberi e filtro delle ombre. Al primo avvio (chiave assente in options.cfg) lo sceglie il gioco dal tipo di
+# scheda video: integrata = Bassa, dedicata = Alta, altro = Media (_detect_quality_3d). Chiave "quality_3d".
+enum Quality3D { LOW, MEDIUM, HIGH }
+const QUALITY_3D_PRESETS := {
+	# lod: pixel di errore ammessi per le versioni semplificate dei modelli (Viewport.mesh_lod_threshold);
+	# shadow_filter: RenderingServer.ShadowQuality del sole (0 dure, 1 morbide molto basse, 2 basse, 3 medie).
+	Quality3D.LOW: {"resolution": 75, "ssao": false, "lod": 48.0, "shadow_filter": 1},
+	Quality3D.MEDIUM: {"resolution": 100, "ssao": false, "lod": 32.0, "shadow_filter": 2},
+	Quality3D.HIGH: {"resolution": 100, "ssao": true, "lod": 16.0, "shadow_filter": 3},
+}
+var quality_3d: Quality3D = Quality3D.MEDIUM
 # Minimappa della sidebar chiusa (2026-09-20, richiesta utente): true = nascosta, resta solo il bottone per
 # riaprirla; false (default) = visibile. Salvato a ogni click sul bottone.
 var minimap_collapsed: bool = false
@@ -151,6 +164,8 @@ func _ready() -> void:
 func load_from_disk() -> void:
 	var config := ConfigFile.new()
 	if config.load(OPTIONS_FILE_PATH) != OK:
+		if DisplayServer.get_name() != "headless":
+			_apply_quality_3d_preset(_detect_quality_3d())
 		save_to_disk()
 		return
 	show_notification_popups = bool(config.get_value(SECTION, "show_notification_popups", true))
@@ -173,6 +188,14 @@ func load_from_disk() -> void:
 	resolution_3d_percent = int(config.get_value(SECTION, "resolution_3d_percent", 100))
 	if not RESOLUTION_3D_CHOICES.has(resolution_3d_percent):
 		resolution_3d_percent = 100
+	# Livello di qualità: assente (file di prima dei livelli) = scelto dalla scheda, con i suoi SSAO e risoluzione, e
+	# scritto subito su disco così la scelta automatica avviene una volta sola.
+	if config.has_section_key(SECTION, "quality_3d"):
+		quality_3d = clampi(int(config.get_value(SECTION, "quality_3d")), Quality3D.LOW, Quality3D.HIGH) as Quality3D
+	elif DisplayServer.get_name() != "headless":
+		# Senza schermo (controlli da riga di comando) la scheda non si vede: niente scelta e niente scrittura.
+		_apply_quality_3d_preset(_detect_quality_3d())
+		call_deferred("save_to_disk")
 	minimap_collapsed = bool(config.get_value(SECTION, "minimap_collapsed", false))
 	work_area_auto_zone = bool(config.get_value(SECTION, "work_area_auto_zone", true))
 	# Letti così come sono: i dialog li riportano nei valori ammessi (PickupChoiceDialog, anche in modalità caccia).
@@ -200,6 +223,41 @@ func set_show_grid(value: bool) -> void:
 	show_grid_changed.emit()
 
 
+# Livello di qualità scelto dal menu: imposta anche SSAO e risoluzione del livello e avvisa la vista 3D aperta.
+func set_quality_3d(level: Quality3D) -> void:
+	_apply_quality_3d_preset(level)
+	graphics_changed.emit()
+
+
+# LOD e filtro delle ombre del livello attuale (letti dalla vista 3D, View3D / Lighting3D).
+func quality_3d_lod_threshold() -> float:
+	return float(QUALITY_3D_PRESETS[quality_3d]["lod"])
+
+
+func quality_3d_shadow_filter() -> int:
+	return int(QUALITY_3D_PRESETS[quality_3d]["shadow_filter"])
+
+
+func _apply_quality_3d_preset(level: Quality3D) -> void:
+	quality_3d = level
+	var preset: Dictionary = QUALITY_3D_PRESETS[level]
+	ssao_enabled = bool(preset["ssao"])
+	resolution_3d_percent = int(preset["resolution"])
+
+
+# Scelta automatica al primo avvio, dal tipo di scheda video che Godot sta usando.
+func _detect_quality_3d() -> Quality3D:
+	var adapter_type := RenderingServer.get_video_adapter_type()
+	var level := Quality3D.MEDIUM
+	if adapter_type == RenderingDevice.DEVICE_TYPE_INTEGRATED_GPU:
+		level = Quality3D.LOW
+	elif adapter_type == RenderingDevice.DEVICE_TYPE_DISCRETE_GPU:
+		level = Quality3D.HIGH
+	print("[UserOptions] scheda video \"%s\" (tipo %d): qualità 3D iniziale %s" % [
+		RenderingServer.get_video_adapter_name(), adapter_type, Quality3D.keys()[level]])
+	return level
+
+
 func set_graphics_3d(ssao: bool, resolution_percent: int) -> void:
 	if ssao_enabled == ssao and resolution_3d_percent == resolution_percent:
 		return
@@ -224,6 +282,7 @@ func save_to_disk() -> void:
 	config.set_value(SECTION, "show_grid", show_grid)
 	config.set_value(SECTION, "ssao_enabled", ssao_enabled)
 	config.set_value(SECTION, "resolution_3d_percent", resolution_3d_percent)
+	config.set_value(SECTION, "quality_3d", quality_3d)
 	config.set_value(SECTION, "minimap_collapsed", minimap_collapsed)
 	config.set_value(SECTION, "work_area_auto_zone", work_area_auto_zone)
 	config.set_value(SECTION, "work_area_gather_trips", work_area_gather_trips)

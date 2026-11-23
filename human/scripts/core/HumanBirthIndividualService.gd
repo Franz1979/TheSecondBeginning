@@ -156,13 +156,44 @@ static func _roll_childbirth_survival(mother: HumanIndividual, human_rules: Huma
 # padre non è (più) nel roster — può essere morto tra concepimento e nascita, vedi doc di testa al
 # file — le sue skill sono trattate come 0.0 per tutte (fallback onesto, stesso principio già in
 # uso per FALLBACK_MAX_VITAL/FALLBACK_MAX_STAMINA: nessun crash, nessuna skill "inventata").
+# Sesso del nascituro auto-bilanciante (2026-11-23, richiesta utente: una serie di sole femmine
+# bloccava la crescita). Parte dal 50% e si sposta verso il sesso che scarseggia nel villaggio della
+# madre (o nel folk, se non ha villaggio): spostamento = squilibrio relativo × SEX_BALANCE_STRENGTH,
+# limitato a [SEX_BALANCE_MIN, SEX_BALANCE_MAX] perché resti sempre un tiro, mai una certezza.
+# Es.: 2 maschi e 11 femmine → (11-2)/13 × 0.3 ≈ +0.21 → maschio al ~71%.
+const SEX_BALANCE_STRENGTH := 0.3
+const SEX_BALANCE_MIN := 0.25
+const SEX_BALANCE_MAX := 0.75
+
+static func _male_birth_probability(mother: HumanIndividual, all_individuals: Array[HumanIndividual]) -> float:
+	var males := 0
+	var females := 0
+	for individual in all_individuals:
+		var same_group: bool
+		if mother.village_ref != null:
+			same_group = individual.village_ref == mother.village_ref
+		else:
+			same_group = individual.folk_ref == mother.folk_ref
+		if not same_group:
+			continue
+		if individual.sex == HumanTypes.Sex.MALE:
+			males += 1
+		else:
+			females += 1
+	var total := males + females
+	if total == 0:
+		return 0.5
+	var imbalance := float(females - males) / float(total)
+	return clampf(0.5 + imbalance * SEX_BALANCE_STRENGTH, SEX_BALANCE_MIN, SEX_BALANCE_MAX)
+
+
 static func _create_newborn(mother: HumanIndividual, game_data: GameData, all_individuals: Array[HumanIndividual]) -> HumanIndividual:
 	var newborn := HumanIndividual.new()
 	newborn.id = game_data.allocate_human_id()
 	newborn.mother_id = mother.id
 	newborn.father_id = mother.pending_child_father_id
 	newborn.partner_id = -1
-	newborn.sex = HumanTypes.Sex.FEMALE if randf() < 0.5 else HumanTypes.Sex.MALE
+	newborn.sex = HumanTypes.Sex.MALE if randf() < _male_birth_probability(mother, all_individuals) else HumanTypes.Sex.FEMALE
 	newborn.birth_year_virtual = game_data.year
 	newborn.birth_day = game_data.current_day
 	newborn.assign_random_name()

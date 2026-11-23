@@ -6,5 +6,5 @@ extends RefCounted
 
 var vertex_color: StandardMaterial3D = FlatMeshBuilder.vertex_color_material()
 var terrain: ShaderMaterial = TerrainMaterial3D.make()
-var water: StandardMaterial3D = WaterMesh3D.make_material()
+var water: ShaderMaterial = WaterMesh3D.make_material(terrain)
 var grid: StandardMaterial3D = GridLines3D.make_material()

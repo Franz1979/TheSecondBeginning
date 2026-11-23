@@ -24,6 +24,17 @@ var females := PackedByteArray()
 var pregnant := PackedByteArray()
 var selected := PackedByteArray()
 
+# Morti a terra (2026-11-21, DeadBodyView del 2D): stessi pupazzi, distesi a faccia in giù. Array paralleli a parte.
+# Centro del corpo (busto) come `positions`/`grounds`; `dead_heads` = direzione dalla vita alla testa (x = est, y = sud).
+var dead_positions := PackedVector2Array()
+var dead_grounds := PackedVector2Array()
+var dead_heads := PackedVector2Array()
+var dead_sizes := PackedFloat32Array()
+var dead_body_colors := PackedColorArray()
+var dead_hair_colors := PackedColorArray()
+var dead_females := PackedByteArray()
+var dead_selected := PackedByteArray()
+
 
 func clear() -> void:
 	ids.clear()
@@ -38,6 +49,14 @@ func clear() -> void:
 	females.clear()
 	pregnant.clear()
 	selected.clear()
+	dead_positions.clear()
+	dead_grounds.clear()
+	dead_heads.clear()
+	dead_sizes.clear()
+	dead_body_colors.clear()
+	dead_hair_colors.clear()
+	dead_females.clear()
+	dead_selected.clear()
 
 
 func size() -> int:

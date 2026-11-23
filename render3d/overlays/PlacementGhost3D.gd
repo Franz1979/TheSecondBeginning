@@ -58,7 +58,7 @@ func _rebuild(snapshot: PlacementGhostSnapshot3D) -> void:
 
 
 func _update_model(snapshot: PlacementGhostSnapshot3D, base_global: Vector2) -> void:
-	var mesh := BuildingModels3D.finished_mesh(snapshot.type_name)
+	var mesh := BuildingModels3D.finished_mesh(snapshot.type_name, snapshot.linear_mask)
 	if mesh == null:
 		if _model != null:
 			_model.visible = false

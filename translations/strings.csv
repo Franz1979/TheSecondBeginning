@@ -2365,6 +2365,10 @@ options_show_grid,Mostra la griglia delle microcelle
 options_group_graphics_3d,Grafica 3D
 options_ssao,Ombreggiatura ambientale (SSAO)
 options_resolution_3d,Risoluzione 3D
+options_quality_3d,Qualità grafica 3D
+options_quality_3d_low,Bassa
+options_quality_3d_medium,Media
+options_quality_3d_high,Alta
 options_group_display,Schermo e suoni
 options_group_game,Partita
 options_group_defaults,Impostazioni di default dei comandi

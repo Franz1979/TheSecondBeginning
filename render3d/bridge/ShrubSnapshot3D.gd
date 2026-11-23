@@ -18,6 +18,12 @@ const FRUIT_FLOWERS := 0
 const FRUIT_BERRIES := 1
 const FRUIT_BARE := 2
 var fruit_state := PackedByteArray()
+# Cespugli che in questa stagione possono avere le bacche (da frutto, adulti, estate o autunno): indice in centers,
+# individuo e jitter del 2D. Con questi, quando si raccolgono o ricrescono le bacche, si cambiano solo loro
+# (GameStateReader.shrub_berries_shown, Shrubs3D.apply_berries) invece di rifare tutti i cespugli della cella.
+var berry_index := PackedInt32Array()
+var berry_keys: Array = [] # Vector3i
+var berry_jitters: Array = [] # Vector2i
 # Bolle del 2D dell'individuo: dove iniziano in blob_* (blob_starts[i] .. blob_starts[i + 1]).
 var blob_starts := PackedInt32Array()
 

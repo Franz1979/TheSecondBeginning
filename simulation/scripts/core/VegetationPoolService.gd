@@ -93,8 +93,13 @@ static func refresh_macrocell(
 		if not mature_counted:
 			mature_counts = _count_mature_individuals_by_lot(macro_state, object_type, game_data.year)
 			mature_counted = true
+		# Frutti (2026-11-21): una risorsa con source_subtype (bacche, ghiande, frutta) conta solo le piante mature di quel
+		# sottotipo; senza (stick, mushroom, plant_fiber) tutte.
+		var rules := CaloricCalculator.get_caloric_source_rules(resource_name)
+		var counts_key: String = rules.source_subtype if rules != null else ""
+		var lot_counts: Dictionary = mature_counts.get(counts_key, {})
 		for lot in stale_lots:
-			cache[lot] = units_per_mature_individual * int(mature_counts.get(lot, 0))
+			cache[lot] = roundi(units_per_mature_individual * float(lot_counts.get(lot, 0.0)))
 		macro_state.lot_capacity_cache[resource_name] = cache
 		macro_state.lot_capacity_checkpoint_day[resource_name] = checkpoint_absolute_day
 		if DebugLogging.ENABLED and DebugLogging.SHOW_RESOURCE_POOL_LOGS:
@@ -146,8 +151,22 @@ static func _birth_year_store(macro_state: MacroCellState, object_type: GameType
 	return macro_state.tree_virtual_birth_year if object_type == GameTypes.WorldObjectType.TREE else macro_state.shrub_virtual_birth_year
 
 
+# Resa di ogni pianta (2026-11-21, richiesta utente — "così non sono proprio tutte uguali"): ogni individuo maturo vale
+# un fattore fisso tra 1 − PLANT_YIELD_VARIATION e 1 + PLANT_YIELD_VARIATION, dal suo hash (stesso individuo = stesso
+# fattore a ogni ricalcolo, nessun tiro a caso). Vale per tutte le risorse a lotto di alberi e cespugli; la capacità del
+# lotto è units_per_mature_plant × somma dei fattori, arrotondata.
+const PLANT_YIELD_VARIATION := 0.25
+
+
+static func _plant_yield_factor(key: Vector3i) -> float:
+	var unit := float(absi(hash(key * 31 + Vector3i(7, 13, 101))) % 1000) / 999.0
+	return 1.0 - PLANT_YIELD_VARIATION + 2.0 * PLANT_YIELD_VARIATION * unit
+
+
 # Individui ADULT/OLD (non YOUNG) per lotto, in un solo giro sul registro: conta solo i sottotipi con una regola
-# risolvibile, come prima. Un lotto senza individui maturi non compare.
+# risolvibile, come prima. Un lotto senza individui maturi non compare. Risultato: {"" -> tutti i sottotipi,
+# nome sottotipo -> solo quello} (2026-11-21, frutti sui lotti), ognuno Dictionary lotto -> somma dei fattori di resa
+# (_plant_yield_factor) delle piante mature.
 static func _count_mature_individuals_by_lot(
 	macro_state: MacroCellState,
 	object_type: GameTypes.WorldObjectType,
@@ -156,7 +175,8 @@ static func _count_mature_individuals_by_lot(
 	var subtype_store := _subtype_store(macro_state, object_type)
 	var birth_year_store := _birth_year_store(macro_state, object_type)
 	var rules_by_subtype: Dictionary = {}
-	var counts: Dictionary = {}
+	var all_counts: Dictionary = {}
+	var counts: Dictionary = {"": all_counts}
 	for key: Vector3i in birth_year_store:
 		var subtype_name: String = subtype_store.get(key, "")
 		if not rules_by_subtype.has(subtype_name):
@@ -170,5 +190,10 @@ static func _count_mature_individuals_by_lot(
 		)
 		if age_band != GameTypes.AgeBand.YOUNG:
 			var lot := Vector2i(key.x, key.y)
-			counts[lot] = int(counts.get(lot, 0)) + 1
+			var factor := _plant_yield_factor(key)
+			all_counts[lot] = float(all_counts.get(lot, 0.0)) + factor
+			if not counts.has(subtype_name):
+				counts[subtype_name] = {}
+			var subtype_counts: Dictionary = counts[subtype_name]
+			subtype_counts[lot] = float(subtype_counts.get(lot, 0.0)) + factor
 	return counts

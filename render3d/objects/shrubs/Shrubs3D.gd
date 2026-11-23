@@ -28,6 +28,7 @@ const COLOR_TOWARD_AMOUNT := 0.35
 # 2026-11-20: con le ombre la prova in partita (test3d.json, SSAO spento, 75%) era scesa da 53 a 22-23 fps, per le foglie
 # in alpha di centinaia di cespugli disegnate anche nell'ombra. Riaccesi SENZA ombra (BUSH_CAST_SHADOWS) per misurare
 # quanto pesava l'ombra; false rimette le bolle.
+# PROVA FPS (2026-11-21, reversibile): false = bolle e tralci low poly di prima, senza foglie a ritaglio; true = com'era.
 const USE_BUSH_MODELS := true
 const BUSH_CAST_SHADOWS := false
 const BUSH_DIR := "res://render3d/assets/models/vegetation/bushes/"
@@ -72,6 +73,18 @@ static func build(snapshot: ShrubSnapshot3D, base_global: Vector2, material: Mat
 	var blob_colors := _empty_lists(blob_meshes.size())
 	var leafy_transforms := _empty_lists(leafy_meshes.size())
 	var bare_transforms := _empty_lists(bare_meshes.size())
+	# Cespugli che possono avere le bacche: indice dell'individuo -> indice tra i candidati. Ognuno va sia tra quelli con
+	# le bacche sia tra gli spogli; quello che non si vede ha scala zero (apply_berries li scambia).
+	var berry_of: Dictionary = {}
+	for j in range(snapshot.berry_index.size()):
+		berry_of[snapshot.berry_index[j]] = j
+	var berry_transforms: Array = []
+	berry_transforms.resize(snapshot.berry_index.size())
+	var berry_list_index := PackedInt32Array() # posizione nella lista "con le bacche" (uguale in quella "spoglio")
+	berry_list_index.resize(snapshot.berry_index.size())
+	berry_list_index.fill(-1) # -1: cespuglio senza sagoma, non disegnato
+	var berry_shown := PackedByteArray()
+	berry_shown.resize(snapshot.berry_index.size())
 
 	for i in range(snapshot.size()):
 		var center := snapshot.centers[i]
@@ -84,14 +97,26 @@ static func build(snapshot: ShrubSnapshot3D, base_global: Vector2, material: Mat
 				extent = maxf(extent, blob_offset.length() + snapshot.blob_radii[b] * BLOB_SCALE)
 			if extent > 0.0:
 				var bush_size := extent * 2.0 * BUSH_SCALE
+				var bush_transform := Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * bush_size),
+					Vector3(center.x, _height(base_global, center) - bush_size * 0.72 * BUSH_SINK, center.y))
+				if berry_of.has(i):
+					var j: int = berry_of[i]
+					var with_berries := snapshot.fruit_state[i] == ShrubSnapshot3D.FRUIT_BERRIES
+					berry_transforms[j] = bush_transform
+					berry_shown[j] = 1 if with_berries else 0
+					berry_list_index[j] = bush_transforms[BUSH_FRUIT_BERRIES].size()
+					bush_transforms[BUSH_FRUIT_BERRIES].append(bush_transform if with_berries else _hidden(bush_transform))
+					bush_transforms[BUSH_FRUIT_BARE].append(_hidden(bush_transform) if with_berries else bush_transform)
+					bush_colors[BUSH_FRUIT_BERRIES].append(Color.WHITE)
+					bush_colors[BUSH_FRUIT_BARE].append(Color.WHITE)
+					continue
 				var bush_variant := BUSH_WOOD
 				if snapshot.fruit_bearing[i] == 1:
 					match snapshot.fruit_state[i]:
 						ShrubSnapshot3D.FRUIT_FLOWERS: bush_variant = BUSH_FRUIT
 						ShrubSnapshot3D.FRUIT_BERRIES: bush_variant = BUSH_FRUIT_BERRIES
 						_: bush_variant = BUSH_FRUIT_BARE
-				bush_transforms[bush_variant].append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * bush_size),
-					Vector3(center.x, _height(base_global, center) - bush_size * 0.72 * BUSH_SINK, center.y)))
+				bush_transforms[bush_variant].append(bush_transform)
 				bush_colors[bush_variant].append(_bush_tone(shrub_seed) if bush_variant == BUSH_WOOD else Color.WHITE)
 			continue
 		for b in range(snapshot.blob_starts[i], snapshot.blob_starts[i + 1]):
@@ -130,7 +155,16 @@ static func build(snapshot: ShrubSnapshot3D, base_global: Vector2, material: Mat
 	var node := Node3D.new()
 	node.name = "Shrubs"
 	if USE_BUSH_MODELS:
-		node.add_child(MultiMeshGroup3D.build("Bushes", bush_meshes, bush_transforms, null, bush_colors, BUSH_CAST_SHADOWS))
+		var bush_slots := _empty_lists(bush_meshes.size())
+		node.add_child(MultiMeshGroup3D.build("Bushes", bush_meshes, bush_transforms, null, bush_colors, BUSH_CAST_SHADOWS,
+			bush_slots))
+		node.set_meta(&"berry_keys", snapshot.berry_keys)
+		node.set_meta(&"berry_jitters", snapshot.berry_jitters)
+		node.set_meta(&"berry_transforms", berry_transforms)
+		node.set_meta(&"berry_list_index", berry_list_index)
+		node.set_meta(&"berry_shown", berry_shown)
+		node.set_meta(&"berry_slots", bush_slots[BUSH_FRUIT_BERRIES])
+		node.set_meta(&"bare_slots", bush_slots[BUSH_FRUIT_BARE])
 	node.add_child(MultiMeshGroup3D.build("Blobs", blob_meshes, blob_transforms, material, blob_colors))
 	node.add_child(MultiMeshGroup3D.build("Canes", leafy_meshes, leafy_transforms, material))
 	node.add_child(MultiMeshGroup3D.build("CutCanes", bare_meshes, bare_transforms, material))
@@ -140,6 +174,41 @@ static func build(snapshot: ShrubSnapshot3D, base_global: Vector2, material: Mat
 		node.add_child(MultiMeshGroup3D.build("DeadShrubs", [ModelMesh3D.load_mesh(DEAD_CUT_DIR + "shrub_dead.gltf")],
 			[dead_model_transforms], null, [], BUSH_CAST_SHADOWS))
 	return node
+
+
+# Bacche raccolte o ricresciute (2026-11-21, misura FPS: prima si rifacevano tutti i cespugli della cella, 65-185 ms):
+# come il 2D, che lì rifà solo i frutti, si scambiano solo i candidati che hanno cambiato stato, da "con le bacche" a
+# "spoglio" o il contrario. `shown` = GameStateReader.shrub_berries_shown sui candidati del nodo (berry_keys).
+static func apply_berries(node: Node3D, shown: PackedByteArray) -> void:
+	if node == null or not node.has_meta(&"berry_shown"):
+		return
+	var current: PackedByteArray = node.get_meta(&"berry_shown")
+	var list_index: PackedInt32Array = node.get_meta(&"berry_list_index")
+	var transforms: Array = node.get_meta(&"berry_transforms")
+	var berry_slots: Array = node.get_meta(&"berry_slots")
+	var bare_slots: Array = node.get_meta(&"bare_slots")
+	for j in range(mini(shown.size(), current.size())):
+		if shown[j] == current[j] or list_index[j] < 0:
+			continue
+		current[j] = shown[j]
+		var bush_transform: Transform3D = transforms[j]
+		var with_berries := shown[j] == 1
+		var k := list_index[j]
+		if k < berry_slots.size():
+			_set_slot(berry_slots[k], bush_transform if with_berries else _hidden(bush_transform))
+		if k < bare_slots.size():
+			_set_slot(bare_slots[k], _hidden(bush_transform) if with_berries else bush_transform)
+	node.set_meta(&"berry_shown", current)
+
+
+static func _set_slot(slot: Variant, value: Transform3D) -> void:
+	if slot is Array:
+		((slot as Array)[0] as MultiMesh).set_instance_transform(int((slot as Array)[1]), value)
+
+
+# Copia nascosta: stessa posizione (resta nello stesso blocco), scala zero.
+static func _hidden(value: Transform3D) -> Transform3D:
+	return Transform3D(Basis().scaled(Vector3.ZERO), value.origin)
 
 
 static func _dead_cut_transforms(centers: PackedVector2Array, radii: PackedFloat32Array, seeds: PackedInt32Array,

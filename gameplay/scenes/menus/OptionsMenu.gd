@@ -49,6 +49,10 @@ extends Window
 @onready var defaults_header: Label = $MarginContainer/VBoxContainer/DefaultsHeader
 # Grafica 3D (2026-11-20, UserOptions.ssao_enabled / resolution_3d_percent, applicate subito alla vista 3D aperta).
 @onready var graphics_3d_header: Label = $MarginContainer/VBoxContainer/Graphics3DHeader
+# Livello di qualità 3D (2026-11-23, UserOptions.quality_3d): imposta anche SSAO e risoluzione qui sotto.
+const QUALITY_3D_LABEL_KEYS := ["options_quality_3d_low", "options_quality_3d_medium", "options_quality_3d_high"]
+@onready var quality_3d_label: Label = $MarginContainer/VBoxContainer/Quality3DRow/Label
+@onready var quality_3d_option_button: OptionButton = $MarginContainer/VBoxContainer/Quality3DRow/OptionButton
 @onready var ssao_label: Label = $MarginContainer/VBoxContainer/SsaoRow/Label
 @onready var ssao_check_box: CheckBox = $MarginContainer/VBoxContainer/SsaoRow/CheckBox
 @onready var resolution_3d_label: Label = $MarginContainer/VBoxContainer/Resolution3DRow/Label
@@ -95,6 +99,9 @@ func _ready() -> void:
 		language_option_button.add_item(tr(key))
 	for percent in UserOptions.RESOLUTION_3D_CHOICES:
 		resolution_3d_option_button.add_item("%d%%" % percent)
+	# Voci nell'ordine di UserOptions.Quality3D (LOW, MEDIUM, HIGH): l'indice è il livello. Testi in _refresh_texts.
+	for i in range(UserOptions.Quality3D.size()):
+		quality_3d_option_button.add_item("")
 	for row_data in VOLUME_ROWS:
 		var row_path: String = "MarginContainer/VBoxContainer/%s" % row_data["row"]
 		var slider: HSlider = get_node(row_path + "/Slider")
@@ -115,6 +122,7 @@ func _ready() -> void:
 	grid_check_box.toggled.connect(_on_grid_toggled)
 	ssao_check_box.toggled.connect(_on_ssao_toggled)
 	resolution_3d_option_button.item_selected.connect(_on_resolution_3d_selected)
+	quality_3d_option_button.item_selected.connect(_on_quality_3d_selected)
 	close_button.pressed.connect(hide)
 	# I volumi si applicano in tempo reale (_on_volume_changed) ma si salvano su disco alla chiusura del
 	# menu: visibility_changed copre il CloseButton e qualunque altro hide(), anche per le modifiche da tastiera
@@ -149,8 +157,7 @@ func open_menu(show_language: bool = true) -> void:
 	health_icons_check_box.set_pressed_no_signal(UserOptions.show_health_icons)
 	autosave_check_box.set_pressed_no_signal(UserOptions.autosave_enabled)
 	grid_check_box.set_pressed_no_signal(UserOptions.show_grid)
-	ssao_check_box.set_pressed_no_signal(UserOptions.ssao_enabled)
-	resolution_3d_option_button.select(maxi(0, UserOptions.RESOLUTION_3D_CHOICES.find(UserOptions.resolution_3d_percent)))
+	_sync_graphics_3d_controls()
 	for field in _volume_sliders.keys():
 		(_volume_sliders[field] as HSlider).set_value_no_signal(float(UserOptions.get(field)))
 	exclusive = true
@@ -176,6 +183,19 @@ func _on_ssao_toggled(pressed: bool) -> void:
 func _on_resolution_3d_selected(index: int) -> void:
 	UserOptions.set_graphics_3d(UserOptions.ssao_enabled, int(UserOptions.RESOLUTION_3D_CHOICES[index]))
 	UserOptions.save_to_disk()
+
+
+# Livello di qualità: cambia anche SSAO e risoluzione, che il menu rimostra subito.
+func _on_quality_3d_selected(index: int) -> void:
+	UserOptions.set_quality_3d(index as UserOptions.Quality3D)
+	UserOptions.save_to_disk()
+	_sync_graphics_3d_controls()
+
+
+func _sync_graphics_3d_controls() -> void:
+	quality_3d_option_button.select(UserOptions.quality_3d)
+	ssao_check_box.set_pressed_no_signal(UserOptions.ssao_enabled)
+	resolution_3d_option_button.select(maxi(0, UserOptions.RESOLUTION_3D_CHOICES.find(UserOptions.resolution_3d_percent)))
 
 
 func _on_notification_popups_toggled(pressed: bool) -> void:
@@ -235,6 +255,9 @@ func _refresh_texts() -> void:
 	graphics_3d_header.text = tr("options_group_graphics_3d")
 	ssao_label.text = tr("options_ssao")
 	resolution_3d_label.text = tr("options_resolution_3d")
+	quality_3d_label.text = tr("options_quality_3d")
+	for key_index in range(QUALITY_3D_LABEL_KEYS.size()):
+		quality_3d_option_button.set_item_text(key_index, tr(QUALITY_3D_LABEL_KEYS[key_index]))
 	display_header.text = tr("options_group_display")
 	game_header.text = tr("options_group_game")
 	defaults_header.text = tr("options_group_defaults")

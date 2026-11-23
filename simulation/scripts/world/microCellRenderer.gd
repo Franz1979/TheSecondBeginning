@@ -80,10 +80,10 @@ const DEAD_TREE_MAX_TILT_DEGREES: float = 12.0
 # a "<": la piega sporge da un lato, la cima torna verso il centro) — vedi _build_dead_tree_mesh.
 const DEAD_TREE_BEND_POINTS: Array = [Vector2(0.5, 1.0), Vector2(0.12, 0.42), Vector2(0.62, 0.0)]
 const DEAD_TREE_LINE_HALF_THICKNESS: float = 0.11
-# Finestra di fruttificazione per i marcatori bacche/frutti (tarda estate/autunno): fuori da
-# queste stagioni i marcatori non vengono disegnati, ma il sottotipo congelato dell'individuo
-# (vedi tree_individual_subtype/shrub_individual_subtype) resta invariato — è solo un gate a
-# draw-time.
+# (2026-11-21) Niente più finestra fissa di fruttificazione (era estate/autunno): i marcatori di bacche/frutti seguono
+# fruit_stock_available_ratio_by_lot, che vale 0 nelle stagioni in cui il moltiplicatore della risorsa è 0
+# (LotCapacityService.get_visual_ratios_by_lot), quindi compaiono in tutte e sole le stagioni in cui il frutto c'è.
+# La costante resta solo per la vista 3D (render3d/bridge/GameStateReader), seguita da un'altra sessione: il 2D non la legge.
 const FRUITING_SEASONS := [GameTypes.Season.SUMMER, GameTypes.Season.AUTUMN]
 const BOUNDARY_DASH_COLOR := Color(0, 0, 0, 0.6)
 const BOUNDARY_DASH_WIDTH: float = 2.0
@@ -481,7 +481,7 @@ var shrub_current_year: int = 0
 # ("wood_only"/"wild_fruit"/"domesticable_fruit"/"conifer") — vedi set_tree_age_params.
 var tree_age_params: Dictionary = {}
 var tree_current_year: int = 0
-# Stagione corrente (vedi GRASS_PALETTE_BY_SEASON/FRUITING_SEASONS sopra) — arriva già risolta
+# Stagione corrente (vedi GRASS_PALETTE_BY_SEASON sopra) — arriva già risolta
 # dal chiamante (MacroCellScene, via SeasonCalculator.get_season_for_day), stessa separazione
 # di responsabilità delle altre proprietà "calcolate altrove" del renderer.
 # Il default è la stagione del giorno di partenza di una nuova partita (GameData.START_DAY),
@@ -1511,8 +1511,8 @@ func set_cut_dead_positions(cut: Dictionary, dead: Dictionary) -> bool:
 
 
 # Il colore dell'erba e quello della chioma degli alberi NON conifer dipendono dalla stagione,
-# quindi entrambi vanno ricalcolati qui; la visibilità dei frutti (FRUITING_SEASONS) è invece un
-# gate a draw-time, non richiede nessun rebuild dei loro buffer. La chioma conifer (a forma di
+# quindi entrambi vanno ricalcolati qui; la visibilità dei frutti segue invece il rapporto per lotto
+# (set_fruit_stock_available_ratio_by_lot, che GameScene ripassa quando la stagione lo cambia). La chioma conifer (a forma di
 # abete) resta sempre piena/verde in ogni stagione, ma il rebuild va comunque rifatto per intero
 # perché lo stesso _rebuild_tree_multimeshes ricostruisce entrambi i gruppi insieme.
 func set_season(season: GameTypes.Season) -> void:
@@ -3133,9 +3133,7 @@ func _draw_vegetation_positions() -> void:
 		draw_multimesh(_shrub_multimesh, null)
 		_debug_draw_primitive_count += 1
 
-	var fruit_in_season: bool = current_season in FRUITING_SEASONS
-
-	if fruit_in_season and _berry_multimesh != null and _berry_multimesh.instance_count > 0:
+	if _berry_multimesh != null and _berry_multimesh.instance_count > 0:
 		draw_multimesh(_berry_multimesh, null)
 		_debug_draw_primitive_count += 1
 
@@ -3151,11 +3149,11 @@ func _draw_vegetation_positions() -> void:
 		draw_multimesh(_tree_conifer_canopy_multimesh, null)
 		_debug_draw_primitive_count += 1
 
-	if fruit_in_season and _tree_fruit_wild_multimesh != null and _tree_fruit_wild_multimesh.instance_count > 0:
+	if _tree_fruit_wild_multimesh != null and _tree_fruit_wild_multimesh.instance_count > 0:
 		draw_multimesh(_tree_fruit_wild_multimesh, null)
 		_debug_draw_primitive_count += 1
 
-	if fruit_in_season and _tree_fruit_domesticable_multimesh != null and _tree_fruit_domesticable_multimesh.instance_count > 0:
+	if _tree_fruit_domesticable_multimesh != null and _tree_fruit_domesticable_multimesh.instance_count > 0:
 		draw_multimesh(_tree_fruit_domesticable_multimesh, null)
 		_debug_draw_primitive_count += 1
 

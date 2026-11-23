@@ -14,3 +14,4 @@ space_per_unit = 10.0
 units_per_mature_plant = 3
 lot_source = 1
 fuel_value = 1.0
+seasonal_availability_multiplier = Array[float]([1.0, 0.8, 0.6, 1.0])

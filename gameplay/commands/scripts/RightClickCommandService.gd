@@ -22,7 +22,7 @@ enum Command { BURY, HUNT, BUTCHER, CUT, QUARRY, PICKUP, BUILD, TRANSPORT, FISH,
 #   - trappole (2026-11-07) prima del taglio, su una microcella senza edifici, rocce né argilla dove se ne può piazzare una
 #     (targets.trap_place_options): il popup ha anche Raccogli, Taglia e Pesca se valgono; lo stesso popup se sul ruscello
 #     c'è una nassa con pesci e il lavoratore ha la lenza (2026-11-08): si sceglie tra pescare e svuotarla;
-#   - raccolta, poi costruzione (o riparazione) e trasporto sull'edificio; su una Tettoia dell'acqua completa, prima di
+#   - raccolta (su un edificio con un lavoro da riprendere solo mucchi a terra e trappole), poi costruzione (o riparazione) e trasporto sull'edificio; su una Tettoia dell'acqua completa, prima di
 #     costruzione e trasporto, il riempimento delle giare (2026-11-06, WaterJarCommandService).
 static func candidates(ctx: GameContext, worker: HumanIndividual, targets: RightClickTargets, transport_pending: bool) -> Array[Command]:
 	var commands: Array[Command] = []
@@ -37,6 +37,15 @@ static func candidates(ctx: GameContext, worker: HumanIndividual, targets: Right
 	if targets.carcass_pile != null:
 		commands.append(Command.BUTCHER)
 	var on_resumable_building := has_resumable_work(ctx, targets.building)
+	# Sul cantiere (2026-11-21): niente raccolta delle risorse naturali (verdure, erbe, semi, uova...), come taglio e
+	# cava: il destro è Costruisci e la pulizia le toglie. Prima, con una risorsa nota, vinceva la raccolta e serviva un
+	# secondo clic per costruire; con una sconosciuta si costruiva subito. Restano i mucchi a terra e le trappole.
+	if on_resumable_building:
+		var kept: Array[Dictionary] = []
+		for candidate in targets.pickup_candidates:
+			if int(candidate.get("source_kind", PickUpAction.SourceKind.TERRAIN)) != PickUpAction.SourceKind.TERRAIN:
+				kept.append(candidate)
+		targets.pickup_candidates = kept
 	var day := ctx.game_data.get_absolute_day()
 	if targets.building == null and targets.rock.is_empty() and targets.clay.is_empty() \
 			and (not targets.trap_place_options.is_empty() or _can_fish_or_empty_trap(worker, targets)):

@@ -13,6 +13,12 @@ var seeds := PackedInt32Array()
 var conifer := PackedByteArray()
 # 1 = latifoglia da frutto (wild_fruit / domesticable_fruit), 0 = wood_only o conifera.
 var fruit_bearing := PackedByteArray()
+# 1 = domesticable_fruit (frutti rossi), 0 = wild_fruit (ghiande) o non da frutto.
+var domesticable := PackedByteArray()
+# 1 = frutti in vista, con la regola del 2D (non giovane, FRUITING_SEASONS, lotto non ancora raccolto: _fruit_stock_shows).
+var fruit_shown := PackedByteArray()
+# Stagione della cella (MicroCellRenderer.current_season): latifoglie verdi, d'autunno o spoglie, come il 2D.
+var season: int = GameTypes.Season.SUMMER
 
 # --- Ceppi (alberi tagliati, _build_tree_stump_transform del 2D): piede, larghezza del tronco tagliato, seme ---
 var stump_grounds := PackedVector2Array()

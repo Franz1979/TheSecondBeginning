@@ -15,6 +15,8 @@ var centers := PackedVector2Array()
 var states := PackedByteArray()
 # Seme fisso per focolare (id dell'edificio): forma e posizione delle pietre.
 var seeds := PackedInt32Array()
+# 1 = col suo anello di pietre (focolare); 0 = senza, perché le pietre le ha già il modello dell'edificio (affumicatoio).
+var with_stones := PackedByteArray()
 
 
 func size() -> int:

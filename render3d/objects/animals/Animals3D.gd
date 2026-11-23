@@ -28,6 +28,10 @@ const DEFAULT_SHAPE := {"leg": 0.3, "body": Vector3(0.6, 0.3, 0.25), "head": 0.2
 # Grandezza rispetto alla sagoma 2D, uguale per tutte le specie (2026-11-21, richiesta utente: troppo grandi, -20%). La
 # sagoma 2D è vista dall'alto con orecchie e coda; nel 3D zampe e altezza la fanno sembrare più grossa.
 const SIZE_3D := 0.8
+# Un altro -20% per tutti tranne coniglio e pernice (2026-11-21, richiesta utente: gli animali grossi sembravano ancora
+# troppo grandi). Vale anche per i domestici, che usano la specie d'origine.
+const LARGE_SIZE_3D := 0.8
+const FULL_SIZE_SPECIES := ["rabbit", "partridge"]
 # Zampe: spessore (frazione della lunghezza) e attacco sotto il busto (frazioni di larghezza e lunghezza del busto).
 const LEG_THICK := 0.07
 const LEG_SPREAD := Vector2(0.3, 0.32)
@@ -94,6 +98,8 @@ func update(snapshot: AnimalsSnapshot3D) -> void:
 		buffer.begin()
 	for i in range(count):
 		var length := snapshot.lengths[i] * SIZE_3D
+		if not snapshot.species[i] in FULL_SIZE_SPECIES:
+			length *= LARGE_SIZE_3D
 		var shape: Dictionary = SHAPES.get(snapshot.species[i], DEFAULT_SHAPE)
 		var id := snapshot.ids[i]
 		var ground := snapshot.grounds[i]

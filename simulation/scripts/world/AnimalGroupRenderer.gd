@@ -941,6 +941,13 @@ func _cluster_restored_individuals() -> void:
 			_clusters[c].position = sums[c] / float(counts[c])
 
 
+# Ritorno al 2D dalla vista 3D: le trasformazioni saltate mentre la mappa era nascosta si riscrivono subito.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and is_visible_in_tree() and _multimesh != null:
+		for i in range(mini(_groups.size(), _multimesh.instance_count)):
+			_write_instance_transform(i, _groups[i])
+
+
 func _refresh_instances() -> void:
 	_multimesh.instance_count = _groups.size()
 	for i in range(_groups.size()):
@@ -2565,6 +2572,10 @@ func _bounce_at_bounds(group: AnimalVisualGroup) -> void:
 # (basis e/o origin a seconda della versione); moltiplicare x/y a mano è inequivocabile: scala
 # solo gli assi locali, mai la posizione già scritta in origin.
 func _write_instance_transform(index: int, group: AnimalVisualGroup) -> void:
+	# Mappa 2D nascosta (vista 3D, 2026-11-22): il MultiMesh 2D non si vede, niente scrittura (~3,7 ms a fotogramma).
+	# Il 3D legge le posizioni dagli individui, non da qui; tornando al 2D _notification riscrive tutto.
+	if not is_visible_in_tree():
+		return
 	if not _is_visible_now(group.position):
 		# Istanza nascosta: basi a zero (nessun triangolo visibile), origine alla posizione vera.
 		_multimesh.set_instance_transform_2d(index, Transform2D(Vector2.ZERO, Vector2.ZERO, group.position * CELL_SIZE))

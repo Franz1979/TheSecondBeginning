@@ -28,6 +28,8 @@ var _work_area_icons: WorkAreaIcons3D
 # Persone (pupazzi), rilette e spostate a ogni fotogramma; l'istantanea si riusa.
 var _people: People3D
 var _people_snapshot := PeopleSnapshot3D.new()
+var _weapon_drops: WeaponDrops3D
+var _weapon_drops_snapshot := WeaponDropsSnapshot3D.new()
 # Icone e animazioni del 2D (lampadina, comandi, riti, salute) copiate sullo schermo sopra il loro punto.
 var _overhead_icons: OverheadIcons3D
 # Animali (pupazzi a quadrupede), riletti a ogni fotogramma come le persone.
@@ -37,15 +39,19 @@ var _animals_snapshot := AnimalsSnapshot3D.new()
 
 # Alberi lontani semplificati (2026-11-20, scena di prova TreeStressTest: da lontano 52 -> 60 fps): pixel di errore che il
 # LOD dei modelli importati (pini, CommonTree) può introdurre; Godot sceglie la versione semplificata per blocco
-# (MultiMeshGroup3D). Da vicino resta sempre il modello pieno.
-const MESH_LOD_THRESHOLD := 16.0
+# (MultiMeshGroup3D). Da vicino resta sempre il modello pieno. La soglia la decide il livello di qualità 3D del giocatore
+# (UserOptions.quality_3d_lod_threshold, 2026-11-23: Bassa 48, Media 32, Alta 16), vedi _apply_graphics_options. Le
+# catture RenderDoc mostrano alberi e cespugli limitati dai vertici, non dai pixel: soglia alta = versioni leggere prima.
 
 var _lighting: Lighting3D
+var _perf_far_hide_applied := false # TEMPORANEO misura FPS (tasto F3 di Perf3D)
+var _perf_aniso_level := -1 # TEMPORANEO misura FPS (tasto F3 di Perf3D): livello anisotropo di partenza
 
 
 func _ready() -> void:
 	add_to_group(GROUP)
 	set_process(false)
+	Perf3D.reset_keys() # TEMPORANEO misura FPS: ogni partita parte con tutto acceso
 
 
 func toggle() -> void:
@@ -77,6 +83,9 @@ func activate() -> void:
 	_world_root.add_child(_camera)
 	_camera.setup(_reader)
 	_camera.make_current()
+	# Niente 3D sotto i pannelli aperti (2026-11-22, misura FPS). preload e non il class_name: il gioco lanciato senza
+	# editor (es. da RenderDoc) non ha ancora la classe nuova nell'elenco globale.
+	_camera.add_child(preload("res://render3d/camera/PanelOccluder3D.gd").new())
 	_placement_ghost = PlacementGhost3D.new()
 	_placement_ghost.name = "PlacementGhost"
 	_world_root.add_child(_placement_ghost)
@@ -85,6 +94,8 @@ func activate() -> void:
 	_world_root.add_child(_work_area_icons)
 	_people = People3D.new(_materials.vertex_color)
 	_world_root.add_child(_people)
+	_weapon_drops = WeaponDrops3D.new(_materials.vertex_color)
+	_world_root.add_child(_weapon_drops)
 	_animals = Animals3D.new(_materials.vertex_color)
 	_world_root.add_child(_animals)
 	_overhead_icons = OverheadIcons3D.new()
@@ -118,6 +129,7 @@ func deactivate() -> void:
 	_placement_ghost = null
 	_work_area_icons = null
 	_people = null
+	_weapon_drops = null
 	_animals = null
 	_overhead_icons = null
 	_reader.set_2d_visible(true)
@@ -127,28 +139,71 @@ func deactivate() -> void:
 
 
 func _process(_delta: float) -> void:
+	Perf3D.begin() # TEMPORANEO misura FPS
+	if _lighting != null and _lighting.sun != null: # TEMPORANEO misura FPS: tasti F9/F10/F11 di Perf3D
+		_lighting.sun.shadow_enabled = not Perf3D.shadows_off
+		_lighting.environment.ssao_enabled = UserOptions.ssao_enabled and not Perf3D.ssao_off
+		_lighting.environment.glow_enabled = Lighting3D.GLOW_ENABLED and not Perf3D.glow_off
+	if _perf_aniso_level < 0: # TEMPORANEO misura FPS: tasto F3 di Perf3D
+		_perf_aniso_level = get_viewport().anisotropic_filtering_level
+	get_viewport().anisotropic_filtering_level = Viewport.ANISOTROPY_DISABLED if Perf3D.aniso_off else _perf_aniso_level as Viewport.AnisotropicFiltering
+	for perf_cell: Cell3D in _cells.values(): # TEMPORANEO misura FPS: tasti F12 (alberi e cespugli) e F4 (terreno) di Perf3D
+		if perf_cell._terrain_material != null:
+			perf_cell._terrain_material.set_shader_parameter("debug_flat", Perf3D.terrain_flat)
+			perf_cell._terrain_material.set_shader_parameter("debug_one_noise", Perf3D.one_noise)
+		for perf_layer: StringName in [&"trees", &"shrubs"]:
+			var perf_node: Node3D = perf_cell._layers.get(perf_layer)
+			if perf_node != null:
+				perf_node.visible = not Perf3D.vegetation_off
+		for perf_layer: StringName in [&"stones", &"sticks", &"ground_fruit", &"ground_plants", &"grass"]: # tasto F3
+			var perf_node: Node3D = perf_cell._layers.get(perf_layer)
+			if perf_node != null:
+				perf_node.visible = not Perf3D.ground_off
+	if Perf3D.far_hide_off != _perf_far_hide_applied: # TEMPORANEO misura FPS: tasto F3 di Perf3D, sui blocchi già costruiti
+		_perf_far_hide_applied = Perf3D.far_hide_off
+		for perf_cell: Cell3D in _cells.values():
+			for perf_instance in perf_cell.find_children("*", "MultiMeshInstance3D", true, false):
+				if perf_instance.has_meta(&"hide_distance"):
+					var perf_end: float = 0.0 if Perf3D.far_hide_off else float(perf_instance.get_meta(&"hide_distance"))
+					perf_instance.visibility_range_end = perf_end
+					perf_instance.visibility_range_end_margin = perf_end * MultiMeshGroup3D.HIDE_MARGIN
 	# Anche a mouse fermo la vista può muoversi (tasti, bordo): la mappa 2D resta allineata al puntatore, così ciò che il
 	# gioco segue a ogni fotogramma (trascinamento delle zone, anteprima del piazzamento) resta sotto il mouse.
 	var screen := get_viewport().get_mouse_position()
 	var ground: Variant = _camera.ground_point(screen) if _camera != null else null
 	if ground != null:
 		_reader.align_2d_pointer(screen, ground)
+	Perf3D.mark(&"3d_puntatore")
 	_sync_cells()
+	Perf3D.begin()
 	if _lighting != null and _camera != null:
 		_lighting.follow_camera_distance(_camera.distance())
+	Perf3D.mark(&"3d_luce")
 	# Anteprima del piazzamento: il gioco la tiene sotto il puntatore allineato; qui solo disegnata.
 	_placement_ghost.update(_reader.placement_ghost())
+	Perf3D.mark(&"3d_fantasma")
 	_reader.people(_people_snapshot)
+	Perf3D.mark(&"lettura_persone")
 	_people.update(_people_snapshot)
+	Perf3D.mark(&"3d_persone")
+	_reader.weapon_drops(_weapon_drops_snapshot)
+	_weapon_drops.update(_weapon_drops_snapshot)
+	Perf3D.mark(&"armi")
 	_reader.animals(_animals_snapshot)
+	Perf3D.mark(&"lettura_animali")
 	_animals.update(_animals_snapshot)
+	Perf3D.mark(&"3d_animali")
 	_overhead_icons.update(_reader, _camera)
+	Perf3D.mark(&"icone_sopra")
 	# Icone dei lavori delle zone: seguono a ogni fotogramma la scritta della loro zona sullo schermo.
 	var labels: Array = []
 	for coords in _cells:
 		labels.append_array((_cells[coords] as Cell3D).work_area_labels())
 	_work_area_icons.update(labels, _camera)
-	_log_multimesh_counts_every_interval()
+	Perf3D.mark(&"icone_zone")
+	# Log [3D CONTI] spento il 2026-11-21 (numeri già presi, dava scatti di 6-25 ms ogni 3 secondi): la funzione resta
+	# sotto finché non si tolgono tutte le misure temporanee.
+	#_log_multimesh_counts_every_interval()
 
 
 # Opzioni "Grafica 3D" del giocatore (UserOptions, menu Opzioni): ombreggiatura ambientale e risoluzione 3D. Si
@@ -159,7 +214,9 @@ func _apply_graphics_options() -> void:
 	var resolution_scale := clampf(UserOptions.resolution_3d_percent / 100.0, 0.25, 1.0)
 	viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if resolution_scale < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR
 	viewport.scaling_3d_scale = resolution_scale
-	viewport.mesh_lod_threshold = MESH_LOD_THRESHOLD
+	viewport.mesh_lod_threshold = UserOptions.quality_3d_lod_threshold()
+	# Filtro delle ombre del sole del livello di qualità (dure in Bassa: ~1 ms in meno sulla Intel UHD).
+	RenderingServer.directional_soft_shadow_filter_set_quality(UserOptions.quality_3d_shadow_filter() as RenderingServer.ShadowQuality)
 	if _lighting != null:
 		_lighting.apply_graphics_options()
 
@@ -252,6 +309,7 @@ func _input(event: InputEvent) -> void:
 
 # Celle 3D = celle accese del gioco: crea le nuove, toglie quelle spente, riposiziona le altre (il centro può cambiare).
 func _sync_cells() -> void:
+	Perf3D.begin() # TEMPORANEO misura FPS
 	var live := {}
 	for coords in _reader.live_cell_coords():
 		live[coords] = true
@@ -270,63 +328,142 @@ func _sync_cells() -> void:
 		cell.build(source, _materials)
 		_world_root.add_child(cell)
 		_cells[coords] = cell
+	Perf3D.mark(&"celle_accese")
 	var grid_visible := _reader.grid_visible()
+	Perf3D.begin()
 	for coords in _cells:
 		var cell: Cell3D = _cells[coords]
 		# Griglia: segue l'opzione del gioco anche mentre si è in 3D.
 		cell.set_grid_visible(grid_visible, _materials)
+		Perf3D.mark(&"griglia")
+		# Nebbia come nel 2D: la sua texture, aggiornata anche col 2D nascosto.
+		cell.set_fog(_reader.fog_texture(coords))
+		Perf3D.mark(&"nebbia_texture")
+		# Stagione: l'erba alta cambia colore a inizio stagione, come nel 2D.
+		var season := _reader.season(coords)
+		Perf3D.mark(&"firma_season")
+		if cell.needs_refresh(&"season", [season]):
+			cell.refresh_season(season, [season])
+			Perf3D.mark_count(&"rifai_season")
+		# Giacimento d'argilla: terreno rifatto quando una microcella si esaurisce (torna prato).
+		var clay_deposit_signature := _reader.clay_deposit_signature(coords)
+		Perf3D.mark(&"firma_clay_deposit")
+		if cell.needs_refresh(&"clay_deposit", clay_deposit_signature):
+			cell.refresh_clay_deposit(clay_deposit_signature)
+			Perf3D.mark_count(&"rifai_clay_deposit")
+		# Zolle d'argilla: rifatte quando una parte della pozza entra nel nero della nebbia o ne esce.
+		if not cell.clay_positions().is_empty():
+			var hidden_clay := _reader.black_fog_positions(coords, cell.clay_positions())
+			Perf3D.mark(&"firma_hidden_clay")
+			var clay_signature := [hidden_clay.hash()]
+			Perf3D.mark(&"firma_clay")
+			if cell.needs_refresh(&"clay", clay_signature):
+				cell.refresh_clay(hidden_clay, clay_signature, _materials)
+				Perf3D.mark_count(&"rifai_clay")
 		# Rocce e sassi: rifatti quando il gioco li cambia.
 		var stone_signature := _reader.stone_signature(coords)
+		Perf3D.mark(&"firma_stone")
 		if cell.needs_refresh(&"stones", stone_signature):
 			cell.refresh_stones(_reader.stone_snapshot(coords), stone_signature, _materials)
+			Perf3D.mark_count(&"rifai_stones")
 		# Bastoni a terra: rifatti quando il 2D riceve la disponibilità nuova (raccolta, stagione, nebbia).
 		var sticks_signature := _reader.sticks_signature(coords)
+		Perf3D.mark(&"firma_sticks")
 		if cell.needs_refresh(&"sticks", sticks_signature):
 			cell.refresh_sticks(_reader.sticks_snapshot(coords), sticks_signature, _materials)
+			Perf3D.mark_count(&"rifai_sticks")
+		# Frutti caduti a terra (ghiande): rifatti quando cambiano stagione, capacità o raccolto dei lotti, o la nebbia.
+		var ground_fruit_signature := _reader.ground_fruit_signature(coords)
+		Perf3D.mark(&"firma_ground_fruit")
+		if cell.needs_refresh(&"ground_fruit", ground_fruit_signature):
+			cell.refresh_ground_fruit(_reader.ground_fruit_snapshot(coords), ground_fruit_signature, _materials)
+			Perf3D.mark_count(&"rifai_ground_fruit")
 		# Suoli: prato dove c'è erba, sottobosco sotto alberi e cespugli, ghiaia sotto le rocce, terra altrove.
 		var cover_signature := _reader.ground_cover_signature(coords)
+		Perf3D.mark(&"firma_cover")
 		if cell.needs_refresh(&"ground_cover", cover_signature):
 			cell.refresh_ground_cover(_reader.ground_cover_snapshot(coords), cover_signature)
+			Perf3D.mark_count(&"rifai_ground_cover")
+		# Piantine a terra delle risorse "chiazza d'erba" (verdure selvatiche...): rifatte quando cambia la disponibilità.
+		var ground_plants_signature := _reader.ground_patch_signature(coords)
+		Perf3D.mark(&"firma_ground_plants")
+		if cell.needs_refresh(&"ground_plants", ground_plants_signature):
+			cell.refresh_ground_plants(_reader.ground_patch_snapshot(coords), ground_plants_signature)
+			Perf3D.mark_count(&"rifai_ground_plants")
 		# Alberi: rifatti quando cambia l'elenco del 2D (nascite, tagli, nebbia) o l'anno.
 		var tree_signature := _reader.tree_signature(coords)
+		Perf3D.mark(&"firma_tree")
 		if cell.needs_refresh(&"trees", tree_signature):
 			cell.refresh_trees(_reader.tree_snapshot(coords), tree_signature, _materials)
+			Perf3D.mark_count(&"rifai_trees")
 		# Cespugli (macchie, rovi da frutto, tagliati): come gli alberi.
 		var shrub_signature := _reader.shrub_signature(coords)
+		Perf3D.mark(&"firma_shrub")
 		if cell.needs_refresh(&"shrubs", shrub_signature):
-			cell.refresh_shrubs(_reader.shrub_snapshot(coords), shrub_signature, _materials)
+			Perf3D.log_changed_signature("cespugli", cell._layer_signatures.get(&"shrubs", []), shrub_signature, # TEMPORANEO
+				["elenco vegetazione", "posizioni", "quanti", "anno", "elenco tagliati", "tagliati", "quanti tagliati",
+				"elenco morti", "morti", "quanti morti", "stagione", "nebbia su tagliati/morti"])
+			Perf3D.begin() # TEMPORANEO
+			var shrub_snapshot := _reader.shrub_snapshot(coords)
+			Perf3D.mark_count(&"rifai_shrubs_lettura2d") # TEMPORANEO
+			cell.refresh_shrubs(shrub_snapshot, shrub_signature, _materials)
+			Perf3D.mark_count(&"rifai_shrubs_costruzione3d")
+		# Bacche raccolte o ricresciute: solo quei cespugli cambiano modello (come il 2D, che lì rifà solo i frutti).
+		var berry_signature := _reader.shrub_berry_signature(coords)
+		if cell.needs_refresh(&"shrub_berries", berry_signature):
+			var candidates := cell.shrub_berry_candidates()
+			cell.refresh_shrub_berries(_reader.shrub_berries_shown(coords, candidates[0], candidates[1]), berry_signature)
+			Perf3D.mark_count(&"bacche_cespugli")
 		# Focolari: rifatti quando cambia l'elenco degli edifici del 2D o lo stato di un focolare (acceso, braci, spento).
 		var hearth_signature := _reader.hearth_signature(coords)
+		Perf3D.mark(&"firma_hearth")
 		if cell.needs_refresh(&"hearths", hearth_signature):
 			cell.refresh_hearths(_reader.hearth_snapshot(coords), hearth_signature, _materials)
+			Perf3D.mark_count(&"rifai_hearths")
 		# Siti di deposito (per ora solo lo spiazzo di terra battuta): rifatti quando cambia l'elenco degli edifici.
 		var buildings_signature := _reader.buildings_signature(coords)
+		Perf3D.mark(&"firma_buildings")
 		if cell.needs_refresh(&"deposit_sites", buildings_signature):
 			cell.refresh_deposit_sites(_reader.building_places(coords, "deposit_site"), buildings_signature, _materials)
+			Perf3D.mark_count(&"rifai_deposit_sites")
 		# Mucchietti delle scorte (un segnaposto per posto occupato del magazzino): rifatti quando cambia un posto.
 		var piles := _reader.storage_piles(coords)
+		Perf3D.mark(&"firma_piles")
 		var piles_signature := piles.signature()
+		Perf3D.mark(&"firma_piles")
 		if cell.needs_refresh(&"storage_piles", piles_signature):
 			cell.refresh_storage_piles(piles, piles_signature, _materials)
+			Perf3D.mark_count(&"rifai_storage_piles")
 		# Terra battuta (l'edificio): mattonelle come nel 2D; in cantiere compare man mano col lavoro.
 		var dirt_signature := _reader.dirt_ground_signature(coords)
+		Perf3D.mark(&"firma_dirt")
 		if cell.needs_refresh(&"dirt_ground", dirt_signature):
 			cell.refresh_dirt_ground(_reader.dirt_ground_tiles(coords), dirt_signature)
+			Perf3D.mark_count(&"rifai_dirt_ground")
 		# Cerchi di sassi: come i depositi.
 		if cell.needs_refresh(&"pebble_circles", buildings_signature):
 			cell.refresh_pebble_circles(_reader.building_places(coords, "pebble_circle"), buildings_signature, _materials)
+			Perf3D.mark_count(&"rifai_pebble_circles")
 		# Aree di lavoro (layer acceso, zona selezionata, scelta della zona, trascinamento): come nel 2D.
 		var areas := _reader.work_areas(coords)
+		Perf3D.mark(&"firma_areas")
 		var areas_signature := areas.signature()
+		Perf3D.mark(&"firma_areas")
 		if cell.needs_refresh(&"work_areas", areas_signature):
 			cell.refresh_work_areas(areas, areas_signature)
+			Perf3D.mark_count(&"rifai_work_areas")
 		# Selezione (dal 2D) e edificio sotto il mouse: alone a terra, riquadro, contorno sui modelli.
 		var hovered_id: int = int(_hovered_building.get("id", -1)) if _hovered_building.get("coords") == coords else -1
 		var selection := _reader.selection(coords, hovered_id)
+		Perf3D.mark(&"firma_selection")
 		var selection_signature := selection.signature()
+		Perf3D.mark(&"firma_selection")
 		if cell.needs_refresh(&"selection", selection_signature):
 			cell.refresh_selection(selection, selection_signature)
+			Perf3D.mark_count(&"rifai_selection")
 		# Edifici con modello Blender (tenda di rami): rifatti anche quando la fase del cantiere cambia.
 		var models_signature := _reader.building_models_signature(coords)
+		Perf3D.mark(&"firma_models")
 		if cell.needs_refresh(&"building_models", models_signature):
 			cell.refresh_building_models(_reader.building_models(coords), models_signature)
+			Perf3D.mark_count(&"rifai_building_models")

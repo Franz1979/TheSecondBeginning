@@ -11,6 +11,8 @@ const TEXTURE_DIR := "res://render3d/assets/textures/%s/%s_%s.jpg"
 const SURFACES := ["grass", "dirt", "clay"]
 # Suoli con solo colore e rilievo (la ruvidità è un numero fisso nello shader).
 const SIMPLE_SURFACES := ["forest", "gravel"]
+# Erba alta dove il 2D ha l'erba-risorsa (2026-11-21): disegnata dal progetto, SOURCES_PER_GIOCO/textures/make_tallgrass.py.
+const TALL_GRASS_DIR := "res://render3d/assets/textures/tallgrass/"
 # Rumore dei bordi: immagine ripetibile, macchie di circa 1-2 microcelle (vedi noise_tile nello shader).
 const NOISE_SIZE := 256
 const NOISE_FREQUENCY := 0.05
@@ -29,6 +31,13 @@ static func make() -> ShaderMaterial:
 	for surface in SIMPLE_SURFACES:
 		material.set_shader_parameter(surface + "_albedo", load(TEXTURE_DIR % [surface, surface, "color"]))
 		material.set_shader_parameter(surface + "_normal", load(TEXTURE_DIR % [surface, surface, "normal"]))
+	# Erba alta dell'erba-risorsa (texture del progetto, .png): colore, rilievo e colore medio.
+	var tall: Texture2D = load(TALL_GRASS_DIR + "tallgrass_color.png")
+	material.set_shader_parameter("tall_albedo", tall)
+	material.set_shader_parameter("tall_normal", load(TALL_GRASS_DIR + "tallgrass_normal.png"))
+	material.set_shader_parameter("tall_average", _average_color(tall))
+	material.set_shader_parameter("winter_albedo", load(TALL_GRASS_DIR + "tallgrass_winter_color.png"))
+	material.set_shader_parameter("winter_normal", load(TALL_GRASS_DIR + "tallgrass_winter_normal.png"))
 	material.set_shader_parameter("edge_noise", _edge_noise_texture())
 	return material
 
@@ -42,6 +51,16 @@ static func for_cell(shared: ShaderMaterial, cell_origin: Vector2, stream_mask: 
 	if stream_mask != null:
 		material.set_shader_parameter("stream_mask", ImageTexture.create_from_image(stream_mask))
 	return material
+
+
+# Stagione del 2D per l'erba alta: primavera ed estate verdi, autunno dorato, inverno secco e rado (terrain.gdshader).
+static func set_season(material: ShaderMaterial, season: GameTypes.Season) -> void:
+	var index := 0
+	if season == GameTypes.Season.AUTUMN:
+		index = 1
+	elif season == GameTypes.Season.WINTER:
+		index = 2
+	material.set_shader_parameter("grass_season", index)
 
 
 # Maschera dei suoli della cella (GroundCover3D).

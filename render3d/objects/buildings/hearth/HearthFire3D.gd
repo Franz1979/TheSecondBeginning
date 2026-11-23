@@ -31,6 +31,32 @@ const ASH_TEXTURE_SIZE := 128
 const OBJECT_LAYER := 2
 const TERRAIN_LAYERS := 1
 
+# Luce del fuoco (2026-11-21, richiesta utente: era troppo forte, "agghiacciante"): acceso 0,8 (era 1,6, tremolio ±0,2
+# invece di ±0,5), braci al massimo 0,4 (era 0,6), arancio meno saturo, e da acceso un po' più in alto (era 0,3) perché
+# non faccia una macchia accecante a terra vicino al fuoco.
+# Pietre e legna dai modelli Blender (2026-11-21, richiesta utente; SOURCES_PER_GIOCO/blender/scripts/campfire.py): l'anello e
+# una legna per stato. false = i pezzi fatti a codice di prima (_add_stones, _add_logs). Il cantiere sta in
+# BuildingModels3D.MODELS["campfire"].
+const USE_MODELS := true
+const STONES_MODEL := "campfire_pietre"
+const LOG_MODELS := {
+	HearthSnapshot3D.BURNING: "campfire_legna_accesa",
+	HearthSnapshot3D.EMBERS: "campfire_legna_braci",
+	HearthSnapshot3D.OUT: "campfire_legna_spenta",
+}
+
+# Luce: acceso 0,64 (2026-11-21, richiesta utente: era 1,6, poi 0,8, poi ancora -20%), tremolio ±25% come prima;
+# braci al massimo 0,4, con un colore rosso brace (LIGHT_COLOR_EMBERS, richiesta utente) invece dell'arancio del fuoco.
+# Poi (stesso giorno) la macchia bianca accecante sulla terra vicino al fuoco: veniva dall'attenuazione 2 (luce tutta
+# concentrata al centro). Da acceso: attenuazione morbida (LIGHT_ATTENUATION_BURNING), luce più in alto, forza 0,5. Le
+# braci restano com'erano (piaciute): attenuazione 2, 0,4.
+const LIGHT_BURNING := 0.5
+const LIGHT_ATTENUATION_BURNING := 0.8
+const LIGHT_EMBERS := 0.4
+const LIGHT_COLOR := Color(1.0, 0.68, 0.42)
+const LIGHT_COLOR_EMBERS := Color(1.0, 0.32, 0.14)
+const LIGHT_HEIGHT := 0.9
+
 const FLAME_SHADER_PATH := "res://render3d/objects/buildings/hearth/flame.gdshader"
 const EMBER_SHADER_PATH := "res://render3d/objects/buildings/hearth/ember.gdshader"
 
@@ -45,7 +71,8 @@ var _body: Node3D
 var _time := 0.0
 
 
-func setup(state: int, hearth_seed: int, vertex_material: Material) -> void:
+# with_stones = false: senza l'anello di pietre, già nel modello dell'edificio (affumicatoio, 2026-11-22).
+func setup(state: int, hearth_seed: int, vertex_material: Material, with_stones: bool = true) -> void:
 	_state = state
 	name = "Hearth"
 	_body = Node3D.new()
@@ -53,17 +80,21 @@ func setup(state: int, hearth_seed: int, vertex_material: Material) -> void:
 	_body.scale = Vector3.ONE * SIZE
 	add_child(_body)
 	_add_ash()
-	_add_stones(hearth_seed, vertex_material)
-	_add_logs(hearth_seed)
+	if USE_MODELS:
+		_add_models(hearth_seed, with_stones)
+	else:
+		if with_stones:
+			_add_stones(hearth_seed, vertex_material)
+		_add_logs(hearth_seed)
 	_add_embers()
 	if state == HearthSnapshot3D.BURNING:
 		_add_flames(hearth_seed)
 		_add_sparks()
 		_add_smoke(10, 0.32, 0.6)
-		_add_light(1.6, 2.4, true)
+		_add_light(LIGHT_BURNING, 2.4, true)
 	elif state == HearthSnapshot3D.EMBERS:
 		_add_smoke(5, 0.18, 0.35)
-		_add_light(0.5, 1.1, false)
+		_add_light(LIGHT_EMBERS, 1.1, false)
 
 
 # Godot accende _process quando il nodo entra in scena: va spento qui (lo spento non ha luce da far tremolare).
@@ -76,9 +107,9 @@ func _process(delta: float) -> void:
 		return
 	_time += delta
 	if _state == HearthSnapshot3D.BURNING:
-		_light.light_energy = 1.6 + 0.3 * sin(_time * 11.0) + 0.2 * sin(_time * 17.7)
+		_light.light_energy = LIGHT_BURNING * (1.0 + 0.15 * sin(_time * 11.0) + 0.1 * sin(_time * 17.7))
 	else:
-		_light.light_energy = 0.3 + 0.3 * (0.5 + 0.5 * sin(_time * 1.6))
+		_light.light_energy = LIGHT_EMBERS * (0.6 + 0.4 * (0.5 + 0.5 * sin(_time * 1.6)))
 
 
 func _add_ash() -> void:
@@ -104,6 +135,26 @@ func _add_stones(hearth_seed: int, vertex_material: Material) -> void:
 		stone.transform = Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(size, size * 0.85, size * 1.1)),
 			Vector3(cos(angle) * RING_RADIUS, -0.01, sin(angle) * RING_RADIUS))
 		_body.add_child(stone)
+
+
+# Pietre e legna dai modelli Blender: l'anello sempre uguale, la legna dello stato girata di un angolo proprio del
+# focolare. Fuori dal nodo scalato di SIZE: i modelli sono già in metri (x MODEL_SCALE). Livello degli oggetti, come prima.
+func _add_models(hearth_seed: int, with_stones: bool = true) -> void:
+	var logs: String = LOG_MODELS.get(_state, LOG_MODELS[HearthSnapshot3D.OUT])
+	var turn := float(posmod(hearth_seed, 628)) / 100.0
+	var pieces: Array = [[logs, turn]]
+	if with_stones:
+		pieces.push_front([STONES_MODEL, 0.0])
+	for entry in pieces:
+		var mesh := ModelMesh3D.load_mesh(BuildingModels3D.MODEL_DIR + String(entry[0]) + ".glb")
+		if mesh == null:
+			continue
+		var instance := MeshInstance3D.new()
+		instance.mesh = mesh
+		instance.layers = OBJECT_LAYER
+		instance.lod_bias = BuildingModels3D.NO_LOD_BIAS
+		instance.transform = Transform3D(Basis(Vector3.UP, float(entry[1])).scaled(Vector3.ONE * BuildingModels3D.MODEL_SCALE), Vector3.ZERO)
+		add_child(instance)
 
 
 # Legna a capanna (acceso, braci) o crollata a terra (spento).
@@ -153,6 +204,8 @@ func _add_embers() -> void:
 		HearthSnapshot3D.EMBERS:
 			material.set_shader_parameter("glow", 1.0)
 			material.set_shader_parameter("pulse_amount", 0.6)
+			# Più rosso del fuoco acceso (2026-11-21, richiesta utente).
+			material.set_shader_parameter("glow_color", Color(0.9, 0.12, 0.03))
 		_:
 			material.set_shader_parameter("glow", 0.0)
 			material.set_shader_parameter("char_color", Color(0.22, 0.21, 0.2))
@@ -265,12 +318,14 @@ func _add_smoke(amount: int, opacity: float, velocity: float) -> void:
 func _add_light(energy: float, light_range: float, shadows: bool) -> void:
 	_light = OmniLight3D.new()
 	_light.name = "FireLight"
-	_light.light_color = Color(1.0, 0.55, 0.25)
+	_light.light_color = LIGHT_COLOR
 	_light.light_energy = energy
 	_light.omni_range = light_range * SIZE * 1.6
-	_light.omni_attenuation = 2.0
+	_light.omni_attenuation = LIGHT_ATTENUATION_BURNING if shadows else 2.0
 	_light.shadow_enabled = shadows
-	_light.position = Vector3(0.0, (0.3 if shadows else 0.12) * SIZE, 0.0)
+	_light.position = Vector3(0.0, (LIGHT_HEIGHT if shadows else 0.12) * SIZE, 0.0)
+	if not shadows:
+		_light.light_color = LIGHT_COLOR_EMBERS
 	add_child(_light)
 
 

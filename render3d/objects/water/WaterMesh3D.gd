@@ -4,6 +4,7 @@ extends RefCounted
 # Oggetto 3D: la superficie dell'acqua di UNA macrocella (mare, lago, fiume, ruscello), piatta e un po' trasparente
 # sopra il fondale del terreno. Un quadrato per microcella d'acqua.
 
+const SHADER_PATH := "res://render3d/objects/water/water.gdshader"
 const KIND_COLORS := {
 	0: Palette3D.WATER_SEA,
 	1: Palette3D.WATER_LAKE,
@@ -31,12 +32,19 @@ static func build(water_cells: Dictionary, material: Material) -> MeshInstance3D
 	return instance
 
 
-# Materiale dell'acqua: colore dei vertici con trasparenza, lucido.
-static func make_material() -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.vertex_color_use_as_albedo = true
-	material.vertex_color_is_srgb = true
-	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	material.roughness = 0.12
-	material.metallic_specular = 0.7
+# Materiale dell'acqua (water.gdshader): colore dei vertici con trasparenza, lucido, più la nebbia del 2D. Il rumore dei
+# bordi è quello del terreno (`terrain`), così il confine della nebbia è lo stesso.
+static func make_material(terrain: ShaderMaterial) -> ShaderMaterial:
+	var material := ShaderMaterial.new()
+	material.shader = load(SHADER_PATH)
+	material.set_shader_parameter("edge_noise", terrain.get_shader_parameter("edge_noise"))
+	return material
+
+
+# Copia del materiale per una cella (la nebbia è una texture per cella): stesso rumore, più il suo angolo in microcelle
+# assolute.
+static func for_cell(shared: ShaderMaterial, cell_origin: Vector2) -> ShaderMaterial:
+	var material := shared.duplicate() as ShaderMaterial
+	material.set_shader_parameter("cell_origin", cell_origin)
+	material.set_shader_parameter("cell_size", float(World.WIDTH))
 	return material

@@ -135,6 +135,10 @@ static func build(source: Cell3DSource, water_cells: Dictionary, clay_weights: P
 	instance.name = "Terrain"
 	instance.mesh = mesh
 	instance.material_override = material
+	# Niente ombra proiettata dal terreno (2026-11-23, misura FPS con RenderDoc): il terreno è quasi piatto e la sua
+	# ombra cadeva solo su sé stesso; nella mappa delle ombre costava ~0,2 ms (fino a ~4 ms quando lo shader scartava
+	# i pixel della nebbia nera, poi tolto). Le ombre di alberi, rocce ed edifici sul terreno restano (le riceve).
+	instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return instance
 
 
