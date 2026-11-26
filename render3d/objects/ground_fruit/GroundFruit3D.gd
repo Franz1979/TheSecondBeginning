@@ -53,7 +53,9 @@ static func build(snapshot: GroundFruitSnapshot3D, base_global: Vector2, materia
 				var yaw := float(hash(seed_base + Vector2i(13, 2)) % 1000) / 1000.0 * TAU
 				var basis := Basis(Vector3.UP, yaw).scaled(Vector3.ONE * MODEL_SCALE)
 				buckets[posmod(hash(seed_base), meshes.size())].append(Transform3D(basis, Vector3(p.x, y, p.y)))
-		var group := MultiMeshGroup3D.build("GroundFruit_" + resource_name, meshes, buckets, material)
+		# Senza ombra (2026-11-25, FPS vista 3D): mucchietti già a terra, l'ombra sarebbe di pochi pixel e i vertici si
+		# pagherebbero una terza volta (passata delle ombre).
+		var group := MultiMeshGroup3D.build("GroundFruit_" + resource_name, meshes, buckets, material, [], false)
 		if group == null:
 			continue
 		if root == null:

@@ -87,10 +87,13 @@ signal graphics_changed
 enum Quality3D { LOW, MEDIUM, HIGH }
 const QUALITY_3D_PRESETS := {
 	# lod: pixel di errore ammessi per le versioni semplificate dei modelli (Viewport.mesh_lod_threshold);
-	# shadow_filter: RenderingServer.ShadowQuality del sole (0 dure, 1 morbide molto basse, 2 basse, 3 medie).
-	Quality3D.LOW: {"resolution": 75, "ssao": false, "lod": 48.0, "shadow_filter": 1},
-	Quality3D.MEDIUM: {"resolution": 100, "ssao": false, "lod": 32.0, "shadow_filter": 2},
-	Quality3D.HIGH: {"resolution": 100, "ssao": true, "lod": 16.0, "shadow_filter": 3},
+	# shadow_filter: RenderingServer.ShadowQuality del sole (0 dure, 1 morbide molto basse, 2 basse, 3 medie);
+	# bush_far: pixel sullo schermo sotto i quali un cespuglio passa alla versione leggera da lontano (Shrubs3D), 0 = mai;
+	# shadow_size: lato della mappa d'ombra del sole (2026-11-26: 2048 in Bassa, 4096 = valore di Godot; 1024 rendeva
+	# sfocate e a scalini le ombre degli alberi da lontano).
+	Quality3D.LOW: {"resolution": 75, "ssao": false, "lod": 48.0, "shadow_filter": 1, "bush_far": 30.0, "shadow_size": 2048},
+	Quality3D.MEDIUM: {"resolution": 100, "ssao": false, "lod": 32.0, "shadow_filter": 2, "bush_far": 30.0, "shadow_size": 4096},
+	Quality3D.HIGH: {"resolution": 100, "ssao": true, "lod": 16.0, "shadow_filter": 3, "bush_far": 15.0, "shadow_size": 4096},
 }
 var quality_3d: Quality3D = Quality3D.MEDIUM
 # Minimappa della sidebar chiusa (2026-09-20, richiesta utente): true = nascosta, resta solo il bottone per
@@ -236,6 +239,14 @@ func quality_3d_lod_threshold() -> float:
 
 func quality_3d_shadow_filter() -> int:
 	return int(QUALITY_3D_PRESETS[quality_3d]["shadow_filter"])
+
+
+func quality_3d_bush_far_pixels() -> float:
+	return float(QUALITY_3D_PRESETS[quality_3d]["bush_far"])
+
+
+func quality_3d_shadow_size() -> int:
+	return int(QUALITY_3D_PRESETS[quality_3d]["shadow_size"])
 
 
 func _apply_quality_3d_preset(level: Quality3D) -> void:

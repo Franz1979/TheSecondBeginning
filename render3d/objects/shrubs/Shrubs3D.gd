@@ -49,6 +49,14 @@ const BUSH_REDDISH_A := Color(1.0, 0.62, 0.52)
 const BUSH_REDDISH_B := Color(0.95, 0.5, 0.42)
 const BUSH_REDDISH_PERCENT := 12
 const BUSH_YELLOWISH_PERCENT := 12
+# Cespugli da lontano (2026-11-25, FPS vista 3D, scelti dall'utente in bushes.blend): stesso cespuglio con ~1 foglia su 7,
+# ingrandite (bushes.py, livello "_far"), 114-250 triangoli invece di 436-1442. Il LOD di Godot non scende sotto ~190
+# perché ogni foglia è un pezzo separato. Stesso ordine di BUSH_MODELS. Il cambio avviene, per blocco, quando il
+# cespuglio più grande del blocco è largo sullo schermo meno dei pixel del livello di qualità
+# (UserOptions.quality_3d_bush_far_pixels, che cambiando livello dal menu si applica subito); "" in BUSH_FAR_MODELS o 0
+# nei pixel rimette il cespuglio vicino a ogni distanza. 2026-11-26, zoom medio: GPU 39,2 -> 30,3 ms, il cambio non si nota.
+const BUSH_FAR_MODELS := ["bush_common_far", "bush_common_flowers_far", "bush_fruit_berries_far", "bush_fruit_bare_far"]
+static var _bush_far_meshes: Array = []
 const BUSH_SCALE := 1.0
 # Quanto il piede scende sotto terra (frazione dell'altezza): sul terreno in pendenza non resta sospeso.
 const BUSH_SINK := 0.05
@@ -156,8 +164,17 @@ static func build(snapshot: ShrubSnapshot3D, base_global: Vector2, material: Mat
 	node.name = "Shrubs"
 	if USE_BUSH_MODELS:
 		var bush_slots := _empty_lists(bush_meshes.size())
+		var far_meshes := _get_bush_far_meshes()
+		var far_pixels := UserOptions.quality_3d_bush_far_pixels()
+		var near_role := MultiMeshGroup3D.LOD_NONE if far_meshes.is_empty() else MultiMeshGroup3D.LOD_NEAR
 		node.add_child(MultiMeshGroup3D.build("Bushes", bush_meshes, bush_transforms, null, bush_colors, BUSH_CAST_SHADOWS,
-			bush_slots))
+			bush_slots, false, near_role, far_pixels))
+		var far_slots := _empty_lists(bush_meshes.size())
+		if not far_meshes.is_empty():
+			node.add_child(MultiMeshGroup3D.build("BushesFar", far_meshes, bush_transforms, null, bush_colors,
+				BUSH_CAST_SHADOWS, far_slots, false, MultiMeshGroup3D.LOD_FAR, far_pixels))
+		node.set_meta(&"far_berry_slots", far_slots[BUSH_FRUIT_BERRIES])
+		node.set_meta(&"far_bare_slots", far_slots[BUSH_FRUIT_BARE])
 		node.set_meta(&"berry_keys", snapshot.berry_keys)
 		node.set_meta(&"berry_jitters", snapshot.berry_jitters)
 		node.set_meta(&"berry_transforms", berry_transforms)
@@ -187,6 +204,9 @@ static func apply_berries(node: Node3D, shown: PackedByteArray) -> void:
 	var transforms: Array = node.get_meta(&"berry_transforms")
 	var berry_slots: Array = node.get_meta(&"berry_slots")
 	var bare_slots: Array = node.get_meta(&"bare_slots")
+	# Anche i cespugli da lontano (stesse copie, stesso ordine).
+	var far_berry_slots: Array = node.get_meta(&"far_berry_slots", [])
+	var far_bare_slots: Array = node.get_meta(&"far_bare_slots", [])
 	for j in range(mini(shown.size(), current.size())):
 		if shown[j] == current[j] or list_index[j] < 0:
 			continue
@@ -198,6 +218,10 @@ static func apply_berries(node: Node3D, shown: PackedByteArray) -> void:
 			_set_slot(berry_slots[k], bush_transform if with_berries else _hidden(bush_transform))
 		if k < bare_slots.size():
 			_set_slot(bare_slots[k], _hidden(bush_transform) if with_berries else bush_transform)
+		if k < far_berry_slots.size():
+			_set_slot(far_berry_slots[k], bush_transform if with_berries else _hidden(bush_transform))
+		if k < far_bare_slots.size():
+			_set_slot(far_bare_slots[k], _hidden(bush_transform) if with_berries else bush_transform)
 	node.set_meta(&"berry_shown", current)
 
 
@@ -228,6 +252,18 @@ static func _get_bush_meshes() -> Array:
 		for mesh in ModelMesh3D.load_meshes(BUSH_DIR, BUSH_MODELS):
 			_bush_meshes.append(_tintable(mesh))
 	return _bush_meshes
+
+
+# Vuoto se manca anche una sola forma da lontano: allora si usa il cespuglio vicino a ogni distanza.
+static func _get_bush_far_meshes() -> Array:
+	if _bush_far_meshes.is_empty() and not BUSH_FAR_MODELS.has(""):
+		var meshes: Array = []
+		for mesh in ModelMesh3D.load_meshes(BUSH_DIR, BUSH_FAR_MODELS):
+			if mesh == null:
+				return []
+			meshes.append(_tintable(mesh))
+		_bush_far_meshes = meshes
+	return _bush_far_meshes
 
 
 static func _tintable(mesh: Mesh) -> Mesh:

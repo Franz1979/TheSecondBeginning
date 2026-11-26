@@ -86,6 +86,7 @@ func activate() -> void:
 	# Niente 3D sotto i pannelli aperti (2026-11-22, misura FPS). preload e non il class_name: il gioco lanciato senza
 	# editor (es. da RenderDoc) non ha ancora la classe nuova nell'elenco globale.
 	_camera.add_child(preload("res://render3d/camera/PanelOccluder3D.gd").new())
+	_camera.add_child(preload("res://render3d/debug/CameraBookmark3D.gd").new()) # TEMPORANEO misura FPS: Ins/Home
 	_placement_ghost = PlacementGhost3D.new()
 	_placement_ghost.name = "PlacementGhost"
 	_world_root.add_child(_placement_ghost)
@@ -217,6 +218,10 @@ func _apply_graphics_options() -> void:
 	viewport.mesh_lod_threshold = UserOptions.quality_3d_lod_threshold()
 	# Filtro delle ombre del sole del livello di qualità (dure in Bassa: ~1 ms in meno sulla Intel UHD).
 	RenderingServer.directional_soft_shadow_filter_set_quality(UserOptions.quality_3d_shadow_filter() as RenderingServer.ShadowQuality)
+	# Mappa d'ombra del sole del livello (2048 in Bassa), a 16 bit come il valore di progetto.
+	RenderingServer.directional_shadow_atlas_set_size(UserOptions.quality_3d_shadow_size(), true)
+	# Cespugli da lontano: distanza di cambio del livello, subito su tutte le celle già costruite.
+	MultiMeshGroup3D.set_lod_pixels(get_tree(), UserOptions.quality_3d_bush_far_pixels())
 	if _lighting != null:
 		_lighting.apply_graphics_options()
 
