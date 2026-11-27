@@ -111,6 +111,7 @@ func refresh_grass(snapshot: GrassSnapshot3D, signature: Array) -> void:
 func refresh_ground_cover(snapshot: GroundCoverSnapshot3D, signature: Array) -> void:
 	_layer_signatures[&"ground_cover"] = signature
 	TerrainMaterial3D.set_cover(_terrain_material, GroundCover3D.build_image(snapshot))
+	TerrainWeightsBaker3D.request(self)
 
 
 # Stagione del 2D: colore dell'erba alta (verde, dorata, secca d'inverno), nel materiale del terreno.
@@ -228,6 +229,7 @@ func refresh_building_models(snapshot: BuildingModelsSnapshot3D, signature: Arra
 func refresh_dirt_ground(snapshot: DirtGroundSnapshot3D, signature: Array) -> void:
 	_layer_signatures[&"dirt_ground"] = signature
 	TerrainMaterial3D.set_beaten(_terrain_material, DirtGround3D.build_image(snapshot))
+	TerrainWeightsBaker3D.request(self)
 
 
 # Sostituisce il nodo del livello (null = livello vuoto) e ne ricorda l'impronta.

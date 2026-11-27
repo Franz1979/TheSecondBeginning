@@ -38,6 +38,8 @@ static var terrain_flat := false
 static var far_hide_off := false
 static var aniso_off := false
 static var one_noise := false
+static var layers_flat := false
+static var terrain_mode := 0
 static var ground_off := false
 
 
@@ -51,6 +53,8 @@ static func reset_keys() -> void:
 	far_hide_off = false
 	aniso_off = false
 	one_noise = false
+	layers_flat = false
+	terrain_mode = 0
 	ground_off = false
 
 
@@ -140,7 +144,7 @@ static func tick(viewport: Viewport, view_3d_active: bool) -> void:
 		"no" if glow_off or not Lighting3D.GLOW_ENABLED else "sì"])
 	lines[0] += " vegetazione %s terreno %s piccole da lontano %s anisotropo %s" % ["no" if vegetation_off else "sì", "piatto" if terrain_flat else "texture",
 		"disegnate" if far_hide_off else "spente", "no" if aniso_off else "sì"]
-	lines[0] += " rumore %s risoluzione3d %d%% cose a terra %s" % ["una lettura" if one_noise else "sette letture", roundi(viewport.scaling_3d_scale * 100.0), "no" if ground_off else "sì"]
+	lines[0] += " rumore %s strati %s risoluzione3d %d%% cose a terra %s" % ["una lettura" if one_noise else "sette letture", "a tinta" if layers_flat else "texture", roundi(viewport.scaling_3d_scale * 100.0), "no" if ground_off else "sì"]
 	var names := _total.keys()
 	names.sort_custom(func(a, b): return int(_total[a]) > int(_total[b]))
 	var parts := PackedStringArray()
@@ -179,8 +183,13 @@ static func _read_keys() -> void:
 		ssao_off = not ssao_off
 	if _pressed(KEY_F11):
 		glow_off = not glow_off
+	# F4 a giro (2026-11-26, passo 0 della cottura del terreno): normale -> piatto -> rumore unico -> strati a tinta -> normale.
 	if _pressed(KEY_F4):
-		terrain_flat = not terrain_flat
+		terrain_mode = (terrain_mode + 1) % 4
+		terrain_flat = terrain_mode == 1
+		one_noise = terrain_mode == 2
+		layers_flat = terrain_mode == 3
+		print("[PERF3D] tasto F4: terreno %s" % ["normale", "piatto", "rumore unico", "strati a tinta"][terrain_mode])
 	# F3 ora fa l'anisotropo (2026-11-22: F2 e F8 non arrivavano al gioco); la prova dello spegnimento da lontano è finita.
 	# F3 ora nasconde le cose piccole a terra (le prove di anisotropo e rumore sono finite: non costano niente).
 	if _pressed(KEY_F3):

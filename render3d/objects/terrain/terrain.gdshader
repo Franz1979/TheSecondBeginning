@@ -10,6 +10,9 @@
 shader_type spatial;
 render_mode cull_back, diffuse_burley, specular_schlick_ggx;
 
+// Rumore e parte liscia dei bordi tra i suoli: in comune con la cottura (terrain_weights_bake.gdshader).
+#include "res://render3d/objects/terrain/terrain_edges.gdshaderinc"
+
 uniform sampler2D grass_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D grass_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D grass_roughness : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
@@ -23,11 +26,17 @@ uniform sampler2D forest_albedo : source_color, filter_linear_mipmap_anisotropic
 uniform sampler2D forest_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D gravel_albedo : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D gravel_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
-uniform sampler2D edge_noise : filter_linear, repeat_enable;
 uniform sampler2D stream_mask : hint_default_black, filter_linear, repeat_disable;
 // Suoli della cella (GroundCover3D), un pixel per microcella: R = erba, G = alberi o cespugli, B = roccia.
 // Senza maschera = tutto prato.
 uniform sampler2D cover_mask : hint_default_white, filter_linear, repeat_disable;
+// Cottura dei pesi (2026-11-27, misura FPS: i 7 rumori dei bordi valevano ~2,8 ms): la parte liscia dei bordi della cella
+// (terrain_edges.gdshaderinc) cotta una volta da TerrainWeightsBaker3D, 4 punti per microcella, al posto dei rumori e
+// della maschera dei suoli. A = prato, sottobosco, sottocespuglio, ghiaia; B = terra battuta e tre rumori. Finché la
+// cella non è cotta (use_baked_weights false) i bordi si calcolano dal vivo, uguali.
+uniform bool use_baked_weights = false;
+uniform sampler2D baked_weights_a : filter_linear_mipmap, repeat_disable;
+uniform sampler2D baked_weights_b : filter_linear_mipmap, repeat_disable;
 // Terra battuta (una per microcella, DirtGround3D): R = 1 dove c'è, G = più scura (deposito), B = mattonella dell'edificio
 // "Terra battuta" (terra marrone scura); senza B = terra chiara sotto un altro edificio. Nero = niente.
 uniform sampler2D beaten_mask : hint_default_black, filter_linear, repeat_disable;
@@ -57,8 +66,6 @@ uniform float dirt_tile = 3.0;
 uniform float clay_tile = 2.5;
 uniform float forest_tile = 3.0;
 uniform float gravel_tile = 2.0;
-// Quante microcelle copre il rumore dei bordi.
-uniform float noise_tile = 24.0;
 
 // Erba: quanto prende la tinta del bioma (0 = colore vero della texture, 1 = tutta tinta) e saturazione finale.
 uniform float grass_tint_strength = 0.55;
@@ -100,7 +107,9 @@ uniform float litter_winter_brightness = 0.8;
 uniform bool stylized_grass = false;
 // TEMPORANEO (2026-11-21, misura FPS, tasto F4 di Perf3D): terreno a tinta unita, senza nessuna lettura di texture.
 uniform bool debug_flat = false;
-uniform bool debug_one_noise = false; // TEMPORANEO misura FPS (tasto F3 di Perf3D)
+// TEMPORANEO misura FPS (tasto F4 di Perf3D, quarto modo): "strati a tinta", ogni lettura del dettaglio dei suoli
+// (colore, normale, ruvidità) dà un valore fisso; bordi, rumori e maschere restano veri.
+uniform bool debug_layers_flat = false;
 uniform vec3 stylized_light : source_color = vec3(0.60, 0.72, 0.26);
 uniform vec3 stylized_dark : source_color = vec3(0.38, 0.56, 0.18);
 uniform vec3 stylized_dry : source_color = vec3(0.74, 0.70, 0.36);
@@ -128,8 +137,6 @@ uniform float clay_edge_noise = 0.5;
 uniform float clay_roughness_scale = 0.5;
 uniform float rim_darkness = 0.72;
 // Confini tra i suoli (prato, sottobosco, ghiaia, terra): quanto sono frastagliati e quanto è largo il passaggio.
-uniform float cover_edge_noise = 0.35;
-uniform float cover_edge_wiggle = 0.3;
 uniform float cover_edge_softness = 0.14;
 // Sottobosco e ghiaia: ruvidità fissa (non hanno la texture della ruvidità).
 uniform float forest_roughness = 0.95;
@@ -144,7 +151,6 @@ uniform float forest_grass_mix = 0.65;
 uniform float shrub_grass_mix = 0.65;
 uniform vec3 shrub_tint = vec3(1.0, 1.0, 1.0);
 uniform float forest_edge_softness = 0.26;
-uniform float forest_edge_wiggle = 0.45;
 uniform float gravel_roughness = 0.85;
 // Segnaposto per i terreni di terra (deserto, spiaggia, collina, roccia...): la terra tinta color sabbia.
 uniform vec3 sand_color : source_color = vec3(0.80, 0.70, 0.52);
@@ -166,6 +172,21 @@ uniform float ripple_strength = 2.5;
 varying vec2 ground_pos;
 varying vec3 tint;
 varying vec2 weights;
+
+// TEMPORANEO misura FPS: letture del dettaglio dei suoli, fisse con debug_layers_flat.
+vec4 layer_tex(sampler2D s, vec2 uv, vec4 fixed_value) {
+	if (debug_layers_flat) {
+		return fixed_value;
+	}
+	return texture(s, uv);
+}
+
+vec4 layer_grad(sampler2D s, vec2 uv, vec2 dx, vec2 dy, vec4 fixed_value) {
+	if (debug_layers_flat) {
+		return fixed_value;
+	}
+	return textureGrad(s, uv, dx, dy);
+}
 
 vec3 srgb_to_linear(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
@@ -254,52 +275,38 @@ void fragment() {
 	// textureGrad con le derivate prese qui fuori (le derivate dentro un ramo non sono affidabili ai bordi del ramo).
 	vec2 dpx = dFdx(ground_pos);
 	vec2 dpy = dFdy(ground_pos);
-	vec3 grass = texture(grass_albedo, g_uv).rgb;
-	vec3 dirt = texture(dirt_albedo, d_uv).rgb;
+	vec3 grass = layer_tex(grass_albedo, g_uv, vec4(grass_average, 1.0)).rgb;
+	vec3 dirt = layer_tex(dirt_albedo, d_uv, vec4(dirt_average, 1.0)).rgb;
 	// Rilievo della terra e dell'erba (dalla luminosità): rompe i bordi come farebbe il terreno vero.
 	float dirt_relief = dot(dirt / max(dirt_average, vec3(0.01)), vec3(0.333)) - 1.0;
 	float grass_relief = dot(grass / max(grass_average, vec3(0.01)), vec3(0.333)) - 1.0;
 
-	float edge_n = texture(edge_noise, ground_pos / noise_tile).r;
 	vec2 cell_uv = (ground_pos - cell_origin) / cell_size;
 
 	float dirt_w = clamp(weights.x, 0.0, 1.0);
 	float has_clay = step(0.001, weights.y);
-	// Suoli della microcella, letti sfumati, col bordo mosso da un rumore largo e rotto dal rumore fine e dal rilievo.
-	// Ogni suolo usa un pezzo diverso del rumore, così i bordi non si ricalcano.
-	vec4 cover = texture(cover_mask, cell_uv);
-	float wiggle_a;
-	float wiggle_b;
-	float wiggle_c;
-	float fine_b;
-	float wiggle_d;
-	float fine_d;
-	if (debug_one_noise) { // TEMPORANEO misura FPS: niente letture in più, tutti i rumori ricavati da edge_n
-		wiggle_a = fract(edge_n + 0.31);
-		wiggle_b = fract(edge_n + 0.63);
-		wiggle_c = fract(edge_n + 0.11);
-		fine_b = fract(edge_n + 0.52);
-		wiggle_d = fract(edge_n + 0.83);
-		fine_d = fract(edge_n + 0.24);
+	// Suoli della microcella, sfumati: la parte liscia del bordo (maschera + rumori, terrain_edges.gdshaderinc) cotta o
+	// calcolata qui, poi la curva morbida e il rilievo della texture, che rompe i bordi come farebbe il terreno vero.
+	vec4 s_a;
+	vec4 s_b;
+	if (use_baked_weights) {
+		s_a = texture(baked_weights_a, cell_uv) * EDGE_SIGNAL_RANGE - EDGE_SIGNAL_OFFSET;
+		s_b = texture(baked_weights_b, cell_uv);
+		s_b.x = s_b.x * EDGE_SIGNAL_RANGE - EDGE_SIGNAL_OFFSET;
 	} else {
-		wiggle_a = texture(edge_noise, ground_pos / (noise_tile * 3.0) + vec2(0.31, 0.71)).r;
-		wiggle_b = texture(edge_noise, ground_pos / (noise_tile * 3.0) + vec2(0.63, 0.17)).r;
-		wiggle_c = texture(edge_noise, ground_pos / (noise_tile * 2.0) + vec2(0.11, 0.47)).r;
-		fine_b = texture(edge_noise, ground_pos / noise_tile + vec2(0.52, 0.29)).r;
-		wiggle_d = texture(edge_noise, ground_pos / (noise_tile * 3.0) + vec2(0.83, 0.39)).r;
-		fine_d = texture(edge_noise, ground_pos / noise_tile + vec2(0.24, 0.66)).r;
+		terrain_edge_signals(ground_pos, texture(cover_mask, cell_uv), texture(beaten_mask, cell_uv).r, s_a, s_b);
 	}
+	float wiggle_a = s_b.y;
+	float wiggle_b = s_b.z;
+	float edge_n = s_b.w;
 	float lo = 0.5 - cover_edge_softness;
 	float hi = 0.5 + cover_edge_softness;
-	float grass_w = smoothstep(lo, hi, cover.r + (wiggle_a - 0.5) * cover_edge_wiggle + (edge_n - 0.5) * cover_edge_noise - dirt_relief * 0.15);
-	float forest_w = smoothstep(0.5 - forest_edge_softness, 0.5 + forest_edge_softness,
-		cover.g + (wiggle_b - 0.5) * forest_edge_wiggle + (fine_b - 0.5) * cover_edge_noise);
-	float shrub_w = smoothstep(0.5 - forest_edge_softness, 0.5 + forest_edge_softness,
-		cover.a + (wiggle_d - 0.5) * forest_edge_wiggle + (fine_d - 0.5) * cover_edge_noise);
+	float grass_w = smoothstep(lo, hi, s_a.x - dirt_relief * 0.15);
+	float forest_w = smoothstep(0.5 - forest_edge_softness, 0.5 + forest_edge_softness, s_a.y);
+	float shrub_w = smoothstep(0.5 - forest_edge_softness, 0.5 + forest_edge_softness, s_a.z);
 	vec3 beaten_rg = texture(beaten_mask, cell_uv).rgb;
-	float beaten = beaten_rg.r;
-	float beaten_w = smoothstep(lo, hi, beaten + (wiggle_a - 0.5) * cover_edge_wiggle + (edge_n - 0.5) * cover_edge_noise + dirt_relief * 0.1);
-	float gravel_w = smoothstep(lo, hi, cover.b + (wiggle_c - 0.5) * cover_edge_wiggle + (edge_n - 0.5) * cover_edge_noise + dirt_relief * 0.1);
+	float beaten_w = smoothstep(lo, hi, s_b.x + dirt_relief * 0.1);
+	float gravel_w = smoothstep(lo, hi, s_a.w + dirt_relief * 0.1);
 	grass_w *= 1.0 - dirt_w;
 	// L'erba-risorsa vera, prima che la nebbia vi aggiunga il prato "ricordato" (lì la tinta non va).
 	float resource_grass_w = grass_w;
@@ -320,7 +327,7 @@ void fragment() {
 	float clay_w = 0.0;
 	float rim_w = 0.0;
 	if (has_clay > 0.0) {
-		clay = textureGrad(clay_albedo, c_uv, dpx / clay_tile, dpy / clay_tile).rgb;
+		clay = layer_grad(clay_albedo, c_uv, dpx / clay_tile, dpy / clay_tile, vec4(clay_average, 1.0)).rgb;
 		float clay_relief = dot(clay / max(clay_average, vec3(0.01)), vec3(0.333)) - 1.0;
 		float edge = weights.y + (edge_n - 0.5) * clay_edge_noise;
 		float clay_patch = texture(edge_noise, ground_pos / clay_patch_tile + vec2(0.21, 0.83)).r;
@@ -341,7 +348,7 @@ void fragment() {
 	meadow_color = season_low(meadow_color);
 	vec3 forest = vec3(0.0);
 	if (under_w > 0.0) {
-		forest = season_litter(textureGrad(forest_albedo, f_uv, dpx / forest_tile, dpy / forest_tile).rgb);
+		forest = season_litter(layer_grad(forest_albedo, f_uv, dpx / forest_tile, dpy / forest_tile, vec4(0.3, 0.25, 0.15, 1.0)).rgb);
 	}
 	// Erba alta sull'erba-risorsa (sottobosco e sottocespuglio restano col prato a texture).
 	vec2 t_uv = ground_pos / tall_tile;
@@ -349,13 +356,13 @@ void fragment() {
 	vec2 t_dy = dpy / tall_tile;
 	vec4 winter = vec4(0.0);
 	if (resource_grass_w > 0.0) {
-		vec3 tall = textureGrad(tall_albedo, t_uv, t_dx, t_dy).rgb;
+		vec3 tall = layer_grad(tall_albedo, t_uv, t_dx, t_dy, vec4(tall_average, 1.0)).rgb;
 		vec3 tall_color = mix(tall, tint * tall / max(tall_average, vec3(0.01)), tall_tint_strength) * tall_brightness;
 		if (grass_season == 1) {
 			float tall_luma = dot(tall_color, vec3(0.333));
 			tall_color = mix(tall_color, tall_autumn_color / max(dot(tall_autumn_color, vec3(0.333)), 0.01) * tall_luma, tall_autumn_amount);
 		} else if (grass_season == 2) {
-			winter = textureGrad(winter_albedo, t_uv, t_dx, t_dy);
+			winter = layer_grad(winter_albedo, t_uv, t_dx, t_dy, vec4(0.5, 0.45, 0.3, 0.5));
 			tall_color = mix(dirt * winter_soil_brightness, winter.rgb, winter.a);
 		}
 		meadow_color = mix(meadow_color, tall_color, resource_grass_w);
@@ -376,7 +383,7 @@ void fragment() {
 	vec3 albedo = mix(ground, clay_color, clay_w);
 	// Ghiaia sotto le rocce sopra a tutto (anche sabbia e argilla): dove c'è una roccia il fondo è sempre ghiaia.
 	if (gravel_w > 0.0) {
-		albedo = mix(albedo, textureGrad(gravel_albedo, s_uv, dpx / gravel_tile, dpy / gravel_tile).rgb, gravel_w);
+		albedo = mix(albedo, layer_grad(gravel_albedo, s_uv, dpx / gravel_tile, dpy / gravel_tile, vec4(0.5, 0.48, 0.45, 1.0)).rgb, gravel_w);
 	}
 
 	// Ruscello (letto qui: serve a sapere se occorrono normale e ruvidità della terra).
@@ -386,12 +393,12 @@ void fragment() {
 	vec3 n_dirt = vec3(0.5, 0.5, 1.0);
 	float r_dirt = 1.0;
 	if (need_dirt) {
-		n_dirt = textureGrad(dirt_normal, d_uv, dpx / dirt_tile, dpy / dirt_tile).rgb;
-		r_dirt = textureGrad(dirt_roughness, d_uv, dpx / dirt_tile, dpy / dirt_tile).r;
+		n_dirt = layer_grad(dirt_normal, d_uv, dpx / dirt_tile, dpy / dirt_tile, vec4(0.5, 0.5, 1.0, 1.0)).rgb;
+		r_dirt = layer_grad(dirt_roughness, d_uv, dpx / dirt_tile, dpy / dirt_tile, vec4(0.9)).r;
 	}
 
-	vec3 n_grass = texture(grass_normal, g_uv).rgb;
-	float r_meadow = texture(grass_roughness, g_uv).r;
+	vec3 n_grass = layer_tex(grass_normal, g_uv, vec4(0.5, 0.5, 1.0, 1.0)).rgb;
+	float r_meadow = layer_tex(grass_roughness, g_uv, vec4(0.9)).r;
 	if (stylized_grass) {
 		// Prato stilizzato quasi liscio: il rilievo della foto non c'è più.
 		n_grass = mix(n_grass, vec3(0.5, 0.5, 1.0), stylized_flatten);
@@ -399,24 +406,24 @@ void fragment() {
 	}
 	vec3 normal_map = mix(n_dirt, n_grass, meadow_w);
 	if (resource_grass_w > 0.0) {
-		vec3 n_tall = textureGrad(tall_normal, t_uv, t_dx, t_dy).rgb;
+		vec3 n_tall = layer_grad(tall_normal, t_uv, t_dx, t_dy, vec4(0.5, 0.5, 1.0, 1.0)).rgb;
 		if (grass_season == 2) {
-			n_tall = mix(n_dirt, textureGrad(winter_normal, t_uv, t_dx, t_dy).rgb, winter.a);
+			n_tall = mix(n_dirt, layer_grad(winter_normal, t_uv, t_dx, t_dy, vec4(0.5, 0.5, 1.0, 1.0)).rgb, winter.a);
 		}
 		normal_map = mix(normal_map, n_tall, resource_grass_w * meadow_w);
 	}
 	if (under_w > 0.0) {
-		normal_map = mix(normal_map, textureGrad(forest_normal, f_uv, dpx / forest_tile, dpy / forest_tile).rgb, under_w);
+		normal_map = mix(normal_map, layer_grad(forest_normal, f_uv, dpx / forest_tile, dpy / forest_tile, vec4(0.5, 0.5, 1.0, 1.0)).rgb, under_w);
 	}
 	normal_map = mix(normal_map, mix(n_dirt, vec3(0.5, 0.5, 1.0), beaten_flatten * (1.0 - beaten_rg.b)), beaten_w);
 	normal_map = mix(normal_map, n_dirt, max(dirt_w, rim_w));
 	float r_clay = 0.0;
 	if (clay_w > 0.0) {
-		normal_map = mix(normal_map, textureGrad(clay_normal, c_uv, dpx / clay_tile, dpy / clay_tile).rgb, clay_w);
-		r_clay = textureGrad(clay_roughness, c_uv, dpx / clay_tile, dpy / clay_tile).r * clay_roughness_scale;
+		normal_map = mix(normal_map, layer_grad(clay_normal, c_uv, dpx / clay_tile, dpy / clay_tile, vec4(0.5, 0.5, 1.0, 1.0)).rgb, clay_w);
+		r_clay = layer_grad(clay_roughness, c_uv, dpx / clay_tile, dpy / clay_tile, vec4(0.9)).r * clay_roughness_scale;
 	}
 	if (gravel_w > 0.0) {
-		normal_map = mix(normal_map, textureGrad(gravel_normal, s_uv, dpx / gravel_tile, dpy / gravel_tile).rgb, gravel_w);
+		normal_map = mix(normal_map, layer_grad(gravel_normal, s_uv, dpx / gravel_tile, dpy / gravel_tile, vec4(0.5, 0.5, 1.0, 1.0)).rgb, gravel_w);
 	}
 
 	float roughness = mix(r_dirt, r_meadow, meadow_w);

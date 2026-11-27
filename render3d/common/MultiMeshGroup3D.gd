@@ -14,9 +14,12 @@ const CHUNK_SIZE := 10.0
 # schermo sarebbe più piccola di MIN_SCREEN_PIXELS (un puntino: ghiande, frutti a terra, sassi, bastoni, piantine da
 # lontano). Distanza calcolata da sola per ogni blocco dalla misura della forma e dalla sua copia più grande: le cose
 # grandi (alberi, cespugli, rocce) restano sempre accese entro lo zoom massimo. HIDE_MARGIN: tolleranza perché un blocco
-# al limite non si accenda e spenga di continuo.
+# al limite non si accenda e spenga di continuo. A 0 dal 2026-11-27 (segnalazione utente: buchi nel bosco e tra i
+# cespugli dopo un po' da fermi, che sparivano muovendo la telecamera): con un margine Godot cambia lo stato di un blocco
+# solo quando la distanza esce dalla fascia, e i blocchi NUOVI (strato rifatto: crescita, taglio, stagione) nati dentro
+# la fascia restavano spenti finché la telecamera non si muoveva.
 const MIN_SCREEN_PIXELS := 2.0
-const HIDE_MARGIN := 0.1
+const HIDE_MARGIN := 0.0
 
 # meshes[i] = forma i; transforms_by_mesh[i] = Array di Transform3D delle sue copie (coordinate locali del nodo).
 # colors_by_mesh (facoltativo): colors_by_mesh[i] = Array di Color, uno per copia, che moltiplica il colore dei vertici

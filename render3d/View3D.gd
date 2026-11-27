@@ -78,6 +78,10 @@ func activate() -> void:
 	_apply_graphics_options()
 	if not UserOptions.graphics_changed.is_connected(_apply_graphics_options):
 		UserOptions.graphics_changed.connect(_apply_graphics_options)
+	# Cuoco dei pesi dei bordi del terreno (2026-11-27, misura FPS): prima delle celle, che gli chiedono la cottura.
+	var weights_baker := TerrainWeightsBaker3D.new()
+	weights_baker.name = "TerrainWeightsBaker"
+	_world_root.add_child(weights_baker)
 	_camera = Camera3DController.new()
 	_camera.name = "Camera3D"
 	_world_root.add_child(_camera)
@@ -152,6 +156,7 @@ func _process(_delta: float) -> void:
 		if perf_cell._terrain_material != null:
 			perf_cell._terrain_material.set_shader_parameter("debug_flat", Perf3D.terrain_flat)
 			perf_cell._terrain_material.set_shader_parameter("debug_one_noise", Perf3D.one_noise)
+			perf_cell._terrain_material.set_shader_parameter("debug_layers_flat", Perf3D.layers_flat)
 		for perf_layer: StringName in [&"trees", &"shrubs"]:
 			var perf_node: Node3D = perf_cell._layers.get(perf_layer)
 			if perf_node != null:

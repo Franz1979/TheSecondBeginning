@@ -17,6 +17,9 @@ const TALL_GRASS_DIR := "res://render3d/assets/textures/tallgrass/"
 const NOISE_SIZE := 256
 const NOISE_FREQUENCY := 0.05
 const AVERAGE_STEP := 16
+# Cottura dei pesi dei bordi (2026-11-27, TerrainWeightsBaker3D): false = niente cottura, bordi calcolati dal vivo come
+# prima (stesso aspetto, ~3 ms in più).
+const BAKED_WEIGHTS_ENABLED := true
 
 
 static func make() -> ShaderMaterial:
@@ -71,6 +74,13 @@ static func set_cover(material: ShaderMaterial, cover_image: Image) -> void:
 # Maschera della terra battuta della cella (DirtGround3D).
 static func set_beaten(material: ShaderMaterial, beaten_image: Image) -> void:
 	_set_mask(material, "beaten_mask", beaten_image)
+
+
+# Pesi dei bordi cotti da TerrainWeightsBaker3D (immagini con le mipmap): da qui lo shader li legge al posto dei rumori.
+static func set_baked_weights(material: ShaderMaterial, weights_a: Image, weights_b: Image) -> void:
+	_set_mask(material, "baked_weights_a", weights_a)
+	_set_mask(material, "baked_weights_b", weights_b)
+	material.set_shader_parameter("use_baked_weights", true)
 
 
 # La prima volta crea la texture, poi la aggiorna sul posto (stesso formato e misura).
