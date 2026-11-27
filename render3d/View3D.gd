@@ -227,6 +227,8 @@ func _apply_graphics_options() -> void:
 	RenderingServer.directional_shadow_atlas_set_size(UserOptions.quality_3d_shadow_size(), true)
 	# Cespugli da lontano: distanza di cambio del livello, subito su tutte le celle già costruite.
 	MultiMeshGroup3D.set_lod_pixels(get_tree(), UserOptions.quality_3d_bush_far_pixels())
+	# Ombre degli alberi del livello (spente in Bassa), subito su tutte le celle già costruite.
+	Trees3D.set_shadows(get_tree(), UserOptions.quality_3d_tree_shadows())
 	if _lighting != null:
 		_lighting.apply_graphics_options()
 

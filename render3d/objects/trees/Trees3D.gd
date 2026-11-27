@@ -32,6 +32,10 @@ const SHADOW_PROXY := true
 const PROXY_CROWN_FILL := 0.85 # la chioma vera non riempie il suo riquadro: palla e cono un po' più stretti
 const PROXY_TRUNK_RADIUS := 0.035 # raggio del tronco, in parte dell'altezza del modello
 static var _shadow_proxies: Dictionary = {} # Mesh del modello -> sagoma (null: il modello tiene la sua ombra)
+# Ombre degli alberi spegnibili dal livello di qualità (2026-11-27, UserOptions.quality_3d_tree_shadows: spente in Bassa).
+# I gruppi che fanno ombra (sagome, modelli con la loro ombra, morti e ceppi) stanno in SHADOW_GROUP: set_shadows li
+# cambia tutti al volo, senza ricostruirli; quelli nuovi nascono già col valore del livello attuale.
+const SHADOW_GROUP := &"tree_shadows_3d"
 
 const TRUNK_HEIGHT_SCALE := 2.4
 const TRUNK_RADIUS_SCALE := 0.45
@@ -186,7 +190,7 @@ static func build(snapshot: TreeSnapshot3D, base_global: Vector2, material: Mate
 # nelle stesse posizioni, fa solo l'ombra.
 static func _add_tree_group(node: Node3D, group_name: String, meshes: Array, transforms: Array, colors: Array) -> void:
 	if not SHADOW_PROXY:
-		node.add_child(MultiMeshGroup3D.build(group_name, meshes, transforms, null, colors))
+		node.add_child(_shadow_caster(MultiMeshGroup3D.build(group_name, meshes, transforms, null, colors)))
 		return
 	var proxies: Array = []
 	var proxied_transforms: Array = []
@@ -197,8 +201,33 @@ static func _add_tree_group(node: Node3D, group_name: String, meshes: Array, tra
 		proxied_transforms.append(transforms[i] if proxy != null else [])
 		own_shadow_transforms.append([] if proxy != null else transforms[i])
 	node.add_child(MultiMeshGroup3D.build(group_name, meshes, proxied_transforms, null, colors, false))
-	node.add_child(MultiMeshGroup3D.build(group_name + "Shadows", proxies, proxied_transforms, null, [], true, [], true))
-	node.add_child(MultiMeshGroup3D.build(group_name + "OwnShadow", meshes, own_shadow_transforms, null, colors))
+	node.add_child(_shadow_caster(MultiMeshGroup3D.build(group_name + "Shadows", proxies, proxied_transforms, null, [], true, [], true)))
+	node.add_child(_shadow_caster(MultiMeshGroup3D.build(group_name + "OwnShadow", meshes, own_shadow_transforms, null, colors)))
+
+
+# Accende o spegne le ombre di tutti gli alberi già costruiti (livello di qualità cambiato, View3D).
+static func set_shadows(tree: SceneTree, enabled: bool) -> void:
+	for group_node in tree.get_nodes_in_group(SHADOW_GROUP):
+		_apply_shadows(group_node, enabled)
+
+
+# Mette un gruppo appena costruito tra quelli che fanno ombra, già col valore del livello attuale.
+static func _shadow_caster(group_node: Node3D) -> Node3D:
+	group_node.add_to_group(SHADOW_GROUP)
+	_apply_shadows(group_node, UserOptions.quality_3d_tree_shadows())
+	return group_node
+
+
+# Le sagome (solo ombra) si nascondono; gli altri blocchi si disegnano senza fare ombra.
+static func _apply_shadows(group_node: Node, enabled: bool) -> void:
+	for child in group_node.get_children():
+		var instance := child as GeometryInstance3D
+		if instance == null:
+			continue
+		if instance.cast_shadow == GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY:
+			instance.visible = enabled
+		else:
+			instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if enabled else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 # Sagoma d'ombra di un modello (SHADOW_PROXY), fatta una volta per forma; null se il modello non ha parti a ritaglio.
@@ -347,9 +376,9 @@ static func _add_stumps_and_dead(node: Node3D, snapshot: TreeSnapshot3D, base_gl
 		var y := GroundHeight3D.land_height(base_global.x + ground.x, base_global.y + ground.y) - SINK
 		dead_transforms[posmod(seed_value / 13, dead_meshes.size())].append(
 			Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * size), Vector3(ground.x, y, ground.y)))
-	node.add_child(MultiMeshGroup3D.build("Stumps", [ModelMesh3D.load_mesh(DEAD_CUT_DIR + STUMP_MODEL + ".gltf")],
-		[stump_transforms], null))
-	node.add_child(MultiMeshGroup3D.build("DeadTrees", dead_meshes, dead_transforms, null))
+	node.add_child(_shadow_caster(MultiMeshGroup3D.build("Stumps", [ModelMesh3D.load_mesh(DEAD_CUT_DIR + STUMP_MODEL + ".gltf")],
+		[stump_transforms], null)))
+	node.add_child(_shadow_caster(MultiMeshGroup3D.build("DeadTrees", dead_meshes, dead_transforms, null)))
 
 
 static func _get_dead_tree_meshes() -> Array:
